@@ -1,9 +1,18 @@
 /**
- * 13F 포트폴리오 화면 모델(lib/institutionsScreen) — 기관 목록 줄·비중 추이 선·보유 표 줄 키.
+ * 13F 포트폴리오 화면 모델(lib/institutionsScreen) — 기관 목록 줄·고른 기관 제목·요약 KPI·비중 추이 선·보유 표 줄 키.
  */
 import { describe, expect, it } from "vitest";
 
-import { holdingRowKeys, institutionItems, WEIGHT_LINE_LABEL_WIDTH, weightLines } from "../institutionsScreen";
+import { formatCurrency } from "../format";
+import {
+  holdingRowKeys,
+  institutionItems,
+  institutionTitle,
+  portfolioKpis,
+  WEIGHT_LINE_LABEL_WIDTH,
+  weightLines,
+} from "../institutionsScreen";
+import type { PortfolioResponse } from "../types/institution";
 
 describe("institutionItems", () => {
   it("키는 CIK, 이름은 국기를 뗀 글, 설명은 그대로 — 받은 차례", () => {
@@ -76,5 +85,57 @@ describe("holdingRowKeys", () => {
 
   it("줄이 없으면 빈 목록", () => {
     expect(holdingRowKeys([])).toEqual([]);
+  });
+});
+
+describe("institutionTitle", () => {
+  const items = [{ key: "0001067983", label: "가상 버크셔", desc: "" }];
+
+  it("목록 이름 → 포트폴리오 응답의 기관 이름(국기 뗌) → 'CIK …'", () => {
+    expect(institutionTitle(items, "0001067983", { institution: { name: "응답 이름" } })).toBe("가상 버크셔");
+    expect(institutionTitle([], "0001067983", { institution: { name: "\u{1F1FA}\u{1F1F8} 응답 이름" } })).toBe("응답 이름");
+    expect(institutionTitle([], "0001067983", null)).toBe("CIK 0001067983");
+    expect(institutionTitle(items, "0001608046", { institution: {} })).toBe("CIK 0001608046");
+  });
+});
+
+describe("portfolioKpis", () => {
+  const krw = { toKrw: (usd: number | null | undefined) => (usd == null ? null : `약 ${usd * 2}원`), note: "원/달러 2.00 기준" };
+  const data: Pick<PortfolioResponse, "latest" | "quarters"> = {
+    latest: { reportDate: "2026-06-30", filingDate: "2026-08-14", totalValue: 1_000_000 },
+    quarters: [
+      { filingDate: "2026-05-15", reportDate: "2026-03-31", totalValue: 900_000, holdingCount: 10 },
+      { filingDate: "2026-08-14", reportDate: "2026-06-30", totalValue: 1_000_000, holdingCount: 11 },
+    ],
+  };
+
+  it("기준일(보조 제출일·출처) · 총액(서식 formatCurrency·보조 원화 + 환율 글) · 분기 수(단위 '개'·보조 기준일 목록)", () => {
+    const [date, total, quarters] = portfolioKpis(data, krw, "합성 출처");
+    expect(date).toMatchObject({ key: "reportDate", label: "최신 공시 기준일", value: "2026-06-30", note: "제출일 2026-08-14", source: "합성 출처" });
+    expect(total).toMatchObject({ key: "totalValue", label: "포트폴리오 총액", value: 1_000_000, note: "약 2000000원 · 원/달러 2.00 기준" });
+    expect(total.format?.(1_000_000)).toBe(formatCurrency(1_000_000));
+    expect(total.source).toBeUndefined();
+    expect(quarters).toMatchObject({ key: "quarters", label: "수집된 분기", value: 2, unit: "개", note: "2026-03-31, 2026-06-30" });
+    expect(quarters.format?.(2)).toBe("2");
+    expect(quarters.source).toBeUndefined();
+  });
+
+  it("모르는 값은 null(0으로 채우지 않음) — 총액을 모르면 원화 없이 환율 글만, 제출일을 모르면 '제출일 —'", () => {
+    const [date, total] = portfolioKpis(
+      { latest: { reportDate: "", filingDate: "", totalValue: null }, quarters: [] },
+      { toKrw: () => null, note: "원/달러 값이 없어 원화 환산은 생략했습니다." },
+      "합성 출처",
+    );
+    expect(date.value).toBeNull();
+    expect(date.note).toBe("제출일 —");
+    expect(total.value).toBeNull();
+    expect(total.note).toBe("원/달러 값이 없어 원화 환산은 생략했습니다.");
+  });
+
+  it("분기가 없으면 0개(센 수)·보조 없음, 응답이 없으면 빈 목록", () => {
+    const kpis = portfolioKpis({ latest: undefined, quarters: [] }, krw, "합성 출처");
+    expect(kpis[2]).toMatchObject({ value: 0, note: null });
+    expect(kpis[1].value).toBeNull();
+    expect(portfolioKpis(null, krw, "합성 출처")).toEqual([]);
   });
 });

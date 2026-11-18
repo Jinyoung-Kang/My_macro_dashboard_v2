@@ -1,10 +1,13 @@
 /**
- * 13F 포트폴리오 화면(/institutions)의 화면 모델 — 기관 목록 줄·비중 추이 선 이름표·보유 표 줄 키를 만드는 React를 모르는 순수 함수(ADR 0004 규칙 3).
- * 값이 없으면 null(화면은 "—"), 0으로 채우지 않습니다.
+ * 13F 포트폴리오 화면(/institutions)의 화면 모델 — 기관 목록 줄·고른 기관 요약 KPI·비중 추이 선 이름표·보유 표 줄 키를 만드는 React를 모르는 순수 함수
+ * (ADR 0004 규칙 3). 값이 없으면 null(화면은 "—"), 0으로 채우지 않습니다.
  */
 import { distinctLabels } from "./chartAxis";
+import { EMPTY, formatCurrency, formatNumber } from "./format";
 import { filerName } from "./holdings";
-import type { Holding } from "./types/institution";
+import type { KpiItem } from "./kpi";
+import { presentText } from "./patterns";
+import type { Holding, PortfolioResponse } from "./types/institution";
 
 /** 기관 목록 API(/api/sec13f/institutions)의 줄 하나 — 이 화면이 쓰는 칸만. */
 export type InstitutionEntry = { key: string; name: string; cik: string; desc: string };
@@ -15,6 +18,67 @@ export type InstitutionItem = { key: string; label: string; desc: string };
 /** 기관 목록 줄 — 받은 차례 그대로. 목록을 받기 전이면 빈 목록. */
 export function institutionItems(list: readonly InstitutionEntry[] | null | undefined): InstitutionItem[] {
   return (list ?? []).map((entry) => ({ key: entry.cik, label: filerName(entry.name) ?? `CIK ${entry.cik}`, desc: entry.desc }));
+}
+
+/**
+ * 고른 기관 패널의 제목 — 기관 목록의 이름(국기를 뗌), 목록을 아직 못 받았거나 없는 기관이면 포트폴리오 응답의 기관 이름, 그것도 없으면 'CIK …'
+ * (이름을 지어내지 않음). 같은 백엔드 기관 표의 이름이라 새 요청이 없습니다.
+ */
+export function institutionTitle(
+  items: readonly InstitutionItem[],
+  cik: string,
+  portfolio: Pick<PortfolioResponse, "institution"> | null | undefined,
+): string {
+  return items.find((item) => item.key === cik)?.label ?? filerName(portfolio?.institution?.name) ?? `CIK ${cik}`;
+}
+
+/** 요약 KPI 띠 첫 타일의 출처 줄 — 기관 상세 보유 종목 패널과 같은 글. */
+export const PORTFOLIO_SOURCE = "SEC EDGAR 13F";
+
+/** 원화 환산(공용 환율 훅 useUsdKrw의 두 칸) — 환율을 모르면 toKrw가 null, note는 그 사실을 적은 글. */
+export type KrwConversion = { toKrw: (usd: number | null | undefined) => string | null; note: string };
+
+/**
+ * 고른 기관의 포트폴리오 요약 KPI 띠 — 최신 공시 기준일(보조 '제출일 …') · 포트폴리오 총액(보조 '약 …원 · 원/달러 … 기준 · 시각' — 환율을 모르면 그
+ * 사실 한 줄) · 수집된 분기(n개, 보조 = 분기 기준일 목록). 예전 지표 칸 셋과 같은 값·글입니다. 출처 줄은 첫 타일에만 둡니다 — 띠 전체가 같은 13F
+ * 저장본이라 같은 글을 세 번 되풀이하지 않습니다(순유동성·섹터 띠와 같은 규칙). 응답이 없으면 빈 목록.
+ */
+export function portfolioKpis(
+  data: Pick<PortfolioResponse, "latest" | "quarters"> | null | undefined,
+  krw: KrwConversion,
+  source: string,
+): KpiItem[] {
+  if (!data) {
+    return [];
+  }
+  const latest = data.latest ?? null;
+  const total = typeof latest?.totalValue === "number" && Number.isFinite(latest.totalValue) ? latest.totalValue : null;
+  const quarters = data.quarters ?? [];
+  return [
+    {
+      key: "reportDate",
+      label: "최신 공시 기준일",
+      value: presentText(latest?.reportDate),
+      note: `제출일 ${presentText(latest?.filingDate) ?? EMPTY}`,
+      source,
+    },
+    {
+      key: "totalValue",
+      label: "포트폴리오 총액",
+      value: total,
+      format: formatCurrency,
+      // 달러 금액은 크기가 잘 안 잡혀 매크로 화면이 수집한 같은 원/달러로 환산해 함께 적습니다(환율을 모르면 환산 없이 그 사실만).
+      note: [total === null ? null : krw.toKrw(total), krw.note].filter((text): text is string => Boolean(text)).join(" · "),
+    },
+    {
+      key: "quarters",
+      label: "수집된 분기",
+      value: quarters.length,
+      format: (value) => formatNumber(value, 0),
+      unit: "개",
+      note: quarters.map((quarter) => quarter.reportDate).join(", ") || null,
+    },
+  ];
 }
 
 /** 비중 추이 선 이름표 폭 — 예전 '앞 18자 + …'와 같은 폭입니다. 구분자가 붙은 이름표는 구분자만큼 더 길 수 있습니다. */

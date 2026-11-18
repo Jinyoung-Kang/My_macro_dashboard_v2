@@ -1,21 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
-import { ChangeCell } from "@/components/patterns";
+import { ChangeCell, KpiStrip } from "@/components/patterns";
 import { weightHistoryRows } from "@/lib/chartData";
 import {
-  Banner,
+  Callout,
   Card,
   EmptyState,
   ErrorState,
+  FOCUS_RING,
   Freshness,
   Loading,
-  Metric,
   PageHeader,
+  Panel,
   Select,
   SourceBadge,
   Table,
+  TEXT_TARGET,
 } from "@/components/ui";
 import {
   ChevronDownIcon,
@@ -33,7 +36,16 @@ import {
   formatCurrency,
   formatNumber, formatWeightPercent } from "@/lib/format";
 import { holdingActionView, type HoldingActionKind } from "@/lib/holdings";
-import { holdingRowKeys, type InstitutionEntry, institutionItems, weightLines } from "@/lib/institutionsScreen";
+import { institutionHref } from "@/lib/detail";
+import {
+  holdingRowKeys,
+  type InstitutionEntry,
+  institutionItems,
+  institutionTitle,
+  portfolioKpis,
+  PORTFOLIO_SOURCE,
+  weightLines,
+} from "@/lib/institutionsScreen";
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -71,6 +83,9 @@ export default function InstitutionsPage() {
 
   const items = institutionItems(institutions.data?.institutions);
   const selected = items.find((item) => item.key === cik);
+  // 고른 기관 패널 — 제목(목록 이름, 없으면 포트폴리오 응답의 이름·'CIK …')과 요약 KPI(예전 지표 칸 셋과 같은 값·글).
+  const title = institutionTitle(items, cik, data);
+  const kpis = portfolioKpis(data?.available ? data : null, usdKrw, PORTFOLIO_SOURCE);
   const history = data?.weightHistory;
 
   const chartData = history ? weightHistoryRows(history.dates, history.series) : [];
@@ -115,40 +130,32 @@ export default function InstitutionsPage() {
             }))}
           />
         </div>
-        {selected?.desc && <p className="mt-3 text-xs text-text-3">{selected.desc}</p>}
       </Card>
 
-      {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
-
-      {data && !data.available && (
-        <Banner tone="warn">
-          {data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}
-        </Banner>
-      )}
+      {/*
+        고른 기관 패널 — 제목 = 기관 이름, 부제 = 기관 목록의 설명(예전 고르기 카드 아래 글과 같은 출처), 머리 동작 = 기관 상세 링크(요청 없음).
+        본문은 포트폴리오 읽기 상태 — 읽는 중·오류(다시 시도)·저장본 없음 안내, 값이 오면 요약 KPI 띠.
+      */}
+      <Panel
+        title={title}
+        subtitle={selected?.desc || undefined}
+        actions={
+          // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 포커스 링 — 기관 상세 '13F 포트폴리오에서 자세히'와 같은 꼴(중립 잉크·밑줄).
+          <Link href={institutionHref(cik)} className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
+            기관 상세 열기
+          </Link>
+        }
+      >
+        {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
+        {error && <ErrorState message={error} onRetry={reload} />}
+        {data && !data.available && (
+          <Callout tone="warn">{data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}</Callout>
+        )}
+        {kpis.length > 0 && <KpiStrip label="포트폴리오 요약" items={kpis} keepDates />}
+      </Panel>
 
       {data?.available && (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric
-              label="최신 공시 기준일"
-              value={data.latest?.reportDate ?? EMPTY}
-              caption={`제출일 ${data.latest?.filingDate ?? EMPTY}`}
-            />
-            <Metric
-              label="포트폴리오 총액"
-              value={formatCurrency(data.latest?.totalValue ?? null)}
-              // 달러 금액은 크기가 잘 안 잡힙니다. 매크로 화면이 이미 수집한
-              // 같은 원/달러 값으로 환산해 함께 적습니다(환율을 모르면 생략).
-              caption={usdKrw.toKrw(data.latest?.totalValue ?? null) ?? undefined}
-              note={usdKrw.note}
-            />
-            <Metric
-              label="수집된 분기"
-              value={`${data.quarters.length}개`}
-              caption={data.quarters.map((q) => q.reportDate).join(", ")}
-            />
-          </div>
 
           <Card
             title="상위 종목 분기별 비중 히트맵" source={SOURCES.sec13f}

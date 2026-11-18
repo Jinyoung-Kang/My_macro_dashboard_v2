@@ -6,7 +6,7 @@
  * 모의·합성 응답·도우미 함수는 원래 파일의 것을 글자 그대로 복사했습니다(이 사례가 쓰는 것만). P5b 두 화면 갈래(13F 포트폴리오 · 교집합·스타일·스코어카드)가
  * 화면을 바꿀 때 서로의 시험 파일을 고치지 않게 갈래마다 파일을 나눈 것입니다(나머지 사례는 원래 파일에 남음).
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -24,6 +24,8 @@ vi.mock("@/components/charts", () => ({
   HorizontalBars: () => null,
 }));
 
+import { endpoints } from "@/lib/endpoints";
+import { formatCurrency, formatKrw } from "@/lib/format";
 import { kstToday, rangeStart } from "@/lib/infoSearch";
 import type { PortfolioResponse } from "@/lib/types";
 import InstitutionsPage from "../institutions/page";
@@ -131,5 +133,170 @@ describe("보유 표 '비중 변화' — 색만으로 방향을 전하지 않는
     expect(within(unknown).getByText("—")).toBeTruthy();
     expect(unknown.textContent).not.toMatch(/\d/);
     expect(unknown.querySelector(".text-up, .text-down")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ 고른 기관 패널·요약 KPI 띠와 읽기 상태
+
+const BERKSHIRE = "0001067983";
+const INSTITUTIONS = endpoints.institution.institutions;
+const PORTFOLIO = endpoints.institution.portfolio(BERKSHIRE, "8", "30");
+const USDKRW = endpoints.macro.usdkrw;
+
+/** 경로 → 응답(정확히 일치) — Error면 실패, 함수면 부를 때마다 그 결과. 없는 경로는 끝나지 않는 요청. */
+let served: Record<string, unknown> = {};
+function serve() {
+  api.apiGetShared.mockImplementation((path: string) => {
+    if (!(path in served)) return new Promise(() => {});
+    const body = served[path];
+    if (typeof body === "function") return (body as () => Promise<unknown>)();
+    return body instanceof Error ? Promise.reject(body) : Promise.resolve(body);
+  });
+}
+const portfolioCalls = () => api.apiGetShared.mock.calls.filter(([path]) => path === PORTFOLIO).length;
+
+function summaryPortfolio(overrides: Partial<PortfolioResponse> = {}): PortfolioResponse {
+  return {
+    available: true, cik: BERKSHIRE,
+    institution: { name: "가상 버크셔 (응답 이름)", desc: "" },
+    collectedAtKst: "2026-11-18 06:00:00",
+    quarters: [
+      { filingDate: "2026-05-15", reportDate: "2026-03-31", totalValue: 90_000_000_000, holdingCount: 40 },
+      { filingDate: "2026-08-14", reportDate: "2026-06-30", totalValue: 100_000_000_000, holdingCount: 41 },
+    ],
+    latest: { reportDate: "2026-06-30", filingDate: "2026-08-14", totalValue: 100_000_000_000 },
+    holdings: [
+      { name: "SYNTHETIC ALPHA CO", cusip: "000000501", class: "COM", value: 60_000_000_000, shares: 600, weight: 60, weightDiff: 1, sharesDiff: 10, action: "비중 확대 (Added)" },
+    ],
+    ...overrides,
+  };
+}
+
+function berkshireList() {
+  return { institutions: [{ key: "brk", name: "\u{1F1FA}\u{1F1F8} 가상 버크셔 (Fictional Berkshire)", cik: BERKSHIRE, desc: "합성 기관 설명 — 가치 투자" }] };
+}
+
+/** KPI 띠 안의 타일(이름 있는 묶음). */
+function tile(name: string): HTMLElement {
+  const strip = screen.getByRole("region", { name: "포트폴리오 요약" });
+  return within(strip).getByRole("group", { name });
+}
+
+describe("고른 기관 패널 — 제목·설명·기관 상세 링크와 요약 KPI 띠", () => {
+  beforeEach(() => {
+    served = {};
+    serve();
+  });
+
+  it("제목은 목록 이름(국기 뗌), 부제는 목록의 설명, 머리 동작은 기관 상세 링크 — 요약 셋은 KPI 타일(첫 타일만 출처 줄)", async () => {
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = summaryPortfolio();
+    served[USDKRW] = { available: true, rate: 1400, lastTs: "2026-11-18 09:00" };
+    render(<InstitutionsPage />);
+
+    const heading = await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (Fictional Berkshire)" });
+    const panel = heading.closest("section") as HTMLElement;
+    expect(within(panel).getByText("합성 기관 설명 — 가치 투자")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe(`/institutions/${BERKSHIRE}`);
+
+    await screen.findByRole("region", { name: "포트폴리오 요약" });
+    const date = tile("최신 공시 기준일");
+    expect(date.textContent).toContain("2026-06-30");
+    expect(date.textContent).toContain("제출일 2026-08-14");
+    expect(date.textContent).toContain("SEC EDGAR 13F");
+
+    const total = tile("포트폴리오 총액");
+    expect(total.textContent).toContain(formatCurrency(100_000_000_000));
+    await waitFor(() => expect(total.textContent).toContain(`약 ${formatKrw(140_000_000_000_000)} · 원/달러 1,400.00 기준 · 2026-11-18 09:00`));
+    expect(total.textContent).not.toContain("출처");
+
+    const quarters = tile("수집된 분기");
+    expect(quarters.textContent).toContain("2개");
+    expect(quarters.textContent).toContain("2026-03-31, 2026-06-30");
+  });
+
+  it("총액을 모르면 '—'(0으로 채우지 않음), 환율을 모르면 환산 없이 그 사실 한 줄", async () => {
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = summaryPortfolio({ latest: { reportDate: "2026-06-30", filingDate: "2026-08-14", totalValue: null } });
+    served[USDKRW] = { available: false };
+    render(<InstitutionsPage />);
+
+    await screen.findByRole("region", { name: "포트폴리오 요약" });
+    const total = tile("포트폴리오 총액");
+    expect(within(total).getByText("—")).toBeTruthy();
+    expect(total.textContent).not.toMatch(/\d/);
+    expect(total.textContent).toContain("원/달러 값이 없어 원화 환산은 생략했습니다.");
+  });
+
+  it("기관 목록을 아직 못 받으면 제목은 포트폴리오 응답의 기관 이름 — 부제(목록의 설명)는 없음", async () => {
+    served[PORTFOLIO] = summaryPortfolio();
+    render(<InstitutionsPage />);
+    expect(await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (응답 이름)" })).toBeTruthy();
+    expect(screen.queryByText("합성 기관 설명 — 가치 투자")).toBeNull();
+  });
+});
+
+describe("고른 기관 패널 — 포트폴리오 읽기 상태", () => {
+  beforeEach(() => {
+    served = {};
+    serve();
+  });
+
+  it("읽는 중이면 '불러오는 중' — 제목은 CIK(목록·응답 모두 없음), 기관 상세 링크는 그대로", async () => {
+    render(<InstitutionsPage />);
+    const heading = await screen.findByRole("heading", { level: 2, name: `CIK ${BERKSHIRE}` });
+    const panel = heading.closest("section") as HTMLElement;
+    expect(within(panel).getByText("13F 공시를 불러오는 중…")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe(`/institutions/${BERKSHIRE}`);
+    expect(screen.queryByRole("region", { name: "포트폴리오 요약" })).toBeNull();
+  });
+
+  it("읽기가 실패하면 그 문구와 다시 시도 — 누르면 같은 경로를 한 번 더 읽고, 값이 오면 KPI 띠", async () => {
+    let fail = true;
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = () => (fail ? Promise.reject(new Error("백엔드 API에 연결하지 못했습니다")) : Promise.resolve(summaryPortfolio()));
+    render(<InstitutionsPage />);
+
+    const message = await screen.findByText("백엔드 API에 연결하지 못했습니다");
+    const panel = message.closest("section") as HTMLElement;
+    expect(within(panel).getByRole("heading", { level: 2 }).textContent).toBe("가상 버크셔 (Fictional Berkshire)");
+    expect(portfolioCalls()).toBe(1);
+
+    fail = false;
+    fireEvent.click(within(panel).getByRole("button", { name: "다시 시도" }));
+    await screen.findByRole("region", { name: "포트폴리오 요약" });
+    expect(portfolioCalls()).toBe(2);
+    expect(screen.queryByText("백엔드 API에 연결하지 못했습니다")).toBeNull();
+  });
+
+  it("저장본이 없으면(available:false) 응답 글을 주의 안내로 — 히트맵·추이·보유 표 패널은 없음", async () => {
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = { available: false, cik: BERKSHIRE, message: "13F 저장본이 아직 없습니다(합성 안내).", quarters: [], holdings: [] };
+    render(<InstitutionsPage />);
+
+    const message = await screen.findByText("13F 저장본이 아직 없습니다(합성 안내).");
+    expect(message.closest("section")?.querySelector("h2")?.textContent).toBe("가상 버크셔 (Fictional Berkshire)");
+    expect(screen.getByText("주의:")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "포트폴리오 요약" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "상위 종목 분기별 비중 히트맵" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^보유 종목 상세/ })).toBeNull();
+  });
+
+  it("값이 있는 채로 다시 읽기가 실패하면 머리 신선도에 '새로 읽지 못함' — 값은 그대로", async () => {
+    let calls = 0;
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = () => {
+      calls += 1;
+      return calls === 1 ? Promise.resolve(summaryPortfolio()) : Promise.reject(new Error("백엔드 API에 연결하지 못했습니다"));
+    };
+    const { rerender } = render(<InstitutionsPage />);
+    await screen.findByRole("region", { name: "포트폴리오 요약" });
+
+    signal.token += 1;
+    await act(async () => rerender(<InstitutionsPage />));
+    await waitFor(() => expect(portfolioCalls()).toBe(2));
+    expect(await screen.findByText("새로 읽지 못함")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "포트폴리오 요약" })).toBeTruthy();
+    signal.token = 0;
   });
 });
