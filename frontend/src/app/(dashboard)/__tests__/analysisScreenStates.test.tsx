@@ -699,6 +699,32 @@ describe("스코어카드 — 주의 안내가 처음 읽는 동안과 값이 �
   });
 });
 
+describe("스코어카드 — 처음 읽는 동안 빠진 것 목록이 응답과 같은 글이다(QA-721)", () => {
+  /** 백엔드 ScorecardService가 늘 보내는 빠진 것 목록(응답과 같은 값). */
+  const MISSING = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"];
+  function missingTexts() {
+    const box = screen.getByText("이 카드는 종합 점수가 아닙니다.").closest("div.rounded-control") as HTMLElement;
+    return [...(box.querySelector("ul")?.children ?? [])].map((item) => item.textContent ?? "");
+  }
+
+  // 수정 전 실패(plain it): 처음 읽는 동안의 줄 글이 ['', '', ''](글 없는 막대 자리 — QA-716 고침). 줄 수는 같지만 390에서 실제 줄 셋 가운데 둘이 두 줄로 꺾여
+  // 안내 상자가 181 → 213px로 자랐음(검토 자기 빌드, 지연 300ms — CLS 0.1905 그대로). 같은 글이면 같은 폭에서 같은 줄로 꺾입니다.
+  it.fails("처음 읽는 동안의 빠진 것 목록 줄 글이 응답이 온 뒤와 같다", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    const view = render(<ScorecardPage />);
+    const pending = missingTexts();
+    view.unmount();
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody({ missing: MISSING })) : new Promise(() => {}));
+    render(<ScorecardPage />);
+    await screen.findByRole("region", { name: "스코어 요약" });
+    expect({ pending, loaded: missingTexts() }).toEqual({
+      pending: MISSING.map((item) => `${item} — 수집하지 않습니다`),
+      loaded: MISSING.map((item) => `${item} — 수집하지 않습니다`),
+    });
+  });
+});
+
 describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => {
   // 수정 전 실패: '실제 값' 칸이 deltaColor라 양수인 변동성·최대낙폭까지 상승 빨강(text-up)·음수 모멘텀은 하락 파랑이고, 음수 부호가 ASCII '-'
   // (표 '-5.2%', 원자료 1개월 수익률 '-0.30%').
