@@ -604,6 +604,67 @@ class RealTradeRebalanceTest {
     }
 
     @Test
+    @DisplayName("주식 종목 수의 1% 거름 경계 — 잔여 종목 목표 1.0%는 N에 듦(보냄), 0.99%는 빠짐(no-names)")
+    void stockNamesDustBoundary() {
+        assertThat(RealTradeRebalance.stockNames(w("Z", 1.0), Set.of(), CASH_LIKE)).isEqualTo(1);
+        assertThat(RealTradeRebalance.stockNames(w("Z", 0.99), Set.of(), CASH_LIKE)).isZero();
+        // S5b 모양(후보 0 + 잔여 Z) — Z 목표가 1.0이면 그 종목이 N을 채워 보냄, 0.99면 no-names(나머지 확인은 같음)
+        for (double z : new double[]{1.0, 0.99}) {
+            Case c = new Case().prev(merge(w(CASH, 69), each("ABC", 10))).held(merge(w(CASH, 66.0), each("ABC", 10), w("Z", z)))
+                    .now(w(CASH, 99.7 - z, "Z", z));
+            assertThat(c.inputs().stockNames()).as("Z %s", z).isEqualTo(z >= 1.0 ? 1 : 0);
+            assertThat(c.verdict().check()).as("Z %s", z).isEqualTo(z >= 1.0 ? null : "no-names");
+        }
+    }
+
+    @Test
+    @DisplayName("대기 STOP 종목은 주식 종목 수·유지 종목 축소·노출 감소에서 빠짐 — 스탑 종목만 남은 '모두 팔기'는 no-names, 스탑 종목의 축소는 K에 안 듦, 보유·목표의 스탑 종목은 R에 안 듦")
+    void stopNamesLeftOutOfNameChecks() {
+        // (a) 실제 계좌·앞 묶음 153130 32·A 30(대기 STOP — 09:10 목표에 반영 안 됨)·B 28, 지금 목표는 153130 70·A 30(후보 0 — 모두 팔기)
+        Map<String, Double> book = w(CASH, 32, "A", 30, "B", 28);
+        Case onlyStop = new Case().prev(book).held(book).now(w(CASH, 70, "A", 30)).stops("A");
+        Inputs a = onlyStop.inputs();
+        assertThat(a.stockNames()).isZero();
+        assertThat(onlyStop.verdict().check()).isEqualTo("no-names");
+        pct(a.checkTurnoverPct(), 66);
+        pct(a.deriskPct(), 28);
+        pct(a.investedPct(), 100);
+        pct(a.accountDriftPct(), 0);
+        assertThat(RealTradeRebalance.judge(with(a, "N", 1)).exempt()).as("스탑 종목이 N을 채우면 예외로 나감 — 막는 것은 N뿐").isTrue();
+        assertThat(RealTradeRebalance.stockNames(w(CASH, 70, "A", 30), Set.of(), CASH_LIKE)).isEqualTo(1);
+
+        // (c) 두 목표에 다 있는 스탑 종목 A가 11 → 5.5로 줆(실제 가격 반토막) — K에 들지 않아 보냄(스탑을 셌다면 5.5 > 5로 name-cut)
+        assertThat(RealTradeRebalance.nameCut(w("A", 5.5, "B", 11), w("A", 11, "B", 11), set("A"), CASH_LIKE)).isEqualByComparingTo("0.00");
+        assertThat(RealTradeRebalance.nameCut(w("A", 5.5, "B", 11), w("A", 11, "B", 11), Set.of(), CASH_LIKE)).isEqualByComparingTo("5.50");
+        Case cutStop = case1().held(merge(HELD1, w("A", 5.7))).now(merge(w(CASH, 9.5, "A", 5.5), each("BCDE", 11), each("FGHI", 10))).stops("A");
+        assertThat(cutStop.inputs().nameCutPct()).isEqualByComparingTo("0.00");
+        assertThat(cutStop.verdict().exempt()).isTrue();
+
+        // R의 보유 쪽 — 보유한 스탑 종목 F(목표 0)는 빼고 셈: E3c 모양(셋 순감 + 하나 교체)에 F가 스탑이면 R 29.4로 보냄(F를 셌다면 39.2로 derisk-over)
+        Case heldStop = new Case().prev(PREV2).held(PREV2).now(merge(w(CASH, 40.2), each("ABCDE", 9.8), w("K", 9.8))).stops("F");
+        pct(heldStop.inputs().deriskPct(), 29.4);
+        assertThat(heldStop.verdict().exempt()).isTrue();
+        // R의 목표 쪽 — E3(넷 순감)에 반영 안 된 감시 STOP A가 목표·보유에 다 있으면 양쪽에서 빼 R 39.2로 멈춤(목표 쪽만 셌다면 29.4로 지남)
+        Case targetStop = new Case().prev(PREV2).held(PREV2).now(merge(w(CASH, 40.2), each("ABCDEF", 9.8))).stops("A");
+        assertThat(targetStop.verdict().check()).isEqualTo("derisk-over");
+        pct(targetStop.inputs().deriskPct(), 39.2);
+    }
+
+    @Test
+    @DisplayName("빠진 종목 수는 계좌 어긋남 계획의 건너뜀도 셈 — 책이 파는 A에 앱의 전량 매도 주문이 걸려 있으면 판정 계획은 A를 다루지 않지만 앞 묶음 목표로는 되사는 쪽(opposite-pending)")
+    void uncountedIncludesAccountDriftPlan() {
+        Case c = case1().now(merge(w(CASH, 15), each("BCDE", 11), each("FGHI", 10)));
+        c.opposite = set("A");
+        Inputs in = c.inputs();
+        Account account = c.account();
+        Plan judged = RealTradeRebalance.judgePlan(c.now, E, account, Set.of(), BigDecimal.ZERO, RULES, Set.of(), BigDecimal.ZERO);
+        assertThat(judged.skipped()).as("판정 계획에는 A의 건너뜀 없음").noneMatch(skip -> s("A").equals(skip.symbol()));
+        assertThat(in.uncounted()).isEqualTo(1);
+        assertThat(c.verdict().check()).isEqualTo("uncounted");
+        assertThat(RealTradeRebalance.judge(with(in, "U", 0)).exempt()).as("막는 것은 U뿐").isTrue();
+    }
+
+    @Test
     @DisplayName("목표 합에 스탑 크레딧 없음 — N3b·N4·E1b 통과(Σ ≥ 99), A2·A2c·S4·S4b targets-thin, 기본 슬롯 결정 뒤 반영 STOP 하나 통과·둘 멈춤")
     void investedHasNoStopCredit() {
         Case a2 = case1().now(merge(each("ADE", 11), each("FGHI", 10))).stops("BC");

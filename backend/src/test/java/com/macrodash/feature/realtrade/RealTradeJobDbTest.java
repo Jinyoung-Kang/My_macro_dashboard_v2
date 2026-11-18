@@ -4259,7 +4259,7 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @DisplayName("U3a·E2·S5b — 후보 0(153130 99)·모두 팔기 + 현금 잔차·0.3% 잔여 종목 → no-names")
+    @DisplayName("U3a·E2·S5b·스탑 종목뿐 — 후보 0(153130 99)·모두 팔기 + 현금 잔차·0.3% 잔여 종목·대기 STOP 종목만 남은 모두 팔기 → no-names")
     void rebalanceNoNamesHalts() {
         rebalanceDay(P1, H1, pcts(CASH_LIKE, 99), Set.of());
         run("09:10:05");
@@ -4276,6 +4276,15 @@ class RealTradeJobDbTest {
         run("09:10:05");
         assertHalted("S5b", "no-names");
         assertThat(haltDetail().path("stockNames").asInt()).isZero();
+
+        // 지금 목표의 주식 종목이 대기 STOP 종목(09:10 목표에 반영 안 된 감시 STOP A)뿐인 '모두 팔기' — 스탑 종목은 N에 들지 않음(다른 확인은 지남)
+        nextCase();
+        rebalanceDay(pcts(CASH_LIKE, 32, "A", 30, "B", 28), pcts(CASH_LIKE, 32, "A", 30, "B", 28), pcts(CASH_LIKE, 70, "A", 30), letters("A"));
+        run("09:10:05");
+        assertHalted("스탑 종목뿐", "no-names");
+        assertThat(haltDetail().path("stockNames").asInt()).isZero();
+        assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(66.0);
+        assertThat(haltDetail().path("deriskPct").asDouble()).isEqualTo(28.0);
     }
 
     @Test
