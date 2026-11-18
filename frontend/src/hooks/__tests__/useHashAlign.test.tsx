@@ -151,7 +151,7 @@ function Changing({ ids }: { ids: readonly string[] }) {
 }
 
 describe("useHashAlign — 처음 한 번만(QA-769)", () => {
-  it.fails("사용자 입력으로 그친 뒤 목차 칸 id 목록이 바뀌어도 해시 절로 다시 옮기지 않는다", () => {
+  it("사용자 입력으로 그친 뒤 목차 칸 id 목록이 바뀌어도 해시 절로 다시 옮기지 않는다", () => {
     window.history.replaceState(null, "", "/paper/us/settings#paper-settings-b");
     const { rerender } = render(<Changing ids={["paper-settings-a", "paper-settings-b"]} />);
     expect(scrolled).toEqual(["paper-settings-b"]);
@@ -162,7 +162,7 @@ describe("useHashAlign — 처음 한 번만(QA-769)", () => {
     expect(scrolled).toEqual(["paper-settings-b"]);
   });
 
-  it.fails("맞추는 동안 목록이 바뀌어도 새로 걸지 않고 하던 맞춤을 이어 간다(입력이 오면 그침)", () => {
+  it("맞추는 동안 목록이 바뀌어도 새로 걸지 않고 하던 맞춤을 이어 간다(입력이 오면 그침)", () => {
     window.history.replaceState(null, "", "/paper/us/settings#paper-settings-b");
     const { rerender } = render(<Changing ids={["paper-settings-a", "paper-settings-b"]} />);
     rerender(<Changing ids={["paper-settings-a", "paper-settings-b", "paper-settings-c"]} />);
