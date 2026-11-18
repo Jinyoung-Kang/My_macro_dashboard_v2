@@ -243,6 +243,8 @@ export function AccountDetailPanel({
               {
                 key: "ticker",
                 header: "종목",
+                // 한국은 기업명 — 낱말 사이에서만 꺾음(옛 ui Table의 칸 규칙, QA-776).
+                className: "break-keep",
                 cell: (row) => (
                   <span className="flex flex-wrap items-center gap-1">
                     <span><TickerName code={row.ticker} /></span>
@@ -347,6 +349,8 @@ function CompositionView({ label, composition }: { label: string; composition: A
           {
             key: "label",
             header: "종목",
+            // 한국은 기업명 — 낱말 사이에서만 꺾음(옛 ui Table의 칸 규칙, QA-776).
+            className: "break-keep",
             cell: (row) => (
               <span className="flex items-center gap-2">
                 <span
