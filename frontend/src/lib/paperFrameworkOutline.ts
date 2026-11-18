@@ -61,11 +61,6 @@ export function frameworkOutline(rendered: string | null | undefined, idPrefix =
   return sections;
 }
 
-/** 절들을 다시 이은 글 — 원래 렌더링 글과 같아야 합니다(시험용·확인용). */
-export function frameworkOutlineText(sections: readonly FrameworkOutlineSection[]): string {
-  return sections.flatMap((section) => (section.heading === null ? section.lines : [section.heading, ...section.lines])).join("\n");
-}
-
 /** 목차 하위 칸으로 쓸 머리 단계(위 설명). 머리가 없으면 null. */
 export function frameworkOutlineTocLevel(sections: readonly FrameworkOutlineSection[]): 1 | 2 | 3 | null {
   const counts = new Map<number, number>();

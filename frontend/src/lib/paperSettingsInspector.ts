@@ -85,8 +85,9 @@ export function settingKeyHistory(history: unknown, key: string): SettingKeyHist
   });
 }
 
-/** 검사 칸 속성 한 줄 — 값이 null이면 화면이 '—'(PropertyList). */
+/** 검사 칸 속성 한 줄 — 값이 null이면 화면이 '—'(PropertyList). `key`는 화면이 줄을 가리는 이름(보이는 이름 글로 가리지 않게). */
 export type SettingInspectorProperty = {
+  key: "description" | "key" | "type" | "range" | "options" | "market" | "current" | "default" | "isDefault" | "rulesImpact" | "settingsRow";
   label: string;
   value: string | null;
   /** 식별자(키·형) — 고정폭. */
@@ -110,20 +111,22 @@ export function settingInspectorProperties(
   const type = clean(meta?.type);
   const hasVersion = typeof version === "number" && Number.isFinite(version);
   return [
-    { label: "설명", value: clean(row.description) || null, block: true, emptyReason: "서버가 설명을 보내지 않음" },
-    { label: "키", value: row.key, mono: true },
-    { label: "형", value: type || row.kind, mono: true },
-    { label: "범위", value: row.range, emptyReason: "정한 범위 없음" },
-    { label: "고를 수 있는 값", value: row.kind === "choice" && row.options.length > 0 ? row.options.join(" · ") : null, emptyReason: "고르는 키가 아님" },
-    { label: "시장", value: settingMarketLabel(row.market) },
-    { label: "지금 값", value: row.current },
-    { label: "기본값", value: row.defaultText === EMPTY ? null : row.defaultText, emptyReason: "서버가 기본값을 보내지 않음" },
-    { label: "기본값과 같은가", value: row.isDefault === null ? null : row.isDefault ? "같음" : "다름", emptyReason: "기본값을 모름" },
+    { key: "description", label: "설명", value: clean(row.description) || null, block: true, emptyReason: "서버가 설명을 보내지 않음" },
+    { key: "key", label: "키", value: row.key, mono: true },
+    { key: "type", label: "형", value: type || row.kind, mono: true },
+    { key: "range", label: "범위", value: row.range, emptyReason: "정한 범위 없음" },
+    { key: "options", label: "고를 수 있는 값", value: row.kind === "choice" && row.options.length > 0 ? row.options.join(" · ") : null, emptyReason: "고르는 키가 아님" },
+    { key: "market", label: "시장", value: settingMarketLabel(row.market) },
+    { key: "current", label: "지금 값", value: row.current },
+    { key: "default", label: "기본값", value: row.defaultText === EMPTY ? null : row.defaultText, emptyReason: "서버가 기본값을 보내지 않음" },
+    { key: "isDefault", label: "기본값과 같은가", value: row.isDefault === null ? null : row.isDefault ? "같음" : "다름", emptyReason: "기본값을 모름" },
     {
+      key: "rulesImpact",
       label: "규칙 계좌 영향",
       value: row.affectsRules ? (row.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향") : "없음",
     },
     {
+      key: "settingsRow",
       label: "설정 행",
       value: row.missing
         ? "설정 행에 없음 — 기본값으로 읽음"

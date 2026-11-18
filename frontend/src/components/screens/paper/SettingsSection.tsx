@@ -388,9 +388,10 @@ function SettingInspector({
 }) {
   const headingId = useId();
   const items: PropertyItem[] = settingInspectorProperties(row, meta, version).map((property) => ({
+    key: property.key,
     label: property.label,
-    // 규칙 계좌 영향은 줄의 표지와 같은 주의 태그(아이콘 + 글 — 낭독기 '주의: ').
-    value: property.label === "규칙 계좌 영향" && row.affectsRules ? <Tag tone="warn">{property.value}</Tag> : property.value,
+    // 규칙 계좌 영향은 줄의 표지와 같은 주의 태그(아이콘 + 글 — 낭독기 '주의: '). 줄은 이름 글이 아니라 키로 가립니다.
+    value: property.key === "rulesImpact" && row.affectsRules ? <Tag tone="warn">{property.value}</Tag> : property.value,
     mono: property.mono,
     block: property.block,
     emptyReason: property.emptyReason,
@@ -566,7 +567,7 @@ function SettingInput({
             type="checkbox"
             checked={value === "true"}
             aria-labelledby={labelledBy}
-          aria-describedby={describedBy}
+            aria-describedby={describedBy}
             onChange={(event) => onChange(event.target.checked ? "true" : "false")}
           />
           <span aria-hidden="true">{value === "true" ? "예" : "아니오"}</span>
@@ -603,7 +604,7 @@ function SettingInput({
             rows={table ? Math.min(Math.max(lines + 1, 2), 8) : value.length > 80 ? 4 : value.length > 40 ? 2 : 1}
             spellCheck={false}
             aria-labelledby={labelledBy}
-          aria-describedby={describedBy}
+            aria-describedby={describedBy}
             onChange={(event) => onChange(event.target.value)}
             className={`${INPUT} font-mono text-xs`}
           />

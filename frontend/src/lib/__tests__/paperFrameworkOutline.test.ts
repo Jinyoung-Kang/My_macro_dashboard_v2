@@ -5,10 +5,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   frameworkOutline,
-  frameworkOutlineText,
+  type FrameworkOutlineSection,
   frameworkOutlineTocLevel,
   frameworkVersionEntries,
 } from "../paperFrameworkOutline";
+
+/** 절들을 다시 이은 글 — 원래 렌더링 글과 같아야 합니다(글을 잃거나 바꾸지 않음을 보는 시험 도우미 — 화면은 쓰지 않음). */
+function frameworkOutlineText(sections: readonly FrameworkOutlineSection[]): string {
+  return sections.flatMap((section) => (section.heading === null ? section.lines : [section.heading, ...section.lines])).join("\n");
+}
 
 /** QA 스택 v1과 같은 꼴 — 제목(#) 하나, 절(##) 여럿, 엔진 머리(###). */
 const RENDERED = [
