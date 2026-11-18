@@ -5,6 +5,7 @@
  * 좁은 화면 누름 자리 44px, 넓은 화면 32px 줄, 고대비 켠 줄 2px 테두리, 강조 파랑 없음. jsdom은 배치를 계산하지 않으므로 폭별 모양은 클래스로 봅니다.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorState } from "@/components/ui";
@@ -206,5 +207,61 @@ describe("FilterList — 모양(클래스)", () => {
     const { container } = render(<FilterList label="기관" items={ITEMS} selected={["a"]} onToggle={() => {}} count />);
     const classes = [...container.querySelectorAll("[class]")].flatMap((element) => tokens(element));
     expect(classes.filter((token) => /accent/.test(token))).toEqual([]);
+  });
+});
+
+describe("FilterList — 하나 고름은 라디오 묶음(QA-711)", () => {
+  /** 부르는 쪽처럼 고름을 상태로 들고 있는 감싸개 — 키로 고르면 다시 그립니다. */
+  function Single({ onToggle }: { onToggle: (key: string) => void }) {
+    const [chosen, setChosen] = useState("b");
+    return (
+      <FilterList
+        label="분석할 기관"
+        items={ITEMS}
+        selected={[chosen]}
+        onToggle={(key) => {
+          onToggle(key);
+          setChosen(key);
+        }}
+        selection="single"
+      />
+    );
+  }
+
+  // 수정 전 실패(plain it): { radiogroup: false, checked: [], tabStops: ["가상 갑 자산운용30종목", "가상 을 연기금", "가상 병 투자회사"], pressed: 3 } — 하나 고름도
+  // 여럿 고름과 같은 aria-pressed 토글 단추라, 고른 줄은 '눌림'으로 읽히는데 다시 눌러도 풀리지 않고 줄마다 Tab 정지점(13F 기관 12줄 = 12개 — 개편 전 고르기 상자는 1개).
+  it.fails("radiogroup 안의 radio(aria-checked) — 고른 줄만 Tab 정지점, 위·아래·Home·End로 옮기며 고름, 고른 줄을 다시 눌러도 그대로", () => {
+    const onToggle = vi.fn();
+    const { container } = render(<Single onToggle={onToggle} />);
+    const group = screen.queryByRole("radiogroup", { name: "분석할 기관" });
+    const radios = group ? within(group).getAllByRole("radio") : [];
+    expect({
+      radiogroup: group !== null,
+      checked: radios.map((radio) => radio.getAttribute("aria-checked")),
+      tabStops: [...container.querySelectorAll("button")].filter((button) => button.tabIndex >= 0).map((button) => button.textContent),
+      pressed: container.querySelectorAll("[aria-pressed]").length,
+    }).toEqual({ radiogroup: true, checked: ["false", "true", "false"], tabStops: ["가상 을 연기금"], pressed: 0 });
+
+    // 아래 화살표 — 다음 줄로 포커스를 옮기며 고름(라디오 묶음의 키 규칙). 끝에서는 처음으로 돌아갑니다.
+    radios[1].focus();
+    fireEvent.keyDown(radios[1], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(radios[2]);
+    expect(onToggle.mock.calls).toEqual([["c"]]);
+    expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual(["false", "false", "true"]);
+    expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, -1, 0]);
+    fireEvent.keyDown(radios[2], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(radios[0]);
+    fireEvent.keyDown(radios[0], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(radios[2]);
+    fireEvent.keyDown(radios[2], { key: "Home" });
+    expect(document.activeElement).toBe(radios[0]);
+    fireEvent.keyDown(radios[0], { key: "End" });
+    expect(document.activeElement).toBe(radios[2]);
+    expect(onToggle.mock.calls).toEqual([["c"], ["a"], ["c"], ["a"], ["c"]]);
+
+    // 고른 줄을 다시 누르면 아무 일 없음(고름을 비우지 않음 — 라디오는 풀리지 않음).
+    fireEvent.click(radios[2]);
+    expect(onToggle).toHaveBeenCalledTimes(5);
+    expect(radios[2].getAttribute("aria-checked")).toBe("true");
   });
 });
