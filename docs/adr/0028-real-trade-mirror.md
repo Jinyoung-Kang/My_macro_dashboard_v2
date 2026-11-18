@@ -174,9 +174,11 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   켜지면 153130을 판 현금이 남는다. 반대로 예외를 놓쳐 지금처럼 멈추는 날 — D 묶음이 없던 날·결정이 OK가 아닌 날·빠진 종목·하루 한도 부족·결정 뒤 반영된 STOP 둘 이상·
   유지 종목 다섯 이상 교체(153130 46.7% 기준) 등 — 은 사람이 해제한다. 지금 멈춤 판정(G0)이 시각 맞추기 날 책 종목의 매매 제한 몫을 세지 않는 길(QA-376의 2026-11-09 결정)은
   이번 범위 밖이다(넓히지도 막지도 않음). 미리 보기 계산은 그대로이고 경고 글만 고쳤다. 런타임 끄기 스위치는 두지 않는다(되돌림 배포와 화면 끄기).
-  계약은 [명세 §3.1·§12.2·§13.2](../specs/2026-11-06-real-trade-mirror.md), 판정은 `RealTradeRebalance`(순수), 시험은 `RealTradeRebalanceTest`(경계·계획 4절 사례)·
-  `RealTradeNoticesTest.texts`·`RealTradeJobDbTest`의 `rebalance*`(보냄 — 시각 맞추기·시가 맞추기 날, 교체 수, 매매 제한 종목, 스탑 기준, 미룬 매수의 마무리, 남은 몫 뒤 /
-  멈춤 — 입구 다섯과 열두 확인 각각, Claude 책 그대로, 판정 오류, 한 번만)·`scheduledDecisionStillHalts`·`observationLogDoesNotChangeBatch`, 화면 `realtradeCodes.test.ts`·
-  `realtrade.test.ts`.
+  계약은 [명세 §3.1·§12.2·§13.2](../specs/2026-11-06-real-trade-mirror.md), 판정은 `RealTradeRebalance`(순수), 시험은 `RealTradeRebalanceTest`(경계·계획 4절 사례·
+  대기 STOP 종목 제외와 1% 거름)·`RealTradeNoticesTest.texts`·`RealTradeJobDbTest`의 `rebalance*`(보냄 — 시각 맞추기·시가 맞추기 날, 교체 수, 매매 제한 종목, 스탑 기준,
+  미룬 매수의 마무리, 남은 몫 뒤 / 멈춤 — 입구 다섯과 열두 확인 가운데 교차 확인을 뺀 각각, Claude 책 그대로, 판정 오류, 한 번만)·`scheduledDecisionStillHalts`·
+  `observationLogDoesNotChangeBatch`, 화면 `realtradeCodes.test.ts`·`realtrade.test.ts`. 교차 확인(`over-allowance`)은 두 셈(판정 회전율·책 변화량)의 어긋남을 잡는
+  장치다 — 종목마다 |지금 − 보유| ≤ |지금 − 앞| + |앞 − 보유|라 판정 회전율은 대개 책 변화량 + 계좌 어긋남(앞 확인에서 ≤ 20) 안이어서 정상 계좌·목표로는 작업 경로에서
+  만들기 어려워 순수 시험(`judgeTableBoundaries`·`crossCheckUsesStopOnlyDrift`)만 본다.
 - 토큰이 키 하나에 1개라 서버 밖에 같은 키가 있으면 주문 시각에 401이 나고 멈춘다.
 - 모의 1분봉 체결가와 실제 체결가는 다르다(지연·슬리피지·정수 주). 실제 계좌 칸은 실제 평균 체결가만 보이고, 모의 체결가 대비는 다음 단계로 남긴다(모의 체결은 그날 밤에야 기록됨).

@@ -4302,6 +4302,29 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("E3 넷 순감(153130 40.2) — 노출 감소 39.2%p > 30 → derisk-over; 책 가격이 빠진 목표 종목 → value-unknown(모르면 지금처럼 멈춤)")
+    void rebalanceDeriskAndUnknownValueHalt() {
+        rebalanceDay(P2, P2, merged(pcts(CASH_LIKE, 40.2), each("ABCDEF", 9.8)), Set.of());
+        run("09:10:05");
+        assertHalted("E3", "derisk-over");
+        assertThat(haltDetail().path("deriskPct").asDouble()).isEqualTo(39.2);
+        assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(78.4);
+
+        // 판정 경로가 책 가격(OpenTargets.price)을 측정에 넘기는지 — 한 종목의 책 가격이 빠지면 가격 배율을 셀 수 없어 value-unknown(그 칸은 넣지 않음)
+        nextCase();
+        rebalanceDay(P1, H1, NOW1, Set.of());
+        Map<String, Double> price = new java.util.HashMap<>();
+        NOW1.keySet().forEach(sym -> price.put(sym, 1000.0));
+        price.remove(r("F"));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, NOW1, price, 1e7, 0, List.of(),
+                List.of(), List.of())));
+        run("09:10:05");
+        assertHalted("책 가격 빠짐", "value-unknown");
+        assertThat(haltDetail().path("priceRatio").isMissingNode()).isTrue();
+        assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(80.0);
+    }
+
+    @Test
     @DisplayName("U3d·A2 — 153130을 놀리는 현금으로(목표 합 75) / 결정 전 STOP B·C + 놀리는 현금(73) → targets-thin")
     void rebalanceIdleCashTargetsHalts() {
         rebalanceDay(P1, H1, merged(each("ABCDE", 11), each("FG", 10)), Set.of());
