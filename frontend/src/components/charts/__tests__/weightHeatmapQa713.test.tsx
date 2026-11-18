@@ -56,7 +56,7 @@ afterEach(() => {
 
 describe("비중 히트맵이 상자보다 넓으면 최신 분기가 보이게 시작하고 넘김 안내를 둔다(QA-713)", () => {
   // 수정 전 실패(plain it): { hint: null, scrollLeft: 0 } — 안내 줄이 없고 스크롤이 왼쪽(가장 오래된 분기)에서 시작.
-  it.fails("표가 상자보다 넓으면(640 > 482px) 안내 줄이 폭과 상관없이 보이고, 스크롤은 오른쪽 끝(가장 최근 분기)에서 시작한다", () => {
+  it("표가 상자보다 넓으면(640 > 482px) 안내 줄이 폭과 상관없이 보이고, 스크롤은 오른쪽 끝(가장 최근 분기)에서 시작한다", () => {
     stubBox(640, 482);
     render(<WeightHeatmap dates={DATES} series={SERIES} />);
     const region = screen.getByRole("region", { name: "비중 히트맵 (좌우 스크롤)" });
@@ -65,5 +65,20 @@ describe("비중 히트맵이 상자보다 넓으면 최신 분기가 보이게 
       hint: hint === null ? null : hint.className.split(/\s+/).includes("sm:hidden") ? "phone-only" : "shown",
       scrollLeft: region.scrollLeft,
     }).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  it("표가 상자에 들어가면 안내는 폰(sm 미만)에서만이고 처음 자리는 그대로(오른쪽 끝 = 0)", () => {
+    stubBox(898, 898);
+    render(<WeightHeatmap dates={DATES} series={SERIES} />);
+    expect(screen.getByText("← 표를 좌우로 넘겨 보세요").className.split(/\s+/)).toContain("sm:hidden");
+    expect(screen.getByRole("region", { name: "비중 히트맵 (좌우 스크롤)" }).scrollLeft).toBe(0);
+  });
+
+  it("범례·설명 글은 상자 왼쪽에 붙어(sticky left-0) 오른쪽 끝에서 시작해도 보인다", () => {
+    stubBox(640, 482);
+    render(<WeightHeatmap dates={DATES} series={SERIES} />);
+    const legend = screen.getByRole("list", { name: "칸 색 단계" });
+    expect(legend.className.split(/\s+/)).toEqual(expect.arrayContaining(["sticky", "left-0"]));
+    expect((legend.nextElementSibling as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["sticky", "left-0"]));
   });
 });

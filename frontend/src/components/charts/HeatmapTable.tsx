@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Empty } from "@/components/patterns/Empty";
 import { EMPTY, formatNumber, formatWeightPercent } from "@/lib/format";
@@ -40,6 +42,12 @@ export type HeatmapRow = {
  *   그대로입니다.
  * - 범례(표 아래): 단계 견본 다섯(장식) + 단계 글(`legend.stepLabel` — 예 '최댓값의 0~20%') + '밝은 단계일수록 큼', 그 아래 `legend.note`(설명 글).
  * - `minWidth`(px)를 주지 않으면 표 최소 폭 640px입니다.
+ * - 넘김 안내(공용 DataTable `scrollHint="overflow"`와 같은 글·규칙): 상자 위 '← 표를 좌우로 넘겨 보세요'(aria-hidden — 낭독기에는 영역 이름이 같은 말을 함)를
+ *   폰(sm 미만 — 최소 폭보다 좁음)에서는 늘, 그 밖에서는 상자 폭을 재서 표가 넓을 때만 보입니다. 처음 재기는 그리기 전(layout effect)이라 안내가 나중에 끼어들어
+ *   표를 밀지 않고, 그 뒤 폭이 바뀌면 ResizeObserver로 다시 잽니다. 예전에는 안내가 없어 1024(메뉴 220 — 두 칸 틀 가운데 482px)에서 가려진 열이 있다는 단서가
+ *   없었습니다(QA-713).
+ * - `initialScroll="end"`(선택, 기본 "start"): 처음 그릴 때(와 열이 바뀔 때) 스크롤을 오른쪽 끝에 둡니다 — 열이 시간 차례인 표(비중 히트맵의 분기)에서 가장
+ *   최근 열이 먼저 보이게. 행 머리는 왼쪽에 붙어 남고(sticky), 범례·설명 글도 상자 왼쪽에 붙어 남습니다(sticky — 스크롤해도 보임).
  */
 export function HeatmapTable({
   caption,
@@ -51,6 +59,7 @@ export function HeatmapTable({
   zeroText,
   legend,
   minWidth,
+  initialScroll = "start",
 }: {
   caption: string;
   rowHeader: string;
@@ -61,79 +70,109 @@ export function HeatmapTable({
   zeroText?: string;
   legend: { stepLabel: (step: 1 | 2 | 3 | 4 | 5) => string; note?: ReactNode };
   minWidth?: number;
+  /** 처음 스크롤 자리 — "end"면 오른쪽 끝(가장 최근 열). */
+  initialScroll?: "start" | "end";
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  // 표가 상자보다 넓은지 — 그리기 전에 한 번 재고(안내가 뒤늦게 끼어들어 표를 밀지 않게), 그 뒤 폭이 바뀌면 다시 잽니다.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return undefined;
+    const measure = () => setOverflowing(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+  // 처음 스크롤 자리 — 열이 바뀌면(다른 기관의 분기) 다시 맞춥니다.
+  const columnKeys = columns.map((column) => column.key).join("\u0000");
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box || initialScroll !== "end") return;
+    box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
+  }, [initialScroll, columnKeys]);
+
   return (
-    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${caption} (좌우 스크롤)`}>
-      <table
-        className={minWidth === undefined ? "w-full min-w-[640px] border-collapse text-xs" : "w-full border-collapse text-xs"}
-        style={minWidth === undefined ? undefined : { minWidth }}
-      >
-        <caption className="sr-only">{caption}</caption>
-        <thead>
-          <tr className="text-xs text-text-3">
-            <th scope="col" className="sticky left-0 break-keep bg-surface px-3 py-2 text-left font-medium">
-              {rowHeader}
-            </th>
-            {columns.map((column) => (
-              <th key={column.key} scope="col" title={column.title} className="break-keep px-2 py-2 text-right font-medium tabular-nums">
-                {column.label}
+    <div className="min-w-0">
+      <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${overflowing ? "" : "sm:hidden"}`}>
+        ← 표를 좌우로 넘겨 보세요
+      </p>
+      <div ref={boxRef} className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${caption} (좌우 스크롤)`}>
+        <table
+          className={minWidth === undefined ? "w-full min-w-[640px] border-collapse text-xs" : "w-full border-collapse text-xs"}
+          style={minWidth === undefined ? undefined : { minWidth }}
+        >
+          <caption className="sr-only">{caption}</caption>
+          <thead>
+            <tr className="text-xs text-text-3">
+              <th scope="col" className="sticky left-0 break-keep bg-surface px-3 py-2 text-left font-medium">
+                {rowHeader}
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key}>
-              <th scope="row" title={row.title} className="sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2">
-                {row.label}
-              </th>
-              {columns.map((column, index) => {
-                const raw = row.values[index];
-                // 유한하지 않은 수는 값을 모르는 것과 같게 봅니다(0으로 채우지 않음).
-                const value = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-                const self = row.selfIndex === index;
-                // 0인 칸은 "데이터 없음"이 아니라 그 값이 0이라는 뜻입니다(비중이면 그 분기에 보유하지 않음) — 칠하지 않습니다.
-                const step = self ? 0 : heatmapStep(value, max);
-                const title = `${row.title ?? row.label} · ${column.title ?? column.label}`;
-                const text =
-                  value === null ? <Empty align="end" /> : value === 0 && zeroText !== undefined ? zeroText : format(value);
-                if (self) {
+              {columns.map((column) => (
+                <th key={column.key} scope="col" title={column.title} className="break-keep px-2 py-2 text-right font-medium tabular-nums">
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <th scope="row" title={row.title} className="sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2">
+                  {row.label}
+                </th>
+                {columns.map((column, index) => {
+                  const raw = row.values[index];
+                  // 유한하지 않은 수는 값을 모르는 것과 같게 봅니다(0으로 채우지 않음).
+                  const value = typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+                  const self = row.selfIndex === index;
+                  // 0인 칸은 "데이터 없음"이 아니라 그 값이 0이라는 뜻입니다(비중이면 그 분기에 보유하지 않음) — 칠하지 않습니다.
+                  const step = self ? 0 : heatmapStep(value, max);
+                  const title = `${row.title ?? row.label} · ${column.title ?? column.label}`;
+                  const text =
+                    value === null ? <Empty align="end" /> : value === 0 && zeroText !== undefined ? zeroText : format(value);
+                  if (self) {
+                    return (
+                      <td key={column.key} className="bg-surface-2 px-2 py-1.5 text-right tabular-nums text-text-2" title={title}>
+                        {text}
+                      </td>
+                    );
+                  }
                   return (
-                    <td key={column.key} className="bg-surface-2 px-2 py-1.5 text-right tabular-nums text-text-2" title={title}>
+                    <td
+                      key={column.key}
+                      data-step={step === 0 ? undefined : step}
+                      className={step === 0 ? "px-2 py-1.5 text-right tabular-nums" : "px-2 py-1.5 text-right tabular-nums forced-color-adjust-none"}
+                      style={step === 0 ? undefined : { backgroundColor: SEQUENTIAL_STEPS[step - 1], color: SEQUENTIAL_TEXT[step - 1] }}
+                      title={title}
+                    >
                       {text}
                     </td>
                   );
-                }
-                return (
-                  <td
-                    key={column.key}
-                    data-step={step === 0 ? undefined : step}
-                    className={step === 0 ? "px-2 py-1.5 text-right tabular-nums" : "px-2 py-1.5 text-right tabular-nums forced-color-adjust-none"}
-                    style={step === 0 ? undefined : { backgroundColor: SEQUENTIAL_STEPS[step - 1], color: SEQUENTIAL_TEXT[step - 1] }}
-                    title={title}
-                  >
-                    {text}
-                  </td>
-                );
-              })}
-            </tr>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {/* 범례·설명은 상자 왼쪽에 붙여 둡니다(sticky) — 스크롤한 자리(initialScroll="end" 등)에서도 보이게. */}
+        <ul aria-label="칸 색 단계" className="sticky left-0 mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-3">
+          {STEPS.map((step) => (
+            <li key={step} className="inline-flex items-center gap-1 tabular-nums">
+              <span
+                aria-hidden="true"
+                className="size-3 shrink-0 rounded-sm border border-border forced-color-adjust-none"
+                style={{ backgroundColor: SEQUENTIAL_STEPS[step - 1] }}
+              />
+              {legend.stepLabel(step)}
+            </li>
           ))}
-        </tbody>
-      </table>
-      <ul aria-label="칸 색 단계" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-3">
-        {STEPS.map((step) => (
-          <li key={step} className="inline-flex items-center gap-1 tabular-nums">
-            <span
-              aria-hidden="true"
-              className="size-3 shrink-0 rounded-sm border border-border forced-color-adjust-none"
-              style={{ backgroundColor: SEQUENTIAL_STEPS[step - 1] }}
-            />
-            {legend.stepLabel(step)}
-          </li>
-        ))}
-        <li>밝은 단계일수록 큼</li>
-      </ul>
-      {legend.note ? <p className="mt-1 text-xs text-text-3">{legend.note}</p> : null}
+          <li>밝은 단계일수록 큼</li>
+        </ul>
+        {legend.note ? <p className="sticky left-0 mt-1 text-xs text-text-3">{legend.note}</p> : null}
+      </div>
     </div>
   );
 }
@@ -181,6 +220,8 @@ export function WeightHeatmap({
       }))}
       max={max}
       format={formatWeight}
+      // 열은 분기 차례(오래된 것 → 최근) — 상자보다 넓으면 가장 최근 분기가 먼저 보이게 오른쪽 끝에서 시작합니다(QA-713).
+      initialScroll="end"
       // 0%는 "미보유"입니다. 값을 모르는 것(EMPTY)과 같은 기호를 쓰면 둘을 구분할 수 없습니다.
       zeroText="·"
       legend={{
