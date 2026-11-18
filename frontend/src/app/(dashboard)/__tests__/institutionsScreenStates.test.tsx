@@ -431,3 +431,19 @@ describe("보유 표 검사 칸 — 맨 앞 아이콘 줄 단추", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
+
+// ------------------------------------------------------------------ 비중 히트맵 패널 부제
+
+describe("비중 히트맵 패널 부제 — 순차 범례와 같은 말", () => {
+  it("'칸이 밝을수록 비중이 큽니다'(범례 '밝은 단계일수록 큼') — 예전 '색이 진할수록'은 없음", async () => {
+    served = {};
+    serve();
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = summaryPortfolio({ weightHistory: { dates: ["2026-06-30"], series: { "SYNTHETIC ALPHA CO": [60] } } });
+    render(<InstitutionsPage />);
+    const heading = await screen.findByRole("heading", { level: 2, name: "상위 종목 분기별 비중 히트맵" });
+    const panel = heading.closest("section") as HTMLElement;
+    expect(within(panel).getByText("칸이 밝을수록 비중이 큽니다. 어느 칸이 밝아지는지만 보면 흐름이 읽힙니다.")).toBeTruthy();
+    expect(panel.textContent).not.toContain("진할수록");
+  });
+});
