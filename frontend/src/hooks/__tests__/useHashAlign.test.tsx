@@ -135,3 +135,45 @@ describe("useHashAlign", () => {
     expect(remove.mock.calls.map(([type]) => type).sort()).toEqual(expect.arrayContaining(["keydown", "pointerdown", "touchstart", "wheel"]));
   });
 });
+
+/** 목차 칸 id가 그리는 동안 바뀌는 화면(설정 '보기' 고르기·프레임 판이 바뀜 — 묶음·절 칸 id가 바뀜). */
+function Changing({ ids }: { ids: readonly string[] }) {
+  useHashAlign(ids, true);
+  return (
+    <main>
+      {ids.map((id) => (
+        <div key={id} id={id}>
+          {id}
+        </div>
+      ))}
+    </main>
+  );
+}
+
+describe("useHashAlign — 처음 한 번만(QA-769)", () => {
+  it.fails("사용자 입력으로 그친 뒤 목차 칸 id 목록이 바뀌어도 해시 절로 다시 옮기지 않는다", () => {
+    window.history.replaceState(null, "", "/paper/us/settings#paper-settings-b");
+    const { rerender } = render(<Changing ids={["paper-settings-a", "paper-settings-b"]} />);
+    expect(scrolled).toEqual(["paper-settings-b"]);
+    act(() => {
+      window.dispatchEvent(new Event("wheel"));
+    });
+    rerender(<Changing ids={["paper-settings-a", "paper-settings-b", "paper-settings-c"]} />);
+    expect(scrolled).toEqual(["paper-settings-b"]);
+  });
+
+  it.fails("맞추는 동안 목록이 바뀌어도 새로 걸지 않고 하던 맞춤을 이어 간다(입력이 오면 그침)", () => {
+    window.history.replaceState(null, "", "/paper/us/settings#paper-settings-b");
+    const { rerender } = render(<Changing ids={["paper-settings-a", "paper-settings-b"]} />);
+    rerender(<Changing ids={["paper-settings-a", "paper-settings-b", "paper-settings-c"]} />);
+    expect(scrolled).toEqual(["paper-settings-b"]);
+    fireResize();
+    expect(scrolled).toEqual(["paper-settings-b", "paper-settings-b"]);
+    act(() => {
+      window.dispatchEvent(new Event("keydown"));
+    });
+    fireResize();
+    rerender(<Changing ids={["paper-settings-a", "paper-settings-b"]} />);
+    expect(scrolled).toHaveLength(2);
+  });
+});
