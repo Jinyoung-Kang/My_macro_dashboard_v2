@@ -312,6 +312,24 @@ describe("교집합 — 읽기가 실패한 뒤 다시 읽는 동안(QA-710)", (
   });
 });
 
+describe("교집합 — 처음 읽는 동안 값이 온 뒤의 꼴로 자리를 잡는다(QA-714)", () => {
+  // 수정 전 실패(plain it): { tags: 0, rows: 0, bars: false, table: false } — 기관 목록 자리는 글 줄 Skeleton 4줄, 가운데는 KPI 띠 자리표시뿐이라 값이 오면
+  // 목록(390 672px·lg 824px)이 왼쪽 '조건'을, 막대·상세 표 패널이 '이번 분기 공통 신규 매수'를 화면 밖으로 밀었음(검토 자기 빌드 CLS 0.18~0.41).
+  it.fails("기관 목록은 목록 꼴 자리(좁은 화면 태그·넓은 화면 줄 12), 가운데는 막대·상세 표 패널 자리 — 값이 와도 아래 패널이 밀리지 않게", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<ConsensusPage />);
+    const group = await screen.findByRole("group", { name: "분석 대상 기관" });
+    const status = within(group).getByRole("status", { name: "기관 목록 불러오는 중" });
+    const lists = [...status.querySelectorAll("ul")];
+    expect({
+      tags: lists[0]?.children.length ?? 0,
+      rows: lists[1]?.children.length ?? 0,
+      bars: screen.queryByRole("status", { name: "공통 보유 상위 종목 불러오는 중" }) !== null,
+      table: screen.queryByRole("status", { name: "교집합 상세 불러오는 중" }) !== null,
+    }).toEqual({ tags: 12, rows: 12, bars: true, table: true });
+  });
+});
+
 /** 스타일 화면 위험 응답(합성) — 위험 기여 하나는 음수(분산 효과로 포트폴리오 변동성을 줄이는 종목), VaR·ES는 손실이라 음수. */
 function riskBody(over: Record<string, unknown> = {}) {
   return {
