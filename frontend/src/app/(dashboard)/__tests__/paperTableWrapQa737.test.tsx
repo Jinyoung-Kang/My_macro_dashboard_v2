@@ -106,3 +106,24 @@ describe("QA-776 — 계좌 상세 최근 체결·구성 표의 종목 칸은 �
     }
   });
 });
+
+// QA-810 — QA-737 고침이 주문 표의 방향·출처(줄바꿈 없음)·체결 시점(최소 폭) 칸을 넓히자, 1440에서 상자 폭에 딱 맞는 자동 배치의 남은 폭을 최소 폭이 없는
+// 마지막 '근거' 칸이 내줌(141px — 글 150~253자가 낱말 중간에서 꺾여 행 최대 348px, 주문 패널 3,521px). 오른쪽 정렬 '크기' 칸(공용 표 기본 줄바꿈 없음 —
+// '순자산의 16.91% 매수 (목표 66.88%)' 256px)이 폭을 가장 많이 쥐고 있었음. 계좌2 주문 표(timedOrderColumns)와 한국 주문 표는 이미 크기를 낱말 사이에서
+// 접고 근거 칸에 최소 폭·break-keep을 둡니다.
+describe("QA-810 — 미국 주문 표의 근거 칸은 최소 폭을 지키고 크기 칸은 낱말 사이에서 접는다", () => {
+  it.fails("주문 표: '근거' 머리·칸에 최소 폭 + break-keep, '크기' 칸 글은 낱말 사이에서 접는 span", async () => {
+    render(<HoldingsSection books={[BOOK] as never} onChanged={() => {}} />);
+    await settled();
+    const orders = screen.getByRole("table", { name: "주문" });
+    for (const cell of column(orders, "근거")) {
+      expect(cell.className, cell.tagName).toMatch(/min-w-\[/);
+      expect(classes(cell), cell.tagName).toContain("break-keep");
+    }
+    for (const cell of column(orders, "크기").slice(1)) {
+      const wrap = cell.querySelector("span");
+      expect(wrap?.className ?? "", cell.textContent ?? "").toMatch(/whitespace-normal/);
+      expect(classes(wrap as HTMLElement)).toContain("break-keep");
+    }
+  });
+});
