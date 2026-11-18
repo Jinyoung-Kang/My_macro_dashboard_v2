@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { DataTable, Empty, KpiStrip } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, SKELETON_BAR, Tag } from "@/components/ui";
+import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { formatNumber } from "@/lib/format";
 import {
@@ -25,8 +25,11 @@ import { endpoints } from "@/lib/endpoints";
  */
 const CAVEAT_FALLBACK = "가격으로 잴 수 있는 것만 담은 카드입니다. 종합 점수가 아니며, 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다.";
 
-/** 처음 읽는 동안 빠진 것 목록 자리의 줄 수 — 백엔드가 늘 보내는 missing(재무 안정성·성장성·밸류에이션) 세 줄. 자리일 뿐 보이는 글이 아닙니다. */
-const MISSING_PENDING_LINES = 3;
+/**
+ * 처음 읽는 동안의 빠진 것 목록 — 백엔드(ScorecardService)가 늘 보내는 missing과 같은 글입니다. 글 없는 막대 자리(QA-716 고침)는 줄 수만 같아, 좁은 화면에서
+ * 실제 줄이 두 줄로 꺾이면 안내 상자가 자라 아래를 밀었습니다(QA-721). 백엔드 목록을 바꾸면 여기도 같이 고칩니다.
+ */
+const MISSING_FALLBACK = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"] as const;
 
 /**
  * 종목 스코어카드 — <b>가격으로 잴 수 있는 것만</b>.
@@ -76,13 +79,11 @@ export default function ScorecardPage() {
             ))}
           </ul>
         ) : firstLoadPending(scorecard) ? (
-          // 처음 읽는 동안은 빠진 것 목록의 자리(같은 꼴의 줄 MISSING_PENDING_LINES — 글 없이 막대, 읽기에서 뺌). 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가
-          // 자라 아래 조회 조건·결과를 밀었습니다(QA-716).
-          <ul aria-hidden="true" className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
-            {Array.from({ length: MISSING_PENDING_LINES }, (_, index) => (
-              <li key={index} className="h-4">
-                <span className={`inline-block h-3 w-2/3 align-middle ${SKELETON_BAR}`} />
-              </li>
+          // 처음 읽는 동안은 응답과 같은 빠진 것 목록(MISSING_FALLBACK — 같은 글이라 같은 폭에서 같은 줄로 꺾임). 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가
+          // 자라 아래 조회 조건·결과를 밀었습니다(QA-716·QA-721).
+          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+            {MISSING_FALLBACK.map((item) => (
+              <li key={item}>{item} — 수집하지 않습니다</li>
             ))}
           </ul>
         ) : null}

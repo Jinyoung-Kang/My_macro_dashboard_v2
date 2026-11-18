@@ -709,7 +709,7 @@ describe("스코어카드 — 처음 읽는 동안 빠진 것 목록이 응답�
 
   // 수정 전 실패(plain it): 처음 읽는 동안의 줄 글이 ['', '', ''](글 없는 막대 자리 — QA-716 고침). 줄 수는 같지만 390에서 실제 줄 셋 가운데 둘이 두 줄로 꺾여
   // 안내 상자가 181 → 213px로 자랐음(검토 자기 빌드, 지연 300ms — CLS 0.1905 그대로). 같은 글이면 같은 폭에서 같은 줄로 꺾입니다.
-  it.fails("처음 읽는 동안의 빠진 것 목록 줄 글이 응답이 온 뒤와 같다", async () => {
+  it("처음 읽는 동안의 빠진 것 목록 줄 글이 응답이 온 뒤와 같다", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     const view = render(<ScorecardPage />);
     const pending = missingTexts();
