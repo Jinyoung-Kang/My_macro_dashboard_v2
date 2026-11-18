@@ -186,11 +186,12 @@ describe("FilterList — 모양(클래스)", () => {
     expect(tokens(off)).not.toContain("bg-text");
   });
 
-  it("하나: 고른 줄은 잉크 막대(SELECTED_BAR — wrap이면 넓은 화면만)·굵게·중립 바탕, 체크 상자 없음", () => {
+  it("하나: 고른 줄은 잉크 막대(SELECTED_BAR — wrap의 좁은 화면 태그에도, QA-712)·굵게·중립 바탕, 체크 상자 없음", () => {
     render(<FilterList label="기관" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" />);
     const on = screen.getByRole("radio", { name: "가상 을 연기금" });
     const bar = on.querySelector("span[aria-hidden='true']") as HTMLElement;
-    expect(tokens(bar)).toEqual(expect.arrayContaining([...SELECTED_BAR.split(" "), "max-lg:hidden"]));
+    expect(tokens(bar)).toEqual(expect.arrayContaining(SELECTED_BAR.split(" ")));
+    expect(tokens(bar)).not.toContain("max-lg:hidden");
     expect(tokens(on)).toEqual(expect.arrayContaining(["relative", "bg-surface-2", "font-semibold"]));
     const off = screen.getByRole("radio", { name: "가상 갑 자산운용" });
     expect(off.querySelectorAll("span[aria-hidden='true']")).toHaveLength(1); // note 칸만(막대·상자 없음)
@@ -291,7 +292,7 @@ describe("FilterList — 좁은 화면 하나 고름 태그의 고대비 표지(
 
   // 수정 전 실패(plain it): { on: 0, off: [0, 0] } — 켠 태그의 잉크 막대(SELECTED_BAR)는 max-lg:hidden이고 체크 상자는 여럿 고름에만 있어, 고대비에서 켠 태그(2px 테두리·
   // 굵기 600)와 끈 태그(1px 경계 — 그 모드에서 시스템 색으로 남음·굵기 500)를 가르는 것이 테두리 두께와 굵기뿐이었음(/institutions 390 태그 12개).
-  it.fails("켠 태그만 좁은 화면에서도 보이는 고대비 표지를 가진다 — 끈 태그는 없음", () => {
+  it("켠 태그만 좁은 화면에서도 보이는 고대비 표지를 가진다 — 끈 태그는 없음", () => {
     render(<FilterList label="분석할 기관" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" narrow="wrap" />);
     expect({
       on: narrowForcedMarks(screen.getByRole("radio", { name: "가상 을 연기금" })),

@@ -26,7 +26,10 @@ const WRAP_LINED =
   "max-lg:inline-flex max-lg:max-w-full max-lg:rounded-control max-lg:border max-lg:py-2 lg:w-full lg:min-h-0 lg:border-b lg:border-border-subtle lg:pt-1.5 lg:pb-[5px]";
 const WRAP_LAST = "max-lg:inline-flex max-lg:max-w-full max-lg:rounded-control max-lg:border max-lg:py-2 lg:w-full lg:min-h-0 lg:py-1.5";
 
-/** 켠 줄·끈 줄의 글. 켠 줄은 굵게(고대비 2px 테두리), 끈 줄은 보통 굵기 — 좁은 화면 태그는 끈 태그를 보조 글자색으로 물립니다. */
+/**
+ * 켠 줄·끈 줄의 글. 켠 줄은 굵게(고대비 2px 테두리), 끈 줄은 보통 굵기 — 좁은 화면 태그는 끈 태그를 보조 글자색으로 물립니다. 좁은 화면 끈 태그의 1px 경계는
+ * 고대비에서 시스템 색으로 남으므로, 켠 태그는 테두리 두께만이 아니라 모양 표지(여럿 — 체크 상자, 하나 — 왼쪽 막대)로도 갈립니다(QA-712).
+ */
 const ON = "font-semibold text-text forced-colors:border-2";
 const OFF = "font-normal text-text";
 const WRAP_ON = "max-lg:border-border-strong max-lg:bg-surface-2";
@@ -48,7 +51,7 @@ const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-borde
  *   딸리게). Tab 정지점은 고른 줄 하나(roving tabindex — 고른 줄이 없으면 첫 줄)이고, 위·아래(왼쪽·오른쪽)·Home·End가 포커스를 옮기며 그 줄을 고릅니다(끝에서는
  *   반대 끝으로). 고른 줄을 다시 눌러도 아무 일 없음(`onToggle`을 부르지 않음 — 라디오는 풀리지 않음). 예전에는 토글 단추(aria-pressed)라 고른 줄이 '눌림'으로
  *   읽히는데 다시 눌러도 풀리지 않았고, 줄마다 Tab 정지점이라 13F 기관 12줄이 Tab 정지점 12개였습니다(개편 전 고르기 상자는 1개 — QA-711). 넓은 화면은 고른 줄에
- *   3px 잉크 막대(SELECTED_BAR) + 굵은 글 + 중립 바탕(surface-2)입니다.
+ *   3px 잉크 막대(SELECTED_BAR) + 굵은 글 + 중립 바탕(surface-2)이고, 좁은 화면 태그도 같은 막대를 태그 안 왼쪽 끝에 둡니다(고대비 표지 — QA-712).
  * - 넓은 화면(lg 이상)은 늘 세로 목록(줄 32px, 마우스를 올리면 surface-2). 좁은 화면은 `narrow`: "wrap"(기본)은 44px 태그가 줄을 바꾸며 늘어섭니다(켠 태그 진한
  *   경계 + surface-2 + 굵은 글 — 여럿이면 체크 상자도, 끈 태그 옅은 경계 + 보조 글자색), "list"는 넓은 화면과 같은 세로 목록(줄 44px)입니다.
  * - `count`: 목록 위 개수 줄(true면 여럿은 'n개 고름 · 전체 m개', 하나는 '전체 m개' — 함수면 그 글). `placeholder`를 주면 목록 대신(읽는 중·오류), 줄이 없으면 `emptyText`.
@@ -148,7 +151,9 @@ export function FilterList({
                 }}
                 className={`${ITEM} ${shape} ${tone}`}
               >
-                {!multiple && on ? <span aria-hidden="true" className={wrap ? `${SELECTED_BAR} max-lg:hidden` : SELECTED_BAR} /> : null}
+                {/* 하나 고름의 고른 줄 막대 — 좁은 화면 태그에도 둡니다(태그 안 왼쪽 끝, 절대 위치라 태그 폭이 그대로). 고대비에서는 바탕이 지워지고 끈 태그의
+                    1px 경계도 시스템 색으로 남아, 이 막대(그 모드에서 3px 왼쪽 테두리)가 없으면 켠 태그와 끈 태그를 테두리 두께로만 갈랐습니다(QA-712). */}
+                {!multiple && on ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
                 {multiple ? (
                   <span aria-hidden="true" className={on ? BOX_ON : wrap ? `${BOX_OFF} max-lg:hidden` : BOX_OFF}>
                     {on ? <CheckIcon size={12} /> : null}
