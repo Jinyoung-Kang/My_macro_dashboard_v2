@@ -2,7 +2,8 @@
  * 모의 매매 — 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6). 서버 값을 그대로 보이고(판정 수·결정 날짜는 서버가 붙인 값), 모르는
  * 값은 "—".
  *
- *  - 결정 로그 → '주간 복기': 목록(상태·창·판정 수·제안) → 가장 최근 주를 펼침(판정 표·반복 오류·지킬 것·제안)
+ *  - 결정 로그 → '주간 복기': 시각순 목록(주마다 한 줄 — 상태·창·판정 수·제안·남긴 시각) → 주를 고르면 그 주의 복기(판정 표·반복 오류·지킬 것·제안)를
+ *    검사 칸에(jsdom은 좁은 배치 — 대화상자). 가장 최근 주는 화면을 열 때 읽어 둡니다(넓은 배치는 그 주가 고른 줄)
  *  - 제안 링크 → 프레임 탭으로 옮겨 그 제안을 강조(자동 반영 없음 — 승인은 프레임 탭)
  *  - 수동 실행은 확인 단계("Sonnet 5.5 호출 1회(… 최대 약 $0.9 …), 하루 호출 상한에 포함") → POST /api/paper/reviews/run → 결과 한 줄, 서버 400은 경고로
  */
@@ -25,6 +26,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 const STATS = { cumReturnPct: null, cagrPct: null, volPct: null, mddPct: null, sharpe: null, excessPct: null, beta: null, sampleDays: 0 };
 
@@ -117,7 +119,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const rowsOf = (table: HTMLElement) =>
   within(table).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
@@ -128,23 +133,49 @@ async function openReviews() {
   fireEvent.click(await screen.findByRole("button", { name: "주간 복기" }));
 }
 
+/** 복기 줄 — 시각순 목록('복기 기록')에서 시각 열이 그 주인 줄 단추. */
+async function weekLine(week: string): Promise<HTMLElement> {
+  const list = await screen.findByRole("list", { name: "복기 기록" });
+  const line = within(list).getAllByRole("button").find((button) => button.querySelector("time")?.textContent === week);
+  expect(line, `${week} 줄`).toBeTruthy();
+  return line as HTMLElement;
+}
+
+/** 그 주 줄을 눌러 복기 한 건을 엽니다(좁은 배치 — 위쪽 대화상자) — 영역 '{주} 주 복기'. */
+async function openWeek(week: string): Promise<HTMLElement> {
+  fireEvent.click(await weekLine(week));
+  return screen.findByRole("region", { name: `${week} 주 복기` });
+}
+
+/** 공용 표·속성 목록의 모르는 값 — '—'와 낭독용 '값 없음'(patterns Empty). */
+const NONE = "—값 없음";
+
 describe("결정 로그 — 주간 복기", () => {
   it("목록(서버 값 그대로, 판정 수가 없으면 —)과 가장 최근 주의 판정 표·반복 오류·지킬 것·제안", async () => {
     await openReviews();
 
     expect(await screen.findByText(/가장 최근 복기 주 2026-10-30 · 정기 복기 2026-10-31 09:00 — 이미 남김\(복기 완료\)/)).toBeTruthy();
-    const listCard = screen.getByText("복기 기록 (최근 52주)").closest("section") as HTMLElement;
-    expect(rowsOf(within(listCard).getByRole("table"))).toEqual([
-      ["2026-10-30 보기", "복기 완료", "4주", "유지 1 · 반증 1 · 판단불가 0", "제안 #12 · 승인 대기", "2026-10-31 09:05"],
-      ["2026-10-23 보기", "건너뜀 · 결정 없음창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다", "4주", "—", "—",
-        "2026-10-24 09:00"],
-    ]);
+    // 줄마다 복기 주·종류 태그·상태·창·판정 수·제안·남긴 시각(모르는 판정 수·제안은 '—', 서버 오류 문구는 줄 아래).
+    const latest = await weekLine("2026-10-30");
+    expect(within(latest).getByText("주간 복기")).toBeTruthy();
+    expect(within(latest).getByText("복기 완료")).toBeTruthy();
+    expect(within(latest).getByText("창 4주")).toBeTruthy();
+    expect(within(latest).getByText("판정 유지 1 · 반증 1 · 판단불가 0")).toBeTruthy();
+    expect(latest.textContent).toContain("제안 #12 · 승인 대기 · 남긴 시각 2026-10-31 09:05");
+    const skipped = await weekLine("2026-10-23");
+    expect(within(skipped).getByText("건너뜀 · 결정 없음")).toBeTruthy();
+    expect(within(skipped).getByText("판정 —")).toBeTruthy();
+    expect(skipped.textContent).toContain("제안 — · 남긴 시각 2026-10-24 09:00");
+    expect(within(skipped).getByText("창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다")).toBeTruthy();
+    // 가장 최근 주는 화면을 열 때 읽어 둡니다(줄을 누르면 바로 보임).
+    await waitFor(() => expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/reviews/2026-10-30", 0));
 
-    const body = await screen.findByRole("region", { name: "2026-10-30 주 복기" });
+    const body = await openWeek("2026-10-30");
     const verdicts = within(body).getAllByRole("table")[0];
     expect(rowsOf(verdicts)).toEqual([
       ["#7", "—", "2026-10-26", "정기", "유지", "체결 뒤 +10.00%, 무효화 미충족"],
-      ["#8", "—", "2026-10-28", "수동", "반증", "관망 뒤 +4% 상승"],
+      // 반증은 주의 태그 — 낭독기에 '주의: '를 먼저 읽힙니다.
+      ["#8", "—", "2026-10-28", "수동", "주의: 반증", "관망 뒤 +4% 상승"],
     ]);
     expect(within(body).getByText("월 재량 상한 근처에서 신규 진입(#7·#8)")).toBeTruthy();
     expect(within(body).getByText("200일선 위 종목 우선")).toBeTruthy();
@@ -163,6 +194,7 @@ describe("결정 로그 — 주간 복기", () => {
     serve("/api/paper/reviews", () => state.list);
     serve("/api/paper/reviews/2026-10-30", () => state.detail);
     await openReviews();
+    await openWeek("2026-10-30");
     const region = () => screen.getByRole("region", { name: "2026-10-30 주 복기" });
     expect(await screen.findByText(/API 오류로 끝났습니다/)).toBeTruthy();
 
@@ -184,11 +216,11 @@ describe("결정 로그 — 주간 복기", () => {
         error: "창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다" },
     }));
     await openReviews();
-    fireEvent.click(await screen.findByRole("button", { name: "2026-10-23 보기" }));
-
-    const body = await screen.findByRole("region", { name: "2026-10-23 주 복기" });
-    expect(within(body).getByText("창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다")).toBeTruthy();
-    expect(within(body).getByText("판정 —")).toBeTruthy();
+    const body = await openWeek("2026-10-23");
+    await waitFor(() => expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/reviews/2026-10-23", 0));
+    expect(await within(body).findByText("창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다")).toBeTruthy();
+    const head = body.querySelector("dl") as HTMLElement;
+    expect(within(head).getByText("판정").nextElementSibling?.textContent).toBe(NONE);
     expect(within(body).queryByText(/제안 없음/)).toBeNull();
   });
 
@@ -199,7 +231,7 @@ describe("결정 로그 — 주간 복기", () => {
     (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView = scroll;
     try {
       await openReviews();
-      const body = await screen.findByRole("region", { name: "2026-10-30 주 복기" });
+      const body = await openWeek("2026-10-30");
       fireEvent.click(within(body).getByRole("button", { name: "프레임 탭에서 이 제안 보기" }));
 
       expect((await screen.findByRole("tab", { name: "프레임" })).getAttribute("aria-selected")).toBe("true");
@@ -232,7 +264,7 @@ describe("결정 로그 — 주간 복기", () => {
     }));
     try {
       await openReviews();
-      const body = await screen.findByRole("region", { name: "2026-10-30 주 복기" });
+      const body = await openWeek("2026-10-30");
       fireEvent.click(within(body).getByRole("button", { name: "프레임 탭에서 이 제안 보기" }));
       await waitFor(() => expect(scroll).toHaveBeenCalled());
       expect(scroll).toHaveBeenLastCalledWith({ block: "start", behavior: "auto" });
@@ -242,11 +274,14 @@ describe("결정 로그 — 주간 복기", () => {
     }
   });
 
-  it("목록의 제안 칸도 같은 링크 — 찾는 제안이 최근 목록에 없으면 그렇다고", async () => {
+  it("목록 줄에는 제안 글만(줄 단추 안), 링크는 그 주의 복기 — 찾는 제안이 최근 목록에 없으면 그렇다고", async () => {
     serve("/api/paper/framework/proposals", () => ({ available: true, proposals: [PROPOSAL(13, null)] }));
     serve("/api/paper/framework", () => ({ available: true, current: V1, versions: [] }));
     await openReviews();
-    fireEvent.click(await screen.findByRole("button", { name: "제안 #12 · 승인 대기" }));
+    const line = await weekLine("2026-10-30");
+    expect(within(line).queryByRole("button")).toBeNull();
+    const body = await openWeek("2026-10-30");
+    fireEvent.click(within(body).getByRole("button", { name: "프레임 탭에서 이 제안 보기" }));
     expect(await screen.findByText(/제안 #12가 최근 제안 목록\(50건\)에 없습니다/)).toBeTruthy();
   });
 
@@ -267,6 +302,31 @@ describe("결정 로그 — 주간 복기", () => {
     fireEvent.click(screen.getByRole("button", { name: "지금 복기 실행" }));
     fireEvent.click(screen.getByRole("button", { name: "복기 실행 확인" }));
     expect(await screen.findByText("2026-10-30 확정 종가가 아직 없습니다")).toBeTruthy();
+  });
+
+  it("넓은 화면: 가장 최근 주가 고른 줄로 목록 옆 검사 칸에 — 다른 주를 고르면 그 주를 한 번 읽어 그 칸에", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+    );
+    serve("/api/paper/reviews/2026-10-23", () => ({
+      available: true,
+      review: { ...DETAIL.review, weekEnding: "2026-10-23", status: "SKIPPED", verdicts: [], verdictCounts: null, recurringErrors: [], keep: [],
+        proposal: null, usage: null, model: null, error: "창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다" },
+    }));
+    await openReviews();
+
+    const inspector = await screen.findByRole("region", { name: "복기 기록 — 2026-10-30 주 복기" });
+    expect(await within(inspector).findByRole("region", { name: "2026-10-30 주 복기" })).toBeTruthy();
+    expect((await weekLine("2026-10-30")).getAttribute("aria-current")).toBe("true");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(await weekLine("2026-10-23"));
+    const next = await screen.findByRole("region", { name: "복기 기록 — 2026-10-23 주 복기" });
+    expect(await within(next).findByText("창 안에 복기할 Claude 결정이 없어 Claude를 부르지 않았습니다")).toBeTruthy();
+    expect(api.apiGetShared.mock.calls.filter(([path]) => path === "/api/paper/reviews/2026-10-23")).toHaveLength(1);
+    expect(api.apiGetShared.mock.calls.filter(([path]) => path === "/api/paper/reviews/2026-10-30")).toHaveLength(1);
   });
 
   it("복기 테이블이 아직 없으면(available:false) 서버 문구 그대로", async () => {
