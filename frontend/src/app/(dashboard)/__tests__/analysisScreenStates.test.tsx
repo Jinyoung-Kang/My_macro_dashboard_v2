@@ -769,3 +769,28 @@ describe("스코어카드 — 배치와 네 상태", () => {
     }
   });
 });
+
+describe("모르는 값 '—'의 까닭을 늘 보이는 글로 적는다(QA-719)", () => {
+  // 수정 전 실패(plain it): { turnover: "—값 없음", percentile: "—값 없음" } — 까닭은 칸 span의 title(마우스 설명)에만 있어 키보드·터치·낭독기로 닿지 않았고, 스타일
+  // 회전율의 까닭 문단('직전 분기가 없으면 —')은 P5b에서 '읽는 법' 접기 안으로 들어가 늘 보이는 곳에 없었음.
+  it.fails("스타일 성격 표 회전율·스코어카드 백분위의 '—' 옆에 짧은 까닭(직전 분기 없음·표본 부족)", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles"
+        ? Promise.resolve({ available: true, rows: [{ cik: "0000000031", key: "a", name: "가상 자산운용", desc: "", reportDate: "2026-06-30", totalValue: 1e9,
+            holdingCount: 10, effectiveHoldings: 5.5, hhi: 0.18, top10Weight: 90, turnover: null, quarterCount: 1 }] })
+        : new Promise(() => {}));
+    const style = render(<GuruPage />);
+    const row = (await screen.findByRole("button", { name: "가상 자산운용" })).closest("tr") as HTMLElement;
+    const table = row.closest("table") as HTMLElement;
+    const turnoverIndex = [...table.querySelectorAll("thead th")].findIndex((cell) => cell.textContent === "분기 회전율");
+    const turnover = row.children[turnoverIndex].textContent;
+    style.unmount();
+
+    api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody()) : new Promise(() => {})));
+    render(<ScorecardPage />);
+    const trend = (await screen.findByText("추세 위치")).closest("tr") as HTMLElement;
+    const scoreTable = trend.closest("table") as HTMLElement;
+    const scoreIndex = [...scoreTable.querySelectorAll("thead th")].findIndex((cell) => cell.textContent === "백분위");
+    expect({ turnover, percentile: trend.children[scoreIndex].textContent }).toEqual({ turnover: "—값 없음직전 분기 없음", percentile: "—값 없음표본 부족" });
+  });
+});
