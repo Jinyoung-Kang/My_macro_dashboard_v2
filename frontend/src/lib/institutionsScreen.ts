@@ -4,7 +4,7 @@
  */
 import { distinctLabels } from "./chartAxis";
 import { type DetailProperty, holdingDetailItems, holdingItemLabels } from "./detailEntity";
-import { EMPTY, formatCurrency, formatNumber } from "./format";
+import { EMPTY, formatKoreanScale, formatNumber } from "./format";
 import { filerName } from "./holdings";
 import type { KpiItem } from "./kpi";
 import { presentText } from "./patterns";
@@ -40,7 +40,7 @@ export const PORTFOLIO_SOURCE = "SEC EDGAR 13F";
 export type KrwConversion = { toKrw: (usd: number | null | undefined) => string | null; note: string };
 
 /**
- * 고른 기관의 포트폴리오 요약 KPI 띠 — 최신 공시 기준일(보조 '제출일 …') · 포트폴리오 총액(보조 '약 …원 · 원/달러 … 기준 · 시각' — 환율을 모르면 그
+ * 고른 기관의 포트폴리오 요약 KPI 띠 — 최신 공시 기준일(보조 '제출일 …') · 포트폴리오 총액(값 '…억' + 단위 '달러', 보조 '약 …원 · 원/달러 … 기준 · 시각' — 환율을 모르면 그
  * 사실 한 줄) · 수집된 분기(n개, 보조 = 분기 기준일 목록). 예전 지표 칸 셋과 같은 값·글입니다. 출처 줄은 첫 타일에만 둡니다 — 띠 전체가 같은 13F
  * 저장본이라 같은 글을 세 번 되풀이하지 않습니다(순유동성·섹터 띠와 같은 규칙). 응답이 없으면 빈 목록.
  */
@@ -67,7 +67,11 @@ export function portfolioKpis(
       key: "totalValue",
       label: "포트폴리오 총액",
       value: total,
-      format: formatCurrency,
+      // 값 글은 조·억 단위 숫자('2,993억'), 통화는 단위 칸('달러') — 예전 formatCurrency 글('2,993억 달러')과 같은 글자입니다. 통화를 값 글에 두면
+      // 좁은 타일(1024 — 타일 안쪽 약 131px)에서 '2,993억 달' / '러'처럼 낱말 안에서 꺾였습니다(타일의 wrap-anywhere). 단위 칸은 값의 마지막 글자와
+      // 한 묶음이라 홀로 다음 줄로 가지 않습니다(공용 KPI 띠).
+      format: usdScaleNumber,
+      unit: "달러",
       // 달러 금액은 크기가 잘 안 잡혀 매크로 화면이 수집한 같은 원/달러로 환산해 함께 적습니다(환율을 모르면 환산 없이 그 사실만).
       note: [total === null ? null : krw.toKrw(total), krw.note].filter((text): text is string => Boolean(text)).join(" · "),
     },
@@ -80,6 +84,11 @@ export function portfolioKpis(
       note: quarters.map((quarter) => quarter.reportDate).join(", ") || null,
     },
   ];
+}
+
+/** 달러 금액의 조·억·만 단위 숫자 글(통화 없이 — formatCurrency의 '… 달러'에서 통화를 뺀 것). */
+function usdScaleNumber(value: number): string {
+  return formatKoreanScale(value, "").trim();
 }
 
 /** 비중 추이 선 이름표 폭 — 예전 '앞 18자 + …'와 같은 폭입니다. 구분자가 붙은 이름표는 구분자만큼 더 길 수 있습니다. */

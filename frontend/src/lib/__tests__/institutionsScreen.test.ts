@@ -111,11 +111,13 @@ describe("portfolioKpis", () => {
     ],
   };
 
-  it("기준일(보조 제출일·출처) · 총액(서식 formatCurrency·보조 원화 + 환율 글) · 분기 수(단위 '개'·보조 기준일 목록)", () => {
+  it("기준일(보조 제출일·출처) · 총액(값 = 조·억 숫자, 단위 '달러' — formatCurrency와 같은 글자, 보조 원화 + 환율 글) · 분기 수(단위 '개'·보조 기준일 목록)", () => {
     const [date, total, quarters] = portfolioKpis(data, krw, "합성 출처");
     expect(date).toMatchObject({ key: "reportDate", label: "최신 공시 기준일", value: "2026-06-30", note: "제출일 2026-08-14", source: "합성 출처" });
     expect(total).toMatchObject({ key: "totalValue", label: "포트폴리오 총액", value: 1_000_000, note: "약 2000000원 · 원/달러 2.00 기준" });
-    expect(total.format?.(1_000_000)).toBe(formatCurrency(1_000_000));
+    expect(total.unit).toBe("달러");
+    expect(`${total.format?.(1_000_000)} ${total.unit}`).toBe(formatCurrency(1_000_000));
+    expect(total.format?.(299_300_000_000)).toBe("2,993억");
     expect(total.source).toBeUndefined();
     expect(quarters).toMatchObject({ key: "quarters", label: "수집된 분기", value: 2, unit: "개", note: "2026-03-31, 2026-06-30" });
     expect(quarters.format?.(2)).toBe("2");

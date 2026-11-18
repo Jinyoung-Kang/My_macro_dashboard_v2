@@ -211,7 +211,9 @@ describe("고른 기관 패널 — 제목·설명·기관 상세 링크와 요�
     expect(date.textContent).toContain("SEC EDGAR 13F");
 
     const total = tile("포트폴리오 총액");
-    expect(total.textContent).toContain(formatCurrency(100_000_000_000));
+    // 값 글은 조·억 숫자, 통화는 단위 칸(값의 마지막 글자와 한 묶음) — formatCurrency와 같은 글자('1,000억 달러').
+    expect(total.textContent).toContain(formatCurrency(100_000_000_000).replace(" 달러", "달러"));
+    expect(within(total).getByText("달러").className).toContain("text-text-3");
     await waitFor(() => expect(total.textContent).toContain(`약 ${formatKrw(140_000_000_000_000)} · 원/달러 1,400.00 기준 · 2026-11-18 09:00`));
     expect(total.textContent).not.toContain("출처");
 
