@@ -452,7 +452,8 @@ function DecisionTimeline({
       entries={entries}
       renderDetail={(entry) => {
         const line = byKey.get(entry.key);
-        return line ? <DecisionDetail id={line.id} market={market} /> : null;
+        // 결정마다 따로 그립니다(key) — 같은 자리에서 다른 결정을 그릴 때 앞 결정의 접기 열림 상태가 넘어가지 않게(QA-765와 같은 까닭).
+        return line ? <DecisionDetail key={line.id} id={line.id} market={market} /> : null;
       }}
       groupBy={(entry) => byKey.get(entry.key)?.group ?? null}
       groupHeadingLevel={3}

@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("QA-765 — 제안 검사 칸의 상태는 제안마다", () => {
-  it.fails("#5의 승인 확인 단계를 연 채 #6(변경 0건)을 고르면 #6에는 확인 단계가 없고 승인 단추는 막혀 있다", async () => {
+  it("#5의 승인 확인 단계를 연 채 #6(변경 0건)을 고르면 #6에는 확인 단계가 없고 승인 단추는 막혀 있다", async () => {
     render(<FrameworkSection />);
     const list = await screen.findByRole("list", { name: "제안 목록" });
 

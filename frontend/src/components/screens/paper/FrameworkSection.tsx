@@ -223,7 +223,10 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
               itemLabel={(proposal) => `제안 #${proposal.id}`}
               renderItem={(proposal) => <ProposalRow proposal={proposal} />}
               renderDetail={(proposal) => (
+                // 제안마다 따로 그립니다(key) — 검사 칸은 고른 줄이 바뀌어도 같은 자리에서 다시 그리므로, key가 없으면 앞 제안의 확인 단계·보내는 중·결과가
+                // 새로 고른 제안으로 넘어갔습니다(QA-765 — 승인할 수 없는 제안에도 막히지 않은 '승인 확인').
                 <ProposalItem
+                  key={proposal.id}
                   proposal={proposal}
                   current={current}
                   onChanged={reloadAll}

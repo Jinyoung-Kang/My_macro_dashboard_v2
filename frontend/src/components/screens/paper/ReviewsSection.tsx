@@ -158,7 +158,9 @@ export function ReviewsSection({
           onPick={setPicked}
           empty={korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 일요일 21:00(KST) 뒤에 첫 복기가 생깁니다."}
           renderBody={(row) => (
+            // 주마다 따로 그립니다(key) — 앞 주의 접기 열림 상태가 다음 주로 넘어가지 않게(QA-765와 같은 까닭).
             <ReviewPane
+              key={row.key}
               row={row}
               week={week}
               onShow={setPicked}
