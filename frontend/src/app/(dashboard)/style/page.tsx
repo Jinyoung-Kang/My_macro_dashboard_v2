@@ -609,7 +609,12 @@ function HoldersCard() {
       </form>
 
       {loading && query && <Loading />}
-      {error && <ErrorState message={error} onRetry={reload} />}
+      {/* 검색 칸 줄과 붙지 않게 12px 띄웁니다(위험 패널의 오류·안내와 같은 간격 — 공용 오류 상자에는 바깥 여백이 없음). 읽는 중 줄은 제 위아래 여백(24px)이 있어 그대로. */}
+      {error && (
+        <div className="mt-3">
+          <ErrorState message={error} onRetry={reload} />
+        </div>
+      )}
       {noMatch && (
         <div role="status" className="mt-4 flex flex-col gap-1 rounded-control bg-surface-2/60 px-4 py-6 text-sm">
           <p className="font-medium text-text">{noMatch.title}</p>

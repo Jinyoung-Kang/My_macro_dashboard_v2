@@ -777,6 +777,19 @@ describe("스코어카드 — 배치와 네 상태", () => {
   });
 });
 
+describe("스타일 — 보유 기관 검색 오류는 검색 칸 줄과 띄운다", () => {
+  it("읽지 못하면 오류 상자(다시 시도)가 12px(mt-3) 띄운 자리에 — 위험 패널의 오류와 같은 간격", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/guru/holders") ? Promise.reject(new Error("보유 기관을 읽지 못했습니다.")) : new Promise(() => {}));
+    render(<GuruPage />);
+    fireEvent.change(screen.getByPlaceholderText("NVIDIA"), { target: { value: "NVIDIA" } });
+    fireEvent.click(screen.getByRole("button", { name: "찾기" }));
+    const message = await screen.findByText("보유 기관을 읽지 못했습니다.");
+    const box = message.closest("div.rounded-control") as HTMLElement;
+    expect(box.parentElement?.className).toBe("mt-3");
+  });
+});
+
 describe("모르는 값 '—'의 까닭을 늘 보이는 글로 적는다(QA-719)", () => {
   // 수정 전 실패(plain it): { turnover: "—값 없음", percentile: "—값 없음" } — 까닭은 칸 span의 title(마우스 설명)에만 있어 키보드·터치·낭독기로 닿지 않았고, 스타일
   // 회전율의 까닭 문단('직전 분기가 없으면 —')은 P5b에서 '읽는 법' 접기 안으로 들어가 늘 보이는 곳에 없었음.
