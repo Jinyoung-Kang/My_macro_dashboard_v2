@@ -512,7 +512,7 @@ describe("KpiStrip — 값 꼴에 맞춘 읽는 중 타일(pendingMatchesValue)"
   // 공통 보유 화면 '교집합 기준 분기'는 응답의 기준 분기가 없으면(각 기관의 최신 분기) 판정 라벨 '각 기관 최신'이라, 값 줄이 라벨 글의 줄 높이(24·28px)로
   // 읽는 중 자리(28·32px)보다 4px 낮았음 — 390 두 칸 배치에서 그 타일이 혼자 둘째 줄이라 값이 오면 띠가 203 → 199px로 줄고 아래 패널이 4px 올라감(QA-724).
   // 수정 전 실패(plain it): 값 줄 클래스 ["mt-0.5", "flex", "items-baseline"] — min-h-7·lg:min-h-8 없음.
-  it.fails("주면 값이 온 판정 라벨 타일(valueKind 'label')의 값 줄도 읽는 중 자리와 같은 28·32px(QA-724)", () => {
+  it("주면 값이 온 판정 라벨 타일(valueKind 'label')의 값 줄도 읽는 중 자리와 같은 28·32px(QA-724)", () => {
     const items: KpiItem[] = [{ key: "reportDate", label: "교집합 기준 분기", value: "각 기관 최신", valueKind: "label" }];
     render(<KpiStrip label="띠" items={items} pendingMatchesValue />);
     const row = valueText(tile("교집합 기준 분기"), "각 기관 최신").parentElement as HTMLElement;
