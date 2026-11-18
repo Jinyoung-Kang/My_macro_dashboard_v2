@@ -81,3 +81,27 @@ describe("QA-736 — 판 경계 이름표가 좁은 그림에서 겹치지 않�
     expect(labelExtents(container).map((entry) => entry.text)).toEqual(["프레임 v1", "프레임 v2", "프레임 v3"]);
   });
 });
+
+/**
+ * QA-777 — QA-736 고침이 이름표 폭을 축 글 폭 어림(axisLabelWidth — 한글 한 자를 라틴 두 칸 × 0.6em = 1.2em)으로 셈해, 겹치지 않는 이름표까지 숨겼습니다.
+ * '프레임 v4'는 그 어림으로 64.8px이지만 브라우저가 그린 폭은 52px였습니다(검토 자기 빌드 390 — v2 이름표 끝과 22px 떨어진 v4 이름표가 숨음).
+ * 이웃 두 선의 간격이 64px이면 실제 이름표(52px)는 4px 넘게 떨어지는데, 예전 어림(64.8 + 4)으로는 겹친다고 보았습니다. 왼쪽 축 폭을 고정(axisWidth)해 그림
+ * 너비 256px(5행 — 행 사이 64px)로 둡니다.
+ */
+describe("QA-777 — 겹치지 않는 판 경계 이름표는 숨기지 않는다", () => {
+  const rows = ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17"].map((date, index) => ({ date, a: 100000 + index * 100 }));
+  it.fails("행 사이 64px의 이웃 두 선(오른쪽 이름표) — '프레임 v2'·'프레임 v3' 둘 다 그린다", () => {
+    observeAs(60 + 256 + 8, 300);
+    const { container } = render(
+      <MultiLineSeries
+        data={rows}
+        series={[{ key: "a", name: "규칙 계좌", color: SERIES_COLORS.blue }]}
+        axisWidth={60}
+        markers={[{ x: "2026-11-12", label: "프레임 v2" }, { x: "2026-11-13", label: "프레임 v3" }]}
+      />,
+    );
+    expect(container.querySelectorAll(".recharts-reference-line")).toHaveLength(2);
+    expect([...container.querySelectorAll("text.recharts-label")].map((node) => node.textContent)).toEqual(["프레임 v2", "프레임 v3"]);
+  });
+});
+
