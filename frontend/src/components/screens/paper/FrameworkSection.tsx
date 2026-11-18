@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   type Column,
   DataTable,
@@ -14,7 +14,7 @@ import {
   Timeline,
   type TimelineEntry,
 } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Tag } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, inputClasses, Loading, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -604,12 +604,42 @@ function ProposalItem({
   const approved = decision.approveFor === proposal.id && decision.approve.result ? approveResultView(decision.approve.result) : null;
   const rejected = decision.rejectFor === proposal.id && decision.reject.result ? rejectResultView(decision.reject.result) : null;
 
+  // 확인 단계의 포커스(QA-815 — 결정 로그·메모의 화면 안 확인 상자와 같은 규칙): 열면 '취소'로(실수로 Enter를 눌러도 POST가 나가지 않게, 확인 글은 그 단추의
+  // 설명 — QA-767). 닫거나 끝나면 누른 단추와 상자가 함께 사라져 포커스가 문서·대화상자 틀로 떨어지므로, 잃었을 때만 그 제안의 같은 동작 단추('제안 #n 승인'·
+  // '거절')로 — 승인·거절이 성공하면 제안이 대기에서 빠져 단추가 사라지므로 제안 칸(article)으로 돌아갑니다(QA-768·771).
+  const articleRef = useRef<HTMLElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmTextId = `${useId()}-proposal-confirm`;
+  const opened = useRef<DecisionKind | null>(null);
+  useEffect(() => {
+    if (deciding !== null) {
+      if (opened.current === deciding) return;
+      opened.current = deciding;
+      cancelRef.current?.focus();
+      return;
+    }
+    const kind = opened.current;
+    if (kind === null || busy) return;
+    opened.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active.isConnected && active.getAttribute("role") !== "dialog") return;
+    const sent = kind === "approve" ? decision.approveFor === proposal.id : decision.rejectFor === proposal.id;
+    const failed = (kind === "approve" ? approveError : rejectError) !== null;
+    const label = `${view.title} ${kind === "approve" ? "승인" : "거절"}`;
+    const button = [...(articleRef.current?.querySelectorAll("button") ?? [])].find((entry) => entry.textContent === label);
+    // 보내지 않고 닫았거나(취소) 실패했으면 그 단추로, 성공했으면(곧 단추가 사라짐) 제안 칸으로.
+    if (button && !button.disabled && (!sent || failed)) button.focus();
+    else articleRef.current?.focus();
+  });
+
   return (
     <article
+      ref={articleRef}
       id={anchor ? `paper-proposal-${proposal.id}` : undefined}
       aria-label={view.title}
       aria-current={highlighted ? "true" : undefined}
-      className={`flex min-w-0 scroll-mt-4 flex-col gap-3 ${framed ? "rounded-control border border-border bg-surface px-4 py-3" : ""}`.trim()}
+      tabIndex={-1}
+      className={`flex min-w-0 scroll-mt-4 flex-col gap-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${framed ? "rounded-control border border-border bg-surface px-4 py-3" : ""}`.trim()}
     >
       <header className="flex flex-wrap items-center gap-2">
         {framed && <h3 className="text-sm font-semibold text-text">{view.title}</h3>}
@@ -657,12 +687,21 @@ function ProposalItem({
 
       {view.pending && (deciding ? (
         <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
-          <p className="text-sm leading-relaxed text-warn">{deciding === "approve" ? view.confirmApprove : view.confirmReject}</p>
+          <p id={confirmTextId} className="text-sm leading-relaxed text-warn">{deciding === "approve" ? view.confirmApprove : view.confirmReject}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" onClick={() => void decision.confirm()} disabled={busy}>
               {busy ? "보내는 중…" : deciding === "approve" ? "승인 확인" : "거절 확인"}
             </Button>
-            <Button onClick={decision.cancel} disabled={busy}>취소</Button>
+            <button
+              ref={cancelRef}
+              type="button"
+              onClick={decision.cancel}
+              disabled={busy}
+              aria-describedby={confirmTextId}
+              className={buttonClasses()}
+            >
+              취소
+            </button>
           </div>
         </div>
       ) : (
@@ -677,12 +716,15 @@ function ProposalItem({
         </div>
       ))}
 
-      {/* 서버의 400 문구(다른 판이 먼저 승인됨·대상 없음 등)를 그대로. */}
-      {approveError && <Callout tone="warn">{approveError}</Callout>}
-      {rejectError && <Callout tone="warn">{rejectError}</Callout>}
-      {approved && <Callout tone={approved.tone}>{approved.text}</Callout>}
-      {approved?.warning && <Callout tone="warn">{approved.warning}</Callout>}
-      {rejected && <Callout tone={rejected.tone}>{rejected.text}</Callout>}
+      {/* 서버의 400 문구(다른 판이 먼저 승인됨·대상 없음 등)를 그대로 — 늘 그려 둔 알림 영역(role=status) 안이라 낭독기가 성공·실패를 읽습니다(QA-815).
+          비어 있으면 높이·간격이 없습니다(article의 gap은 빈 칸에도 들어 -mt-3으로 상쇄). */}
+      <div role="status" className="flex flex-col gap-3 empty:-mt-3">
+        {approveError && <Callout tone="warn">{approveError}</Callout>}
+        {rejectError && <Callout tone="warn">{rejectError}</Callout>}
+        {approved && <Callout tone={approved.tone}>{approved.text}</Callout>}
+        {approved?.warning && <Callout tone="warn">{approved.warning}</Callout>}
+        {rejected && <Callout tone={rejected.tone}>{rejected.text}</Callout>}
+      </div>
     </article>
   );
 }

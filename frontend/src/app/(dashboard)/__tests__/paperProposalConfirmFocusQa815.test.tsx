@@ -67,7 +67,7 @@ async function openProposal() {
 }
 
 describe("QA-815 — 제안 승인·거절 확인 단계의 포커스와 알림", () => {
-  it.fails("확인 단계를 열면 '취소'로, 취소하면 연 단추('제안 #7 승인')로", async () => {
+  it("확인 단계를 열면 '취소'로, 취소하면 연 단추('제안 #7 승인')로", async () => {
     const inspector = await openProposal();
     const approve = within(inspector).getByRole("button", { name: "제안 #7 승인" });
     approve.focus();
@@ -78,7 +78,7 @@ describe("QA-815 — 제안 승인·거절 확인 단계의 포커스와 알림"
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it.fails("거절이 실패하면 오류가 role=status 안이고, 포커스는 '제안 #7 거절'로", async () => {
+  it("거절이 실패하면 오류가 role=status 안이고, 포커스는 '제안 #7 거절'로", async () => {
     api.apiPost.mockRejectedValue(new Error("합성 오류 — 거절하지 못했습니다"));
     const inspector = await openProposal();
     fireEvent.click(within(inspector).getByRole("button", { name: "제안 #7 거절" }));
