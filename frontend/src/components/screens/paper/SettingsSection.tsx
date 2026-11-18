@@ -6,6 +6,7 @@ import {
   DataTable,
   type InspectorContext,
   InspectorFrame,
+  InspectorSubheading,
   InspectorTrigger,
   PropertyList,
   type PropertyItem,
@@ -399,7 +400,10 @@ function SettingInspector({
     <div className="flex min-w-0 flex-col gap-4">
       <PropertyList items={items} dense />
       <section aria-labelledby={headingId} className="min-w-0">
-        <h4 id={headingId} className="mb-1 text-caption font-semibold text-text-2">바꾼 기록(최근 100판 안)</h4>
+        {/* 검사 칸 제목 바로 아래 단계(옆 칸 h4·대화상자 h3 — InspectorSubheading). */}
+        <InspectorSubheading fallback="h4" id={headingId} className="mb-1 text-caption font-semibold text-text-2">
+          바꾼 기록(최근 100판 안)
+        </InspectorSubheading>
         {history.loading && !history.data ? (
           <p className="text-sm text-text-2">설정 이력을 읽는 중…</p>
         ) : history.error ? (

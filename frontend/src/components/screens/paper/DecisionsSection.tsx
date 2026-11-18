@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { DataTable, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
+import { DataTable, InspectorSubheading, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
 import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
@@ -840,11 +840,11 @@ function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
 }
 
 /** 상세 안의 한 부분 — 제목·설명·내용. 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다.
- * 제목은 h3 — 이 상세는 카드(제목 h2) 바로 안에 그려지므로 h4로 건너뛰지 않습니다. */
+ * 제목은 검사 칸 제목 바로 아래 단계(InspectorSubheading — 옆 칸 h4·대화상자 h3, 작업대 P6 검토 — 예전 h3은 옆 칸 제목 h3과 같은 단계였음). */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      <InspectorSubheading fallback="h3" className="text-sm font-semibold text-text">{title}</InspectorSubheading>
       {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>

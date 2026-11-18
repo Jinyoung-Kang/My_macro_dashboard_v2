@@ -3,7 +3,7 @@
 import { useId, type JSX } from "react";
 
 import { LineChart } from "@/components/charts";
-import { ChangeChip, EstimateBadge, RangeTabs } from "@/components/patterns";
+import { ChangeChip, EstimateBadge, InspectorSubheading, RangeTabs } from "@/components/patterns";
 import { useChartScrub } from "@/hooks/useChartScrub";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { hasLineValues, scrubModel } from "@/lib/lineChart";
@@ -45,9 +45,10 @@ export function AccountCurvePanel({
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 id={headingId} className="text-sm font-semibold text-text">
+        {/* 검사 칸 제목 바로 아래 단계(옆 칸 h4·대화상자 h3 — 작업대 P6 검토: 대화상자 h2 아래 h4로 건너뛰었음). */}
+        <InspectorSubheading fallback="h4" id={headingId} className="text-sm font-semibold text-text">
           {title}
-        </h4>
+        </InspectorSubheading>
         {ranges.length > 1 ? (
           <RangeTabs ranges={NAV_RANGES} allowed={ranges} value={range} onChange={onRange} label={`${model.name} 순자산 곡선 기간`} />
         ) : null}

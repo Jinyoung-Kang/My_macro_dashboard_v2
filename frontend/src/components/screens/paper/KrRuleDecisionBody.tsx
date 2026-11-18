@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { DataTable } from "@/components/patterns";
+import { DataTable, InspectorSubheading } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";
 import type { Badge } from "@/lib/paper";
 import {
@@ -265,11 +265,11 @@ function Cell({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** 상세 안의 한 부분 — 결정 로그 탭과 같은 모양(제목 h3이 영역 이름). */
+/** 상세 안의 한 부분 — 결정 로그 탭과 같은 모양(제목이 영역 이름 — 검사 칸 제목 바로 아래 단계, InspectorSubheading). */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      <InspectorSubheading fallback="h3" className="text-sm font-semibold text-text">{title}</InspectorSubheading>
       {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>

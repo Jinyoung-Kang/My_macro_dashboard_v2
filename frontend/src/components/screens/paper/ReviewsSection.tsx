@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { DataTable, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
+import { DataTable, InspectorSubheading, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -445,10 +445,11 @@ function ReviewBody({
   );
 }
 
+/** 복기 한 건 안의 한 부분 — 제목은 검사 칸 제목 바로 아래 단계(옆 칸 h4·대화상자 h3 — InspectorSubheading). */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold text-text">{title}</h3>
+      <InspectorSubheading fallback="h3" className="text-xs font-semibold text-text">{title}</InspectorSubheading>
       {note && <p className="text-xs text-text-3">{note}</p>}
       {children}
     </section>

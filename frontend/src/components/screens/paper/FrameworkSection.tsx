@@ -4,9 +4,10 @@ import { type ReactNode, useEffect, useState } from "react";
 import {
   type Column,
   DataTable,
+  InspectorSubheading,
   MasterDetail,
-  PropertyList,
   type PropertyItem,
+  PropertyList,
   SectionAnchor,
   SectionIndex,
   type SectionIndexItem,
@@ -1079,11 +1080,14 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** 안의 한 부분 — 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다(결정 로그 탭과 같은 모양). */
+/**
+ * 안의 한 부분 — 제목이 영역 이름이 되어(aria-label) 표마다 따로 찾을 수 있습니다(결정 로그 탭과 같은 모양). 제목은 제안 검사 칸 안이면 칸 제목 바로 아래 단계
+ * (옆 칸 h4·대화상자 h3), 요청 카드 안(제안 제목 h3 아래)이면 h4(InspectorSubheading).
+ */
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h4 className="text-sm font-semibold text-text">{title}</h4>
+      <InspectorSubheading fallback="h4" className="text-sm font-semibold text-text">{title}</InspectorSubheading>
       {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
