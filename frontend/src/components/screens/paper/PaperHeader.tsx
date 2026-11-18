@@ -22,8 +22,10 @@ const MARKETS: readonly { code: PaperMarketCode; label: string }[] = [
  * 조작은 모두 44px입니다(시장 세그먼트는 셸 하위 메뉴 줄이 같은 일을 해 그리지 않음 — 두 줄로 겹쳐 보였음).
  *
  * - 계좌 고르기·동작 칸은 탭의 섹션이 채웁니다(PaperTabHeader 계약 — 콜백 ref로 칸 요소를 넘기면 PaperScreen이 공급자에 넘김). 비어 있으면 칸을 숨깁니다
- *   (empty:hidden — 빈 칸의 간격이 남지 않게). DOM 차례는 넓은 화면의 보이는 차례(제목 → 계좌 → 한계·자세히 → 동작)이고, 좁은 화면은 한계 줄을 맨 끝 줄로
- *   옮겨(order) 계좌와 동작이 한 줄에 놓입니다.
+ *   (empty:hidden — 빈 칸의 간격이 남지 않게). 계좌 칸은 고른 계좌 이름 폭 아래로 줄어들지 않고(shrink-0 — 줄 폭까지만), 같은 줄에 동작이 들어가지 않으면
+ *   동작이 다음 줄로 갑니다(QA-772 — 예전에는 계좌 칸이 동작에 밀려 390 보유 탭에서 'Claude 계좌1 · 운용 중'이 'Claude 계좌'까지만 보였음).
+ * - DOM 차례는 제목 → 계좌 → 동작 → 한계·자세히·신선도로, 좁은 화면의 보이는 차례(계좌·동작 → 한계 줄)와 같습니다(QA-772 — Tab 차례). 넓은 화면은 동작 칸만
+ *   맨 오른쪽 끝으로 옮깁니다(lg:order-last·ml-auto — 줄 끝이라 읽는 차례가 크게 어긋나지 않음).
  * - 시장 세그먼트는 같은 탭의 다른 시장 주소로 가는 링크 둘(지금 시장은 aria-current="page") — 그 시장에 없는 탭(미국의 'ISA 계좌')이면 그 시장의 개요.
  * - '자세히'는 예전 머리 설명 문단(글 그대로)을 펼치는 단추(aria-expanded·aria-controls)입니다. 접힌 동안에도 글은 DOM에 남습니다(hidden — `<details>`와 같음).
  * - 실제 계좌·ISA 탭이면 제목 옆에 주의 태그 '실제 계좌'(명세 §7-1 '실제 표지는 늘 보임' — 그 탭의 모듈은 건드리지 않음, 진행 기록 real-isa-banner-neutral-not-warn).
@@ -78,9 +80,11 @@ export function PaperHeader({
             })}
           </nav>
         </div>
-        {/* 계좌 고르기 칸(탭이 채움 — 비면 숨김). 좁은 화면은 남은 폭을 쓰고 동작이 그 오른쪽에 놓입니다. */}
-        <div ref={onAccountSlot} data-paper-header-slot="account" className="flex min-w-0 flex-1 items-center empty:hidden lg:flex-none" />
-        <div className="order-last flex basis-full flex-wrap items-center gap-x-3 gap-y-1 lg:order-none lg:basis-auto">
+        {/* 계좌 고르기 칸(탭이 채움 — 비면 숨김) — 고른 이름 폭 아래로 줄어들지 않고 줄 폭까지만(QA-772). */}
+        <div ref={onAccountSlot} data-paper-header-slot="account" className="flex max-w-full shrink-0 items-center empty:hidden" />
+        {/* 동작 칸(탭이 채움 — 비면 숨김) — 좁은 화면은 계좌 칸 옆(들어가지 않으면 다음 줄), 넓은 화면은 오른쪽 끝(order·ml-auto). */}
+        <div ref={onActionsSlot} data-paper-header-slot="actions" className="flex items-center empty:hidden lg:order-last lg:ml-auto" />
+        <div className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 lg:basis-auto">
           {limits ? <PaperLimitsDrawer limits={limits.lines} source={limits.source} book2Label={limits.book2Label} /> : null}
           <button
             type="button"
@@ -95,8 +99,6 @@ export function PaperHeader({
           {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'(QA-104, QA-067과 같음). */}
           <Freshness refreshError={refreshError} />
         </div>
-        {/* 동작 칸(탭이 채움 — 비면 숨김) — 넓은 화면은 오른쪽 끝. */}
-        <div ref={onActionsSlot} data-paper-header-slot="actions" className="flex items-center empty:hidden lg:ml-auto" />
       </div>
       <div id={detailsId} hidden={!detailsOpen} className="max-w-[72ch] text-sm leading-relaxed text-text-2">
         {description}

@@ -37,7 +37,7 @@ function renderHeader(over: Partial<Parameters<typeof PaperHeader>[0]> = {}) {
 }
 
 describe("PaperHeader", () => {
-  it("한 줄 머리 — 제목·세그먼트·계좌 칸·한계·자세히·동작 칸 차례, 빈 칸은 숨김, 칸 요소를 콜백으로 넘긴다", () => {
+  it("한 줄 머리 — 제목·세그먼트·계좌 칸·동작 칸·한계·자세히 DOM 차례(넓은 화면은 동작이 오른쪽 끝), 빈 칸은 숨김, 칸 요소를 콜백으로 넘긴다", () => {
     const { container, onAccountSlot, onActionsSlot } = renderHeader();
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
     const account = container.querySelector('[data-paper-header-slot="account"]') as HTMLElement;
@@ -46,19 +46,21 @@ describe("PaperHeader", () => {
     expect(onActionsSlot).toHaveBeenCalledWith(actions);
     expect(account.className).toContain("empty:hidden");
     expect(actions.className).toContain("empty:hidden");
-    // 넓은 화면은 동작이 오른쪽 끝, 좁은 화면은 계좌 칸이 남은 폭.
+    // 넓은 화면은 동작이 오른쪽 끝(order·ml-auto), 계좌 칸은 고른 이름 폭 아래로 줄어들지 않음(QA-772).
     expect(actions.className).toContain("lg:ml-auto");
-    expect(account.className).toContain("flex-1");
-    // DOM 차례 = 넓은 화면의 보이는 차례(제목 → 계좌 → 한계·자세히 → 동작).
+    expect(actions.className).toContain("lg:order-last");
+    expect(account.className).toContain("shrink-0");
+    expect(account.className).not.toContain("flex-1");
+    // DOM 차례 = 좁은 화면의 보이는 차례(제목 → 계좌 → 동작 → 한계·자세히 — QA-772 Tab 차례).
     const row = account.parentElement as HTMLElement;
     const order = [...row.children].map((child) =>
       child.getAttribute("data-paper-header-slot") ?? (child.querySelector("h1") ? "title" : child.querySelector("button") ? "meta" : "?"),
     );
-    expect(order).toEqual(["title", "account", "meta", "actions"]);
-    // 좁은 화면은 한계 줄이 맨 끝(계좌·동작이 한 줄).
-    const meta = row.children[2] as HTMLElement;
-    expect(meta.className).toContain("order-last");
-    expect(meta.className).toContain("lg:order-none");
+    expect(order).toEqual(["title", "account", "actions", "meta"]);
+    // 한계 줄은 좁은 화면에서 제 줄(basis-full), 차례를 바꾸지 않음.
+    const meta = row.children[3] as HTMLElement;
+    expect(meta.className).toContain("basis-full");
+    expect(meta.className).not.toContain("order-last");
   });
 
   it("시장 세그먼트 — lg만, 같은 탭의 두 시장 주소(지금 시장 aria-current), 그 시장에 없는 탭이면 그 시장의 개요", () => {

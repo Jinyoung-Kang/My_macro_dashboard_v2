@@ -35,7 +35,7 @@ const slot = (name: "account" | "actions") => document.querySelector<HTMLElement
 const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
 
 describe("QA-772 — 머리 둘째 줄: 계좌 고르기는 줄어들지 않고, DOM 차례 = 보이는 차례", () => {
-  it.fails("계좌 칸은 내용 폭 아래로 줄어들지 않는다(flex-1·min-w-0 없음 — 넘치면 동작이 다음 줄로), 줄 폭은 넘지 않음(max-w-full)", () => {
+  it("계좌 칸은 내용 폭 아래로 줄어들지 않는다(flex-1·min-w-0 없음 — 넘치면 동작이 다음 줄로), 줄 폭은 넘지 않음(max-w-full)", () => {
     renderHeader();
     const account = classes(slot("account"));
     expect(account).not.toContain("flex-1");
@@ -43,7 +43,7 @@ describe("QA-772 — 머리 둘째 줄: 계좌 고르기는 줄어들지 않고,
     expect(account).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
   });
 
-  it.fails("DOM 차례 — 계좌 칸 → 동작 칸 → 한계·자세히(좁은 화면의 보이는 차례), 좁은 화면 order 바꾸기 없음", () => {
+  it("DOM 차례 — 계좌 칸 → 동작 칸 → 한계·자세히(좁은 화면의 보이는 차례), 좁은 화면 order 바꾸기 없음", () => {
     renderHeader();
     const details = screen.getByRole("button", { name: "자세히" });
     const following = (a: Node, b: Node) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
