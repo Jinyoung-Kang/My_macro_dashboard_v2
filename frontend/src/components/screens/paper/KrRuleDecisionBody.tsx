@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";
 import type { Badge } from "@/lib/paper";
 import {
@@ -14,6 +14,7 @@ import {
   type KrRuleDecisionView,
 } from "@/lib/paperKr";
 import { paperTabPath } from "@/lib/paperRoutes";
+import { PaperBadge } from "./PaperBadge";
 import { TickerName } from "./TickerName";
 
 /**
@@ -30,15 +31,16 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
         <Part title="선정" note={view.selectionNote ?? "재선정일·출발 때만 아래 목표대로 삽니다(점수 = 외국인·기관 20일 순매수 합 ÷ 상장주식수)."}>
           <Cells cells={view.selection} />
           {view.targets.length > 0 && (
-            <Table
-              label="목표"
+            <DataTable
+              caption="목표"
+              dense
               rows={view.targets}
               rowKey={(row) => row.key}
               columns={[
-                { key: "rank", header: "순서", align: "right", render: (row) => row.rank },
-                { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
-                { key: "score", header: "점수", align: "right", render: (row) => row.score },
-                { key: "weight", header: "목표 비중", align: "right", render: (row) => row.weight },
+                { key: "rank", header: "순서", align: "right", cell: (row) => row.rank },
+                { key: "code", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
+                { key: "score", header: "점수", align: "right", cell: (row) => row.score },
+                { key: "weight", header: "목표 비중", align: "right", cell: (row) => row.weight },
               ]}
             />
           )}
@@ -56,15 +58,16 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
           <details className="rounded-control border border-border px-3 py-2 text-xs">
             <summary className="cursor-pointer text-text-3">후보 표 보기</summary>
             <div className="mt-2">
-              <Table
-                label="후보"
+              <DataTable
+                caption="후보"
+                dense
                 rows={view.candidates}
                 rowKey={(row) => row.key}
-                emptyMessage="후보가 없습니다 — 외국인·기관 20일 순매수가 둘 다 0보다 큰 U 종목이 없었습니다."
+                emptyText="후보가 없습니다 — 외국인·기관 20일 순매수가 둘 다 0보다 큰 U 종목이 없었습니다."
                 columns={[
-                  { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
-                  { key: "rank", header: "U 순위", align: "right", render: (row) => row.rank },
-                  { key: "score", header: "점수", align: "right", render: (row) => row.score },
+                  { key: "code", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
+                  { key: "rank", header: "U 순위", align: "right", cell: (row) => row.rank },
+                  { key: "score", header: "점수", align: "right", cell: (row) => row.score },
                 ]}
               />
             </div>
@@ -74,16 +77,18 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
 
       {view.holdings.length > 0 && (
         <Part title="보유 매도 판정" note="보유마다 그날 매도 판정 — 20일 누적이 둘 다 0보다 작거나 재선정일 후보 밖이면 팝니다(현금성 제외).">
-          <Table
-            label="보유 매도 판정"
+          <DataTable
+            caption="보유 매도 판정"
+            dense
+            scrollHint
             rows={view.holdings}
             rowKey={(row) => row.key}
             columns={[
-              { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
-              { key: "qty", header: "수량(주)", align: "right", render: (row) => row.qty },
-              { key: "weight", header: "비중", align: "right", render: (row) => row.weight },
-              { key: "sell", header: "판정", render: (row) => <span className={row.sell === "매도" ? "text-down" : "text-text-2"}>{row.sell}</span> },
-              { key: "reasons", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reasons}</span> },
+              { key: "code", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
+              { key: "qty", header: "수량(주)", align: "right", cell: (row) => row.qty },
+              { key: "weight", header: "비중", align: "right", cell: (row) => row.weight },
+              { key: "sell", header: "판정", className: "whitespace-nowrap", cell: (row) => <span className={row.sell === "매도" ? "text-down" : "text-text-2"}>{row.sell}</span> },
+              { key: "reasons", header: "사유", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.reasons}</span> },
             ]}
           />
         </Part>
@@ -91,13 +96,14 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
 
       {view.skipped.length > 0 && (
         <Part title="고르지 못한 주문" note="계획했지만 주문을 내지 않은 종목과 서버가 남긴 사유입니다.">
-          <Table
-            label="고르지 못한 주문"
+          <DataTable
+            caption="고르지 못한 주문"
+            dense
             rows={view.skipped}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <TickerName code={row.ticker} /> },
-              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <TickerName code={row.ticker} /> },
+              { key: "reason", header: "사유", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
             ]}
           />
         </Part>
@@ -169,17 +175,19 @@ export function KrDecisionExtrasParts({ extras }: { extras: KrDecisionExtras }) 
 /** 자료 게이트 표 — 통과·미달 배지와 서버 문장. ③의 창 구멍 문구가 있으면 설정 탭(kr.calendar.extraClosures) 링크를 붙입니다. */
 export function KrGateTable({ rows, label }: { rows: KrGateRow[]; label: string }) {
   return (
-    <Table
-      label={label}
+    <DataTable
+      caption={label}
+      dense
       rows={rows}
       rowKey={(row) => row.key}
       columns={[
-        { key: "gate", header: "게이트", className: "whitespace-nowrap", render: (row) => <span className="font-semibold text-text">{row.gate}</span> },
-        { key: "status", header: "판정", className: "whitespace-nowrap", render: (row) => <Badges badges={[row.badge]} /> },
+        { key: "gate", header: "게이트", className: "whitespace-nowrap", cell: (row) => <span className="font-semibold text-text">{row.gate}</span> },
+        { key: "status", header: "판정", className: "whitespace-nowrap", cell: (row) => <Badges badges={[row.badge]} /> },
         {
           key: "note",
           header: "판정 문장",
-          render: (row) => (
+          className: "break-keep",
+          cell: (row) => (
             <span className="text-xs text-text-2">
               {row.note}
               {row.extraClosures && (
@@ -207,25 +215,28 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
   if (!events) return null;
   return (
     <Part title="사건 줄(패킷 11b_events)" note={`창 ${events.window}${events.timeNote ? ` · ${events.timeNote}` : ""}`}>
-      <Table<KrEventRow>
-        label="사건 줄"
+      <DataTable<KrEventRow>
+        caption="사건 줄"
+        dense
+        scrollHint
         rows={events.rows}
         rowKey={(row) => row.key}
-        emptyMessage="걸린 사건이 없습니다(패킷 글 참고)."
+        emptyText="걸린 사건이 없습니다(패킷 글 참고)."
         columns={[
-          { key: "k", header: "번호", render: (row) => row.k },
-          { key: "source", header: "출처", render: (row) => <span className="whitespace-nowrap text-xs">{row.source}</span> },
+          { key: "k", header: "번호", className: "break-keep", cell: (row) => row.k },
+          { key: "source", header: "출처", className: "whitespace-nowrap", cell: (row) => <span className="whitespace-nowrap text-xs">{row.source}</span> },
           {
             key: "when",
             header: "시각",
-            render: (row) => (
+            className: "break-keep",
+            cell: (row) => (
               <span className="flex flex-col text-xs">
                 <span className="whitespace-nowrap">{row.when}</span>
                 {row.beforeWindow && <span className="text-xs text-warn">창 앞 시각 — 결정 순간 뒤(창 안)에 받은 제목</span>}
               </span>
             ),
           },
-          { key: "matched", header: "걸린 이유", render: (row) => <span className="text-xs text-text-2">{row.matched}</span> },
+          { key: "matched", header: "걸린 이유", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.matched}</span> },
         ]}
       />
       {events.text && (
@@ -266,14 +277,11 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
+/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
-    <span className="flex flex-wrap items-center gap-1">
-      {badges.map((badge) => (
-        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-          {badge.label}
-        </span>
-      ))}
+    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
+      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
     </span>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
-import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Table } from "@/components/ui";
+import { DataTable, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
+import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
 import { useApi } from "@/hooks/useApi";
@@ -572,20 +572,23 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
         >
           {/* 그룹 섞기(D27) 뒤 기록은 신호 풀 표와 그룹별 순위표, 그 전 기록은 순위표 하나 — 결정 기록은 바뀌지 않는 이력이라 둘 다 그립니다. */}
           {selection.pool.length > 0 && (
-            <Table<PoolRow>
-              label="신호 풀"
+            <DataTable<PoolRow>
+              caption="신호 풀"
+              dense
+              scrollHint
               rows={selection.pool}
               rowKey={(row) => row.key}
               columns={[
-                { key: "name", header: "기관", render: (row) => row.name },
+                { key: "name", header: "기관", className: "break-keep", cell: (row) => row.name },
                 {
                   key: "group",
                   header: "그룹",
-                  render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
+                  className: "break-keep",
+                  cell: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                 },
-                { key: "rankA", header: "그룹 A 순위", align: "right", render: (row) => row.rankA },
-                { key: "rankB", header: "그룹 B 순위", align: "right", render: (row) => row.rankB },
-                { key: "weight", header: "기관 가중", align: "right", render: (row) => row.weight },
+                { key: "rankA", header: "그룹 A 순위", align: "right", cell: (row) => row.rankA },
+                { key: "rankB", header: "그룹 B 순위", align: "right", cell: (row) => row.rankB },
+                { key: "weight", header: "기관 가중", align: "right", cell: (row) => row.weight },
               ]}
             />
           )}
@@ -612,79 +615,88 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
             title="13F 신호 이벤트"
             note="신호 기관마다 선정 기준일까지 공시된 최신 분기와 바로 앞 분기를 비교한 결과입니다. 비중은 그 기관 13F 총액 대비."
           >
-            <Table<SignalEventRow>
-              label="13F 신호 이벤트"
+            <DataTable<SignalEventRow>
+              caption="13F 신호 이벤트"
+              dense
+              scrollHint
               rows={view.events}
               rowKey={(row) => row.key}
-              emptyMessage="신호 이벤트가 없습니다 — 신호 기관의 최신 분기에 신규 편입·확대·전량 매도가 없었습니다."
+              emptyText="신호 이벤트가 없습니다 — 신호 기관의 최신 분기에 신규 편입·확대·전량 매도가 없었습니다."
               columns={[
-                { key: "filer", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filer}</span> },
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
+                { key: "filer", header: "기관(순위)", className: "break-keep", cell: (row) => <span className="text-xs">{row.filer}</span> },
+                { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
                 {
                   key: "action",
                   header: "행동",
-                  render: (row) => <span className={row.actionKey === "CLOSED" ? "text-down" : "text-up"}>{row.action}</span>,
+                  className: "whitespace-nowrap",
+                  cell: (row) => <span className={row.actionKey === "CLOSED" ? "text-down" : "text-up"}>{row.action}</span>,
                 },
-                { key: "sharesChange", header: "주식 수 변화", align: "right", render: (row) => row.sharesChange },
-                { key: "weight", header: "비중", align: "right", render: (row) => row.weight },
-                { key: "previousWeight", header: "직전 비중", align: "right", render: (row) => row.previousWeight },
+                { key: "sharesChange", header: "주식 수 변화", align: "right", cell: (row) => row.sharesChange },
+                { key: "weight", header: "비중", align: "right", cell: (row) => row.weight },
+                { key: "previousWeight", header: "직전 비중", align: "right", cell: (row) => row.previousWeight },
               ]}
             />
           </Part>
 
           <Part title="매수 후보" note={candidatesNote(decision.kind)}>
             {view.allocation && <p className="text-xs leading-relaxed text-text-2">{view.allocation}</p>}
-            <Table<SignalCandidateRow>
-              label="매수 후보"
+            <DataTable<SignalCandidateRow>
+              caption="매수 후보"
+              dense
+              scrollHint
               rows={view.candidates}
               rowKey={(row) => row.ticker}
-              emptyMessage="매수 후보가 없습니다 — 여러 기관이 함께 신규 편입·확대한 종목이 없었습니다."
+              emptyText="매수 후보가 없습니다 — 여러 기관이 함께 신규 편입·확대한 종목이 없었습니다."
               columns={[
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
-                { key: "buyers", header: "매수 기관(순위)", render: (row) => <span className="text-xs">{row.buyers}</span> },
-                { key: "buyerCount", header: "기관 수", align: "right", render: (row) => row.buyerCount },
+                { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
+                { key: "buyers", header: "매수 기관(순위)", className: "break-keep", cell: (row) => <span className="text-xs">{row.buyers}</span> },
+                { key: "buyerCount", header: "기관 수", align: "right", cell: (row) => row.buyerCount },
                 // 섞은 뒤 기록은 점수 순, 섞기 전 기록은 순위 합 순이라 정렬 기준 칸을 기록 모양에 맞춥니다.
                 view.scored
-                  ? { key: "score", header: "점수", align: "right", render: (row) => row.score }
-                  : { key: "rankSum", header: "순위 합", align: "right", render: (row) => row.rankSum },
-                { key: "combinedWeight", header: "합산 비중", align: "right", render: (row) => row.combinedWeight },
+                  ? { key: "score", header: "점수", align: "right", cell: (row) => row.score }
+                  : { key: "rankSum", header: "순위 합", align: "right", cell: (row) => row.rankSum },
+                { key: "combinedWeight", header: "합산 비중", align: "right", cell: (row) => row.combinedWeight },
               ]}
             />
           </Part>
 
           {view.scored && (
             <Part title="점수 기여" note={view.convictionNote ?? undefined}>
-              <Table<ContributionRow>
-                label="점수 기여"
+              <DataTable<ContributionRow>
+                caption="점수 기여"
+                dense
+                scrollHint
                 rows={view.contributions}
                 rowKey={(row) => row.key}
-                emptyMessage="점수 기여 기록이 없습니다."
+                emptyText="점수 기여 기록이 없습니다."
                 columns={[
-                  { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
-                  { key: "filer", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filer}</span> },
+                  { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
+                  { key: "filer", header: "기관(순위)", className: "break-keep", cell: (row) => <span className="text-xs">{row.filer}</span> },
                   {
                     key: "group",
                     header: "그룹",
-                    render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
+                    className: "break-keep",
+                    cell: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                   },
-                  { key: "filerWeight", header: "기관 가중", align: "right", render: (row) => row.filerWeight },
-                  { key: "conviction", header: "확신도", align: "right", render: (row) => row.conviction },
-                  { key: "points", header: "점수 기여", align: "right", render: (row) => row.points },
+                  { key: "filerWeight", header: "기관 가중", align: "right", cell: (row) => row.filerWeight },
+                  { key: "conviction", header: "확신도", align: "right", cell: (row) => row.conviction },
+                  { key: "points", header: "점수 기여", align: "right", cell: (row) => row.points },
                 ]}
               />
             </Part>
           )}
 
           <Part title="전량 매도한 기관" note="보유 종목을 신호 기관 여러 곳이 전량 매도하면 매도 신호입니다.">
-            <Table<ClosedSignalRow>
-              label="전량 매도한 기관"
+            <DataTable<ClosedSignalRow>
+              caption="전량 매도한 기관"
+              dense
               rows={view.closed}
               rowKey={(row) => row.ticker}
-              emptyMessage="전량 매도가 없습니다."
+              emptyText="전량 매도가 없습니다."
               columns={[
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
-                { key: "filers", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filers}</span> },
-                { key: "count", header: "기관 수", align: "right", render: (row) => row.count },
+                { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
+                { key: "filers", header: "기관(순위)", className: "break-keep", cell: (row) => <span className="text-xs">{row.filers}</span> },
+                { key: "count", header: "기관 수", align: "right", cell: (row) => row.count },
               ]}
             />
           </Part>
@@ -705,31 +717,35 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                 + "종가면 그 결정의 주문 전부를 다음 거래일의 그 시각에 — 각 주문의 '체결 시점' 칸). 근거에 점수(순위)·매도 사유·남는 현금이 남습니다."
             : "이 결정이 낸 주문입니다. 근거에 어느 기관(그룹·순위·가중)의 어떤 행동이 이 주문을 냈는지가 남습니다."}
       >
-        <Table<PaperOrder>
-          label="주문"
+        <DataTable<PaperOrder>
+          caption="주문"
+          dense
+          scrollHint
           rows={orders}
           rowKey={(row) => String(row.id)}
-          emptyMessage="이 결정은 주문을 내지 않았습니다."
+          emptyText="이 결정은 주문을 내지 않았습니다."
           columns={[
-            { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
-            { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-            { key: "size", header: "크기", align: "right", render: (row) => orderSizeText(row) },
+            { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+            { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+            { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
             {
               key: "status",
               header: "상태",
-              render: (row) => (
+              className: "break-keep",
+              cell: (row) => (
                 <span className="flex flex-wrap items-center gap-1">
                   <Badges badges={[orderStatusBadge(row.status)]} />
                   {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
                 </span>
               ),
             },
-            { key: "timing", header: "체결 시점", render: (row) => timingLabel(row.timing, market, row.targetLocal) },
-            { key: "expires", header: "만료", render: (row) => row.expiresOn ?? EMPTY },
+            { key: "timing", header: "체결 시점", className: "whitespace-nowrap", cell: (row) => timingLabel(row.timing, market, row.targetLocal) },
+            { key: "expires", header: "만료", className: "whitespace-nowrap", cell: (row) => row.expiresOn ?? EMPTY },
             {
               key: "reason",
               header: "근거",
-              render: (row) => (
+              className: "break-keep",
+              cell: (row) => (
                 <span className="text-xs text-text-3" title={jsonTitle(row.reason)}>{orderReasonText(row.reason, 120)}</span>
               ),
             },
@@ -739,13 +755,14 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
 
       {view.skipped.length > 0 && !krRules?.recognized && (
         <Part title="고르지 못한 후보" note="매수 후보였지만 주문을 내지 않은 종목과 서버가 남긴 사유입니다.">
-          <Table<SkippedRow>
-            label="고르지 못한 후보"
+          <DataTable<SkippedRow>
+            caption="고르지 못한 후보"
+            dense
             rows={view.skipped}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => row.ticker },
-              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => row.ticker },
+              { key: "reason", header: "사유", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
             ]}
           />
         </Part>
@@ -782,25 +799,28 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
 /** 선정 때의 순위표(상위 10) — 순위·기관·선정·CAGR·초과·샤프. 섞기 전 순위표와 그룹별 순위표가 같은 모양입니다. */
 function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
   return (
-    <Table<RankingRow>
-      label={label}
+    <DataTable<RankingRow>
+      caption={label}
+      dense
+      scrollHint
       rows={rows}
       rowKey={(row) => row.cik}
-      emptyMessage="순위표가 없습니다."
+      emptyText="순위표가 없습니다."
       columns={[
-        { key: "rank", header: "순위", align: "right", render: (row) => row.rank },
-        { key: "name", header: "기관", render: (row) => row.name },
+        { key: "rank", header: "순위", align: "right", cell: (row) => row.rank },
+        { key: "name", header: "기관", className: "break-keep", cell: (row) => row.name },
         {
           key: "selected",
           header: "선정",
-          render: (row) => {
+          className: "break-keep",
+          cell: (row) => {
             const badge = selectedBadge(row);
             return badge ? <Badges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
           },
         },
-        { key: "cagr", header: "CAGR", align: "right", render: (row) => row.cagr },
-        { key: "excess", header: "초과(SPY 대비)", align: "right", render: (row) => row.excess },
-        { key: "sharpe", header: "샤프", align: "right", render: (row) => row.sharpe },
+        { key: "cagr", header: "CAGR", align: "right", cell: (row) => row.cagr },
+        { key: "excess", header: "초과(SPY 대비)", align: "right", cell: (row) => row.excess },
+        { key: "sharpe", header: "샤프", align: "right", cell: (row) => row.sharpe },
       ]}
     />
   );
@@ -818,18 +838,11 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
+/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
-    <span className="flex flex-wrap items-center gap-1">
-      {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
-      ))}
+    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
+      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
     </span>
   );
 }

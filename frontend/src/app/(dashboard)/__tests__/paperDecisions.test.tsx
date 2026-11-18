@@ -264,6 +264,8 @@ async function openDecision(date: string, kind: string): Promise<HTMLElement> {
   return screen.findByRole("region", { name: `${date} ${kind} 상세` });
 }
 
+/** 공용 표(DataTable)의 모르는 값 칸 — '—'와 낭독용 '값 없음'(patterns Empty). */
+const NONE = "—값 없음";
 const headersOf = (region: HTMLElement) => within(region).getAllByRole("columnheader").map((th) => th.textContent);
 const rowsOf = (region: HTMLElement) =>
   within(region).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
@@ -332,14 +334,14 @@ describe("결정 로그 탭", () => {
     expect(within(selection).getByText(/신호 기관: 버크셔 해서웨이 · 1위, 퍼싱 스퀘어 · 2위/)).toBeTruthy();
     expect(rowsOf(selection)).toEqual([
       ["1", "버크셔 해서웨이", "선정", "+14.21%", "+3.50%p", "0.83"],
-      ["2", "퍼싱 스퀘어", "선정", "+12.10%", "—", "—"],
+      ["2", "퍼싱 스퀘어", "선정", "+12.10%", NONE, NONE],
     ]);
 
     expect(rowsOf(within(detail).getByRole("region", { name: "13F 신호 이벤트" }))).toEqual([
       ["버크셔 해서웨이 · 1위", "AAPL", "확대", "+31.50%", "4.20%", "3.10%"],
-      ["퍼싱 스퀘어 · 2위", "AAPL", "신규 편입", "—", "2.05%", "—"],
+      ["퍼싱 스퀘어 · 2위", "AAPL", "신규 편입", NONE, "2.05%", NONE],
       // 순위표에 없는 기관은 CIK 그대로(이름을 지어내지 않음)
-      ["CIK 0009999999", "XOM", "전량 매도", "—", "0.00%", "1.50%"],
+      ["CIK 0009999999", "XOM", "전량 매도", NONE, "0.00%", "1.50%"],
     ]);
 
     const candidates = within(detail).getByRole("region", { name: "매수 후보" });
@@ -349,7 +351,7 @@ describe("결정 로그 탭", () => {
 
     const orders = rowsOf(within(detail).getByRole("region", { name: "주문" }));
     expect(orders).toHaveLength(1);
-    expect(orders[0].slice(0, 6)).toEqual(["AAPL", "매수", "순자산의 10.00% 매수", "체결", "사후 체결", "—"]);
+    expect(orders[0].slice(0, 6)).toEqual(["AAPL", "매수", "순자산의 10.00% 매수", "체결", "사후 체결", NONE]);
     // 근거 문장을 자르지 않고 그대로 — 둘째 기관까지 보입니다.
     expect(orders[0][6]).toBe("2곳 동시 매수(순위 합 3): 1위 버크셔 해서웨이(0001067983) +31.5%, 2위 퍼싱 스퀘어(0001336528) 신규");
 
@@ -389,8 +391,8 @@ describe("결정 로그 탭", () => {
     expect(headersOf(pool)).toEqual(["기관", "그룹", "그룹 A 순위", "그룹 B 순위", "기관 가중"]);
     expect(rowsOf(pool)).toEqual([
       ["듀케인", "AB", "1위", "1위", "53.3%"],
-      ["아팔루사", "A", "2위", "—", "13.3%"],
-      ["버크셔 해서웨이", "B", "—", "2위", "33.3%"],
+      ["아팔루사", "A", "2위", NONE, "13.3%"],
+      ["버크셔 해서웨이", "B", NONE, "2위", "33.3%"],
     ]);
     expect(rowsOf(within(selection).getByRole("region", { name: "그룹 A 순위표" }))).toEqual([
       ["1", "듀케인", "선정", "+19.00%", "+4.00%p", "1.00"],
@@ -423,6 +425,31 @@ describe("결정 로그 탭", () => {
       ["NVDA", "듀케인 · A 1위 · B 1위", "AB", "53.3%", "100.0%", "0.533"],
       ["NVDA", "버크셔 해서웨이 · B 2위", "B", "33.3%", "25.0%", "0.083"],
     ]);
+  });
+
+  it("상세 표는 공용 조밀 표(넓은 화면 28px 행) — 칸이 많은 표만 640px 넘김, 한국어 글 칸은 낱말 사이에서 꺾고 배지는 공용 태그", async () => {
+    await openDecisionsTab();
+    const detail = await openDecision("2026-10-23", "초기 결정");
+    const tableIn = (name: string) => within(within(detail).getByRole("region", { name })).getByRole("table");
+
+    const orders = tableIn("주문");
+    expect(orders.className).toContain("border-separate");
+    expect(orders.className).toContain("min-w-[640px]");
+    const [ticker, side, , status, timing, expires, reason] = within(orders).getAllByRole("row")[1].querySelectorAll("td");
+    // 조밀 행 — 넓은 화면 위아래 4px(마지막 행은 구분선 없이 lg:py-1).
+    expect(ticker.className).toMatch(/\blg:(pt|py)-1\b/);
+    expect(ticker.className).toContain("break-keep");
+    expect(side.className).toContain("whitespace-nowrap");
+    expect(status.className).toContain("break-keep");
+    expect(timing.className).toContain("whitespace-nowrap");
+    expect(expires.className).toContain("whitespace-nowrap");
+    expect(reason.className).toContain("break-keep");
+    // 칸 둘인 표는 상자 폭에 맞춥니다(최소 폭 없음).
+    expect(tableIn("고르지 못한 후보").className).not.toContain("min-w-[640px]");
+    // 배지 — 공용 태그(테두리·20px), 옛 자체 배지(px-2 py-px) 없음.
+    const badge = within(orders).getByText("체결").parentElement as HTMLElement;
+    expect(badge.className).toContain("leading-4");
+    expect(detail.querySelector(".px-2.py-px")).toBeNull();
   });
 
   it("섞기 전 기록에는 점수 기여 표·배분 줄이 없고 순위 합 칸", async () => {

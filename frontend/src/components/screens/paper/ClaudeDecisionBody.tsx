@@ -1,10 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";
 import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, type ConditionRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
 import type { KrDecisionExtras } from "@/lib/paperKr";
+import { PaperBadge } from "./PaperBadge";
 import { TickerName } from "./TickerName";
 import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
 
@@ -104,33 +105,37 @@ export function ClaudeDecisionBody({
 
       {view.hasResponse && (
         <Part title="제안 주문 (모델 응답)" note="모델이 낸 그대로입니다. 통과·거절은 아래 검증 결과에 있습니다.">
-          <Table<ClaudeOrderRow>
-            label="제안 주문"
+          <DataTable<ClaudeOrderRow>
+            caption="제안 주문"
+            dense
+            scrollHint
             rows={view.orders}
             rowKey={(row) => row.key}
-            emptyMessage="모델이 주문을 내지 않았습니다."
+            emptyText="모델이 주문을 내지 않았습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
-              { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
-              { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+              { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
+              { key: "size", header: "크기", align: "right", cell: (row) => <span className="whitespace-nowrap">{row.size}</span> },
               {
                 key: "timing",
                 header: "체결 시점",
+                className: "break-keep",
                 // 미국 Claude 계좌2는 그 시점을 고른 이유(executionNote)를 아래 작은 글로 — 계좌1 주문은 시점만(예전 그대로).
-                render: (row) => (row.executionNote ? (
+                cell: (row) => (row.executionNote ? (
                   <span className="flex flex-col">
                     <span className="whitespace-nowrap">{row.timing}</span>
                     <span className="text-xs text-text-3" title="실행 메모(executionNote) — 이 시점을 고른 이유">{row.executionNote}</span>
                   </span>
                 ) : <span className="whitespace-nowrap">{row.timing}</span>),
               },
-              { key: "thesis", header: "근거", render: (row) => <span className="text-xs text-text-2">{row.thesis}</span> },
+              { key: "thesis", header: "근거", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.thesis}</span> },
               {
                 key: "labels",
                 header: "라벨",
-                render: (row) => (row.labels.length > 0 ? <Badges badges={row.labels} /> : <span className="text-text-3">{EMPTY}</span>),
+                className: "break-keep",
+                cell: (row) => (row.labels.length > 0 ? <Badges badges={row.labels} /> : <span className="text-text-3">{EMPTY}</span>),
               },
-              { key: "invalidation", header: "무효화 조건", render: (row) => <span className="text-xs text-text-2">{row.invalidation}</span> },
+              { key: "invalidation", header: "무효화 조건", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.invalidation}</span> },
             ]}
           />
         </Part>
@@ -145,25 +150,28 @@ export function ClaudeDecisionBody({
               + "매크로 조건은 검사하지 않습니다."
             : "검증기(하드 규칙)가 주문마다 통과·거절을 정했습니다 — 유니버스·비중 상한·최대 종목 수·배분 합·최소 금액·월 상한·최소 보유일·재진입 금지·자료 신선도. 현금 비중·매크로 조건은 검사하지 않습니다(명세 D7)."}
         >
-          <Table<ValidationRow>
-            label="검증"
+          <DataTable<ValidationRow>
+            caption="검증"
+            dense
+            scrollHint
             rows={view.validation}
             rowKey={(row) => row.key}
-            emptyMessage="검증한 주문이 없습니다."
+            emptyText="검증한 주문이 없습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
-              { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
-              { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
-              { key: "result", header: "결과", render: (row) => <Badges badges={[row.result]} /> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+              { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
+              { key: "size", header: "크기", align: "right", cell: (row) => <span className="whitespace-nowrap">{row.size}</span> },
+              { key: "result", header: "결과", className: "break-keep", cell: (row) => <Badges badges={[row.result]} /> },
               {
                 key: "reason",
                 header: "거절 사유",
+                className: "break-keep",
                 // 사유가 없는 행(통과)의 '—'은 값이 없는 칸이라 다른 빈 칸처럼 보조 글 색 — 주의색은 거절 사유가 있을 때만(QA-506).
-                render: (row) => (row.reason === EMPTY
+                cell: (row) => (row.reason === EMPTY
                   ? <span className="text-xs text-text-3">{EMPTY}</span>
                   : <span className="text-xs text-warn" title={row.reasonTitle}>{row.reason}</span>),
               },
-              { key: "detail", header: "설명", render: (row) => <span className="text-xs text-text-2">{row.detail}</span> },
+              { key: "detail", header: "설명", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.detail}</span> },
             ]}
           />
         </Part>
@@ -171,13 +179,14 @@ export function ClaudeDecisionBody({
 
       {view.watchlist.length > 0 && (
         <Part title="관찰 목록" note="주문은 아니고, 모델이 다음 결정에서 볼 조건으로 남긴 것입니다.">
-          <Table<WatchRow>
-            label="관찰 목록"
+          <DataTable<WatchRow>
+            caption="관찰 목록"
+            dense
             rows={view.watchlist}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
-              { key: "condition", header: "조건", render: (row) => <span className="text-xs text-text-2">{row.condition}</span> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+              { key: "condition", header: "조건", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.condition}</span> },
             ]}
           />
         </Part>
@@ -185,14 +194,15 @@ export function ClaudeDecisionBody({
 
       {view.conditions.length > 0 && (
         <Part title="남긴 조건" note="다음 결정과 장중 판단의 패킷에 코드가 지금 값으로 충족 여부를 매겨 돌려주는 조건입니다. 종목이 붙은 조건은 그 종목을 보유하는 동안 계속 매겨집니다. 코드가 대신 집행하지는 않습니다.">
-          <Table<ConditionRow>
-            label="남긴 조건"
+          <DataTable<ConditionRow>
+            caption="남긴 조건"
+            dense
             rows={view.conditions}
             rowKey={(row) => row.key}
             columns={[
-              { key: "holding", header: "종목", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.holding}</span> },
-              { key: "rule", header: "조건", render: (row) => <code className="whitespace-nowrap text-xs text-text">{row.rule}</code> },
-              { key: "then", header: "충족되면", render: (row) => <span className="text-xs text-text-2">{row.then}</span> },
+              { key: "holding", header: "종목", className: "break-keep", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.holding}</span> },
+              { key: "rule", header: "조건", className: "break-keep", cell: (row) => <code className="whitespace-nowrap text-xs text-text">{row.rule}</code> },
+              { key: "then", header: "충족되면", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.then}</span> },
             ]}
           />
         </Part>
@@ -248,18 +258,11 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
+/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
-    <span className="flex flex-wrap items-center gap-1">
-      {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
-      ))}
+    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
+      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
     </span>
   );
 }

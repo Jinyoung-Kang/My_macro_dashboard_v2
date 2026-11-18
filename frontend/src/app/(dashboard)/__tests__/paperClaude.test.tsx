@@ -197,7 +197,8 @@ describe("결정 로그 — Claude 책", () => {
 
     const judgement = within(detail).getByRole("region", { name: "판단" });
     expect(within(judgement).getByText("위험 회피 (RISK_OFF)")).toBeTruthy();
-    expect(within(judgement).getByText("목표 주식 노출").nextElementSibling?.textContent).toBe("35.0%목표 노출 ≠ 주문");
+    // 어긋남 배지는 공용 주의 태그 — 낭독기에 '주의: '를 먼저 읽힙니다.
+    expect(within(judgement).getByText("목표 주식 노출").nextElementSibling?.textContent).toBe("35.0%주의: 목표 노출 ≠ 주문");
     expect(within(judgement).getByText(/15%p 넘게 다릅니다/)).toBeTruthy();
     expect(within(judgement).getByText("확신도").nextElementSibling?.textContent).toBe("62.0%");
     expect(within(judgement).getByText("노출을 35%로 낮추고 방어 섹터 일부만")).toBeTruthy();
@@ -211,7 +212,7 @@ describe("결정 로그 — Claude 책", () => {
     expect(within(validation).getByText(/현금 비중·매크로 조건은 검사하지 않습니다/)).toBeTruthy();
     expect(rowsOf(validation)).toEqual([
       ["XLV", "매수", "목표 비중 12.00%", "통과", "—", "—"],
-      ["NVDA", "매수", "목표 비중 15.00%", "거절", "비중 상한 초과 (WEIGHT_CAP)", "목표 15% > 종목 상한 10%"],
+      ["NVDA", "매수", "목표 비중 15.00%", "주의: 거절", "비중 상한 초과 (WEIGHT_CAP)", "목표 15% > 종목 상한 10%"],
     ]);
     expect(within(validation).getByText("비중 상한 초과 (WEIGHT_CAP)").getAttribute("title")).toContain("maxWeightStockPct");
     expect(rowsOf(within(detail).getByRole("region", { name: "관찰 목록" }))).toEqual([["TLT", "10Y 4.75% 아래로 3일"]]);
@@ -224,7 +225,7 @@ describe("결정 로그 — Claude 책", () => {
     const orders = rowsOf(within(detail).getByRole("region", { name: "주문" }));
     expect(orders.map((cells) => [cells[0], cells[3], cells[6]])).toEqual([
       ["XLV", "대기", "방어 섹터 상대 강도 개선 [사실·해석] · 무효화: 200일선 아래로"],
-      ["NVDA", "거절WEIGHT_CAP", "교차 확인 2곳 [가설] · 무효화: 다음 13F에서 축소"],
+      ["NVDA", "주의: 거절WEIGHT_CAP", "교차 확인 2곳 [가설] · 무효화: 다음 13F에서 축소"],
     ]);
     // 크기 — 통과 매수는 살 금액, 거절 매수는 받은 값 그대로라 목표 비중(제안)으로
     expect(orders.map((cells) => cells[2])).toEqual(["순자산의 12.00% 매수", "목표 15.00% (제안)"]);
@@ -328,7 +329,7 @@ describe("결정 로그 — Claude 책", () => {
     const detail = await openDetail();
     expect(within(within(detail).getByRole("region", { name: "판단" })).getByText("위험 회피 (RISK_OFF)")).toBeTruthy();
     const orders = within(detail).getByRole("region", { name: "주문" });
-    expect(rowsOf(orders).map((cells) => [cells[0], cells[3]])).toEqual([["XLV", `취소${pausedReason}`], ["NVDA", "거절WEIGHT_CAP"]]);
+    expect(rowsOf(orders).map((cells) => [cells[0], cells[3]])).toEqual([["XLV", `취소${pausedReason}`], ["NVDA", "주의: 거절WEIGHT_CAP"]]);
     expect(within(orders).getByText(/집행 전에 취소되면\(다음 결정이 대신함·일시정지\) 취소와 사유가 보입니다/)).toBeTruthy();
     const packet = within(detail).getByText("입력 패킷(JSON)").closest("details") as HTMLDetailsElement;
     expect(packet.open).toBe(false);
@@ -611,7 +612,7 @@ describe("개요 — Claude 책 시작", () => {
     expect(within(result).getByText(/장부·결정·주문 기록은 바꾸지 않았습니다/)).toBeTruthy();
     expect(rowsOf(within(result).getByRole("region", { name: "검증" })).map((cells) => [cells[0], cells[3], cells[4]])).toEqual([
       ["XLV", "통과", "—"],
-      ["NVDA", "거절", "비중 상한 초과 (WEIGHT_CAP)"],
+      ["NVDA", "주의: 거절", "비중 상한 초과 (WEIGHT_CAP)"],
     ]);
     expect(within(within(result).getByRole("region", { name: "사용량" })).getByText("캐시 읽기 토큰").nextElementSibling?.textContent)
       .toBe("—");
