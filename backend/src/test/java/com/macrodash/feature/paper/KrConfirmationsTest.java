@@ -648,6 +648,97 @@ class KrConfirmationsTest {
         assertThat(line.nav()).isEqualTo(997_538);
     }
 
+    // ------------------------------------------------------------------ ADR 0045 D12 (가): 장중 기록 STOP 매도의 되감기
+    /** D+2 09:10:42에 만든 005930 장중 감시 STOP(기준일 D+1, 만료 D+2). */
+    private long watchStop() {
+        ObjectNode reason = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE).put("stopPct", 10)
+                .put("highWatermark", 71_400).put("stopPrice", 64_260);
+        return store.insertOrder(new Order(0, BOOK, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, reason, D1, kst("2026-11-04T09:10:42"), D2, null));
+    }
+
+    /**
+     * D12 한 세계 — D+1 밤에 005930·000660을 시가로 사고(잠정 D+1 줄), D+2 09:10:42 005930 장중 감시 STOP, {@code intraday}면 09:15:20에 장중
+     * 기록(ADR 0045 ON — 시험용 {@link IntradayRecords}), 그 뒤 금융위 D+1이 들어와 리스크 점검의 확정 조정 한 번. {@code fscForStopped}가 거짓이면 금융위
+     * D+1에 005930 행이 없음(데이터셋은 D+1을 냄).
+     */
+    private NavRow d12World(boolean intraday, boolean fscForStopped) {
+        setUp();
+        confirmed.clear();
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        order("000660", PaperBooks.BUY, 5, D, CREATED);
+        KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+        payload.code("005930", FETCHED_D1).bar(D, 71_300, 71_300, 1_000_000).bar(D1, 71_800, 71_400, 900_000)
+                .minute("OK", "09:01", 71_300, 50_000);
+        payload.code("000660", FETCHED_D1).bar(D, 120_000, 120_000, 1_000_000).bar(D1, 121_000, 120_500, 900_000)
+                .minute("OK", "09:01", 120_000, 50_000);
+        process(payload, COLLECTED_D1);
+        assertThat(store.positions(BOOK)).hasSize(2);
+        long stop = watchStop();
+        if (intraday) {
+            IntradayRecords.record(store, BOOK, Map.of(stop, 64_000.0), kst("2026-11-04T09:15:20"), D2, run().calendar());
+            assertThat(store.positions(BOOK)).extracting(Position::ticker).containsExactly("000660");
+        }
+        if (fscForStopped) {
+            fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+        } else {
+            fsc("005930", KrConfirmed.SOURCE_FSC, D1);
+        }
+        fsc("000660", KrConfirmed.SOURCE_FSC, D1, day(D1, 119_900L, 120_300, 3_000_000, "KOSPI"));
+        lastOutcome = confirm();
+        return navOn(D1);
+    }
+
+    private Outcome lastOutcome;
+
+    @Test
+    @DisplayName("ADR 0045 D12 (가) — D+2 오전 장중 기록 STOP 매도가 있어도 금융위 D+1이 들어오면 D+1 줄을 되감아(판 종목 보유 되살림·그 매도의 현금 흐름 뺌) "
+            + "확정: 순자산·현금·평가액·노출·확정 표시가 장중 기록이 없는 세계와 같음, 지금 상태·보유는 장중 기록 그대로")
+    void d12RewindsIntradayStopForTheConfirmedLine() {
+        NavRow off = d12World(false, true);
+        double offCash = cash();
+        NavRow on = d12World(true, true);
+
+        assertThat(off.pricesFinal()).as("밤 일괄 세계 — 그날까지 체결 확정·보유 금융위 종가").isTrue();
+        assertThat(on).as("D+1 줄 전체(record equals — 금액은 비트까지)").isEqualTo(off);
+        assertThat(lastOutcome.notes()).anySatisfy(note -> assertThat(note).contains("장중 기록 STOP 매도 1건(005930)을 되감아 셈"));
+        assertThat(store.positions(BOOK)).as("저장된 보유는 되살리지 않음").extracting(Position::ticker).containsExactly("000660");
+        Fill sold = store.fillsOf(BOOK).stream().filter(f -> f.observationDate().equals(D2)).findFirst().orElseThrow();
+        double flow = KrxCosts.cashFlow(com.macrodash.analytics.PaperLedger.Side.SELL,
+                BigDecimal.valueOf(sold.price()).multiply(BigDecimal.valueOf(sold.qty())), sold.fee(), sold.tax(), sold.slippageCost()).doubleValue();
+        assertThat(cash()).as("지금 현금 = 밤 일괄 세계의 확정 현금 + 장중 매도 대금").isEqualTo(offCash + flow);
+    }
+
+    @Test
+    @DisplayName("ADR 0045 D12 (가) — 판 종목의 금융위 D+1 행이 없으면 되감은 줄도 잠정(마지막 평가 가격), 값은 장중 기록이 없는 세계와 같음")
+    void d12RewoundLineStaysProvisionalWithoutTheRow() {
+        NavRow off = d12World(false, false);
+        NavRow on = d12World(true, false);
+
+        assertThat(off.pricesFinal()).isFalse();
+        assertThat(on).isEqualTo(off);
+    }
+
+    @Test
+    @DisplayName("ADR 0045 D12 (가) — D 뒤 체결에 장중 기록 STOP 매도가 아닌 것이 섞이면 지금처럼 그 줄을 다시 쓰지 않음(잠정 그대로)")
+    void d12DoesNotRewindOtherFills() {
+        setUp();
+        confirmed.clear();
+        book(2_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        long stop = watchStop();
+        IntradayRecords.record(store, BOOK, Map.of(stop, 64_000.0), kst("2026-11-04T09:15:20"), D2, run().calendar());
+        hourlyFill(PaperBooks.BUY, D1, D2, kst("2026-11-04T10:01"));
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(navOn(D1).pricesFinal()).isFalse();
+        assertThat(outcome.notes()).anySatisfy(note -> assertThat(note).contains("2026-11-03 뒤 체결(2026-11-04)이 장부에 있음"));
+    }
+
     /** 한국 Claude 계좌2의 매시 체결 한 건(장부를 거치지 않음 — 현금·보유 그대로, 확정 판정만 봄): 기준일 {@code asOf}, 체결일 {@code day}. */
     private Fill hourlyFill(String side, LocalDate asOf, LocalDate day, Instant observedAt) {
         long orderId = store.insertOrder(new Order(0, BOOK, null, "005930", side, 10, null, null, PaperBooks.AT_1000, "CLAUDE",
