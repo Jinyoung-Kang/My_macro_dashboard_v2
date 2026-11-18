@@ -277,3 +277,34 @@ describe("교집합 — 분석 대상 거르기 목록(옛 기관 칩)", () => {
     await waitFor(() => expect(institutionCalls()).toBe(before + 1));
   });
 });
+
+/** 스타일 화면 위험 응답(합성) — 위험 기여 하나는 음수(분산 효과로 포트폴리오 변동성을 줄이는 종목), VaR·ES는 손실이라 음수. */
+function riskBody(over: Record<string, unknown> = {}) {
+  return {
+    available: true, cik: "0001067983", benchmark: "SPY", years: 1, collectedAtKst: "2026-11-04 19:40 KST", ageSeconds: 60, stale: false,
+    coverage: { holdings: 30, totalHoldings: 40, weight: 78.1, totalWeight: 100, uncovered: [], uncoveredCount: 0 },
+    metrics: { volatility: 14.2, var95: -1.13, var99: -1.92, es95: -1.63, es99: -2.27, maxDrawdown: 7.64, beta: 0.82, trackingError: 6.1, samples: 250,
+      from: "2025-11-04", to: "2026-11-04" },
+    contributions: [
+      { ticker: "SYNA", name: "SYNTHETIC ALPHA CO", sector: "Technology", weight: 22.1, volatility: 24.0, marginal: 0.3, contribution: 4.1, share: 28.9 },
+      { ticker: "SYNG", name: "SYNTHETIC GOLD CO", sector: "Materials", weight: 5.0, volatility: 18.0, marginal: -0.1, contribution: -0.42, share: -3.0 },
+    ],
+    sectors: [{ sector: "Technology", weight: 40.2 }],
+    ...over,
+  };
+}
+
+describe("스타일 — 종목별 위험 기여는 등락이 아니다(QA-704)", () => {
+  // 수정 전 실패: 위험 기여 칸이 deltaColor로 양수 빨강(text-up)·음수 파랑(text-down)이고 음수 부호가 ASCII '-'('-0.42%p') — 기여는 오르내린 값이 아님.
+  it.fails("위험 기여·기여 비중 칸에 상승·하락 글자색이 없고 음수는 −(U+2212)", async () => {
+    api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/guru/risk") ? Promise.resolve(riskBody()) : new Promise(() => {})));
+    render(<GuruPage />);
+    const table = (await screen.findByText("SYNTHETIC GOLD CO")).closest("table") as HTMLElement;
+    const tinted = [...table.querySelectorAll(".text-up, .text-down")].map((element) => `${element.className} '${element.textContent}'`);
+    // 칸마다 봅니다(표 글 전체를 이으면 칸 경계가 사라져 앞 칸 끝 글자에 붙은 '-'를 놓침).
+    const hyphen = [...table.querySelectorAll("td, th")].map((cell) => cell.textContent ?? "").filter((text) => /(^|\s)-\d/.test(text));
+    expect({ tinted, hyphen }).toEqual({ tinted: [], hyphen: [] });
+    expect(within(table).getByText("−0.42%p")).toBeTruthy();
+    expect(within(table).getByText("−3.0%")).toBeTruthy();
+  });
+});
