@@ -3,7 +3,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty, FilterList, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
+import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
 import type { ActionBarItem } from "@/components/ui/ActionBar";
 import { PanelRightIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -657,9 +657,8 @@ const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
     key: "final",
     header: "가격",
     cell: (row) => (
-      <span className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${row.pricesFinal
-        ? "border-ok/40 bg-ok-tint text-ok" : "border-warn/40 bg-warn-tint text-warn"}`}>
-        {row.pricesFinal ? "확정(금융위 종가)" : "잠정"}
+      <span className="whitespace-nowrap">
+        <Tag tone={row.pricesFinal ? "ok" : "warn"}>{row.pricesFinal ? "확정(금융위 종가)" : "잠정"}</Tag>
       </span>
     ),
   },
@@ -1130,17 +1129,12 @@ function KrEmpty({ children }: { children: ReactNode }) {
   return <p className="py-2 text-sm leading-relaxed text-text-3">{children}</p>;
 }
 
+/** 배지 묶음 — 공용 태그(PaperBadge — 20px, 정상·주의·중립 톤, 마우스 설명 그대로 — 작업대 P6). */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
     <>
       {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
+        <PaperBadge key={badge.key} badge={badge} />
       ))}
     </>
   );

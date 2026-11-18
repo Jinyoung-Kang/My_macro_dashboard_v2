@@ -676,25 +676,28 @@ export function OverviewSection({
 
       <Panel title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
         {watchLine && <p aria-label="장중 스탑 감시" className="mb-2 text-xs text-text-3">{watchLine}</p>}
-        <Table<PaperJobRun>
-          label="작업 기록"
+        <DataTable<PaperJobRun & { key: string }>
+          caption="작업 기록"
+          dense
+          count={(count) => `${count}건`}
+          scrollHint="overflow"
           // 미국 개요 응답의 작업 기록은 한국 kr.* 줄도 담아(미국 응답 글자 그대로 — x3) 화면에서 그 시장 줄만 남깁니다.
-          rows={marketJobs(overview.jobs, market)}
-          rowKey={(row, index) => `${row.job}-${row.startedAtKst ?? index}-${index}`}
-          emptyMessage={jobsEmptyMessage(market, overview.jobs)}
+          rows={marketJobs(overview.jobs, market).map((row, index) => ({ ...row, key: `${row.job}-${row.startedAtKst ?? index}-${index}` }))}
+          rowKey={(row) => row.key}
+          emptyText={jobsEmptyMessage(market, overview.jobs)}
           columns={[
-            { key: "job", header: "작업", render: (row) => row.job },
-            { key: "startedAt", header: "시작", render: (row) => formatKst(row.startedAtKst) },
-            { key: "finishedAt", header: "끝", render: (row) => formatKst(row.finishedAtKst) },
+            { key: "job", header: "작업", cell: (row) => row.job },
+            { key: "startedAt", header: "시작", cell: (row) => formatKst(row.startedAtKst) },
+            { key: "finishedAt", header: "끝", cell: (row) => formatKst(row.finishedAtKst) },
             {
               key: "outcome",
               header: "결과",
-              render: (row) => <span className={jobOutcomeClass(row.outcome)}>{row.outcome || EMPTY}</span>,
+              cell: (row) => <span className={jobOutcomeClass(row.outcome)}>{row.outcome || EMPTY}</span>,
             },
             {
               key: "detail",
               header: "상세",
-              render: (row) => (
+              cell: (row) => (
                 <span className="text-xs text-text-3" title={jsonTitle(row.detail)}>
                   {korea ? krJobDetailText(row) : jsonSummary(row.detail)}
                 </span>
@@ -803,13 +806,11 @@ function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerR
   );
 }
 
+/** 그룹 배지 — 공용 태그(PaperBadge — 20px, 마우스 설명 그대로). */
 function GroupBadge({ badge }: { badge: Badge }) {
-  return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-      {badge.label}
-    </span>
-  );
+  return <PaperBadge badge={badge} />;
 }
+
 
 function Cell({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (

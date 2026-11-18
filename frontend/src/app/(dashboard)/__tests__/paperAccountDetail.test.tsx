@@ -397,7 +397,8 @@ describe("상세 패널의 내용", () => {
       within(within(table).getByText(label).closest("tr") as HTMLElement).getAllByRole("cell").map((td) => td.textContent);
     expect(firstCells("NVDA")).toEqual(["NVDA", "20.0%", "20,240.00 달러", "+1.50%", "10"]);
     expect(firstCells("SHY")).toEqual(["SHY현금성", "30.0%", "30,366.00 달러", "+1.50%", "10"]);
-    expect(firstCells("현금")).toEqual(["현금", "0.5%", "500.00 달러", "—", "—"]);
+    // 모르는 칸은 공용 표의 Empty('—' + 낭독 '값 없음' — 작업대 P6에서 옛 ui Table을 옮김)
+    expect(firstCells("현금")).toEqual(["현금", "0.5%", "500.00 달러", "—값 없음", "—값 없음"]);
     expect(within(composition).queryByRole("img")).toBeNull();
   });
 
@@ -410,7 +411,8 @@ describe("상세 패널의 내용", () => {
     const composition = within(panel).getByRole("region", { name: "구성" });
     const legend = await within(composition).findByRole("list", { name: "구성 범례" });
     const legendSwatches = within(legend).getAllByRole("listitem").map((li) => li.querySelector('[aria-hidden="true"]') as HTMLElement);
-    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"]')] as HTMLElement[];
+    // 표의 색 견본(장식 — 바탕색이 든 aria-hidden 네모). 공용 표의 Empty '—'도 aria-hidden이라 견본만 고릅니다.
+    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"][style]')] as HTMLElement[];
     expect(legendSwatches).toHaveLength(5);
     expect(tableSwatches.length).toBeGreaterThan(0);
     for (const swatch of [...legendSwatches, ...tableSwatches]) {

@@ -278,7 +278,7 @@ describe("자료", () => {
     expect(headers).toContain("평단(원)");
     expect(headers).toContain("평가액(원)↕");
     const held = rowOf(table, "000660");
-    expect(within(held).getByText("기업행위 확인 필요").getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
+    expect(within(held).getByText("기업행위 확인 필요").closest("[title]")?.getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
     expect(within(held).getByText("200,000")).toBeTruthy();
     expect(within(held).getByText("1,005,000")).toBeTruthy();
     expect(within(rowOf(table, "035420")).getByText("가격 없음 · 지난 값")).toBeTruthy();

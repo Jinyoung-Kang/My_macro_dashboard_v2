@@ -465,7 +465,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const table = screen.getByRole("table", { name: "체결 시점 실험" });
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude2/execution?limit=1", 0);
     expect(headersOf(table)).toEqual(["시점", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
-    expect(within(table).getAllByRole("rowheader").map((th) => th.textContent)).toEqual(["다음 거래일 시가대리값", "다음 거래일 10:00 ET"]);
+    expect(within(table).getAllByRole("rowheader").map((th) => th.textContent)).toEqual(["다음 거래일 시가주의: 대리값", "다음 거래일 10:00 ET"]);   // 대리값은 주의 태그(공용 Tag — 낭독 '주의: ')
     expect(rowsOf(table)).toEqual([
       // 모르는 칸은 표가 "—"(Empty — 낭독기는 "값 없음")로 그립니다.
       ["3건", "2일", "—값 없음", "—값 없음", "판단 보류 — 표본 부족(주문 3/10건 · 결정일 2/5일)", "기준 없음 0 · 값 없음 0"],
@@ -492,7 +492,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const chosen = screen.getByRole("table", { name: "고른 시점(M1 — 주 판정)" });
     expect(headersOf(chosen)).toEqual(["구분", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
     expect(within(chosen).getAllByRole("rowheader").map((th) => th.textContent))
-      .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)대리값", "대체 체결(따로 셈)"]);
+      .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)주의: 대리값", "대체 체결(따로 셈)"]);
     expect(rowsOf(chosen)).toEqual([
       ["31건", "9일", "+12.5bp", "+1.3bp ~ +24.0bp", "구간 참고(판정은 8주 뒤)", "기준 없음 2 · 대체 체결 3(아래 줄) · 체결 없음 4"],
       ["3건", "2일", "—값 없음", "—값 없음", "판정에 쓰지 않음 — 표본 부족(주문 3/10건 · 결정일 2/5일)", "기준 없음 0"],
@@ -541,7 +541,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(within(table).getByText("놓침")).toBeTruthy();
     expect(within(table).getByText("호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)")).toBeTruthy();
     // 부르지 않은 행 — 확인 결정·응답 칸은 '—' 하나(둘이 아님), 지연은 라벨 뒤 값 없음.
-    expect(rowsOf(table)[0]).toEqual(["놓침호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)",
+    expect(rowsOf(table)[0]).toEqual(["주의: 놓침호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)",
       "감시 1분봉(5분 수집, 잰 지연)지연 —값 없음", "—값 없음", "—값 없음"]);
 
     fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
@@ -808,7 +808,7 @@ describe("보유·체결 — 계좌2 칸", () => {
       "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지·비용", "가격 출처",
     ]);
     expect(rowsOf(fills)).toEqual([[
-      "2026-11-04 01:10봉 2026-11-03", "AAA대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
+      "2026-11-04 01:10봉 2026-11-03", "AAA주의: 대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
       "+12.3bp", "8,004.00슬리피지 5.0bp", "—값 없음",
     ]]);
   });
@@ -876,7 +876,7 @@ describe("보유·체결 — 계좌2 칸", () => {
       "대기Claude · 만료 2026-11-03체결 —값 없음", "—값 없음근거 [사실] · 무효화: 조건",
     ]]);
     expect(rowsOf(fills)).toEqual([[
-      "2026-11-04 02:10봉 2026-11-03", "BBB대체 체결", "매수", "10", "100.0500관측 100.0000", "—값 없음R3 · 관측 종가(1분봉 없음)",
+      "2026-11-04 02:10봉 2026-11-03", "BBB주의: 대체 체결", "매수", "10", "100.0500관측 100.0000", "—값 없음R3 · 관측 종가(1분봉 없음)",
       "—값 없음", "1,000.50슬리피지 —값 없음", "—값 없음",
     ]]);
   });

@@ -1,8 +1,8 @@
 "use client";
 
 import { DonutChart, SERIES_COLORS } from "@/components/charts";
-import { EstimateBadge } from "@/components/patterns";
-import { Button, Callout, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
+import { DataTable, EstimateBadge } from "@/components/patterns";
+import { Button, Callout, ErrorState, Freshness, Loading, SourceLine, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useTickerNames } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
@@ -34,6 +34,7 @@ import type {
   PaperPositionsResponse,
   PaperSettingsResponse,
 } from "@/lib/types";
+import { PaperBadge } from "./PaperBadge";
 import { TickerName } from "./TickerName";
 
 /** 상세에 보일 최근 체결 수. 전체는 보유·체결 탭(최근 50건). */
@@ -137,7 +138,7 @@ export function AccountDetailPanel({
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
             <h4 id={titleId} tabIndex={-1} className="text-base font-semibold text-text focus:outline-hidden">{book.label} 상세</h4>
-            <span className={`rounded-control border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
+            <PaperBadge badge={card.status} />
           </div>
           {profile && <p className="mt-1 text-xs text-text-2">{profile.summary}</p>}
         </div>
@@ -230,36 +231,36 @@ export function AccountDetailPanel({
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
         {fills.data && !fills.data.available && <Callout tone="warn">{fills.data.message}</Callout>}
         {fills.data?.available && (
-          <Table<PaperFill>
-            label="최근 체결"
+          <DataTable<PaperFill>
+            caption="최근 체결"
             rows={fills.data.fills ?? []}
             rowKey={(row) => String(row.id)}
-            emptyMessage="체결이 없습니다."
+            dense
+            scrollHint="overflow"
+            emptyText="체결이 없습니다."
             columns={[
-              { key: "observedAt", header: "관측 시각", render: (row) => formatKst(row.observedAtKst) },
+              { key: "observedAt", header: "관측 시각", cell: (row) => formatKst(row.observedAtKst) },
               {
                 key: "ticker",
                 header: "종목",
-                render: (row) => (
+                cell: (row) => (
                   <span className="flex flex-wrap items-center gap-1">
                     <span><TickerName code={row.ticker} /></span>
                     {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
-                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-                        {badge.label}
-                      </span>
+                      <PaperBadge key={badge.key} badge={badge} />
                     ))}
                   </span>
                 ),
               },
               // 짧은 한국어 칸 — 머리 '방향'·칸 '매수'를 글자 사이에서 접지 않음(QA-737).
-              { key: "side", header: "방향", className: "whitespace-nowrap", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-              { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
+              { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+              { key: "qty", header: "수량", align: "right", cell: (row) => formatNumber(row.qty, 0) },
               {
                 key: "price",
                 // 한국 체결 행의 가격은 토스 잠정가입니다 — 확정가는 확정 조정 행에(보유·체결 탭과 같은 머리).
                 header: korea ? `잠정 체결가(${meta.unitLabel})` : `체결가(${meta.unitLabel})`,
                 align: "right",
-                render: (row) => {
+                cell: (row) => {
                   const price = formatSharePrice(row.price, market);
                   const confirmed = korea ? krConfirmationCells(row).price : null;
                   return confirmed && confirmed !== EMPTY ? (
@@ -275,7 +276,7 @@ export function AccountDetailPanel({
                 header: korea ? `잠정 금액(${meta.unitLabel})` : `금액(${meta.unitLabel})`,
                 align: "right",
                 // 한국은 원 단위 정수, 미국은 예전처럼 소수 2자리(단위는 머리에).
-                render: (row) => formatNumber(row.gross, meta.moneyDigits),
+                cell: (row) => formatNumber(row.gross, meta.moneyDigits),
               },
             ]}
           />
@@ -335,16 +336,18 @@ function CompositionView({ label, composition }: { label: string; composition: A
           <Legend segments={segments} />
         </div>
       )}
-      <Table<CompositionRow>
-        label="구성"
+      <DataTable<CompositionRow>
+        caption="구성"
         rows={rows}
         rowKey={(row) => row.key}
-        emptyMessage="보유가 없습니다."
+        dense
+        scrollHint="overflow"
+        emptyText="보유가 없습니다."
         columns={[
           {
             key: "label",
             header: "종목",
-            render: (row) => (
+            cell: (row) => (
               <span className="flex items-center gap-2">
                 <span
                   aria-hidden
@@ -353,22 +356,23 @@ function CompositionView({ label, composition }: { label: string; composition: A
                 />
                 <span className={row.isCash ? "text-text-2" : "font-semibold text-text"}>{row.label}</span>
                 {row.cashLike && (
-                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-control border border-border bg-surface-2 px-2 py-px text-xs text-text-2">
-                    현금성
+                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다.">
+                    <Tag>현금성</Tag>
                   </span>
                 )}
               </span>
             ),
           },
-          { key: "share", header: "비중", align: "right", render: (row) => row.shareText },
-          { key: "value", header: "평가액", align: "right", render: (row) => row.valueText },
+          { key: "share", header: "비중", align: "right", cell: (row) => row.shareText },
+          { key: "value", header: "평가액", align: "right", cell: (row) => row.valueText },
           {
             key: "unrealized",
             header: "수익률(평단 대비)",
             align: "right",
-            render: (row) => <span className={deltaColor(row.unrealizedPct)}>{row.unrealizedText}</span>,
+            // 모르면 글 그대로 — 표가 Empty('—' + 낭독 '값 없음')로 그림.
+            cell: (row) => (row.unrealizedText === EMPTY ? EMPTY : <span className={deltaColor(row.unrealizedPct)}>{row.unrealizedText}</span>),
           },
-          { key: "qty", header: "수량", align: "right", render: (row) => row.qtyText },
+          { key: "qty", header: "수량", align: "right", cell: (row) => row.qtyText },
         ]}
       />
     </>
