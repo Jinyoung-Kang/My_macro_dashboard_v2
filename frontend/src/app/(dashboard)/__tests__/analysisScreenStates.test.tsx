@@ -795,7 +795,7 @@ describe("스코어카드 — 첫 읽기가 실패해도 빠진 것 목록이 �
   // 목록을 '처음 읽는 중'(firstLoadPending — 앞선 실패가 없어야 참)에 묶어, 실패하는 순간 목록이 사라지고 다시 시도·종목 바꾸기로 성공하면 다시 생겨 안내 상자
   // 높이가 오르내렸음(P5b QA 스택 확인 — 1440 135.5 ↔ 75.5px, 390 213 ↔ 121px). 본문 글은 읽는 상태와 상관없이 대체 글을 씁니다.
   // 수정 전 실패(plain it): { failed: [], retrying: [], loaded: 세 줄 } — 실패한 뒤와 다시 읽는 동안 목록 0줄.
-  it.fails("실패(오류 상자)한 뒤에도 세 줄, '다시 시도'로 읽는 동안·성공한 뒤도 같은 세 줄", async () => {
+  it("실패(오류 상자)한 뒤에도 세 줄, '다시 시도'로 읽는 동안·성공한 뒤도 같은 세 줄", async () => {
     const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
     render(<ScorecardPage />);
     await screen.findByText(FAILURE);
@@ -811,7 +811,7 @@ describe("스코어카드 — 첫 읽기가 실패해도 빠진 것 목록이 �
   });
 
   // 수정 전 실패(plain it): { failed: [], switching: [] } — 실패한 뒤 종목을 바꿔 읽는 동안도 목록 0줄.
-  it.fails("실패한 뒤 종목을 바꿔 읽는 동안에도 세 줄", async () => {
+  it("실패한 뒤 종목을 바꿔 읽는 동안에도 세 줄", async () => {
     const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
     render(<ScorecardPage />);
     await screen.findByText(FAILURE);
