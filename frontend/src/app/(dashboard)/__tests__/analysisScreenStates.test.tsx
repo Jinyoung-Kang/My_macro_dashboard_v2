@@ -230,6 +230,42 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
+
+  // 기관 배지가 공용 SourceBadge(바탕 surface-2만, 테두리 없음)라 같은 surface-2인 대화상자 면 위에서 보통 모드 1.00:1로 상자가 사라지고, 고대비에서도 바탕이
+  // Canvas로 지워져 상자가 없었음(P5b QA 스택 확인 — 배지를 표 열에서 검사 대화상자로 옮긴 뒤. 13F 보유 표 QA-697과 같은 무리). jsdom이라 그리지 않고
+  // 클래스로 셉니다(QA-697 사례 꼴 — 테두리가 있거나, 없으면 놓인 면과 다른 바탕).
+  // 수정 전 실패(plain it): 배지 둘 모두 { bordered: false, same: ["bg-surface-2"] }.
+  it("대화상자의 기관 배지는 테두리 있는 상자 — 놓인 대화상자 면과 같은 바탕의 테두리 없는 배지가 없다(QA-725)", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/consensus")) {
+        return Promise.resolve({
+          available: true, participants: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"], participantCount: 2, availableDates: [], reportDate: null, minHolders: 2,
+          rows: [{ key: "issuer:000000", name: "SYNTHETIC HOLDER CO", cusip: "000000501", holders: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"],
+            actions: [], holderCount: 2, totalValue: 2_000_000_000, avgWeight: 4.5, maxWeight: 6.25, buyCount: 1, sellCount: 1 }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "SYNTHETIC HOLDER CO" }));
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC HOLDER CO" });
+    const holders = within(dialog).getByRole("region", { name: "보유 기관" });
+    const bg = (element: Element) => [...element.classList].filter((name) => name.startsWith("bg-"));
+    // 배지가 놓인 면 — 배지 목록에서 위로 올라가 처음 만나는 바탕(대화상자 면 bg-surface-2).
+    let surface: HTMLElement | null = holders;
+    while (surface && bg(surface).length === 0) surface = surface.parentElement;
+    expect(surface !== null && dialog.contains(surface) ? bg(surface) : []).toContain("bg-surface-2");
+    const boxes = within(holders).getAllByRole("listitem").map((item) => item.firstElementChild as HTMLElement);
+    expect(
+      boxes.map((box) => {
+        const bordered = box.classList.contains("border");
+        return { bordered, same: bordered ? [] : bg(box).filter((token) => surface !== null && bg(surface).includes(token)) };
+      }),
+    ).toEqual([
+      { bordered: true, same: [] },
+      { bordered: true, same: [] },
+    ]);
+  });
 });
 
 describe("교집합 — 왼쪽 칸 차례(2026-11-18 결정(사용자 위임 — 권장안 가) lg-conditions-below-list)", () => {
@@ -521,6 +557,56 @@ describe("스타일 — 머리 '새로고침'·13F 한계 안내·'읽는 법' �
   });
 });
 
+describe("스타일 — 기관별 성격을 처음 읽지 못한 뒤 다시 읽으면 위험 패널 '기관' 고르기도 돌아온다(QA-727)", () => {
+  const ROWS = [
+    { cik: "0001067983", key: "a", name: "가상 버크셔", desc: "", reportDate: "2026-06-30", totalValue: 2.5e11, holdingCount: 40, effectiveHoldings: 8.2, hhi: 0.12,
+      top10Weight: 88.1, turnover: 3.2, quarterCount: 8 },
+    { cik: "0000000032", key: "b", name: "가상 연기금", desc: "", reportDate: "2026-06-30", totalValue: 2.0e10, holdingCount: 700, effectiveHoldings: 60.5,
+      hhi: 0.0165, top10Weight: 40.2, turnover: null, quarterCount: 1 },
+  ];
+  /** 기관별 성격은 처음에 실패(합성)하고 `fail`을 끄면 두 기관을 돌려줍니다. 위험은 늘 값, 나머지는 끝나지 않음. */
+  function serve() {
+    const control = { fail: true };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path === "/api/guru/profiles") {
+        return control.fail ? Promise.reject(new Error("성격을 읽지 못했습니다.")) : Promise.resolve({ available: true, note: "13F 저장본 기준", rows: ROWS });
+      }
+      if (path.startsWith("/api/guru/risk")) return Promise.resolve(riskBody());
+      return new Promise(() => {});
+    });
+    return control;
+  }
+  const riskInstitutions = () => [...(screen.getByLabelText("기관") as HTMLSelectElement).options].map((option) => option.textContent);
+  const profilesPanel = () => screen.getByRole("heading", { level: 2, name: "기관별 성격" }).closest("section") as HTMLElement;
+
+  // 위험 패널이 같은 경로를 자기 훅으로 따로 읽어, 첫 읽기가 실패한 뒤 '성격 새로고침'·성격 패널 '다시 시도'(화면 위쪽 훅만 다시 부름)로 표는 돌아와도
+  // 위험 패널 '기관' 고르기는 선택지 0개로 남아 바꿀 수 없었음(P5b QA 스택 확인 — 전부터). 실패한 동안은 두 패널이 같은 상태(선택지 없음)입니다.
+  // 수정 전 실패(plain it): { failed: [], recovered: [] } — 다시 읽은 뒤에도 선택지 0개.
+  it("'성격 새로고침'으로 다시 읽으면 성격 표와 함께 위험 패널 '기관' 고르기의 선택지도 돌아온다", async () => {
+    const control = serve();
+    render(<GuruPage />);
+    await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");
+    await screen.findByRole("region", { name: "위험 지표" });
+    const failed = riskInstitutions();
+    control.fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "기관별 성격 새로고침" }));
+    await within(profilesPanel()).findByRole("button", { name: "가상 연기금" });
+    expect({ failed, recovered: riskInstitutions() }).toEqual({ failed: [], recovered: ["가상 버크셔", "가상 연기금"] });
+  });
+
+  // 수정 전 실패(plain it): { failed: [], recovered: [] }.
+  it("성격 패널의 '다시 시도'로 다시 읽어도 위험 패널 '기관' 고르기의 선택지가 돌아온다", async () => {
+    const control = serve();
+    render(<GuruPage />);
+    await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");
+    const failed = riskInstitutions();
+    control.fail = false;
+    fireEvent.click(within(profilesPanel()).getByRole("button", { name: "다시 시도" }));
+    await within(profilesPanel()).findByRole("button", { name: "가상 연기금" });
+    expect({ failed, recovered: riskInstitutions() }).toEqual({ failed: [], recovered: ["가상 버크셔", "가상 연기금"] });
+  });
+});
+
 describe("스타일 — 기관별 성격 표와 검사 칸", () => {
   const PROFILE_ROWS = [
     { cik: "0000000031", key: "a", name: "🇺🇸 가상 자산운용 (Synthetic AM)", desc: "합성 소개 — 가치 투자", reportDate: "2026-06-30", totalValue: 2.5e11,
@@ -657,6 +743,19 @@ describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기�
     render(<ConsensusPage />);
     expect(document.querySelectorAll("[data-shell-filter]")).toHaveLength(0);
   });
+
+  // 패널 본문의 기본 조작(라벨 있는 검색 입력 + '찾기' 단추)은 넓은 화면 30px(명세 §3-7 — 24px는 카드 머리·표 안의 작은 조작). 입력이 inputClasses("sm")이라
+  // lg 이상 24px로 옆 '찾기'(md 30px)보다 6px 낮고 윗변이 어긋났음(P5b QA 스택 확인 1024~1920 194x24 / 50x30 — 전부터, P1 '크기 이름'이 정보 검색 두 곳만 고침).
+  // jsdom이라 높이는 클래스로 봅니다(lg 높이 클래스 — lg:min-h-*).
+  // 수정 전 실패(plain it): { input: ["lg:min-h-6"], button: ["lg:min-h-[30px]"] }.
+  it("보유 기관 검색 입력은 같은 form의 '찾기' 단추와 같은 넓은 화면 높이(30px — lg:min-h-[30px], 24px lg:min-h-6 아님)(QA-728)", () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<GuruPage />);
+    const input = screen.getByPlaceholderText("NVIDIA");
+    const submit = input.closest("form")?.querySelector("button[type='submit']") as HTMLElement;
+    const lgHeight = (element: Element) => [...element.classList].filter((name) => name.startsWith("lg:min-h-"));
+    expect({ input: lgHeight(input), button: lgHeight(submit) }).toEqual({ input: ["lg:min-h-[30px]"], button: ["lg:min-h-[30px]"] });
+  });
 });
 
 /** 스코어카드 응답(합성) — 지표 다섯(모멘텀 하나는 음수, 변동성·최대낙폭은 양수 크기), 원자료 1개월 수익률 −0.297(QA 자료와 같은 값). */
@@ -731,6 +830,67 @@ describe("스코어카드 — 처음 읽는 동안 빠진 것 목록이 응답�
       pending: MISSING.map((item) => `${item} — 수집하지 않습니다`),
       loaded: MISSING.map((item) => `${item} — 수집하지 않습니다`),
     });
+  });
+});
+
+describe("스코어카드 — 첫 읽기가 실패해도 빠진 것 목록이 그대로다(QA-726)", () => {
+  /** 백엔드 ScorecardService가 늘 보내는 빠진 것 목록(응답과 같은 값 — available이 거짓인 응답도 같음). */
+  const MISSING = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"];
+  const LINES = MISSING.map((item) => `${item} — 수집하지 않습니다`);
+  const FAILURE = "스코어카드 연결 실패(합성)";
+  function missingTexts() {
+    const box = screen.getByText("이 카드는 종합 점수가 아닙니다.").closest("div.rounded-control") as HTMLElement;
+    return [...(box.querySelector("ul")?.children ?? [])].map((item) => item.textContent ?? "");
+  }
+  /** 스코어카드 읽기의 답을 바꿀 수 있게 둡니다 — 종목 목록은 둘(AAPL·MSFT), 나머지는 끝나지 않음. */
+  function serveScorecard(first: () => Promise<unknown>) {
+    const control = { answer: first };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/stock/scorecard")) return control.answer();
+      if (path === "/api/stock/universe") {
+        return Promise.resolve({ available: true, rows: [{ ticker: "AAPL", name: "Apple", sector: null }, { ticker: "MSFT", name: "Microsoft", sector: null }] });
+      }
+      return new Promise(() => {});
+    });
+    return control;
+  }
+
+  // 목록을 '처음 읽는 중'(firstLoadPending — 앞선 실패가 없어야 참)에 묶어, 실패하는 순간 목록이 사라지고 다시 시도·종목 바꾸기로 성공하면 다시 생겨 안내 상자
+  // 높이가 오르내렸음(P5b QA 스택 확인 — 1440 135.5 ↔ 75.5px, 390 213 ↔ 121px). 본문 글은 읽는 상태와 상관없이 대체 글을 씁니다.
+  // 수정 전 실패(plain it): { failed: [], retrying: [], loaded: 세 줄 } — 실패한 뒤와 다시 읽는 동안 목록 0줄.
+  it("실패(오류 상자)한 뒤에도 세 줄, '다시 시도'로 읽는 동안·성공한 뒤도 같은 세 줄", async () => {
+    const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
+    render(<ScorecardPage />);
+    await screen.findByText(FAILURE);
+    const failed = missingTexts();
+    let resolve: (value: unknown) => void = () => {};
+    control.answer = () => new Promise((done) => (resolve = done));
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await screen.findByText("스코어카드를 계산하는 중…");
+    const retrying = missingTexts();
+    resolve(scorecardBody({ missing: MISSING }));
+    await screen.findByRole("region", { name: "스코어 요약" });
+    expect({ failed, retrying, loaded: missingTexts() }).toEqual({ failed: LINES, retrying: LINES, loaded: LINES });
+  });
+
+  // 수정 전 실패(plain it): { failed: [], switching: [] } — 실패한 뒤 종목을 바꿔 읽는 동안도 목록 0줄.
+  it("실패한 뒤 종목을 바꿔 읽는 동안에도 세 줄", async () => {
+    const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
+    render(<ScorecardPage />);
+    await screen.findByText(FAILURE);
+    const failed = missingTexts();
+    control.answer = () => new Promise(() => {});
+    await screen.findByRole("option", { name: "MSFT · Microsoft" });
+    fireEvent.change(screen.getByLabelText("종목"), { target: { value: "MSFT" } });
+    await screen.findByText("스코어카드를 계산하는 중…");
+    expect({ failed, switching: missingTexts() }).toEqual({ failed: LINES, switching: LINES });
+  });
+
+  it("응답이 온 뒤에는 응답의 목록 그대로 — 빈 목록이면 목록 없음(대체 글로 채우지 않음)", async () => {
+    serveScorecard(() => Promise.resolve(scorecardBody({ missing: [] })));
+    render(<ScorecardPage />);
+    await screen.findByRole("region", { name: "스코어 요약" });
+    expect(missingTexts()).toEqual([]);
   });
 });
 

@@ -62,8 +62,9 @@ import {
  * '기관 간 유사도' → '포트폴리오 위험' → '이 종목을 누가 들고 있나'. 패널 아래의 긴 설명 문단은 '읽는 법' 접기입니다(글 그대로).
  */
 export default function GuruPage() {
-  // 기관별 성격 — 머리의 '새로고침'이 이 읽기를 다시 부릅니다(예전 성격 카드 머리의 단추를 화면 머리 동작으로 — 명세 §7 4행). 위험 패널의 기관 고르기는
-  // 같은 경로를 따로 읽는 훅 그대로입니다(요청 수 그대로 — 실제 브라우저에서는 동시 요청이 하나로 합쳐짐, lib/sharedRequest).
+  // 기관별 성격 — 머리의 '새로고침'이 이 읽기를 다시 부릅니다(예전 성격 카드 머리의 단추를 화면 머리 동작으로 — 명세 §7 4행). 위험 패널의 기관 고르기도
+  // 이 읽기를 받아 씁니다 — 같은 경로를 따로 읽는 훅이었을 때는 첫 읽기가 실패한 뒤 '성격 새로고침'·'다시 시도'(이 훅만 다시 부름)로 표는 돌아와도
+  // 고르기는 선택지 0개로 남았습니다(QA-727). 실제 브라우저 요청 수는 같습니다(그때도 동시 요청이 하나로 합쳐졌음 — lib/sharedRequest).
   const profiles = useApi<GuruProfilesResponse>(endpoints.institution.guruProfiles);
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -94,7 +95,7 @@ export default function GuruPage() {
 
       <ProfilesCard profiles={profiles} />
       <SimilarityCard />
-      <RiskCard />
+      <RiskCard profiles={profiles} />
       <HoldersCard />
     </div>
   );
@@ -396,9 +397,8 @@ function SimilarityCard() {
   );
 }
 
-/** 기관 포트폴리오의 위험. 커버리지를 항상 먼저 보여 줍니다. */
-function RiskCard() {
-  const profiles = useApi<GuruProfilesResponse>(endpoints.institution.guruProfiles);
+/** 기관 포트폴리오의 위험. 커버리지를 항상 먼저 보여 줍니다. '기관' 고르기의 선택지는 화면이 읽은 기관별 성격(`profiles` — 성격 패널과 같은 읽기)입니다. */
+function RiskCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruProfilesResponse>> }) {
   const [cik, setCik] = useState("0001067983");
   const [benchmark, setBenchmark] = useState("SPY");
   const [years, setYears] = useState("1");
@@ -606,13 +606,14 @@ function HoldersCard() {
       >
         <label className="flex flex-col gap-1">
           <span className="text-xs text-text-3">종목명(일부 또는 전체)</span>
-          {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. */}
+          {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. 크기는 패널 본문의 기본 조작(md — lg 30px)이라
+              옆 '찾기' 단추와 같은 높이입니다(sm이었을 때는 24px로 6px 낮았음 — QA-728). */}
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="NVIDIA"
             data-shell-filter=""
-            className={inputClasses("sm")}
+            className={inputClasses()}
           />
         </label>
         <Button type="submit">찾기</Button>

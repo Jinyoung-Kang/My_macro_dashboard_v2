@@ -134,7 +134,10 @@ function valueRowClass(item: KpiItem, pendingMatchesValue: boolean): string {
     // 값 줄 높이(20·24px 글의 줄 28·32px)를 미리 잡을 때(띠의 선택 prop) — 읽는 중 막대(22px) 줄이 값 줄보다 낮아 값이 오면 띠가 6·10px 자랐음.
     return pendingMatchesValue ? "mt-0.5 min-h-7 lg:min-h-8" : "mt-0.5";
   }
-  const unitTail = item.valueKind !== "label" && Boolean(item.unit) && statValueText(item.value, item.format) !== null;
+  // 값 꼴 자리를 잡는 띠에서 판정 라벨(16·20px 글의 줄 24·28px)은 값 줄을 숫자 값 줄 높이(28·32px)로 받칩니다 — 읽는 중 자리(위)는 값의 꼴을 미리 모르므로
+  // 숫자 높이로 잡는데, 라벨이 오면 4px 낮아 띠가 줄고 아래가 올라갔습니다(공통 보유 '각 기관 최신' — QA-724). 숫자 값 줄은 글 줄이 이미 그 높이입니다.
+  if (item.valueKind === "label") return pendingMatchesValue ? "mt-0.5 flex min-h-7 items-baseline lg:min-h-8" : "mt-0.5 flex items-baseline";
+  const unitTail = Boolean(item.unit) && statValueText(item.value, item.format) !== null;
   return unitTail ? VALUE_ROW_UNIT : "mt-0.5 flex items-baseline";
 }
 
@@ -343,7 +346,8 @@ export function KpiStrip({
   items: readonly KpiItem[];
   /**
    * 읽는 중 타일을 값이 온 뒤의 꼴에 맞춥니다(선택, 기본 꺼짐 — 홈 띠는 자리 줄 수 `pendingLines`로 맞춤): 값 자리를 값 줄 높이(28·32px)로 잡고, 출처 줄은
-   * 읽는 중에도 받은 출처 글(정적)로 그립니다. 변화·상태·메모가 없는 띠(섹터 SPY 기간 수익률 — 첫 타일만 출처 줄)가 값이 와도 높이가 같게(P5a 검토 CLS).
+   * 읽는 중에도 받은 출처 글(정적)로 그립니다. 값이 온 판정 라벨(`valueKind: "label"`)의 값 줄도 같은 높이로 받칩니다(QA-724). 변화·상태·메모가 없는 띠(섹터
+   * SPY 기간 수익률 — 첫 타일만 출처 줄)가 값이 와도 높이가 같게(P5a 검토 CLS).
    */
   pendingMatchesValue?: boolean;
   /**

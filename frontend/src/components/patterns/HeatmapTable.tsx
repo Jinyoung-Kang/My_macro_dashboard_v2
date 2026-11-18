@@ -52,7 +52,11 @@ export type HeatmapRow = {
  *   표를 밀지 않고, 그 뒤 폭이 바뀌면 ResizeObserver로 다시 잽니다. 예전에는 안내가 없어 1024(메뉴 220 — 두 칸 틀 가운데 482px)에서 가려진 열이 있다는 단서가
  *   없었습니다(QA-713).
  * - `initialScroll="end"`(선택, 기본 "start"): 처음 그릴 때(와 열이 바뀔 때) 스크롤을 오른쪽 끝에 둡니다 — 열이 시간 차례인 표(비중 히트맵의 분기)에서 가장
- *   최근 열이 먼저 보이게. 행 머리는 왼쪽에 붙어 남고(sticky), 범례·설명 글도 상자 왼쪽에 붙어 남습니다(sticky — 스크롤해도 보임).
+ *   최근 열이 먼저 보이게. 끝에 붙어 있는 동안 상자·표 폭이 바뀌면(메뉴 접기·펴기 — 폭 전환 중에도, 창 크기 — 끄는 동안에도) 다시 끝으로 옮기고, 사용자가
+ *   왼쪽으로 옮긴 뒤에는 그 자리를 지킵니다(표가 들어가는 폭이나 브라우저가 줄인 자리는 그 폭의 끝이라 다시 붙음). 예전에는 폭이 바뀌어도 그대로라 메뉴를
+ *   펴면 0, 창을 줄이면 옛 끝에 남았고(QA-722), 그 고침도 부품이 쓴 자리의 scroll 이벤트(다음 프레임에 옴)를 사용자 이동으로 읽어 폭이 프레임마다 바뀌는
+ *   동안(메뉴 폭 전환 150ms·창 끌기)에는 붙음이 풀렸습니다(QA-722 보강 — 이제 그 자리와 1px 안의 이벤트는 붙음을 바꾸지 않음).
+ *   행 머리는 왼쪽에 붙어 남고(sticky), 범례·설명 글도 상자 왼쪽에 붙어 남습니다(sticky — 스크롤해도 보임).
  */
 export function HeatmapTable({
   caption,
@@ -86,24 +90,48 @@ export function HeatmapTable({
   const [overflowing, setOverflowing] = useState(false);
   // 표를 그리는지 — 빈 상태에는 스크롤 상자가 없어, 빈 상태로 먼저 그려진 뒤 행이 오면 아래 두 효과가 다시 돌아야 합니다(QA-720).
   const hasTable = rows.length > 0 && columns.length > 0;
-  // 표가 상자보다 넓은지 — 그리기 전에 한 번 재고(안내가 뒤늦게 끼어들어 표를 밀지 않게), 그 뒤 폭이 바뀌면 다시 잽니다.
+  // 스크롤이 오른쪽 끝에 붙어 있는지(initialScroll="end"일 때만 씀) — 폭이 바뀌면 붙어 있던 때만 다시 끝으로 옮깁니다(QA-722). 상자의 scroll 이벤트로 갱신하므로
+  // 사용자가 왼쪽으로 옮기면 풀리고, 표가 들어가는 폭(끝 = 0)이나 브라우저가 줄인 자리가 끝이면 다시 붙습니다.
+  const pinnedEnd = useRef(initialScroll === "end");
+  // 이 부품이 마지막으로 쓴 스크롤 자리(끝으로 옮길 때) — 그 쓰기의 scroll 이벤트는 다음 프레임에 와서, 그 사이 폭이 더 바뀌면(메뉴 폭 전환·창 끌기) 그때의 끝보다
+  // 작아 사용자가 옮긴 것처럼 읽혔습니다(QA-722 보강). 이 자리와 1px 안의 이벤트는 붙음을 바꾸지 않고, 다른 자리의 이벤트(사용자 이동·브라우저가 줄인 자리)가 오면 비웁니다.
+  const writtenLeft = useRef<number | null>(null);
+  // 표가 상자보다 넓은지 — 그리기 전에 한 번 재고(안내가 뒤늦게 끼어들어 표를 밀지 않게), 그 뒤 폭이 바뀌면 다시 잽니다. 끝에 붙어 있었으면 새 끝으로 옮깁니다.
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box) return undefined;
-    const measure = () => setOverflowing(box.scrollWidth > box.clientWidth + 1);
+    const followEnd = initialScroll === "end";
+    const measure = () => {
+      setOverflowing(box.scrollWidth > box.clientWidth + 1);
+      if (followEnd && pinnedEnd.current) {
+        box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
+        writtenLeft.current = box.scrollLeft;
+      }
+    };
+    const onScroll = () => {
+      const written = writtenLeft.current;
+      if (written !== null && Math.abs(box.scrollLeft - written) <= 1) return;
+      writtenLeft.current = null;
+      pinnedEnd.current = box.scrollLeft >= box.scrollWidth - box.clientWidth - 1;
+    };
     measure();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(box);
-    if (box.firstElementChild) observer.observe(box.firstElementChild);
-    return () => observer.disconnect();
-  }, [hasTable]);
-  // 처음 스크롤 자리 — 열이 바뀌거나(다른 기관의 분기) 빈 상태에서 표가 생기면 다시 맞춥니다.
+    if (followEnd) box.addEventListener("scroll", onScroll, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(box);
+    if (observer && box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => {
+      observer?.disconnect();
+      box.removeEventListener("scroll", onScroll);
+    };
+  }, [hasTable, initialScroll]);
+  // 처음 스크롤 자리 — 열이 바뀌거나(다른 기관의 분기) 빈 상태에서 표가 생기면 다시 맞춥니다(끝에 다시 붙음).
   const columnKeys = columns.map((column) => column.key).join("\u0000");
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box || initialScroll !== "end") return;
     box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
+    writtenLeft.current = box.scrollLeft;
+    pinnedEnd.current = true;
   }, [initialScroll, columnKeys, hasTable]);
 
   if (!hasTable) {

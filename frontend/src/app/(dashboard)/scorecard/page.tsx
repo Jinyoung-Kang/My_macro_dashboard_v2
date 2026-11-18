@@ -4,7 +4,7 @@ import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { DataTable, Empty, KpiStrip } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
-import { firstLoadPending, useApi } from "@/hooks/useApi";
+import { useApi } from "@/hooks/useApi";
 import { formatNumber } from "@/lib/format";
 import {
   metricBars,
@@ -26,8 +26,9 @@ import { endpoints } from "@/lib/endpoints";
 const CAVEAT_FALLBACK = "가격으로 잴 수 있는 것만 담은 카드입니다. 종합 점수가 아니며, 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다.";
 
 /**
- * 처음 읽는 동안의 빠진 것 목록 — 백엔드(ScorecardService)가 늘 보내는 missing과 같은 글입니다. 글 없는 막대 자리(QA-716 고침)는 줄 수만 같아, 좁은 화면에서
- * 실제 줄이 두 줄로 꺾이면 안내 상자가 자라 아래를 밀었습니다(QA-721). 백엔드 목록을 바꾸면 여기도 같이 고칩니다.
+ * 값이 없는 동안(처음 읽는 동안·읽지 못함·다시 읽는 중)의 빠진 것 목록 — 백엔드(ScorecardService)가 늘 보내는 missing과 같은 글입니다(available이 거짓인
+ * 응답도 같은 목록). 글 없는 막대 자리(QA-716 고침)는 줄 수만 같아, 좁은 화면에서 실제 줄이 두 줄로 꺾이면 안내 상자가 자라 아래를 밀었습니다(QA-721).
+ * 백엔드 목록을 바꾸면 여기도 같이 고칩니다.
  */
 const MISSING_FALLBACK = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"] as const;
 
@@ -48,8 +49,13 @@ export default function ScorecardPage() {
   const [benchmark, setBenchmark] = useState("SPY");
   const [years, setYears] = useState("1");
 
-  const scorecard = useApi<ScorecardResponse>(endpoints.insight.scorecard(symbol, benchmark, years));
-  const { data, loading, error, reload, refreshError } = scorecard;
+  const { data, loading, error, reload, refreshError } = useApi<ScorecardResponse>(
+    endpoints.insight.scorecard(symbol, benchmark, years),
+  );
+  // 빠진 것 목록 — 값이 없으면(처음 읽는 동안·읽지 못함·다시 읽는 중) 응답과 같은 대체 목록(MISSING_FALLBACK — 같은 글이라 같은 폭에서 같은 줄로 꺾임),
+  // 값이 오면 응답의 목록. 본문 글(caveat)과 같은 규칙입니다. 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가 자라 아래 조회 조건·결과를 밀었고(QA-716·721),
+  // '처음 읽는 중'에만 대체 목록을 두었을 때는 첫 읽기가 실패하면 목록이 사라졌다가 다시 시도·종목 바꾸기로 성공하면 다시 생겼습니다(QA-726).
+  const missing: readonly string[] = data ? (data.missing ?? []) : MISSING_FALLBACK;
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -72,17 +78,9 @@ export default function ScorecardPage() {
       */}
       <Callout tone="warn" title="이 카드는 종합 점수가 아닙니다.">
         <div className="mt-1">{data?.caveat ?? CAVEAT_FALLBACK}</div>
-        {(data?.missing?.length ?? 0) > 0 ? (
+        {missing.length > 0 ? (
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
-            {data!.missing.map((item) => (
-              <li key={item}>{item} — 수집하지 않습니다</li>
-            ))}
-          </ul>
-        ) : firstLoadPending(scorecard) ? (
-          // 처음 읽는 동안은 응답과 같은 빠진 것 목록(MISSING_FALLBACK — 같은 글이라 같은 폭에서 같은 줄로 꺾임). 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가
-          // 자라 아래 조회 조건·결과를 밀었습니다(QA-716·QA-721).
-          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
-            {MISSING_FALLBACK.map((item) => (
+            {missing.map((item) => (
               <li key={item}>{item} — 수집하지 않습니다</li>
             ))}
           </ul>
