@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTickerName } from "@/hooks/useTickerNames";
 import { MultiLineSeries } from "@/components/charts";
 import { ChangeChip, type Column, DataTable, Empty, EstimateBadge, InspectorFrame, type InspectorContext, KpiStrip, RangeTabs, StaleBadge } from "@/components/patterns";
-import { Button, Callout, Freshness, Panel, ROW_TRIGGER, Table } from "@/components/ui";
+import { Button, Callout, Freshness, Panel, ROW_TRIGGER } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useApi } from "@/hooks/useApi";
@@ -621,19 +621,18 @@ export function OverviewSection({
               {selection.pool.length > 0 && (
                 <section aria-label="신호 풀" className="flex flex-col gap-1">
                   <h3 className="text-xs font-semibold text-text">신호 풀 · 기관 가중</h3>
-                  <Table<PoolRow>
-                    label="신호 풀"
+                  {/* 공용 조밀 표(작업대 P6 통합 — 옛 ui Table). 네 칸이라 최소 폭·넘김 안내 없이 카드 폭에 맞춤(결정 상세 표와 같은 규칙 — 다섯 칸 이상만 640px),
+                      모르는 그룹·순위·가중은 공용 '—'(낭독 '값 없음'). */}
+                  <DataTable<PoolRow>
+                    caption="신호 풀"
+                    dense
                     rows={selection.pool}
                     rowKey={(row) => row.key}
                     columns={[
-                      { key: "name", header: "기관", render: (row) => <span className="font-semibold text-text">{row.name}</span> },
-                      {
-                        key: "group",
-                        header: "그룹",
-                        render: (row) => (row.group ? <GroupBadge badge={row.group} /> : <span className="text-text-3">{EMPTY}</span>),
-                      },
-                      { key: "ranks", header: "순위", render: (row) => <span className="whitespace-nowrap">{row.ranks}</span> },
-                      { key: "weight", header: "기관 가중", align: "right", render: (row) => row.weight },
+                      { key: "name", header: "기관", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.name}</span> },
+                      { key: "group", header: "그룹", cell: (row) => (row.group ? <GroupBadge badge={row.group} /> : null) },
+                      { key: "ranks", header: "순위", cell: (row) => (row.ranks === EMPTY ? null : <span className="whitespace-nowrap">{row.ranks}</span>) },
+                      { key: "weight", header: "기관 가중", align: "right", cell: (row) => row.weight },
                     ]}
                   />
                 </section>
