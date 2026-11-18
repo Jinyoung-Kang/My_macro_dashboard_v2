@@ -530,6 +530,45 @@ class PaperSettingsServiceTest {
     }
 
     @Test
+    @DisplayName("ADR 0045 한국 장중 스탑 체결 기록 kr.stopWatch.fill: 기본 OFF(기본 본문 stopWatch 묶음은 mode → fill 차례), 고르기 OFF·SHADOW·ON·한국·규칙 계좌 "
+            + "영향, 설명은 감시 ON일 때만 뜻·SHADOW 대조만·ON 장중 기록·저장 시각, 키가 없는 옛 행은 OFF·판 그대로, 틀린 값은 저장하지 않음")
+    void krStopFillKey() {
+        JsonNode defaults = service.defaultsJson();
+        assertThat(defaults.path("kr").path("stopWatch").path("fill").asString()).isEqualTo("OFF");
+        java.util.List<String> order = new java.util.ArrayList<>();
+        defaults.path("kr").path("stopWatch").propertyNames().forEach(order::add);
+        assertThat(order).as("묶음 순서가 JVM마다 흔들리지 않게(LinkedHashMap)").containsExactly("mode", "fill");
+        assertThat(KrStopFill.of(defaults)).isEqualTo(KrStopFill.OFF);
+        assertThat(KrStopFill.effective(defaults)).isEqualTo(KrStopFill.OFF);
+
+        PaperSettingKeys.Spec fill = PaperSettingKeys.find("kr.stopWatch.fill").orElseThrow();
+        assertThat(fill.type()).isEqualTo(PaperSettingKeys.Type.CHOICE);
+        assertThat(fill.options()).containsExactly("OFF", "SHADOW", "ON");
+        assertThat(fill.affectsRules()).as("규칙 계좌 스탑의 장부 반영 시각이 바뀜").isTrue();
+        assertThat(fill.scope()).isEqualTo(PaperSettingKeys.Scope.KR);
+        assertThat(fill.description()).contains("ADR 0045, 기본 OFF").contains("kr.stopWatch.mode가 ON일 때만 뜻이 있음")
+                .contains("SHADOW는 장부를 그대로 두고").contains("ON은 관문을 지난 그 체결을 장중에 장부에 적음")
+                .contains("저장은 장 마감 뒤 ~ 다음 정기 결정 전");
+        java.util.List<String> keys = PaperSettingKeys.ALL.stream().map(PaperSettingKeys.Spec::key).toList();
+        assertThat(keys.indexOf("kr.stopWatch.fill")).as("감시 스위치 바로 뒤").isEqualTo(keys.indexOf("kr.stopWatch.mode") + 1);
+
+        // 키가 없는 옛 행(서버의 지금 행 — stopWatch 묶음에 mode만) — OFF로 읽고 판 그대로.
+        tools.jackson.databind.node.ObjectNode old = (tools.jackson.databind.node.ObjectNode) body();
+        ((tools.jackson.databind.node.ObjectNode) old.path("kr").path("stopWatch")).remove("fill");
+        assertThat(KrStopFill.of(body())).isEqualTo(KrStopFill.OFF);
+        assertThat(service.current().version()).isEqualTo(1);
+
+        assertThatThrownBy(() -> update("kr.stopWatch.fill", "AUTO")).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> update("kr.stopWatch.fill", true)).isInstanceOf(InvalidRequestException.class);
+        assertThat(service.current().version()).isEqualTo(1);
+        assertThat(update("kr.stopWatch.fill", "SHADOW").get("warning")).isEqualTo(PaperSettingKeys.KR_RULES_FROZEN_WARNING);
+        assertThat(KrStopFill.of(body())).isEqualTo(KrStopFill.SHADOW);
+        assertThat(KrStopFill.effective(body())).as("감시가 OFF면 유효 값은 OFF").isEqualTo(KrStopFill.OFF);
+        update("kr.stopWatch.mode", "ON");
+        assertThat(KrStopFill.effective(body())).isEqualTo(KrStopFill.SHADOW);
+    }
+
+    @Test
     @DisplayName("계좌2 키(claude2.*, 계좌2 명세 §13-2): 꺼짐·소상한 2·기다림 15·체결 기록 켬·장중 확인 꺼짐·투자 성향 공격투자형이 기본(11-02에 적극투자형에서 바꿈), 범위 CLAUDE2(시장 US)·규칙 계좌 영향 없음, 형·범위대로 검사 — 키가 없는 옛 행은 같은 값으로 읽히고 판이 오르지 않음")
     void claude2Keys() {
         JsonNode defaults = service.defaultsJson().path("claude2");
