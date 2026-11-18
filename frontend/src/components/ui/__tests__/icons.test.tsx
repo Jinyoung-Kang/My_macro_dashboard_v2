@@ -35,6 +35,7 @@ const ICONS = [
   "LockIcon",
   "MinusIcon",
   "PanelLeftIcon",
+  "PanelRightIcon",
   "PersonIcon",
   "PlusIcon",
   "RefreshIcon",
@@ -76,6 +77,22 @@ describe("장식 아이콘", () => {
     expect(svg.getAttribute("fill")).toBe("none");
     expect(svg.querySelector("title")).toBeNull();
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("칸 아이콘 — 왼쪽 칸(메뉴 접기)은 왼쪽 세로줄, 오른쪽 칸(검사 칸 열기)은 오른쪽 세로줄, 같은 틀·16·20px", () => {
+    const { container } = render(
+      <>
+        <icons.PanelLeftIcon />
+        <icons.PanelRightIcon />
+        <icons.PanelRightIcon size={20} />
+      </>,
+    );
+    const [left, right, large] = [...container.querySelectorAll("svg")];
+    expect(left.querySelector("rect")?.outerHTML).toBe(right.querySelector("rect")?.outerHTML);
+    expect(left.querySelector("path")?.getAttribute("d")).toBe("M9 4v16");
+    expect(right.querySelector("path")?.getAttribute("d")).toBe("M15 4v16");
+    expect(right.getAttribute("width")).toBe("16");
+    expect(large.getAttribute("width")).toBe("20");
   });
 
   it("크기를 주면 그 크기, 없으면 아이콘마다의 기본 크기", () => {
