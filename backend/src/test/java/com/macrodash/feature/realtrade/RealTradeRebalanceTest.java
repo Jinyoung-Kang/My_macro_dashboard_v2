@@ -109,6 +109,8 @@ class RealTradeRebalanceTest {
         Set<String> unpriced = Set.of();
         Set<String> own = Set.of();
         Set<String> opposite = Set.of();
+        /** 현재가는 있지만 상한가를 모르는 종목(수집기 사전 조회의 upperLimitPrice null). */
+        Set<String> noUpper = Set.of();
         Integer roomOrders = 200;
         BigDecimal roomBuyKrw = new BigDecimal("999999999");
 
@@ -158,7 +160,7 @@ class RealTradeRebalanceTest {
             all.addAll(prev.keySet());
             for (String symbol : all) {
                 if (!unpriced.contains(symbol)) {
-                    quotes.put(symbol, new Quote(BigDecimal.ONE, new BigDecimal("1.3")));
+                    quotes.put(symbol, new Quote(BigDecimal.ONE, noUpper.contains(symbol) ? null : new BigDecimal("1.3")));
                 }
             }
             return new Account(E.subtract(invested), positions, quotes, sellable, pending);
@@ -541,6 +543,40 @@ class RealTradeRebalanceTest {
         // 예외(보냄)에는 넣지 않음(늘 0 — 빠진 종목 수와 같은 규칙), 모르면 '?'
         assertThat(RealTradeRebalance.judge(base()).detail()).doesNotContainKey("sellsDropped");
         assertThat(RealTradeRebalance.summary(Inputs.UNKNOWN)).contains("밀리는 매도 ?");
+    }
+
+    // QA-802 — 상한가를 모르는 매수가 하루 건수 한도에 가려 U와 D 모두에서 빠졌다. 판정 계획의 limit()은 하루 건수(ordersLeft <= 0)를 상한가보다 먼저 보아
+    // 매도가 남은 건수 1을 쓰면 새 종목 매수 일곱이 deferred-daily-cap(U가 세지 않는 사유)이 되고, 하루 한도 셈의 하루 한도 없는 계획(need)은 그 일곱을
+    // price-missing으로 건너뛰어 상한가 금액을 잡지 않아 D 0.00 — 열두 확인을 모두 지나 예외로 153130 매도만 나간다(계획 3-2 'limit()의 상한가 모름 매수도
+    // price-missing으로 함께 멈춘다'와 어긋남). 수정 전: check null(예외), uncounted 0, dailyShortPct 0.00.
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-802 재현 — 수정 전에는 상한가 모름 매수가 하루 건수 한도에 가려 예외로 보냄")
+    @DisplayName("QA-802: 상한가 모름 매수가 하루 건수 한도에 가려도 빠진 종목으로 셈 — 기본 슬롯 153130 46.7% → 15종목, 새 종목 일곱 상한가 모름, 남은 건수 1 → uncounted")
+    void upperUnknownBuysMaskedByDailyOrdersStillUncounted() {
+        Map<String, Double> prev = merge(w(CASH, 46.672), each("ABCDEFGH", 6.666));
+        Map<String, Double> now = merge(each("ABCDEFGH", 6.666), each("IJKLMNO", 6.666));
+
+        // 대조 1 — 남은 건수가 넉넉하면 판정 계획의 limit()이 상한가 모름을 price-missing으로 남겨 지금도 U 7(uncounted)
+        Case roomy = new Case().prev(prev).held(prev).now(now);
+        roomy.noUpper = set("IJKLMNO");
+        assertThat(roomy.verdict().check()).isEqualTo("uncounted");
+        assertThat(roomy.inputs().uncounted()).isEqualTo(7);
+        // 대조 2 — 상한가를 알면 남은 건수 1에서 매수 일곱의 상한가 합이 못 내는 매수(60.66%)라 D가 멈춤
+        Case known = new Case().prev(prev).held(prev).now(now).room(100.0, 1);
+        assertThat(known.verdict().check()).isEqualTo("daily-cap-short");
+        pct(known.inputs().dailyShortPct(), 60.66);
+
+        // 반례 — 상한가 모름 + 남은 건수 1(= 매도 다리 수): 판정 계획에서는 일곱이 deferred-daily-cap, 하루 한도 셈에서는 price-missing
+        Case masked = new Case().prev(prev).held(prev).now(now).room(100.0, 1);
+        masked.noUpper = set("IJKLMNO");
+        Plan judged = RealTradeRebalance.judgePlan(now, E, masked.account(), Set.of(), BigDecimal.ZERO, RULES.withDaily(1, E), Set.of(),
+                BigDecimal.ZERO);
+        assertThat(judged.skipped()).as("판정 계획 — 하루 건수가 상한가 검사보다 먼저").extracting(RealTradePlanner.Skip::reason)
+                .containsOnly(RealTradePlanner.SKIP_DAILY_CAP);
+        Inputs in = masked.inputs();
+        assertThat(in.uncounted()).as("하루 한도 없는 계획에서 상한가 모름(price-missing)으로 빠진 일곱").isEqualTo(7);
+        assertThat(masked.verdict().check()).isEqualTo("uncounted");
+        assertThat(masked.verdict().detail()).containsEntry("uncounted", 7);
     }
 
     @Test

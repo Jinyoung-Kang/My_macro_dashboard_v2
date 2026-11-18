@@ -4114,6 +4114,50 @@ class RealTradeJobDbTest {
         assertHalted("A5", "uncounted");
     }
 
+    /**
+     * {@link #rulesAccount}와 같되 {@code noUpper} 종목은 현재가만 있고 상한가를 모름(수집기 사전 조회의 {@code upperLimitPrice} null — 상·하한가 칸은
+     * 필수가 아님).
+     */
+    private void rulesAccountNoUpper(Map<String, Double> heldPct, Set<String> quoted, Set<String> noUpper) {
+        List<Holding> hs = new ArrayList<>();
+        Map<String, Quote> quotes = new LinkedHashMap<>();
+        Map<String, BigDecimal> sellable = new LinkedHashMap<>();
+        long invested = 0;
+        for (Map.Entry<String, Double> e : heldPct.entrySet()) {
+            long qty = (long) Math.floor(e.getValue() * 100 + 1e-9);
+            hs.add(new Holding(e.getKey(), "합성" + e.getKey(), d(String.valueOf(qty)), d("1000")));
+            quotes.put(e.getKey(), new Quote(d("1000"), noUpper.contains(e.getKey()) ? null : d("1300"), null));
+            sellable.put(e.getKey(), d(String.valueOf(qty)));
+            invested += qty * 1000;
+        }
+        quoted.stream().filter(s -> !quotes.containsKey(s)).forEach(s -> quotes.put(s, new Quote(d("1000"), noUpper.contains(s) ? null : d("1300"),
+                null)));
+        when(client.preflight(any(), any())).thenReturn(Reply.of(new Preflight(clock.now, d(String.valueOf(10_000_000L - invested)), hs, quotes,
+                sellable)));
+    }
+
+    // QA-802 — 상한가를 모르는 매수가 하루 건수 한도에 가려 빠진 종목 수(U)와 하루 한도로 못 내는 매수(D) 모두에서 빠졌다. 수정 전: 예외로 보냄 —
+    // 'expected HALTED but was LIVE', 보낸 주문은 'SELL 153130 DAY 4666' 하나(새 종목 매수 일곱은 하루 건수로 미룸, 다음 날은 지금처럼 멈춤).
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-802 재현 — 수정 전에는 상한가 모름 매수가 하루 건수 한도에 가려 예외로 153130 매도만 나감")
+    @DisplayName("QA-802: 기본 슬롯 153130 46.7% → 15종목, 새 종목 일곱 상한가 모름, 남은 하루 건수 1(= 매도 다리 수) → uncounted, 묶음·주문 없음")
+    void rebalanceUpperUnknownMaskedByDailyOrdersHalts() {
+        Slot s = slot(0, 0);
+        rebalanceDay(s.prev(), s.prev(), s.now(), s.stops());
+        Set<String> fresh = new java.util.TreeSet<>();
+        for (int i = 0; i < 7; i++) {
+            fresh.add(fresh15(i));
+        }
+        rulesAccountNoUpper(s.prev(), s.now().keySet(), fresh);
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 1, 999_999_999L, 999_999_999L)));
+
+        run("09:10:05");
+
+        assertHalted("상한가 모름 + 남은 건수 1", "uncounted");
+        assertThat(haltDetail().path("uncounted").asInt()).isEqualTo(7);
+        assertThat(haltDetail().path("dailyShortPct").asDouble()).isZero();
+    }
+
     @Test
     @DisplayName("S2·S2d — 하루 한도로 오늘 못 내는 매수가 E의 20%를 넘음(남은 하루 매수 금액 0 / 남은 건수 5) → daily-cap-short, 주문 없음")
     void rebalanceDailyCapShortHalts() {
