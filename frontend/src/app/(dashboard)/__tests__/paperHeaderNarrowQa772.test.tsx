@@ -43,13 +43,14 @@ describe("QA-772 — 머리 둘째 줄: 계좌 고르기는 줄어들지 않고,
     expect(account).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
   });
 
-  it("DOM 차례 — 계좌 칸 → 동작 칸 → 한계·자세히(좁은 화면의 보이는 차례), 좁은 화면 order 바꾸기 없음", () => {
+  it("DOM 차례 — 계좌 칸 → 한계·자세히 → 동작 칸(보이는 차례 — 2f120aca의 계좌 → 동작 → 한계는 넓은 화면을 어긋나게 해 QA-778에서 바꿈), order 바꾸기 없음", () => {
     renderHeader();
     const details = screen.getByRole("button", { name: "자세히" });
     const following = (a: Node, b: Node) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-    expect(following(slot("account"), slot("actions"))).toBe(true);
-    expect(following(slot("actions"), details)).toBe(true);
+    expect(following(slot("account"), details)).toBe(true);
+    expect(following(details, slot("actions"))).toBe(true);
     const row = details.parentElement as HTMLElement;
     expect(classes(row)).not.toContain("order-last");
+    expect(classes(slot("actions")).some((name) => /(^|:)order-/.test(name))).toBe(false);
   });
 });

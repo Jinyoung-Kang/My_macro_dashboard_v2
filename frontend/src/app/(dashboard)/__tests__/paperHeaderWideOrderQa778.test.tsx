@@ -29,7 +29,7 @@ function renderHeader() {
 }
 
 describe("QA-778 — 머리의 DOM 차례가 어느 폭에서도 보이는 차례", () => {
-  it.fails("머리 안 어떤 요소도 CSS order로 차례를 바꾸지 않는다(접두 없는 order-*·lg:order-* 모두)", () => {
+  it("머리 안 어떤 요소도 CSS order로 차례를 바꾸지 않는다(접두 없는 order-*·lg:order-* 모두)", () => {
     const { container } = renderHeader();
     const header = container.querySelector("header") as HTMLElement;
     const reordered = [header, ...header.querySelectorAll<HTMLElement>("*")]
@@ -38,7 +38,7 @@ describe("QA-778 — 머리의 DOM 차례가 어느 폭에서도 보이는 차�
     expect(reordered).toEqual([]);
   });
 
-  it.fails("DOM 차례 — 제목 → 계좌 칸 → 한계·자세히·신선도 → 동작 칸(줄 끝)", () => {
+  it("DOM 차례 — 제목 → 계좌 칸 → 한계·자세히·신선도 → 동작 칸(줄 끝)", () => {
     const { container } = renderHeader();
     const account = container.querySelector('[data-paper-header-slot="account"]') as HTMLElement;
     const row = account.parentElement as HTMLElement;

@@ -1,7 +1,7 @@
 /**
  * 모의매매 머리(PaperHeader — 작업대 P6, 실행 명세 §7-1 '머리 압축').
  *
- *  - 한 줄: 제목(h1) · 시장 세그먼트(lg만) · 계좌 칸 · 한계 서랍 단추·자세히·신선도 · 동작 칸 — DOM 차례가 넓은 화면의 보이는 차례, 좁은 화면은 한계 줄이 맨 끝(order)
+ *  - 한 줄: 제목(h1) · 시장 세그먼트(lg만) · 계좌 칸 · 한계 서랍 단추·자세히·신선도 · 동작 칸 — DOM 차례가 어느 폭에서도 보이는 차례(order 없음 — QA-772·778)
  *  - 빈 칸(계좌·동작)은 숨김(empty:hidden), 칸 요소는 콜백 ref로 넘어감(data-paper-header-slot)
  *  - '자세히'는 aria-expanded·aria-controls 단추 — 접힌 동안에도 설명 글은 DOM에(hidden), 펼치면 보임
  *  - 한계 서랍: 단추 '이 장부의 한계 (n줄)'(aria-haspopup=dialog), 열면 서버 목록·계좌2 한계 영역·출처, Esc로 닫으면 단추로 포커스. 한계가 없으면 단추 없음
@@ -37,7 +37,7 @@ function renderHeader(over: Partial<Parameters<typeof PaperHeader>[0]> = {}) {
 }
 
 describe("PaperHeader", () => {
-  it("한 줄 머리 — 제목·세그먼트·계좌 칸·동작 칸·한계·자세히 DOM 차례(넓은 화면은 동작이 오른쪽 끝), 빈 칸은 숨김, 칸 요소를 콜백으로 넘긴다", () => {
+  it("한 줄 머리 — 제목·세그먼트·계좌 칸·한계·자세히·동작 칸 DOM 차례(넓은 화면은 동작이 줄 끝), 빈 칸은 숨김, 칸 요소를 콜백으로 넘긴다", () => {
     const { container, onAccountSlot, onActionsSlot } = renderHeader();
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
     const account = container.querySelector('[data-paper-header-slot="account"]') as HTMLElement;
@@ -46,21 +46,21 @@ describe("PaperHeader", () => {
     expect(onActionsSlot).toHaveBeenCalledWith(actions);
     expect(account.className).toContain("empty:hidden");
     expect(actions.className).toContain("empty:hidden");
-    // 넓은 화면은 동작이 오른쪽 끝(order·ml-auto), 계좌 칸은 고른 이름 폭 아래로 줄어들지 않음(QA-772).
+    // 넓은 화면은 동작이 줄 끝(ml-auto — order로 차례를 바꾸지 않음, QA-778), 계좌 칸은 고른 이름 폭 아래로 줄어들지 않음(QA-772).
     expect(actions.className).toContain("lg:ml-auto");
-    expect(actions.className).toContain("lg:order-last");
+    expect(actions.className).not.toContain("order-");
     expect(account.className).toContain("shrink-0");
     expect(account.className).not.toContain("flex-1");
-    // DOM 차례 = 좁은 화면의 보이는 차례(제목 → 계좌 → 동작 → 한계·자세히 — QA-772 Tab 차례).
+    // DOM 차례 = 어느 폭에서도 보이는 차례(제목 → 계좌 → 한계·자세히 → 동작 — QA-772·778 Tab 차례).
     const row = account.parentElement as HTMLElement;
     const order = [...row.children].map((child) =>
       child.getAttribute("data-paper-header-slot") ?? (child.querySelector("h1") ? "title" : child.querySelector("button") ? "meta" : "?"),
     );
-    expect(order).toEqual(["title", "account", "actions", "meta"]);
-    // 한계 줄은 좁은 화면에서 제 줄(basis-full), 차례를 바꾸지 않음.
-    const meta = row.children[3] as HTMLElement;
-    expect(meta.className).toContain("basis-full");
-    expect(meta.className).not.toContain("order-last");
+    expect(order).toEqual(["title", "account", "meta", "actions"]);
+    // 한계 묶음은 내용 폭 아래로 줄어들지 않고(들어가지 않으면 다음 줄), 차례를 바꾸지 않음.
+    const meta = row.children[2] as HTMLElement;
+    expect(meta.className).toContain("shrink-0");
+    expect(meta.className).not.toContain("order-");
   });
 
   it("시장 세그먼트 — lg만, 같은 탭의 두 시장 주소(지금 시장 aria-current), 그 시장에 없는 탭이면 그 시장의 개요", () => {
