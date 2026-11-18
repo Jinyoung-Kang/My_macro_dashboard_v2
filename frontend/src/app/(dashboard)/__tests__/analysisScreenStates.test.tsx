@@ -595,3 +595,69 @@ describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => 
     expect({ tinted, hyphen, raw }).toEqual({ tinted: [], hyphen: [], raw: "−0.30%" });
   });
 });
+
+describe("스코어카드 — 배치와 네 상태", () => {
+  const scorecardOnly = (answer: () => Promise<unknown>) =>
+    api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/stock/scorecard") ? answer() : new Promise(() => {})));
+
+  it("'종합 점수가 아닙니다' 주의 안내가 결과보다 먼저(늘 보임), 스코어 요약의 종목 타일은 종목 상세 링크, 표는 지표·실제 값·백분위·방향", async () => {
+    scorecardOnly(() => Promise.resolve(scorecardBody()));
+    render(<ScorecardPage />);
+    const strip = await screen.findByRole("region", { name: "스코어 요약" });
+    const caution = screen.getByText("이 카드는 종합 점수가 아닙니다.");
+    // 문서 차례: 주의 안내 → 조회 조건 → 요약 띠.
+    expect(caution.compareDocumentPosition(screen.getByLabelText("종목")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText("종목").compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("재무 안정성 — 수집하지 않습니다")).toBeTruthy();
+
+    const link = within(strip).getByRole("link");
+    expect(link.getAttribute("href")).toBe("/s/us/SYNQ");
+    expect(link.textContent).toContain("Synthetic Quote Inc. · Technology");
+    expect(within(strip).getByRole("group", { name: "가격 지표 평균" }).textContent).toContain("47점");
+    expect(within(strip).getByRole("group", { name: "비교 대상" }).textContent).toContain("136종목");
+
+    const table = screen.getByRole("table", { name: "지표별 점수" });
+    expect([...table.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["지표", "실제 값", "백분위", "방향"]);
+    const trend = [...table.querySelectorAll("tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent))[4];
+    expect(trend).toEqual(["추세 위치200일 이동평균 대비", "—값 없음", "—값 없음", "높을수록 좋음"]);
+    expect(within(table).getByTitle("표본이 부족해 값을 잴 수 없어 백분위도 없습니다")).toBeTruthy();
+    const raw = screen.getByRole("region", { name: "원자료" });
+    expect(within(raw).getByRole("group", { name: "측정 구간" }).textContent).toContain("최근 1년");
+  });
+
+  it("읽는 중·읽지 못함(다시 시도 +1)·저장본 없음 — 주의 안내와 조회 조건은 늘 그대로", async () => {
+    scorecardOnly(() => new Promise(() => {}));
+    const view = render(<ScorecardPage />);
+    expect(screen.getByText("스코어카드를 계산하는 중…")).toBeTruthy();
+    expect(screen.getByText("이 카드는 종합 점수가 아닙니다.")).toBeTruthy();
+    view.unmount();
+
+    scorecardOnly(() => Promise.reject(new Error("스코어카드를 읽지 못했습니다.")));
+    const failed = render(<ScorecardPage />);
+    expect(await screen.findByText("스코어카드를 읽지 못했습니다.")).toBeTruthy();
+    const scorecardCalls = () => api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/stock/scorecard")).length;
+    const before = scorecardCalls();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(scorecardCalls()).toBe(before + 1));
+    failed.unmount();
+
+    scorecardOnly(() => Promise.resolve({ available: false, message: "SYNQ 가격 이력이 없습니다.", symbol: "SYNQ", name: null, sector: null, benchmark: "SPY",
+      years: 1, universeLabel: "S&P 500 대형주", missing: [], caveat: "가격으로 잴 수 있는 것만 담은 카드입니다." }));
+    render(<ScorecardPage />);
+    expect(await screen.findByText("SYNQ 가격 이력이 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "스코어 요약" })).toBeNull();
+    expect(screen.getByLabelText("베타 기준")).toBeTruthy();
+  });
+
+  it("모르는 점수·비교 대상 수·베타는 '—'(0으로 채우지 않음)", async () => {
+    scorecardOnly(() => Promise.resolve(scorecardBody({ priceScore: null, scoredCount: undefined, universeSize: undefined,
+      raw: { momentum1m: null, momentum6m: null, beta: null, samples: 0 } })));
+    render(<ScorecardPage />);
+    const strip = await screen.findByRole("region", { name: "스코어 요약" });
+    for (const name of ["가격 지표 평균", "베타 (vs SPY)", "비교 대상"]) {
+      const tile = within(strip).getByRole("group", { name });
+      expect(tile.textContent).toContain("값 없음");
+      expect(tile.textContent).not.toMatch(/(^|[^\d])0(점|종목)/);
+    }
+  });
+});
