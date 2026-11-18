@@ -235,7 +235,7 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
   // Canvas로 지워져 상자가 없었음(P5b QA 스택 확인 — 배지를 표 열에서 검사 대화상자로 옮긴 뒤. 13F 보유 표 QA-697과 같은 무리). jsdom이라 그리지 않고
   // 클래스로 셉니다(QA-697 사례 꼴 — 테두리가 있거나, 없으면 놓인 면과 다른 바탕).
   // 수정 전 실패(plain it): 배지 둘 모두 { bordered: false, same: ["bg-surface-2"] }.
-  it.fails("대화상자의 기관 배지는 테두리 있는 상자 — 놓인 대화상자 면과 같은 바탕의 테두리 없는 배지가 없다(QA-725)", async () => {
+  it("대화상자의 기관 배지는 테두리 있는 상자 — 놓인 대화상자 면과 같은 바탕의 테두리 없는 배지가 없다(QA-725)", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/consensus")) {
         return Promise.resolve({
