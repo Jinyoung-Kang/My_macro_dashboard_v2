@@ -69,7 +69,8 @@ const PART_ID = { shared: "paper-settings-keys-shared", kr: "paper-settings-keys
  * 초점이 문서 처음(body)으로 떨어지던 것을 막습니다(실패하면 단추가 살아 있어 확인 창이 그 단추로 돌려줌).
  *
  * <p><b>배치</b>(작업대 P6 — 명세 §7-1 '설정'): 긴 화면 목차(SectionIndex — xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위 가로 줄)의 칸은 '바꿀 값' ·
- * 공용·미국 키(하위 칸 = 서버 묶음) · 한국 키(kr.* 묶음) · '바꾼 기록'이고, 새로 고친·바로 연 주소의 #절로 맞춥니다(alignHashOnLoad). 가운데는 지금처럼
+ * 공용·미국 키(하위 칸 = 서버 묶음) · 한국 키(kr.* 묶음) · '바꾼 기록'이고, 새로 고친·바로 연 주소의 #절로 맞춥니다(alignHashOnLoad). 묶음 칸이 많아 세로
+ * 목록이 화면보다 길 수 있어 그 안에서 스크롤합니다(columnScroll — QA 자료 25묶음에서 966px). 가운데는 지금처럼
  * '바꿀 값'(저장·되돌리기·확인 창) → 묶음별 편집 줄 → 바꾼 기록이고, 편집 줄 전체가 검사 칸 틀(InspectorFrame lg — 틀 52rem부터 옆 18rem, 그 아래는
  * 위쪽 대화상자 — 열면 제목에 포커스)입니다. 줄 끝 아이콘 단추('{키} 자세히')가 그 키의 검사 칸을 엽니다 — 읽기만 합니다(설명 전체·형·범위·고를 값·
  * 시장·지금 값·기본값·같은가·규칙 계좌 영향·설정 행·그 키의 바꾼 기록 — 모두 이미 읽은 두 응답의 값, 새 요청 없음). 값 입력은 가운데 줄에만 있습니다.
@@ -159,7 +160,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
   return (
     <>
       {banner}
-      <SectionIndex label="설정 목차" items={navItems} columnFrom="xl" alignHashOnLoad>
+      <SectionIndex label="설정 목차" items={navItems} columnFrom="xl" alignHashOnLoad columnScroll>
         <SectionAnchor id={PENDING_ID} columnFrom="xl">
           <Panel
             title="설정"

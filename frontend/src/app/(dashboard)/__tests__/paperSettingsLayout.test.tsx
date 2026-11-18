@@ -123,6 +123,8 @@ describe("설정 탭 재배치 — 목차", () => {
     expect(document.getElementById("paper-settings-keys-kr")?.querySelector("#paper-settings-kr")).not.toBeNull();
     // 묶음 제목은 패널 머리 그대로(긴 이름).
     expect(screen.getByRole("heading", { name: "기관 선정 — 트랙레코드(그룹 A)" })).toBeTruthy();
+    // 묶음이 많으면 세로 목록이 화면보다 길어 그 안에서 스크롤(SectionIndex columnScroll).
+    expect(column.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-h-[calc(100dvh-5rem)]", "overflow-y-auto"]));
   });
 
   it("한국 화면 기본 보기('한국 + 공용')면 그 밖 칸 이름은 '공용 키' — 보이는 키 수만 셈", async () => {
