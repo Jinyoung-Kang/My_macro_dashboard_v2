@@ -17,13 +17,18 @@ const api = vi.hoisted(() => {
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
-// jsdom에서는 차트를 재지 못해 그림은 빼고 이름만 둡니다(비중 글은 표·목록에 있음).
-vi.mock("@/components/charts", () => ({
-  LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
-  MultiLineSeries: () => null,
-  WeightHeatmap: () => null,
-  HorizontalBars: () => null,
-}));
+// jsdom에서는 차트를 재지 못해 그림은 빼고 이름만 둡니다(비중 글은 표·목록에 있음). 표 히트맵(HeatmapTable — 그림이 아니라 표, Recharts 없음)은
+// 실제 부품을 씁니다(스타일 화면 유사도 행렬의 칸·단계를 봄 — QA-707).
+vi.mock("@/components/charts", async () => {
+  const heatmap = await vi.importActual<typeof import("@/components/charts/HeatmapTable")>("@/components/charts/HeatmapTable");
+  return {
+    LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+    MultiLineSeries: () => null,
+    WeightHeatmap: () => null,
+    HorizontalBars: () => null,
+    HeatmapTable: heatmap.HeatmapTable,
+  };
+});
 
 import { kstToday, rangeStart } from "@/lib/infoSearch";
 import type { GuruHoldersResponse } from "@/lib/types";
@@ -380,5 +385,31 @@ describe("스타일 — '가장 닮은 짝' 막대가 고대비에서 사라진�
     expect(bars).toHaveLength(3);
     expect(bars.map((bar) => (bar.getAttribute("class") ?? "").split(/\s+/).includes("forced-color-adjust-none"))).toEqual([true, true, true]);
     expect([...table.querySelectorAll("tbody tr")].map((row) => row.lastElementChild?.textContent)).toEqual(["42.5", "12.3", "0.0"]);
+  });
+});
+
+describe("스타일 — 기관 간 유사도 행렬이 계열 파랑 농도로 칠해진다(QA-707)", () => {
+  // 수정 전 실패: 칸이 인라인 rgba(57, 135, 229, 0.08~0.63)(계열 파랑 #3987e5 — 강조 파랑과 ΔE 3.4, 명세 §3-5 '순차는 accent·up·down과 다른 계열' 위반)이고
+  // 대각선이 인라인 rgba(139, 148, 158, 0.12)(토큰 밖 회색), 단계 범례가 없음.
+  it.fails("칸은 순차 팔레트 단계(data-step — 겹침 비중이면 최댓값 100의 비율), 대각선(자기 자신)은 중립 면, 0은 칠하지 않고, 단계 범례가 있다", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY_BODY) : new Promise(() => {}));
+    render(<GuruPage />);
+    const matrix = await screen.findByRole("region", { name: "기관 간 유사도 행렬 (좌우 스크롤)" });
+    const cells = [...matrix.querySelectorAll("tbody tr")].map((row) =>
+      [...row.querySelectorAll("td.tabular-nums")].map((cell) => {
+        const element = cell as HTMLElement;
+        return element.getAttribute("data-step") ?? (element.classList.contains("bg-surface-2") ? "self" : element.style.backgroundColor || "none");
+      }));
+    expect({
+      cells,
+      rgba: (matrix.innerHTML.match(/rgba\([^)]*\)/g) ?? []).length,
+      legend: within(matrix).queryByRole("list", { name: "칸 색 단계" }) !== null,
+    }).toEqual({
+      // 42.5 → 0.425(단계 3), 12.25 → 0.1225(단계 1), 0 → 칠하지 않음.
+      cells: [["self", "3", "1"], ["3", "self", "none"], ["1", "none", "self"]],
+      rgba: 0,
+      legend: true,
+    });
   });
 });
