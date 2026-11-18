@@ -79,6 +79,7 @@ import type {
   PaperSettingsResponse,
   PaperStatusResponse,
 } from "@/lib/types";
+import { DetailFold } from "./DetailFold";
 import { TickerName } from "./TickerName";
 import { Claude2CheckpointLine, Claude2WindowList } from "./Claude2StartSection";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
@@ -775,22 +776,19 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
       )}
 
       {response && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">결정 기록 원본(JSON)</summary>
+        <DetailFold summary="결정 기록 원본(JSON)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{response}</pre>
-        </details>
+        </DetailFold>
       )}
       {raw && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">모델 응답 원문</summary>
+        <DetailFold summary="모델 응답 원문">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{raw}</pre>
-        </details>
+        </DetailFold>
       )}
       {packet && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">입력 패킷(JSON)</summary>
+        <DetailFold summary="입력 패킷(JSON)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{packet}</pre>
-        </details>
+        </DetailFold>
       )}
     </section>
   );

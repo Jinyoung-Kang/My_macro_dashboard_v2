@@ -73,7 +73,7 @@ async function openDecision(id: number, name: string): Promise<HTMLElement> {
 const smallSummaries = (root: HTMLElement) => smallTargets(root).filter((entry) => entry.startsWith("summary"));
 
 describe("QA-748 결정·복기 상세의 접기 머리는 좁은 화면에서 44px 누름 자리", () => {
-  it.fails("미국 Claude 결정 상세 — 결정 기록 원본·모델 응답 원문·입력 패킷", async () => {
+  it("미국 Claude 결정 상세 — 결정 기록 원본·모델 응답 원문·입력 패킷", async () => {
     const row = decision(22, "claude");
     reads["/api/paper/overview"] = overview([book("rules", { kind: "RULES", label: "규칙 계좌" }), book("claude", { kind: "CLAUDE", label: "Claude 계좌" })]);
     reads["/api/paper/decisions?book=rules&limit=50"] = { available: true, decisions: [] };
@@ -90,9 +90,15 @@ describe("QA-748 결정·복기 상세의 접기 머리는 좁은 화면에서 4
     const detail = await openDecision(22, "2026-10-26 정기");
     expect(detail.querySelectorAll("summary")).toHaveLength(3);
     expect(smallSummaries(detail)).toEqual([]);
+    // 머리는 브라우저 삼각형 대신 공용 아래 화살표(펼치면 뒤집힘), 처음에는 접힘.
+    for (const summary of detail.querySelectorAll("summary")) {
+      expect(summary.className).toContain("list-none");
+      expect(summary.querySelector("svg")?.getAttribute("class")).toContain("group-open:rotate-180");
+      expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
+    }
   });
 
-  it.fails("한국 결정 상세 — 후보 표 보기(규칙 계좌)·사건 패킷 글(Claude 계좌)", async () => {
+  it("한국 결정 상세 — 후보 표 보기(규칙 계좌)·사건 패킷 글(Claude 계좌)", async () => {
     window.history.replaceState(null, "", "/paper/kr/decisions");
     reads["/api/paper/overview?market=KR"] = overview(
       [book("kr_rules", { kind: "RULES", label: "한국 규칙 계좌" }), book("kr_claude", { kind: "CLAUDE", label: "한국 Claude 계좌" })],
@@ -131,7 +137,7 @@ describe("QA-748 결정·복기 상세의 접기 머리는 좁은 화면에서 4
     expect([...rulesSmall, ...smallSummaries(claudeDetail)]).toEqual([]);
   });
 
-  it.fails("주간 복기 상세 — 복기 입력·복기 응답(JSON)", async () => {
+  it("주간 복기 상세 — 복기 입력·복기 응답(JSON)", async () => {
     reads["/api/paper/overview"] = overview([book("rules", { kind: "RULES", label: "규칙 계좌" }), book("claude", { kind: "CLAUDE", label: "Claude 계좌" })]);
     reads["/api/paper/decisions?book=rules&limit=50"] = { available: true, decisions: [] };
     const week = {

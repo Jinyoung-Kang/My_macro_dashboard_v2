@@ -15,6 +15,7 @@ import {
 } from "@/lib/paperKr";
 import { paperTabPath } from "@/lib/paperRoutes";
 import { PaperBadge } from "./PaperBadge";
+import { DetailFold } from "./DetailFold";
 import { TickerName } from "./TickerName";
 
 /**
@@ -55,8 +56,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
           {view.exclusions.length > 0 && (
             <p className="text-xs text-text-2">제외 — {view.exclusions.map((row) => `${row.reason} ${row.count}`).join(" · ")}</p>
           )}
-          <details className="rounded-control border border-border px-3 py-2 text-xs">
-            <summary className="cursor-pointer text-text-3">후보 표 보기</summary>
+          <DetailFold summary="후보 표 보기">
             <div className="mt-2">
               <DataTable
                 caption="후보"
@@ -71,7 +71,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
                 ]}
               />
             </div>
-          </details>
+          </DetailFold>
         </Part>
       )}
 
@@ -240,10 +240,9 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
         ]}
       />
       {events.text && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">사건 패킷 글(제목)</summary>
+        <DetailFold summary="사건 패킷 글(제목)">
           <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{events.text}</pre>
-        </details>
+        </DetailFold>
       )}
     </Part>
   );

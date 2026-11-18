@@ -43,6 +43,7 @@ import type {
   PaperRunReviewResult,
   PaperStatusResponse,
 } from "@/lib/types";
+import { DetailFold } from "./DetailFold";
 import { TickerName } from "./TickerName";
 
 /**
@@ -365,16 +366,14 @@ function ReviewBody({
         </dl>
       )}
       {view.input && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
+        <DetailFold summary="복기 입력(JSON — 서버가 장부에서 만든 사실)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.input}</pre>
-        </details>
+        </DetailFold>
       )}
       {view.response && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">복기 응답(JSON)</summary>
+        <DetailFold summary="복기 응답(JSON)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.response}</pre>
-        </details>
+        </DetailFold>
       )}
     </section>
   );
