@@ -296,7 +296,7 @@ function riskBody(over: Record<string, unknown> = {}) {
 
 describe("스타일 — 종목별 위험 기여는 등락이 아니다(QA-704)", () => {
   // 수정 전 실패: 위험 기여 칸이 deltaColor로 양수 빨강(text-up)·음수 파랑(text-down)이고 음수 부호가 ASCII '-'('-0.42%p') — 기여는 오르내린 값이 아님.
-  it.fails("위험 기여·기여 비중 칸에 상승·하락 글자색이 없고 음수는 −(U+2212)", async () => {
+  it("위험 기여·기여 비중 칸에 상승·하락 글자색이 없고 음수는 −(U+2212)", async () => {
     api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/guru/risk") ? Promise.resolve(riskBody()) : new Promise(() => {})));
     render(<GuruPage />);
     const table = (await screen.findByText("SYNTHETIC GOLD CO")).closest("table") as HTMLElement;

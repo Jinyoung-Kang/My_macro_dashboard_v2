@@ -20,7 +20,7 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch } from "@/lib/detail";
-import { deltaColor, EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit } from "@/lib/format";
+import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
@@ -489,17 +489,14 @@ function RiskCard() {
                 key: "contribution",
                 header: "위험 기여",
                 align: "right",
-                render: (row) => (
-                  <span className={`font-semibold ${deltaColor(row.contribution, 2)}`}>
-                    {formatWithUnit(row.contribution, 2, "%p")}
-                  </span>
-                ),
+                // 포트폴리오 변동성에 보탠 몫이라 오르내린 값이 아닙니다 — 등락색 없이 본문 잉크, 음수(분산 효과로 줄인 몫)는 −(U+2212)(QA-704).
+                render: (row) => <span className="font-semibold">{withMinusSign(formatWithUnit(row.contribution, 2, "%p"))}</span>,
               },
               {
                 key: "share",
                 header: "기여 비중",
                 align: "right",
-                render: (row) => formatWithUnit(row.share, 1, "%"),
+                render: (row) => withMinusSign(formatWithUnit(row.share, 1, "%")),
               },
             ]}
           />
