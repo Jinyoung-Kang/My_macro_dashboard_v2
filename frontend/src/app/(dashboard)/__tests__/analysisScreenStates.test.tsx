@@ -582,7 +582,7 @@ describe("스타일 — 기관별 성격을 처음 읽지 못한 뒤 다시 읽�
   // 위험 패널이 같은 경로를 자기 훅으로 따로 읽어, 첫 읽기가 실패한 뒤 '성격 새로고침'·성격 패널 '다시 시도'(화면 위쪽 훅만 다시 부름)로 표는 돌아와도
   // 위험 패널 '기관' 고르기는 선택지 0개로 남아 바꿀 수 없었음(P5b QA 스택 확인 — 전부터). 실패한 동안은 두 패널이 같은 상태(선택지 없음)입니다.
   // 수정 전 실패(plain it): { failed: [], recovered: [] } — 다시 읽은 뒤에도 선택지 0개.
-  it.fails("'성격 새로고침'으로 다시 읽으면 성격 표와 함께 위험 패널 '기관' 고르기의 선택지도 돌아온다", async () => {
+  it("'성격 새로고침'으로 다시 읽으면 성격 표와 함께 위험 패널 '기관' 고르기의 선택지도 돌아온다", async () => {
     const control = serve();
     render(<GuruPage />);
     await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");
@@ -595,7 +595,7 @@ describe("스타일 — 기관별 성격을 처음 읽지 못한 뒤 다시 읽�
   });
 
   // 수정 전 실패(plain it): { failed: [], recovered: [] }.
-  it.fails("성격 패널의 '다시 시도'로 다시 읽어도 위험 패널 '기관' 고르기의 선택지가 돌아온다", async () => {
+  it("성격 패널의 '다시 시도'로 다시 읽어도 위험 패널 '기관' 고르기의 선택지가 돌아온다", async () => {
     const control = serve();
     render(<GuruPage />);
     await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");

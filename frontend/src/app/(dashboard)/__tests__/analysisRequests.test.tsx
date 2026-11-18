@@ -2,9 +2,10 @@
  * 교집합(/consensus)·스타일(/style)·스코어카드(/scorecard) 화면의 요청 지킴 — 작업대 개편(P5b 분석 갈래)이 화면을 다시 짜도 읽는 경로·횟수·자동 갱신 간격이
  * 그대로인지 봅니다. 개편 전 코드에서 먼저 통과시켜 두고, 개편 커밋들이 그대로 통과해야 합니다(계획 §5-4 '요청 지킴 시험').
  *
- * - 열 때: 화면마다 읽는 경로와 횟수 — 두 부품이 같은 경로를 따로 읽는 자리도 지금 값 그대로 적습니다(교집합의 원/달러 둘 — 화면과 신규 매수 패널,
- *   스타일의 기관별 성격 둘 — 성격 패널과 위험 패널의 기관 고르기). 시험의 목(apiGetShared)은 한 번 부를 때마다 셉니다 — 실제 브라우저에서는 같은
- *   경로를 동시에 읽으면 한 요청을 함께 씁니다(lib/sharedRequest).
+ * - 열 때: 화면마다 읽는 경로와 횟수 — 두 부품이 같은 경로를 따로 읽는 자리도 지금 값 그대로 적습니다(교집합의 원/달러 둘 — 화면과 신규 매수 패널).
+ *   시험의 목(apiGetShared)은 한 번 부를 때마다 셉니다 — 실제 브라우저에서는 같은 경로를 동시에 읽으면 한 요청을 함께 씁니다(lib/sharedRequest).
+ *   스타일의 기관별 성격은 예전에 둘(성격 패널과 위험 패널의 기관 고르기가 따로 읽음)이었는데, 위험 패널이 화면의 읽기를 받아 쓰게 되어 하나입니다
+ *   (QA-727 — 이 셈만 2 → 1로 바뀌고 실제 브라우저 요청 수는 같음: 그때도 동시 요청이 하나로 합쳐졌음).
  * - 자동 갱신: 1분 이상 간격의 타이머를 하나씩 불러 다시 읽은 경로를 봅니다(원/달러 2분만 — 나머지는 자동 갱신 없음).
  * - 조작 뒤에는 바뀐 조건의 경로만 한 번 더(나머지는 다시 읽지 않음).
  * 검사 칸 열기처럼 개편이 새로 두는 조작의 '+0' 사례는 그 조작을 두는 커밋에서 이 파일에 더합니다.
@@ -210,31 +211,31 @@ function styleReads() {
 }
 
 describe("스타일 화면의 요청", () => {
-  it("열 때 기관별 성격은 두 부품이 한 번씩, 유사도·위험(버크셔·SPY·1년)·원/달러는 한 번씩 — 자동 갱신은 원/달러만 2분, 보유 기관 검색은 찾기 전에 부르지 않음", async () => {
+  it("열 때 기관별 성격(성격 패널과 위험 패널의 기관 고르기가 함께 씀)·유사도·위험(버크셔·SPY·1년)·원/달러를 한 번씩 — 자동 갱신은 원/달러만 2분, 보유 기관 검색은 찾기 전에 부르지 않음", async () => {
     render(<GuruPage />);
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
-    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
+    expect(counts()).toEqual({ [PROFILES]: 1, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
 
     expect(await refreshTimers()).toEqual({ 120_000: [USDKRW] });
   });
 
-  it("'새로고침'은 기관별 성격만 한 번 더(위험 패널의 기관 목록·유사도·위험은 다시 읽지 않음)", async () => {
+  it("'새로고침'은 기관별 성격만 한 번 더(위험 패널의 기관 목록도 이 한 번으로 함께 새로 받음 — QA-727, 유사도·위험은 다시 읽지 않음)", async () => {
     styleReads();
     render(<GuruPage />);
     await screen.findByRole("option", { name: "브리지워터" });
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
 
     fireEvent.click(screen.getByRole("button", { name: /새로고침$/ }));
 
-    await waitFor(() => expect(counts()[PROFILES]).toBe(3));
-    expect(counts()).toEqual({ [PROFILES]: 3, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
+    await waitFor(() => expect(counts()[PROFILES]).toBe(2));
+    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
   });
 
   it("'다시 계산'은 같은 위험을, 기관·벤치마크·측정 구간 고르기는 바뀐 조건의 위험을 한 번씩 더 — 다른 경로는 다시 읽지 않음", async () => {
     styleReads();
     render(<GuruPage />);
     await screen.findByRole("option", { name: "브리지워터" });
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
 
     fireEvent.click(screen.getByRole("button", { name: "다시 계산" }));
     await waitFor(() => expect(counts()[RISK]).toBe(2));
@@ -252,7 +253,7 @@ describe("스타일 화면의 요청", () => {
     await waitFor(() => expect(counts()[byYears]).toBe(1));
 
     expect(counts()).toEqual({
-      [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 2, [USDKRW]: 1, [byInstitution]: 1, [byBenchmark]: 1, [byYears]: 1,
+      [PROFILES]: 1, [SIMILARITY]: 1, [RISK]: 2, [USDKRW]: 1, [byInstitution]: 1, [byBenchmark]: 1, [byYears]: 1,
     });
   });
 
@@ -260,25 +261,25 @@ describe("스타일 화면의 요청", () => {
     styleReads();
     render(<GuruPage />);
     await screen.findByRole("option", { name: "코사인 유사도" });
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
 
     fireEvent.change(screen.getByLabelText("기준"), { target: { value: "cosine" } });
     await act(async () => {});
 
-    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
+    expect(counts()).toEqual({ [PROFILES]: 1, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
   });
 
   it("'찾기'는 적은 종목명으로 보유 기관을 한 번 읽는다", async () => {
     styleReads();
     render(<GuruPage />);
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
 
     fireEvent.change(screen.getByPlaceholderText("NVIDIA"), { target: { value: "NVIDIA" } });
     fireEvent.click(screen.getByRole("button", { name: "찾기" }));
 
     const holders = endpoints.institution.guruHolders("NVIDIA");
     await waitFor(() => expect(counts()[holders]).toBe(1));
-    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1, [holders]: 1 });
+    expect(counts()).toEqual({ [PROFILES]: 1, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1, [holders]: 1 });
   });
 });
 
@@ -287,13 +288,13 @@ describe("스타일 화면의 요청 — 검사 칸(P5b)", () => {
     styleReads();
     render(<GuruPage />);
     const trigger = await screen.findByRole("button", { name: "브리지워터" });
-    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+    await waitFor(() => expect(calledPaths()).toHaveLength(4));
 
     fireEvent.click(trigger);
     expect(await screen.findByRole("dialog", { name: "브리지워터" })).toBeTruthy();
     await act(async () => {});
 
-    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
+    expect(counts()).toEqual({ [PROFILES]: 1, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
   });
 });
 
