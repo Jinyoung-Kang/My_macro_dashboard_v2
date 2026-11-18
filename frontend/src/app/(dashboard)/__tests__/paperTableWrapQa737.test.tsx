@@ -93,3 +93,16 @@ describe("QA-737 — 모의 표의 짧은 한국어 칸은 글자 사이에서 �
     for (const cell of column(table, "방향")) expect(classes(cell), cell.tagName).toContain("whitespace-nowrap");
   });
 });
+
+// QA-776 — 계좌 상세 두 표를 옛 ui Table(모든 칸 break-keep)에서 공용 DataTable(칸 기본 규칙 없음)로 옮기며(작업대 P6) 한국어 이름 칸의 줄바꿈 규칙이 빠짐.
+describe("QA-776 — 계좌 상세 최근 체결·구성 표의 종목 칸은 낱말 사이에서만 꺾인다", () => {
+  it.fails("최근 체결·구성 표의 '종목' 칸에 break-keep(옛 ui Table과 같은 규칙)", async () => {
+    render(<AccountDetailPanel id="detail" book={BOOK as never} books={[BOOK] as never} onClose={() => {}} />);
+    await settled();
+    const fills = within(screen.getByRole("region", { name: "최근 체결" })).getByRole("table");
+    const composition = screen.getByRole("table", { name: "구성" });
+    for (const cell of [...column(fills, "종목").slice(1), ...column(composition, "종목").slice(1)]) {
+      expect(classes(cell), cell.textContent ?? "").toContain("break-keep");
+    }
+  });
+});
