@@ -149,13 +149,13 @@ describe("SplitPane", () => {
     });
   });
 
-  // P5b — 왼쪽 목록·조건 + 가운데 고른 대상(13F 포트폴리오·교집합): 오른쪽 칸을 주지 않으면 두 칸 틀.
-  describe("right를 주지 않으면 두 칸 틀", () => {
+  // P5b — 왼쪽 목록·조건 + 가운데 고른 대상(13F 포트폴리오·교집합): columns={2}면 두 칸 틀.
+  describe("columns={2}면 두 칸 틀", () => {
     const TWO = ["lg:grid", "lg:grid-cols-[13rem_minmax(0,1fr)]"];
 
     it("뿌리는 lg 미만 한 칸·lg 이상 왼쪽 13rem · 가운데(xl에서도 두 칸 — 세 칸 클래스·줄 나눔 없음), 칸은 둘", () => {
       const { container } = render(
-        <SplitPane left={<p>목록</p>}>
+        <SplitPane columns={2} left={<p>목록</p>}>
           <p>가운데</p>
         </SplitPane>,
       );
@@ -167,7 +167,7 @@ describe("SplitPane", () => {
 
     it("자식 차례는 왼쪽 → 가운데(읽는 차례·Tab 차례), 왼쪽 칸은 두 줄을 걸치지 않음", () => {
       const { container } = render(
-        <SplitPane left={<a href="#a">목록 링크</a>}>
+        <SplitPane columns={2} left={<a href="#a">목록 링크</a>}>
           <a href="#b">가운데 링크</a>
         </SplitPane>,
       );
@@ -180,7 +180,7 @@ describe("SplitPane", () => {
 
     it("leftWidth='wide'면 왼쪽 칸만 15rem", () => {
       const { container } = render(
-        <SplitPane leftWidth="wide" left={<p>목록</p>}>
+        <SplitPane columns={2} leftWidth="wide" left={<p>목록</p>}>
           <p>가운데</p>
         </SplitPane>,
       );
@@ -192,7 +192,7 @@ describe("SplitPane", () => {
 
     it("collapseLeft와 함께: 단추 → 왼쪽 → 가운데(셋), 왼쪽 칸은 lg 미만에서만 숨김·줄 걸침 없음", () => {
       const { container } = render(
-        <SplitPane collapseLeft="기관 목록" left={<a href="#a">목록 링크</a>}>
+        <SplitPane columns={2} collapseLeft="기관 목록" left={<a href="#a">목록 링크</a>}>
           <a href="#b">가운데 링크</a>
         </SplitPane>,
       );
@@ -207,15 +207,28 @@ describe("SplitPane", () => {
       expect([...root.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["목록 링크", "가운데 링크"]);
     });
 
-    it("right={null}은 '준 것' — 세 칸 틀 그대로(빈 오른쪽 칸 자리)", () => {
+    it("columns를 주지 않으면 right가 undefined·null이어도 같은 세 칸 틀(빈 오른쪽 칸 자리) — right의 있고 없음으로 틀이 바뀌지 않음", () => {
+      for (const right of [null, undefined]) {
+        const { container, unmount } = render(
+          <SplitPane left={<p>목록</p>} right={right}>
+            <p>가운데</p>
+          </SplitPane>,
+        );
+        const root = container.firstElementChild as HTMLElement;
+        expect(tokens(root)).toEqual(expect.arrayContaining(ENTITY_FRAME.split(" ")));
+        expect(root.children).toHaveLength(3);
+        unmount();
+      }
+    });
+
+    it("columns={2}면 right를 주어도 그리지 않음(두 칸)", () => {
       const { container } = render(
-        <SplitPane left={<p>목록</p>} right={null}>
+        <SplitPane columns={2} left={<p>목록</p>} right={<p>오른쪽</p>}>
           <p>가운데</p>
         </SplitPane>,
       );
-      const root = container.firstElementChild as HTMLElement;
-      expect(tokens(root)).toEqual(expect.arrayContaining(ENTITY_FRAME.split(" ")));
-      expect(root.children).toHaveLength(3);
+      expect((container.firstElementChild as HTMLElement).children).toHaveLength(2);
+      expect(screen.queryByText("오른쪽")).toBeNull();
     });
   });
 });

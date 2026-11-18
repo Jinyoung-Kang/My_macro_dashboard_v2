@@ -100,6 +100,7 @@ export default function ConsensusPage() {
 
       {/* 왼쪽 칸 — 분석 대상 기관(거르기 목록)과 조건. 좁은 화면은 한 칸으로 위에 둡니다(접지 않음 — 조작이 지금처럼 바로 보임). */}
       <SplitPane
+        columns={2}
         left={
           <>
             <Panel

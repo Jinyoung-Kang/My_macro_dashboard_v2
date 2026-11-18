@@ -102,6 +102,7 @@ export default function InstitutionsPage() {
       />
 
       <SplitPane
+        columns={2}
         left={
           <>
             {/*
