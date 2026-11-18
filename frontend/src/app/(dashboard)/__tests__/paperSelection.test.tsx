@@ -136,10 +136,14 @@ async function openSelectionTab() {
   fireEvent.click(await screen.findByRole("tab", { name: "기관 선정" }));
 }
 
-/** Empty 패턴(DataTable의 모르는 칸) — 보이는 "—" + 읽어 주는 "값 없음"(sr-only). 후보 표(펼침 행이 있는 옛 표)는 "—" 그대로. */
+/** Empty 패턴(DataTable의 모르는 칸) — 보이는 "—" + 읽어 주는 "값 없음"(sr-only). 후보 표도 공용 표(작업대 P6 — QA-735)라 같습니다. */
 const NONE = "—값 없음";
 const headersOf = (container: HTMLElement) => within(container).getAllByRole("columnheader").map((th) => th.textContent);
-const cellsOf = (name: string) => within(screen.getByRole("row", { name })).getAllByRole("cell").map((td) => td.textContent);
+/** 후보 표의 그 기관 줄 — 기관 칸의 줄 단추('{기관} 구간 보기', 그룹 B는 '… (그룹 B) 구간 보기')로 찾습니다(공용 표 행에는 이름이 없음). */
+const rowOf = (name: string) => screen.getByRole("button", { name: `${name} 구간 보기` }).closest("tr") as HTMLElement;
+const findRow = async (name: string) => (await screen.findByRole("button", { name: `${name} 구간 보기` })).closest("tr") as HTMLElement;
+/** 줄의 칸 글(행 머리 기관 칸 포함, DOM 차례). */
+const cellsOf = (name: string) => [...rowOf(name).children].map((cell) => cell.textContent);
 
 describe("계산 전(computed:false)", () => {
   it("수집 진행률만 보이고, 후보 표·수익률 칸은 그리지 않는다 — 다음 단계 안내도 없다", async () => {
@@ -190,7 +194,7 @@ describe("계산된 트랙레코드", () => {
   it("자격 있는 기관은 순위·선정 배지와 서버 값 그대로, 커버리지는 % 표기", async () => {
     await openSelectionTab();
 
-    await screen.findByRole("row", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
+    await findRow("버크셔 해서웨이 (Berkshire Hathaway)");
     const cells = cellsOf("버크셔 해서웨이 (Berkshire Hathaway)");
     expect(cells[0]).toBe("1");
     expect(cells[2]).toBe("자격");
@@ -209,29 +213,32 @@ describe("계산된 트랙레코드", () => {
   it("자격 없음·수집 중인 행은 서버 사유를 보이고 순위는 —, 모르는 숫자는 전부 —", async () => {
     await openSelectionTab();
 
-    await screen.findByRole("row", { name: "사이언 (Scion Asset Management)" });
+    await findRow("사이언 (Scion Asset Management)");
     const scion = cellsOf("사이언 (Scion Asset Management)");
-    expect(scion[0]).toBe("—");
+    expect(scion[0]).toBe(NONE);
     expect(scion[2]).toBe(`자격 없음${SCION_REASON}`);
-    expect(scion[3]).toBe("—");
+    expect(scion[3]).toBe(NONE);
 
     const tudor = cellsOf("튜더 (Tudor Investment)");
-    expect(tudor[0]).toBe("—");
+    expect(tudor[0]).toBe(NONE);
     expect(tudor[2]).toBe(`수집 중${TUDOR_REASON}`);
     expect(tudor[4]).toBe("12/30 · 수집 중");
-    expect(tudor.slice(6)).toEqual(Array(9).fill("—"));
-    expect(within(screen.getByRole("row", { name: "튜더 (Tudor Investment)" })).queryByText(/0\.00/)).toBeNull();
+    expect(tudor.slice(6)).toEqual(Array(9).fill(NONE));
+    expect(within(rowOf("튜더 (Tudor Investment)")).queryByText(/0\.00/)).toBeNull();
   });
 
-  it("행을 펼치면 구간 표 — 커버리지가 수익률보다 먼저, 수익률이 없는 구간은 —", async () => {
+  it("기관 칸의 '구간 보기'가 구간 표를 대화상자로 연다 — 커버리지가 수익률보다 먼저, 수익률이 없는 구간은 —", async () => {
     await openSelectionTab();
 
-    const row = await screen.findByRole("row", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
-    const toggle = within(row).getByRole("button", { name: "구간 펼치기" });
+    const row = await findRow("버크셔 해서웨이 (Berkshire Hathaway)");
+    const toggle = within(row).getByRole("button", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간 보기" });
+    expect(toggle.textContent).toContain("구간 보기");
+    expect(toggle.getAttribute("aria-haspopup")).toBe("dialog");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle);
 
-    const periods = screen.getByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간" });
+    const dialog = screen.getByRole("dialog", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간" });
+    const periods = within(dialog).getByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간" });
     expect(headersOf(periods)).toEqual(["공시일", "보고 분기", "시작", "끝", "커버리지", "수익률", "SPY"]);
     const first = within(periods).getByText("2026-05-15").closest("tr") as HTMLElement;
     expect(within(first).getAllByRole("cell").map((td) => td.textContent))
@@ -241,8 +248,8 @@ describe("계산된 트랙레코드", () => {
     expect(lastCells[4]).toBe("0.0% (티커 0개 · 보유 40줄)");
     expect(lastCells[5]).toBe(NONE);
 
-    // 다시 누르면 접습니다.
-    fireEvent.click(within(row).getByRole("button", { name: "구간 접기" }));
+    // Esc로 닫습니다(연 단추로 포커스 — 공용 대화상자).
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간" })).toBeNull();
   });
 
@@ -281,7 +288,7 @@ describe("두 기관 그룹(D27)", () => {
     await openSelectionTab();
 
     const duquesneRow = "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)";
-    await screen.findByRole("row", { name: duquesneRow });
+    await findRow(duquesneRow);
     const duquesne = cellsOf(duquesneRow);
     expect(duquesne[0]).toBe("1");
     expect(duquesne[1]).toContain("스탠리 드러켄밀러, 테크 트렌드 포착형 매크로 운용 · CIK 0001536411");
@@ -291,16 +298,16 @@ describe("두 기관 그룹(D27)", () => {
     expect(duquesne[8]).toBe("+26.80%");
 
     const norges = cellsOf("노르웨이 국부펀드 (Norges Bank / GPFG) (그룹 B)");
-    expect(norges[0]).toBe("—");
+    expect(norges[0]).toBe(NONE);
     expect(norges[2]).toBe("자격 없음평균 커버리지 57.0% < 70%");
     expect(norges[4]).toBe("q8");
   });
 
-  it("그룹 B 행을 펼치면 그 행의 구간 표만 — 2년 창 문구", async () => {
+  it("그룹 B 행의 '구간 보기'는 그 행의 구간 표만 — 2년 창 문구", async () => {
     await openSelectionTab();
 
-    const row = await screen.findByRole("row", { name: "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)" });
-    fireEvent.click(within(row).getByRole("button", { name: "구간 펼치기" }));
+    const row = await findRow("듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B)");
+    fireEvent.click(within(row).getByRole("button", { name: "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B) 구간 보기" }));
 
     const periods = screen.getByRole("region", { name: "듀케인 패밀리 오피스 (Duquesne Family Office) (그룹 B) 구간" });
     expect(within(periods).getByText(/첫 구간은 2년 창 시작으로/)).toBeTruthy();

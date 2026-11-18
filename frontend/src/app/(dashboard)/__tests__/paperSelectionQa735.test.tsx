@@ -75,10 +75,10 @@ function wideAncestors(element: HTMLElement): string[] {
 }
 
 describe("QA-735 — 기관 선정 구간이 표 밖(검사 대화상자)에 그려진다", () => {
-  it.fails("펼친 구간은 table 조상 안이 아니고, 조상 어디에도 390px보다 넓은 최소 폭이 없다", async () => {
+  it("펼친 구간은 table 조상 안이 아니고, 조상 어디에도 390px보다 넓은 최소 폭이 없다", async () => {
     render(<PaperScreen initialTab="selection" />);
     await act(async () => {});
-    await screen.findByText(NAME);
+    await screen.findAllByText(NAME);
     openPeriods(NAME);
     const periods = screen.getByRole("region", { name: `${NAME} 구간` });
     expect(periods.closest("table")).toBeNull();
