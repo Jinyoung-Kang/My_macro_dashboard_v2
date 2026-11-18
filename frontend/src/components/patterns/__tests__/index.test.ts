@@ -14,6 +14,7 @@ import * as ChangeChip from "../ChangeChip";
 import * as DataTable from "../DataTable";
 import * as Empty from "../Empty";
 import * as EntityHeader from "../EntityHeader";
+import * as FilterList from "../FilterList";
 import * as Hero from "../Hero";
 import * as patterns from "../index";
 import * as InspectorFrame from "../InspectorFrame";
@@ -36,6 +37,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   DataTable,
   Empty,
   EntityHeader,
+  FilterList,
   Hero,
   InspectorFrame,
   KpiStrip,
@@ -82,6 +84,7 @@ describe("components/patterns 배럴", () => {
         "Empty",
         "EntityHeader",
         "EstimateBadge",
+        "FilterList",
         "Hero",
         "InspectorFrame",
         "InspectorTrigger",

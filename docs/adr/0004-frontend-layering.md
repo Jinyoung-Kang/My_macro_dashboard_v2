@@ -154,3 +154,9 @@
   데이터 칸 강조색 금지 목록·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
   비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/charts/__tests__/HeatmapTable.test.tsx`·
   `components/charts/__tests__/weightHeatmapQa692.test.tsx`·`lib/__tests__/heatmap.test.ts`.
+- 거르기 목록 `components/patterns/FilterList.tsx` — 화면 패턴(이름 있는 묶음 role="group" 안의 `<button aria-pressed>` 줄 — 단추 이름은 항목 이름 그대로, 체크 표시는 장식, 보조 글은 단추 설명
+  (aria-describedby), 여럿 고름(켬·끔)·하나 고름(고른 줄을 다시 눌러도 그대로), 넓은 화면은 늘 세로 목록 32px 줄(여럿은 16px 잉크 체크 상자, 하나는 잉크 막대 `SELECTED_BAR`·중립 바탕),
+  좁은 화면은 44px 태그 줄바꿈(기본) 또는 세로 목록, 개수 줄·읽는 중/오류 자리·빈 목록 글, 고대비에서 켠 줄 2px 테두리, 말줄임 없이 낱말 사이 줄바꿈). 값을 그리는 패턴이 아니라
+  고르는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않지만(목차 `SectionIndex`와 같은 처리 — 까닭은 그 시험의 주석) 강조 파랑 없이 잉크·중립 바탕으로 고름을 보입니다(원칙 A1).
+  처음 쓰는 곳은 교집합 화면의 분석 대상 기관(기관 칩 12개를 바꿈)·13F 포트폴리오 화면의 기관 목록(P5b), P6 체결·선정 거르기·P7 알림 거르기가 같은 패턴을 씁니다.
+  지키는 시험은 `components/patterns/__tests__/FilterList.test.tsx`.
