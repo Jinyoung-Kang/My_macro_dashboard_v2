@@ -413,3 +413,44 @@ describe("스타일 — 기관 간 유사도 행렬이 계열 파랑 농도로 �
     });
   });
 });
+
+describe("스타일 — 머리 '새로고침'·13F 한계 안내·'읽는 법' 접기", () => {
+  it("'새로고침'은 화면 머리(h1과 같은 머리)의 동작이고 이름은 '기관별 성격 새로고침'(보이는 글 '새로고침'을 담음), 누르면 기관별 성격만 한 번 더", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<GuruPage />);
+    const button = screen.getByRole("button", { name: "기관별 성격 새로고침" });
+    expect(button.textContent).toBe("새로고침");
+    expect(button.closest("header")?.querySelector("h1")?.textContent).toBe("기관 13F 스타일·위험");
+    // 성격 패널 머리에는 단추가 없습니다(머리 동작으로 옮김).
+    const panel = screen.getByRole("heading", { name: "기관별 성격" }).closest("section") as HTMLElement;
+    expect(within(panel).queryByRole("button", { name: /새로고침/ })).toBeNull();
+    const profiles = () => api.apiGetShared.mock.calls.filter(([path]) => path === "/api/guru/profiles").length;
+    const before = profiles();
+    fireEvent.click(button);
+    await waitFor(() => expect(profiles()).toBe(before + 1));
+  });
+
+  it("13F 공시의 한계는 제목 있는 중립 안내 상자로 늘 보이고, 긴 설명 셋은 처음에 접힌 '읽는 법'", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path === "/api/guru/profiles") {
+        return Promise.resolve({ available: true, note: "13F 저장본 기준", rows: [{ cik: "0000000031", key: "a", name: "가상 자산운용", desc: "합성", reportDate: "2026-06-30",
+          totalValue: 1e9, holdingCount: 10, effectiveHoldings: 5.5, hhi: 0.18, top10Weight: 90, turnover: null, quarterCount: 1 }] });
+      }
+      if (path.startsWith("/api/guru/similarity")) return Promise.resolve(SIMILARITY_BODY);
+      if (path.startsWith("/api/guru/risk")) return Promise.resolve(riskBody());
+      return new Promise(() => {});
+    });
+    render(<GuruPage />);
+    expect(screen.getByText("13F 공시의 한계")).toBeTruthy();
+    expect(screen.getByText(/미국 상장 롱 포지션만/)).toBeTruthy();
+    await screen.findByText("SYNTHETIC GOLD CO");
+    await screen.findByRole("region", { name: "기관 간 유사도 행렬 (좌우 스크롤)" });
+    const guides = [...document.querySelectorAll("details")].filter((details) => details.querySelector("summary")?.textContent?.startsWith("읽는 법"));
+    expect(guides.map((details) => [details.querySelector("summary")?.textContent, details.open])).toEqual([
+      ["읽는 법 — 유효 종목 수·회전율", false],
+      ["읽는 법 — 겹침 비중·코사인", false],
+      ["읽는 법 — 위험 기여", false],
+    ]);
+    expect(guides[0].textContent).toContain("1 ÷ 허핀달 지수");
+  });
+});

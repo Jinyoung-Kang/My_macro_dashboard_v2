@@ -4,21 +4,23 @@ import { useMemo, useState } from "react";
 import { HeatmapTable, HorizontalBars } from "@/components/charts";
 import { DataTable } from "@/components/patterns";
 import {
-  Banner,
   Button,
-  Card,
+  buttonClasses,
+  Callout,
   ErrorState,
   Freshness,
   inputClasses,
   Loading,
   Metric,
   PageHeader,
+  Panel,
   Select,
   SourceBadge,
   Table,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
@@ -39,19 +41,34 @@ import { similarityHeatmap, similarityMax, similarityPairs, similarityStepLabel,
  * <p>13F 화면은 "누가 무엇을 들고 있나"를 보여 줍니다. 이 화면은 한 발 더
  * 들어가 <b>어떤 식으로</b> 들고 있는지를 봅니다 — 몇 종목에 쏠려 있는지,
  * 누구와 닮았는지, 그 포트폴리오가 얼마나 흔들렸는지.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리(동작 '새로고침' = 기관별 성격 다시 읽기) → 13F 공시의 한계(중립 안내 상자 — 늘 보임) → '기관별 성격' →
+ * '기관 간 유사도' → '포트폴리오 위험' → '이 종목을 누가 들고 있나'. 패널 아래의 긴 설명 문단은 '읽는 법' 접기입니다(글 그대로).
  */
 export default function GuruPage() {
+  // 기관별 성격 — 머리의 '새로고침'이 이 읽기를 다시 부릅니다(예전 성격 카드 머리의 단추를 화면 머리 동작으로 — 명세 §7 4행). 위험 패널의 기관 고르기는
+  // 같은 경로를 따로 읽는 훅 그대로입니다(요청 수 그대로 — 실제 브라우저에서는 동시 요청이 하나로 합쳐짐, lib/sharedRequest).
+  const profiles = useApi<GuruProfilesResponse>(endpoints.institution.guruProfiles);
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader title="기관 13F 스타일·위험" description="집중도 · 회전율 · 기관 간 유사도 · 포트폴리오 위험 (13F 공시 기준)" />
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
+      <PageHeader
+        title="기관 13F 스타일·위험"
+        description="집중도 · 회전율 · 기관 간 유사도 · 포트폴리오 위험 (13F 공시 기준)"
+        actions={
+          // 보이는 글 '새로고침', 이름은 무엇을 다시 읽는지까지 '기관별 성격 새로고침'(보이는 글을 담음 — WCAG 2.5.3). 공용 단추(Button)와 같은 모양입니다.
+          <button type="button" onClick={profiles.reload} aria-label="기관별 성격 새로고침" className={buttonClasses("default", "md")}>
+            새로고침
+          </button>
+        }
+      />
 
-      <Banner tone="info">
+      <Callout tone="neutral" title="13F 공시의 한계">
         13F는 <b>미국 상장 롱 포지션만</b> 공시 대상입니다. 채권·현금·해외 상장분·
         공매도는 이 숫자에 들어 있지 않습니다. 분기말 기준이며 제출까지 최대{" "}
         <b>45일 지연</b>됩니다 — 지금의 포지션이 아닙니다.
-      </Banner>
+      </Callout>
 
-      <ProfilesCard />
+      <ProfilesCard profiles={profiles} />
       <SimilarityCard />
       <RiskCard />
       <HoldersCard />
@@ -66,19 +83,19 @@ export default function GuruPage() {
  * 투자자가 같은 칸에 놓입니다. 3,000종목을 들고 있어도 상위 몇 개에 쏠려 있으면
  * 이 값은 수십으로 나옵니다.
  */
-function ProfilesCard() {
-  const { data, loading, error, reload } = useApi<GuruProfilesResponse>(endpoints.institution.guruProfiles);
+function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruProfilesResponse>> }) {
+  const { data, loading, error, reload } = profiles;
   const usdKrw = useUsdKrw();
 
   return (
-    <Card
+    <Panel
       title="기관별 성격" source={SOURCES.sec13f}
+      count={(data?.rows?.length ?? 0) > 0 ? `${data!.rows.length.toLocaleString("ko-KR")}곳` : undefined}
       subtitle={data?.note}
-      actions={<Button onClick={reload}>새로고침</Button>}
     >
       {loading && !data && <Loading label="13F 저장본을 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
       {(data?.rows?.length ?? 0) > 0 && (
         <Table
@@ -155,13 +172,13 @@ function ProfilesCard() {
         />
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-text-3">
+      <ReadingGuide topic="유효 종목 수·회전율">
         <b>유효 종목 수</b> = 1 ÷ 허핀달 지수. 한 종목에 몰아넣었으면 1에 가깝고, 고르게
         나눴으면 실제 종목 수에 가까워집니다. <b>회전율</b>은 분기 사이에 갈아탄 비중이며,
         100%면 포트폴리오가 통째로 바뀐 것입니다. 직전 분기가 없으면 {EMPTY}입니다 — 0으로
         두면 &ldquo;한 주도 안 바꿨다&rdquo;로 읽힙니다.
-      </p>
-    </Card>
+      </ReadingGuide>
+    </Panel>
   );
 }
 
@@ -180,7 +197,7 @@ function SimilarityCard() {
   const pairsCaption = `가장 닮은 짝 — ${mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 ${pairs.length}`;
 
   return (
-    <Card
+    <Panel
       title="기관 간 유사도" source={SOURCES.sec13f}
       subtitle={data?.note}
       actions={
@@ -197,7 +214,7 @@ function SimilarityCard() {
     >
       {loading && !data && <Loading label="유사도를 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
       {pairs.length > 0 && (
         <>
@@ -265,12 +282,12 @@ function SimilarityCard() {
         </div>
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-text-3">
+      <ReadingGuide topic="겹침 비중·코사인">
         <b>겹침 비중</b>은 각 종목에서 작은 쪽 비중을 더한 값입니다 — 애플을 한쪽이 10%,
         다른 쪽이 3% 들고 있으면 겹치는 것은 3%입니다. <b>코사인</b>은 비중의 모양만 봅니다.
         종목 수가 크게 다른 두 곳에서는 두 값이 엇갈릴 수 있고, 그 엇갈림 자체가 정보입니다.
-      </p>
-    </Card>
+      </ReadingGuide>
+    </Panel>
   );
 }
 
@@ -289,7 +306,7 @@ function RiskCard() {
   const metrics = data?.metrics;
 
   return (
-    <Card
+    <Panel
       title="포트폴리오 위험" source={SOURCES.sec13fWithPrices}
       subtitle="13F 비중으로 수익률을 재구성해 변동성·VaR·베타·추적오차를 잽니다."
       actions={
@@ -332,7 +349,7 @@ function RiskCard() {
 
       {loading && !data && <Loading label="포트폴리오 위험을 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
       {/*
         커버리지를 결과보다 **먼저** 보여 줍니다. 13F에는 티커가 없어 이름으로
@@ -340,7 +357,7 @@ function RiskCard() {
         전체인 것처럼 보여 주면 안 됩니다.
       */}
       {coverage && (
-        <Banner tone={coverage.weight >= 70 ? "info" : "warn"}>
+        <Callout tone={coverage.weight >= 70 ? "neutral" : "warn"}>
           <div>
             커버리지 <b>{formatWithUnit(coverage.weight, 1, "%")}</b> — 보유 {coverage.totalHoldings}종목
             중 <b>{coverage.holdings}종목</b>의 가격을 찾았습니다. 아래 값은 이 비중만으로 낸
@@ -364,7 +381,7 @@ function RiskCard() {
               </ul>
             </details>
           )}
-        </Banner>
+        </Callout>
       )}
 
       {/* 값은 손실·변동 폭이라 등락색 없이 본문 잉크, 음수(VaR·ES는 손실이라 음수)는 −(U+2212)(QA-709). */}
@@ -465,11 +482,11 @@ function RiskCard() {
               },
             ]}
           />
-          <p className="mt-2 text-xs leading-relaxed text-text-3">
+          <ReadingGuide topic="위험 기여">
             <b>기여의 합 = 포트폴리오 변동성</b>입니다. 개별 변동성을 그냥 더하면 분산 효과가
             사라져 합이 맞지 않습니다. 비중이 큰 종목이 곧 위험이 큰 종목은 아닙니다 — 조용한
             대형주 20%와 널뛰는 종목 5%의 기여가 뒤집히는 일이 흔합니다.
-          </p>
+          </ReadingGuide>
         </div>
       )}
 
@@ -478,7 +495,7 @@ function RiskCard() {
           <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
         </p>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -496,7 +513,7 @@ function HoldersCard() {
   const noMatch = data && (data.rows?.length ?? 0) === 0 ? holdersNoMatch(data.query || query) : null;
 
   return (
-    <Card
+    <Panel
       title="이 종목을 누가 들고 있나" source={SOURCES.sec13f}
       subtitle="13F 공시 이름은 대문자 영문입니다 (예: APPLE, NVIDIA, BERKSHIRE)."
     >
@@ -581,6 +598,6 @@ function HoldersCard() {
           />
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }
