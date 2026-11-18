@@ -658,6 +658,37 @@ function scorecardBody(over: Record<string, unknown> = {}) {
   };
 }
 
+describe("스코어카드 — 주의 안내가 처음 읽는 동안과 값이 온 뒤 같은 꼴이다(QA-716)", () => {
+  /** 백엔드 ScorecardService가 늘 보내는 글·목록(응답과 같은 값 — 화면이 처음 읽는 동안 둘 자리의 기준). */
+  const CAVEAT = "가격으로 잴 수 있는 것만 담은 카드입니다. 종합 점수가 아니며, 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다.";
+  const MISSING = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"];
+  /** 주의 안내 상자 — 본문 글(첫 줄)과 빠진 것 목록의 줄 수(값 줄 또는 자리 줄). */
+  function callout() {
+    const box = screen.getByText("이 카드는 종합 점수가 아닙니다.").closest("div.rounded-control") as HTMLElement;
+    const list = box.querySelector("ul");
+    return { caveat: box.querySelector("div.mt-1")?.textContent ?? null, lines: list ? list.children.length : 0 };
+  }
+
+  // 수정 전 실패(plain it): { sameCaveat: false, pendingLines: 0, loadedLines: 3 } — 처음 읽는 동안의 본문 글(화면의 대체 글)이 응답 글보다 짧고('종합 점수가 아니며,'
+  // 없음) 빠진 것 목록이 응답이 와야 생겨, 값이 오면 안내 상자가 자라 아래 조회 조건·결과를 밀었음(검토 자기 빌드 CLS 390 0.1905·1024 0.054).
+  it.fails("처음 읽는 동안 본문 글은 응답과 같은 글이고 빠진 것 목록 자리가 응답과 같은 줄 수", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    const view = render(<ScorecardPage />);
+    const pending = callout();
+    view.unmount();
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody({ caveat: CAVEAT, missing: MISSING })) : new Promise(() => {}));
+    render(<ScorecardPage />);
+    await screen.findByRole("region", { name: "스코어 요약" });
+    const loaded = callout();
+    expect({ sameCaveat: pending.caveat === loaded.caveat, pendingLines: pending.lines, loadedLines: loaded.lines }).toEqual({
+      sameCaveat: true,
+      pendingLines: 3,
+      loadedLines: 3,
+    });
+  });
+});
+
 describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => {
   // 수정 전 실패: '실제 값' 칸이 deltaColor라 양수인 변동성·최대낙폭까지 상승 빨강(text-up)·음수 모멘텀은 하락 파랑이고, 음수 부호가 ASCII '-'
   // (표 '-5.2%', 원자료 1개월 수익률 '-0.30%').
