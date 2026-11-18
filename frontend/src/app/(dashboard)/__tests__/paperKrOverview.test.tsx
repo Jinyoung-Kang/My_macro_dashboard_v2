@@ -614,3 +614,34 @@ describe("오늘 추정 꼬리(한국)", () => {
     expect(screen.queryByText(/^점선 /)).toBeNull();
   });
 });
+
+// QA-817 — 개요 '한국 수집 상태' 표 머리·칸의 한국어가 음절 중간에서 꺾임(개편 전부터 — 390·1024 '공공데이터' / '포털', '고유번호'·'없음'). 글이 든 칸
+// (항목·기준·범위·상태)은 낱말 사이에서만 꺾여야 합니다(break-keep).
+describe("QA-817 — 한국 수집 상태 표의 칸은 낱말 사이에서만 꺾인다", () => {
+
+  /** 표에서 머리 글이 `header`인 열의 칸들(머리 포함) — 정렬 표시(↕↑↓)는 떼고 봅니다. */
+  function columnCells(table: HTMLElement, header: string): HTMLElement[] {
+    const heads = within(table).getAllByRole("columnheader");
+    const index = heads.findIndex((th) => th.textContent?.replace(/[↕↑↓]/g, "") === header);
+    if (index < 0) throw new Error(`열 없음: ${header}`);
+    return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
+  }
+
+  it.fails("항목·기준·범위·상태 열의 머리·칸에 break-keep", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({
+      ...KR_STATUS,
+      collection: {
+        quotes: { task: "kr_paper_quotes", dataset: "paper.kr.quotes", available: true, collectedAtKst: "2026-10-30 22:05 KST",
+          session: "2026-10-30", universeDate: "2026-10-29", scope: 103, stale: false, staleReason: null },
+        universe: { available: true, baseDate: "2026-10-29", size: 100, behind: false, behindReason: null },
+      },
+    });
+    render(<PaperPage market="KR" />);
+    const region = await screen.findByRole("region", { name: "한국 수집 상태 (좌우 스크롤)" });
+    const table = within(region).getByRole("table");
+    for (const header of ["항목", "기준(세션·기준일)", "범위·개수", "상태"]) {
+      for (const cell of columnCells(table, header)) expect(cell.className.split(/\s+/), `${header}: ${cell.textContent ?? ""}`).toContain("break-keep");
+    }
+  });
+});

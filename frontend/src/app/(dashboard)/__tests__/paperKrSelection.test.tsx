@@ -303,3 +303,30 @@ describe("한국 종목 선정 탭", () => {
     expect(await screen.findByText(/#41\)은 선정 칸이 없습니다\(기한 지남·일시정지 등\) — 결정 기한이 지나 주문 없음/)).toBeTruthy();
   });
 });
+
+// QA-817 — 한국 종목 선정 표의 한국어가 음절 중간에서 꺾임(개편 전부터): '매수 목표' 표의 종목 이름(CodeName — 390 '한화에어로' / '스페이스', 다섯 줄 모두)과
+// '유니버스 구성원' 표의 '사유' 칸(min-w-64뿐 — '최' / '소', '기' / '관'). 이름은 한 덩어리로 다음 줄에, 사유는 낱말 사이에서만 꺾여야 합니다(break-keep).
+describe("QA-817 — 한국 종목 선정 표의 이름·사유는 낱말 사이에서만 꺾인다", () => {
+
+  /** 표에서 머리 글이 `header`인 열의 칸들(머리 포함) — 정렬 표시(↕↑↓)는 떼고 봅니다. */
+  function columnCells(table: HTMLElement, header: string): HTMLElement[] {
+    const heads = within(table).getAllByRole("columnheader");
+    const index = heads.findIndex((th) => th.textContent?.replace(/[↕↑↓]/g, "") === header);
+    if (index < 0) throw new Error(`열 없음: ${header}`);
+    return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
+  }
+
+  it.fails("매수 목표 표의 종목 이름과 구성원 표 '사유' 칸에 break-keep", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
+      available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
+    });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    reads["/api/paper/decisions/45"] = () => Promise.resolve(LATEST_DETAIL);
+    renderSelection();
+    const targets = await screen.findByRole("region", { name: "매수 목표" });
+    const name = within(targets).getByText("삼성전자");
+    expect(name.closest(".break-keep"), name.parentElement?.outerHTML ?? "").not.toBeNull();
+    const members = screen.getByRole("table", { name: "유니버스 구성원" });
+    for (const cell of columnCells(members, "사유")) expect(cell.className.split(/\s+/), cell.textContent ?? "").toContain("break-keep");
+  });
+});
