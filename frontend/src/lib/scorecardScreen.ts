@@ -95,6 +95,12 @@ export function metricScoreEmptyReason(metric: Pick<ScorecardMetric, "value" | "
   return metric.value === null ? "표본이 부족해 값을 잴 수 없어 백분위도 없습니다" : "비교 대상이 10개 미만이라 백분위를 내지 않습니다";
 }
 
+/** 백분위를 모르는 까닭의 짧은 글 — 표 칸 '—' 옆에 늘 보이는 글(긴 글은 마우스 설명 — QA-719). 백분위가 있으면 null. */
+export function metricScoreEmptyShort(metric: Pick<ScorecardMetric, "value" | "score">): string | null {
+  if (finite(metric.score)) return null;
+  return metric.value === null ? "표본 부족" : "비교 대상 10개 미만";
+}
+
 /** 지표별 백분위 막대 — 백분위를 모르는 지표는 뺍니다(0으로 그리지 않음). */
 export function metricBars(metrics: readonly ScorecardMetric[] | null | undefined): { name: string; value: number }[] {
   return (metrics ?? []).filter((metric) => finite(metric.score)).map((metric) => ({ name: metric.label, value: metric.score as number }));

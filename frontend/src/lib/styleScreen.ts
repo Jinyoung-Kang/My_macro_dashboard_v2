@@ -131,8 +131,11 @@ function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** 회전율을 모르는 까닭 — 표 칸의 마우스 설명과 같은 글. */
+/** 회전율을 모르는 까닭 — 검사 칸의 까닭 글·표 칸의 마우스 설명. */
 export const TURNOVER_EMPTY_REASON = "직전 분기가 없어 계산할 수 없습니다";
+
+/** 회전율을 모르는 까닭의 짧은 글 — 표 칸 '—' 옆에 늘 보이는 글(QA-719 — 예전에는 마우스 설명에만 있었음). */
+export const TURNOVER_EMPTY_SHORT = "직전 분기 없음";
 
 /**
  * 기관 성격 검사 칸 속성 — 기관 소개(긴 글)·CIK(고정폭)·기준 분기·포트폴리오 총액·원화 환산(보조 = 환율 문구)·종목 수·유효 종목 수(보조 '1 ÷ HHI')·

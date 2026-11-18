@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   metricBars,
   metricScoreEmptyReason,
+  metricScoreEmptyShort,
   metricValueText,
   priceScoreNote,
   scorecardKpis,
@@ -71,6 +72,12 @@ describe("스코어카드 — 지표 표·막대", () => {
   it("백분위를 모르는 까닭은 값이 없을 때(표본 부족)와 비교 대상이 모자랄 때를 나눈다(QA-088), 백분위가 있으면 null", () => {
     expect(metricScoreEmptyReason({ value: null, score: null })).toBe("표본이 부족해 값을 잴 수 없어 백분위도 없습니다");
     expect(metricScoreEmptyReason({ value: 3, score: null })).toBe("비교 대상이 10개 미만이라 백분위를 내지 않습니다");
+    // 표 칸 '—' 옆의 짧은 까닭(QA-719) — 백분위가 있으면 없음
+    expect([metricScoreEmptyShort({ value: null, score: null }), metricScoreEmptyShort({ value: 3, score: null }), metricScoreEmptyShort({ value: 3, score: 40 })]).toEqual([
+      "표본 부족",
+      "비교 대상 10개 미만",
+      null,
+    ]);
     expect(metricScoreEmptyReason({ value: 3, score: 0 })).toBeNull();
   });
 

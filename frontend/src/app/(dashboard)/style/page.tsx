@@ -48,6 +48,7 @@ import {
   similarityStepLabel,
   similarityText,
   TURNOVER_EMPTY_REASON,
+  TURNOVER_EMPTY_SHORT,
 } from "@/lib/styleScreen";
 
 /**
@@ -165,10 +166,11 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
                   key: "turnover",
                   header: "분기 회전율",
                   align: "right",
+                  // 모르면 '—' 옆에 짧은 까닭을 늘 보이게(긴 글은 마우스 설명) — 예전에는 마우스 설명에만 있었고 표 아래 설명 문단은 '읽는 법' 접기 안이었음(QA-719).
                   cell: (row) =>
                     row.turnover === null ? (
                       <span className="text-text-3" title={TURNOVER_EMPTY_REASON}>
-                        <Empty align="end" />
+                        <Empty align="end" reason={TURNOVER_EMPTY_SHORT} />
                       </span>
                     ) : (
                       formatWithUnit(row.turnover, 1, "%")

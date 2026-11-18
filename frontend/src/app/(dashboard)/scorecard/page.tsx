@@ -9,6 +9,7 @@ import { formatNumber } from "@/lib/format";
 import {
   metricBars,
   metricScoreEmptyReason,
+  metricScoreEmptyShort,
   metricValueText,
   scorecardKpis,
   scorecardRawKpis,
@@ -166,8 +167,9 @@ export default function ScorecardPage() {
                       cell: (row) =>
                         row.score === null ? (
                           // 값 자체가 없으면(표본 부족) 원인은 비교 대상 수가 아닙니다 — 두 경우를 나눠 적습니다(QA-088).
+                          // 짧은 까닭은 '—' 옆에 늘 보이게, 긴 글은 마우스 설명(QA-719 — 예전에는 마우스 설명에만 있었음).
                           <span className="text-text-3" title={metricScoreEmptyReason(row) ?? undefined}>
-                            <Empty align="end" />
+                            <Empty align="end" reason={metricScoreEmptyShort(row)} />
                           </span>
                         ) : (
                           <span className="font-semibold">{formatNumber(row.score, 0)}점</span>

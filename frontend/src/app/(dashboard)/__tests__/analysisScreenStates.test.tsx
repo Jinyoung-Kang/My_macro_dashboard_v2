@@ -521,7 +521,7 @@ describe("스타일 — 기관별 성격 표와 검사 칸", () => {
     ]);
     expect(within(table).queryByText("합성 소개 — 가치 투자")).toBeNull();
     const [first, second] = [...table.querySelectorAll("tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent));
-    expect(first).toEqual(["가상 자산운용 (Synthetic AM)", "2,500억 달러", "40", "8.21 ÷ HHI", "88.1%", "—값 없음", "2026-06-30"]);
+    expect(first).toEqual(["가상 자산운용 (Synthetic AM)", "2,500억 달러", "40", "8.21 ÷ HHI", "88.1%", "—값 없음직전 분기 없음", "2026-06-30"]);
     expect(second).toEqual(["가상 연기금", "—값 없음", "700", "—값 없음", "40.2%", "12.5%", "—값 없음"]);
     expect(within(table).getByTitle("직전 분기가 없어 계산할 수 없습니다")).toBeTruthy();
     // 패널 머리 개수.
@@ -727,7 +727,7 @@ describe("스코어카드 — 배치와 네 상태", () => {
     const table = screen.getByRole("table", { name: "지표별 점수" });
     expect([...table.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["지표", "실제 값", "백분위", "방향"]);
     const trend = [...table.querySelectorAll("tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent))[4];
-    expect(trend).toEqual(["추세 위치200일 이동평균 대비", "—값 없음", "—값 없음", "높을수록 좋음"]);
+    expect(trend).toEqual(["추세 위치200일 이동평균 대비", "—값 없음", "—값 없음표본 부족", "높을수록 좋음"]);
     expect(within(table).getByTitle("표본이 부족해 값을 잴 수 없어 백분위도 없습니다")).toBeTruthy();
     const raw = screen.getByRole("region", { name: "원자료" });
     expect(within(raw).getByRole("group", { name: "측정 구간" }).textContent).toContain("최근 1년");
@@ -773,7 +773,7 @@ describe("스코어카드 — 배치와 네 상태", () => {
 describe("모르는 값 '—'의 까닭을 늘 보이는 글로 적는다(QA-719)", () => {
   // 수정 전 실패(plain it): { turnover: "—값 없음", percentile: "—값 없음" } — 까닭은 칸 span의 title(마우스 설명)에만 있어 키보드·터치·낭독기로 닿지 않았고, 스타일
   // 회전율의 까닭 문단('직전 분기가 없으면 —')은 P5b에서 '읽는 법' 접기 안으로 들어가 늘 보이는 곳에 없었음.
-  it.fails("스타일 성격 표 회전율·스코어카드 백분위의 '—' 옆에 짧은 까닭(직전 분기 없음·표본 부족)", async () => {
+  it("스타일 성격 표 회전율·스코어카드 백분위의 '—' 옆에 짧은 까닭(직전 분기 없음·표본 부족)", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path === "/api/guru/profiles"
         ? Promise.resolve({ available: true, rows: [{ cik: "0000000031", key: "a", name: "가상 자산운용", desc: "", reportDate: "2026-06-30", totalValue: 1e9,
