@@ -45,17 +45,24 @@ export type HeatmapRow = {
  *   '노르웨|이 국부|펀드'처럼 글자 사이에서 꺾였습니다(스타일 화면 유사도 행렬 — 옮기기 전 행렬은 줄바꿈 금지였음). 영문·숫자 머리(비중 히트맵의 공시 이름·날짜)는
  *   그대로입니다.
  * - 범례(표 아래): 단계 견본 다섯(장식) + 단계 글(`legend.stepLabel` — 예 '최댓값의 0~20%') + '밝은 단계일수록 큼', 그 아래 `legend.note`(설명 글).
- * - `minWidth`(px)를 주지 않으면 표 최소 폭 640px입니다.
+ * - 표 최소 폭: `minWidth`(px)를 주면 그 폭, 주지 않으면 열 수에 맞춘 '행 머리 128 + 열 수 × 64'px(상한 640 — 열 여덟부터 640, 아래 `defaultMinWidth`).
+ *   예전에는 열 수와 상관없이 640px라 열이 적으면 고정 행 머리가 표 폭 대부분을 받아 값 칸이 가려졌습니다(QA-729).
  * - 빈 상태: 행이나 열이 없으면 표·범례 없이 `emptyText` 한 줄(기본 '표시할 값이 없습니다.' — 0으로 채운 표를 만들지 않음). 비중 히트맵은 그 전에 제 빈 글을 그립니다.
  * - 넘김 안내(공용 DataTable `scrollHint="overflow"`와 같은 글·규칙): 상자 위 '← 표를 좌우로 넘겨 보세요'(aria-hidden — 낭독기에는 영역 이름이 같은 말을 함)를
  *   폰(sm 미만 — 최소 폭보다 좁음)에서는 늘, 그 밖에서는 상자 폭을 재서 표가 넓을 때만 보입니다. 처음 재기는 그리기 전(layout effect)이라 안내가 나중에 끼어들어
  *   표를 밀지 않고, 그 뒤 폭이 바뀌면 ResizeObserver로 다시 잽니다. 예전에는 안내가 없어 1024(메뉴 220 — 두 칸 틀 가운데 482px)에서 가려진 열이 있다는 단서가
- *   없었습니다(QA-713).
+ *   없었습니다(QA-713). '폰에서는 늘'은 최소 폭이 640px 이상일 때만입니다 — 열이 적어 더 좁은 표는 폰 상자에도 들어갈 수 있어 잰 넘침으로만 보입니다(QA-729).
  * - `initialScroll="end"`(선택, 기본 "start"): 처음 그릴 때(와 열이 바뀔 때) 스크롤을 오른쪽 끝에 둡니다 — 열이 시간 차례인 표(비중 히트맵의 분기)에서 가장
  *   최근 열이 먼저 보이게. 끝에 붙어 있는 동안 상자·표 폭이 바뀌면(메뉴 접기·펴기 — 폭 전환 중에도, 창 크기 — 끄는 동안에도) 다시 끝으로 옮기고, 사용자가
- *   왼쪽으로 옮긴 뒤에는 그 자리를 지킵니다(표가 들어가는 폭이나 브라우저가 줄인 자리는 그 폭의 끝이라 다시 붙음). 예전에는 폭이 바뀌어도 그대로라 메뉴를
+ *   왼쪽으로 옮긴 뒤에는 그 자리를 지킵니다(브라우저가 끝으로 줄인 자리는 그 폭의 끝이라 다시 붙음). 예전에는 폭이 바뀌어도 그대로라 메뉴를
  *   펴면 0, 창을 줄이면 옛 끝에 남았고(QA-722), 그 고침도 부품이 쓴 자리의 scroll 이벤트(다음 프레임에 옴)를 사용자 이동으로 읽어 폭이 프레임마다 바뀌는
  *   동안(메뉴 폭 전환 150ms·창 끌기)에는 붙음이 풀렸습니다(QA-722 보강 — 이제 그 자리와 1px 안의 이벤트는 붙음을 바꾸지 않음).
+ *   표가 상자에 들어가는 폭(넘침 1px 이하)을 재면 붙음을 참으로 둡니다 — 그 폭에서는 모든 열이 보이고 끝 = 처음이라 사용자 자리가 따로 없습니다. 예전에는
+ *   scroll 이벤트로만 다시 붙어, 사용자가 0에 둔 자리는 들어가는 폭을 지나도(줄일 것이 없어 이벤트 없음) 풀린 채 남아 다시 좁히면 0, 40에 둔 자리는 브라우저가
+ *   0으로 줄인 이벤트로 붙어 끝으로 가 둘이 달랐습니다(QA-730 — 2026-11-18 결정: 둘 다 끝).
+ *   알려진 한계: 창을 넓혔다가 그 폭이 한 번도 그려지지 않은 채 곧바로 좁히면(개발자 도구 기기 모드 같은 에뮬레이션 경로에서만 재현 — 실제 창 크기·메뉴는
+ *   아님) 넓은 폭에서 브라우저가 줄인 자리의 scroll 이벤트가 좁아진 뒤 와 사용자 이동으로 읽혀 붙음이 풀립니다. 사용자 이동을 입력(휠·키·끌기) 표시로만 가리면
+ *   찾기(Ctrl+F)·낭독기·scrollIntoView의 정당한 이동까지 끝으로 되돌리므로 그대로 둡니다.
  *   행 머리는 왼쪽에 붙어 남고(sticky), 범례·설명 글도 상자 왼쪽에 붙어 남습니다(sticky — 스크롤해도 보임).
  */
 export function HeatmapTable({
@@ -91,7 +98,7 @@ export function HeatmapTable({
   // 표를 그리는지 — 빈 상태에는 스크롤 상자가 없어, 빈 상태로 먼저 그려진 뒤 행이 오면 아래 두 효과가 다시 돌아야 합니다(QA-720).
   const hasTable = rows.length > 0 && columns.length > 0;
   // 스크롤이 오른쪽 끝에 붙어 있는지(initialScroll="end"일 때만 씀) — 폭이 바뀌면 붙어 있던 때만 다시 끝으로 옮깁니다(QA-722). 상자의 scroll 이벤트로 갱신하므로
-  // 사용자가 왼쪽으로 옮기면 풀리고, 표가 들어가는 폭(끝 = 0)이나 브라우저가 줄인 자리가 끝이면 다시 붙습니다.
+  // 사용자가 왼쪽으로 옮기면 풀리고, 브라우저가 줄인 자리가 끝이면 다시 붙습니다. 표가 상자에 들어가는 폭은 재기(measure)가 다시 붙입니다(QA-730).
   const pinnedEnd = useRef(initialScroll === "end");
   // 이 부품이 마지막으로 쓴 스크롤 자리(끝으로 옮길 때) — 그 쓰기의 scroll 이벤트는 다음 프레임에 와서, 그 사이 폭이 더 바뀌면(메뉴 폭 전환·창 끌기) 그때의 끝보다
   // 작아 사용자가 옮긴 것처럼 읽혔습니다(QA-722 보강). 이 자리와 1px 안의 이벤트는 붙음을 바꾸지 않고, 다른 자리의 이벤트(사용자 이동·브라우저가 줄인 자리)가 오면 비웁니다.
@@ -102,7 +109,11 @@ export function HeatmapTable({
     if (!box) return undefined;
     const followEnd = initialScroll === "end";
     const measure = () => {
-      setOverflowing(box.scrollWidth > box.clientWidth + 1);
+      const fits = box.scrollWidth - box.clientWidth <= 1;
+      setOverflowing(!fits);
+      // 표가 상자에 들어가면 끝 = 처음이라 사용자 자리가 따로 없습니다 — 붙음을 참으로 둡니다. 자리가 이미 0이면 scroll 이벤트가 오지 않아, 이벤트로만 정하면
+      // 사용자가 0에 둔 자리는 들어가는 폭을 지나도 풀린 채 남았습니다(QA-730).
+      if (followEnd && fits) pinnedEnd.current = true;
       if (followEnd && pinnedEnd.current) {
         box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
         writtenLeft.current = box.scrollLeft;
@@ -138,16 +149,18 @@ export function HeatmapTable({
     return <div className="py-6 text-center text-sm text-text-3">{emptyText}</div>;
   }
 
+  const tableMinWidth = minWidth ?? defaultMinWidth(columns.length);
+  // 넘치지 않을 때 안내를 폰에서는 남길지 — sm 미만 화면의 상자는 640px보다 좁아 최소 폭이 그 이상인 표는 늘 넘칩니다. 더 좁은 표(열이 적은 기본 폭)는 폰에서도
+  // 들어갈 수 있어(390 상자 332px에 열 둘 256px) 잰 넘침으로만 보입니다(QA-729).
+  const hintClass = overflowing ? "" : tableMinWidth >= SM_BREAKPOINT ? "sm:hidden" : "hidden";
+
   return (
     <div className="min-w-0">
-      <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${overflowing ? "" : "sm:hidden"}`}>
+      <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${hintClass}`}>
         ← 표를 좌우로 넘겨 보세요
       </p>
       <div ref={boxRef} className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${caption} (좌우 스크롤)`}>
-        <table
-          className={minWidth === undefined ? "w-full min-w-[640px] border-collapse text-xs" : "w-full border-collapse text-xs"}
-          style={minWidth === undefined ? undefined : { minWidth }}
-        >
+        <table className="w-full border-collapse text-xs" style={{ minWidth: tableMinWidth }}>
           <caption className="sr-only">{caption}</caption>
           <thead>
             <tr className="text-xs text-text-3">
@@ -238,3 +251,25 @@ export function HeatmapTable({
 
 /** 범례의 단계 차례. */
 const STEPS = [1, 2, 3, 4, 5] as const;
+
+/** Tailwind sm 경계(640px) — 그보다 좁은 화면의 표 상자는 640px보다 좁습니다. */
+const SM_BREAKPOINT = 640;
+/** 기본 최소 폭의 상한 — 열 여덟(13F 비중 히트맵 8분기)부터 이 폭이고, 그보다 넓은 몫은 표 자동 배치가 열 내용 폭으로 정합니다. */
+const DEFAULT_MIN_WIDTH_CAP = 640;
+/** 기본 최소 폭의 행 머리 몫·열 몫 — P5b QA 재확인(qa@01693937)에서 잰 8분기 비중 히트맵(최소 640px)의 행 머리 128px·분기 열 64px(날짜 머리 '25-09-30'
+ * 한 줄 + 좌우 여백 16px — 값 칸보다 넓음). 8 × 64 + 128 = 640이라 열 여덟의 표는 예전과 같습니다. */
+const ROW_HEADER_SHARE = 128;
+const COLUMN_SHARE = 64;
+
+/**
+ * `minWidth`를 주지 않은 표의 최소 폭(px) — 행 머리 몫 + 열 수 × 열 몫, 상한 640(QA-729).
+ *
+ * 예전에는 열 수와 상관없이 640px였고, 표 자동 배치는 그 폭에서 열의 max-content 합보다 남는 폭을 max-content 비율로 나눠 고정(sticky) 행 머리(긴 종목
+ * 이름)가 대부분을 받았습니다 — 비중 히트맵 행 머리 4분기 260·2분기 370·1분기 469px. 390(상자 332px)에서 분기 2·1이면 값 칸이 어느 스크롤 자리에서도
+ * 보이지 않고 끝 자리에서 행 머리가 왼쪽으로 잘렸으며, 1024(상자 482px) 분기 1은 값 띠 13px였습니다. 이제 열이 적으면 표가 상자에 들어가 스크롤이 없고
+ * (정적 페이지로 잰 390 분기 1·2, 1024 분기 1·2·4), 넘칠 때는 이 최소 폭에서 행 머리가 128px 안팎(가장 긴 낱말이 더 넓으면 그 폭)입니다(390 분기 4 — 표 384px).
+ * 행 머리 최대 폭은 따로 두지 않습니다(이름 말줄임 없음 — 넘칠 때 행 머리를 키우던 것은 이 최소 폭이었음).
+ */
+function defaultMinWidth(columnCount: number): number {
+  return Math.min(DEFAULT_MIN_WIDTH_CAP, ROW_HEADER_SHARE + columnCount * COLUMN_SHARE);
+}

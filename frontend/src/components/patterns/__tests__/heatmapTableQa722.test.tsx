@@ -10,16 +10,26 @@
  * 보강(검토 지적): 위 `resize`는 폭을 한 번에 바꾸고 부품 자신이 scrollLeft를 쓴 뒤의 scroll 이벤트를 보내지 않습니다. 브라우저는 그 이벤트를 다음 프레임에
  * 보내므로, 메뉴 접기·펴기(기본 움직임 — 폭 전환 150ms)나 창 끌기처럼 폭이 프레임마다 바뀌면 이벤트가 올 때의 끝은 이미 더 멀어져 있습니다. 아래 `frames`가
  * 그 차례(폭이 바뀜 → 앞 프레임에 바뀐 자리의 scroll 이벤트 → 관찰 콜백)를 흉내 냅니다 — 펴기 걸음은 QA 스택 1024 레일 펴기에서 프레임마다 잰 상자 폭.
+ *
+ * QA-730(같은 흉내 — 맨 아래 묶음): 사용자가 왼쪽으로 옮긴 자리가 표가 상자에 들어가는 폭을 지난 뒤 자리에 따라 다르게 끝났습니다. 키보드로 0에 둔 경우는
+ * 메뉴를 레일로 접어 표가 들어가도 자리가 그대로라 scroll 이벤트가 없어 붙음이 풀린 채 남아 다시 펴면 0, 휠로 40에 둔 경우는 접을 때 브라우저가 0으로 줄인
+ * 자리의 이벤트로 다시 붙어 펴면 끝(P5b QA 재확인 qa@01693937, 메뉴 206 — 0 / 144와 144 / 144). 2026-11-18 결정(사용자 위임 — 권장안): 둘 다 끝.
+ * 넘치는 폭 안에서만 바뀌면 사용자 자리는 새 끝 안에 남는 동안 그대로이고, 새 끝이 그 자리보다 작아지면 브라우저가 끝으로 줄여 다시 붙습니다(QA-722 규칙 —
+ * 받아들인 동작, 맨 아래 지킴 시험).
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HeatmapTable, type HeatmapRow } from "../HeatmapTable";
 
-const COLUMNS = ["2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"].map((date) => ({ key: date, label: date.slice(2) }));
+// 열 여덟(13F 8분기) — 아래 흉내 폭(최소 640px 표)과 같은 최소 폭(128 + 8 × 64 = 640 — QA-729 뒤 열이 적은 표는 더 좁음).
+const COLUMNS = ["2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"].map((date) => ({
+  key: date,
+  label: date.slice(2),
+}));
 const ROWS: HeatmapRow[] = [
-  { key: "alpha", label: "SYNTHETIC ALPHA CO", values: [1, 2, 3, 4] },
-  { key: "beta", label: "SYNTHETIC BETA CO", values: [4, 3, 2, 1] },
+  { key: "alpha", label: "SYNTHETIC ALPHA CO", values: [1, 2, 3, 4, 5, 6, 7, 8] },
+  { key: "beta", label: "SYNTHETIC BETA CO", values: [8, 7, 6, 5, 4, 3, 2, 1] },
 ];
 const NAME = "합성 히트맵 (좌우 스크롤)";
 
@@ -109,7 +119,7 @@ function stubBox(initial: Sizes) {
   };
 }
 
-/** 표(최소 폭 640px)가 보이는 폭마다 차지하는 크기 — 들어가면 상자를 채움. */
+/** 표(최소 폭 640px — 열 여덟)가 보이는 폭마다 차지하는 크기 — 들어가면 상자를 채움. */
 function fit(visible: number): Sizes {
   return { content: Math.max(640, visible), visible };
 }
@@ -132,7 +142,7 @@ function table(initialScroll: "start" | "end" = "end") {
       rowHeader="종목"
       columns={COLUMNS}
       rows={ROWS}
-      max={4}
+      max={8}
       format={(value) => value.toFixed(1)}
       legend={{ stepLabel: (step) => `단계 ${step}` }}
       initialScroll={initialScroll}
@@ -140,10 +150,14 @@ function table(initialScroll: "start" | "end" = "end") {
   );
 }
 
+/**
+ * 넘김 안내 줄의 보임('shown' 폭과 상관없이 · 'phone-only' sm 미만에서만 · 'hidden' 늘 숨김 — 최소 폭이 640px보다 좁고 넘치지 않는 표, QA-729)과 스크롤 자리.
+ * 'hidden'을 따로 읽어야 넘침을 잘못 재 안내가 숨은 것이 'shown'으로 읽혀 지나가지 않습니다(heatmapTableQa729의 hintState와 같은 판정).
+ */
 function observed() {
-  const hint = screen.getByText("← 표를 좌우로 넘겨 보세요");
+  const classes = screen.getByText("← 표를 좌우로 넘겨 보세요").className.split(/\s+/);
   return {
-    hint: hint.className.split(/\s+/).includes("sm:hidden") ? "phone-only" : "shown",
+    hint: classes.includes("hidden") ? "hidden" : classes.includes("sm:hidden") ? "phone-only" : "shown",
     scrollLeft: screen.getByRole("region", { name: NAME }).scrollLeft,
   };
 }
@@ -242,5 +256,73 @@ describe("폭이 프레임마다 바뀌어도(메뉴 폭 전환·창 끌기) 끝
     expect(observed().scrollLeft).toBe(40);
     box.frames(COLLAPSE.slice(0, 3));
     expect(observed().scrollLeft).toBe(40);
+  });
+});
+
+describe("사용자가 왼쪽으로 옮긴 자리도 표가 상자에 들어가는 폭을 지나면 다시 끝에 붙는다(QA-730)", () => {
+  // 수정 전 실패(plain it): 접은 뒤 { hint: "phone-only", scrollLeft: 0 }(같음), 편 뒤 { hint: "shown", scrollLeft: 0 }(기대 158) — 0에 있던 자리는 표가 들어가도
+  // 줄일 것이 없어 scroll 이벤트가 오지 않아 붙음이 풀린 채 남음.
+  it("키보드로 0에 둔 뒤 메뉴를 레일로 접어(482 → 654px — 표가 들어감, scroll 이벤트 없음) 다시 펴면 오른쪽 끝(158)으로 간다", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.resize(fit(654));
+    expect(observed()).toEqual({ hint: "phone-only", scrollLeft: 0 });
+    box.resize(fit(482));
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  // 수정 전 실패(plain it): { hint: "shown", scrollLeft: 0 }(기대 158) — 위와 같은 까닭, 폭 전환(프레임 아홉씩)에서도 같음.
+  it("키보드로 0에 둔 뒤 기본 움직임으로 접었다 펴도(482 → 654 → 482px) 오른쪽 끝(158)으로 간다", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.frames(COLLAPSE);
+    box.frames(EXPAND);
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  it("휠로 40에 둔 뒤 접었다 펴도(한 번에·기본 움직임) 오른쪽 끝(158)으로 간다 — 지금도 같음(브라우저가 줄인 자리의 이벤트로 붙음)", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(40);
+    box.resize(fit(654));
+    box.resize(fit(482));
+    expect(observed().scrollLeft).toBe(158);
+    userScroll(40);
+    box.frames(COLLAPSE);
+    box.frames(EXPAND);
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  it("표가 들어가는 폭에 닿지 않고 새 끝이 그 자리 이상이면(넘치는 폭 안에서만 바뀜) 사용자가 둔 0·40은 그대로", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.frames(COLLAPSE.slice(0, 5));
+    box.frames([...COLLAPSE.slice(0, 4)].reverse());
+    expect(observed().scrollLeft).toBe(0);
+    userScroll(40);
+    box.frames(COLLAPSE.slice(0, 3));
+    box.frames(EXPAND.slice(5));
+    expect(observed().scrollLeft).toBe(40);
+  });
+
+  // 받아들인 동작(QA-722 규칙 — QA-730 고침 앞뒤 같음): 넘치는 폭 안이어도 새 끝이 사용자 자리보다 작아지면 브라우저가 자리를 그 끝으로 줄이고, 줄인 자리는 그 폭의
+  // 끝이라 다시 붙습니다. 그래서 0(어떤 끝보다도 작지 않음)과 40은 '넘치는 폭 안에서 넓히기'에서도 다르게 끝날 수 있습니다(정적 페이지 482 → 614 → 482px: 40 → 26 → 158).
+  it("넘치는 폭 안에서 넓혀 새 끝이 사용자 자리(40)보다 작아지면 끝으로 줄인 자리에 다시 붙어, 좁히면 오른쪽 끝으로 간다", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(40);
+    box.resize(fit(614));
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 26 });
+    box.resize(fit(482));
+    expect(observed().scrollLeft).toBe(158);
+    userScroll(40);
+    // 488 → 626px(끝 152 → 14 — 602px에서 끝 38이 40보다 작아짐) → 다시 488px.
+    box.frames(COLLAPSE.slice(0, 5));
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 14 });
+    box.frames([...COLLAPSE.slice(0, 4)].reverse());
+    expect(observed().scrollLeft).toBe(152);
   });
 });
