@@ -200,7 +200,8 @@ export function ClaudeDecisionBody({
             rows={view.conditions}
             rowKey={(row) => row.key}
             columns={[
-              { key: "holding", header: "종목", className: "break-keep", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.holding}</span> },
+              // 종목은 같은 상세의 다른 표처럼 이름 표를 따릅니다(한국은 기업명, 코드는 title — QA-818). 계좌 전체 조건은 '—'(이름 표에 없어 그대로).
+              { key: "holding", header: "종목", className: "break-keep", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2"><TickerName code={row.holding} /></span> },
               { key: "rule", header: "조건", className: "break-keep", cell: (row) => <code className="whitespace-nowrap text-xs text-text">{row.rule}</code> },
               { key: "then", header: "충족되면", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.then}</span> },
             ]}

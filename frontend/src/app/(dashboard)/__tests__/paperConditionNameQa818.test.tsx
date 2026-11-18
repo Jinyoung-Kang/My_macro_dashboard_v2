@@ -22,7 +22,7 @@ const RESPONSE = {
 };
 
 describe("QA-818 — 남긴 조건 표의 종목은 이름 표를 따르고 기준값은 천 단위로", () => {
-  it.fails("한국 결정: 종목 칸 'SK하이닉스'(코드는 title), 조건 'price < 180,000', 소수 기준값은 그대로", () => {
+  it("한국 결정: 종목 칸 'SK하이닉스'(코드는 title), 조건 'price < 180,000', 소수 기준값은 그대로", () => {
     const view = claudeDecisionView({ book: "kr_claude", status: "OK", response: RESPONSE });
     render(
       <TickerNamesProvider names={{ "000660": "SK하이닉스" }}>
