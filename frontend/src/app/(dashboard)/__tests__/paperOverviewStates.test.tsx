@@ -8,8 +8,8 @@
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 넓은 화면(lg)만 머리의 시장 세그먼트(같은 탭의 두 시장 링크 — 작업대 P6), 좁은 화면은 셸의 하위 메뉴 줄(Shell.test.tsx), 제목은 '(미국)'
- *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 규칙 계좌 — 사용자 결정 2026-11-13, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
- *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
+ *  - KPI 띠(작업대 W7 — 예전 히어로): 고른 계좌 하나(기본 규칙 계좌 — 사용자 결정 2026-11-13, 줄 단추·머리 계좌 고르기로 그 계좌 — 상세를 닫아도 남음)의
+ *    지금 값, 곡선과 문지르기는 계좌 표 검사 칸(넓은 화면 옆 칸 — 아래 '순자산 곡선' 패널의 탭과 같은 기간), 초기화 전이면 KPI 띠 없이 탭은 곡선 패널에
  *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·변화 한 줄)·추정 배지,
  *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
  *  - 오늘 추정 꼬리(장중 명세 §4): navEstimate가 있으면 비교 곡선에 계좌마다 마지막 줄 → 추정 점의 꼬리(이름 '{계좌} · 추정 HH:MM', 현금뿐
@@ -57,6 +57,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 const STATS = { cumReturnPct: 1.2, cagrPct: null, volPct: null, mddPct: null, sharpe: null, excessPct: null, beta: null, sampleDays: 2 };
 
@@ -158,9 +159,23 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
-const row = (name: RegExp) => screen.getByRole("button", { name });
+/** 계좌 표의 줄 단추('{계좌} 상세 보기' — 보이는 글은 계좌 이름)와 그 줄(tr — 값·칩·배지 칸). */
+const trigger = (name: RegExp) => screen.getByRole("button", { name });
+const row = (name: RegExp) => trigger(name).closest("tr") as HTMLElement;
+/** 넓은 화면(lg 이상)으로 — 계좌 표의 검사 칸이 옆 칸(처음부터 규칙 계좌의 곡선·속성)입니다. */
+function stubWide() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === WIDE_SHELL_MEDIA, media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+  }));
+}
+/** KPI 띠의 타일(이름 = 타일 이름)의 글. */
+const tileText = (strip: HTMLElement, name: string) => within(strip).getByRole("group", { name }).textContent ?? "";
 /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신). */
 const settled = () => act(async () => {});
 
@@ -176,25 +191,28 @@ function comparisonCell(metric: string, account: string): HTMLElement {
   return line.children[column] as HTMLElement;
 }
 
-describe("값 있음 — 계좌 행·비교 표·곡선", () => {
-  it("네 계좌 행: 이름·종류·상태·순자산(달러)·출발 이후 수익률 칩, 비교 표는 계좌 순서대로 열", async () => {
+describe("값 있음 — 계좌 표·비교 표·곡선", () => {
+  it("네 계좌 줄: 이름(줄 단추)·종류·상태 배지·순자산(달러)·출발 이후 수익률 칩·노출, 비교 표는 계좌 순서대로 열", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
-    // 단추 이름은 계좌 이름 + "상세 보기"뿐(값·칩·배지는 설명으로 — 낭독기가 숫자 전부를 단추 이름으로 읽지 않게).
-    const rules = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
-    expect(rules.getAttribute("aria-describedby")).toBeTruthy();
+    // 줄 단추의 보이는 글은 계좌 이름, 이름은 '{계좌} 상세 보기'(값·칩·배지는 같은 줄의 칸 — 낭독기가 숫자 전부를 단추 이름으로 읽지 않게).
+    const button = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
+    const rules = button.closest("tr") as HTMLElement;
     expect(within(rules).getByText("101,200.00")).toBeTruthy();
     expect(within(rules).getByText("달러")).toBeTruthy();
     expect(within(rules).getByText("+1.20%")).toBeTruthy();
     expect(within(rules).getByText("상승")).toBeTruthy();
-    expect(within(rules).getByText(/^규칙 · 운용 중 · /)).toBeTruthy();
-    expect(within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem")).toHaveLength(4);
-    // 아바타(장식 — 단추 이름에 섞이지 않음)와 그 계좌의 곡선 색 고리(규칙 계좌 = 계열 파랑, 60/40 = 회색)
-    const avatar = (button: HTMLElement) => button.querySelector('[aria-hidden="true"].rounded-full') as HTMLElement | null;
-    expect(avatar(rules)?.textContent).toBe("R");
-    expect(avatar(rules)?.style.getPropertyValue("--avatar-ring")).toBe("#3987e5");
-    expect(avatar(row(/^60\/40 계좌 상세 보기/))?.style.getPropertyValue("--avatar-ring")).toBe("#6b727e");
+    expect(within(rules).getByText("규칙")).toBeTruthy();
+    expect(within(rules).getByText("운용 중")).toBeTruthy();
+    expect(within(rules).getByText("99.8%")).toBeTruthy();
+    const accounts = screen.getByRole("table", { name: "계좌 목록" });
+    expect(within(accounts).getAllByRole("columnheader").map((th) => th.textContent)).toEqual(["계좌", "순자산", "수익률(출발 이후)", "주식 노출"]);
+    expect(within(accounts).getAllByRole("rowheader")).toHaveLength(4);
+    // 곡선 색 견본(장식 — 단추 이름에 섞이지 않음): 규칙 계좌 = 계열 파랑, 60/40 = 회색
+    const swatch = (line: HTMLElement) => line.querySelector('[aria-hidden="true"].forced-color-adjust-none') as HTMLElement | null;
+    expect(swatch(rules)?.style.backgroundColor).toBe("rgb(57, 135, 229)");
+    expect(swatch(row(/^60\/40 계좌 상세 보기/))?.style.backgroundColor).toBe("rgb(107, 114, 126)");
 
     const table = screen.getByRole("table", { name: "계좌 비교" });
     expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
@@ -215,107 +233,100 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
   });
 });
 
-describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
-  it("기본은 규칙 계좌(사용자 결정 2026-11-13), 계좌 행을 누르면 히어로도 그 계좌 — 상세를 닫아도 남고, 곡선은 그 계좌 한 줄", async () => {
+describe("KPI 띠와 검사 칸 곡선(작업대 P6 — W7: 44px 히어로를 KPI 띠로, 문지르기는 패널 차트로)", () => {
+  it("기본은 규칙 계좌(사용자 결정 2026-11-13), 줄 단추를 누르면 KPI 띠도 그 계좌 — 대화상자를 닫아도 남고, 곡선은 그 계좌 한 줄", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
     await settled();
-    // 아무것도 고르지 않은 첫 화면의 히어로는 규칙 계좌(그 전에는 Claude 계좌1)
-    const first = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    expect(within(first).getByText("101,200.00")).toBeTruthy();
-    expect(within(first).getByText("+1.20%")).toBeTruthy();
-    expect(within(first).getByText("출발 이후")).toBeTruthy();
+    // 아무것도 고르지 않은 첫 화면의 KPI 띠는 규칙 계좌(그 전에는 Claude 계좌1)
+    const first = screen.getByRole("region", { name: "규칙 계좌 요약" });
+    expect(tileText(first, "순자산")).toContain("101,200.00");
+    expect(tileText(first, "순자산")).toContain("달러");
+    expect(tileText(first, "수익률(출발 이후)")).toBe("수익률(출발 이후)+1.20%");
     // 옛 응답(current 없음)은 장부 값과 마지막 관측
     expect(within(first).getByText("마지막 관측 2026-10-24 05:15")).toBeTruthy();
     expect(within(first).queryByText("추정")).toBeNull();
-    expect(within(first).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
-    expect(screen.queryByRole("region", { name: "Claude 계좌 순자산" })).toBeNull();
-    // 히어로는 화면 맨 위(시작 카드·계좌 카드보다 앞)
-    const accounts = screen.getByRole("list", { name: "계좌 목록" });
+    // 변화를 모르면 '—'(0을 짓지 않음)
+    expect(tileText(first, "변화")).toBe("변화—값 없음");
+    expect(screen.queryByRole("region", { name: "Claude 계좌 요약" })).toBeNull();
+    // KPI 띠는 화면 맨 위(시작 카드·계좌 표보다 앞)
+    const accounts = screen.getByRole("table", { name: "계좌 목록" });
     expect(first.compareDocumentPosition(accounts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    fireEvent.click(row(/^Claude 계좌 상세 보기/));
-    const hero = screen.getByRole("region", { name: "Claude 계좌 순자산" });
-    expect(within(hero).getByText("100,000.00")).toBeTruthy();
+    fireEvent.click(trigger(/^Claude 계좌 상세 보기/));
     // 시작 전 계좌는 곡선 값이 없음(선 없음 — 0으로 채우지 않음)
-    expect(within(hero).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
-    expect(screen.queryByRole("region", { name: "규칙 계좌 순자산" })).toBeNull();
+    const dialog = screen.getByRole("dialog", { name: "Claude 계좌" });
+    expect(within(dialog).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
 
-    // 상세를 닫아도 히어로는 그 계좌 그대로
-    fireEvent.click(row(/^Claude 계좌 상세 닫기/));
+    // 대화상자를 닫아도 KPI 띠는 그 계좌 그대로(연 동안 뒤 화면은 보조 기술에서 가려져 닫은 뒤에 봅니다)
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Claude 계좌 상세" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Claude 계좌 순자산" })).toBeTruthy();
+    expect(tileText(screen.getByRole("region", { name: "Claude 계좌 요약" }), "순자산")).toContain("100,000.00");
+    expect(screen.queryByRole("region", { name: "규칙 계좌 요약" })).toBeNull();
   });
 
-  it("히어로 제목 줄 오른쪽의 고르기 상자로 계좌를 바꾼다(사용자 요청 2026-11-02) — 계좌 행과 같은 상태, 상자는 초점을 잃지 않음", async () => {
+  it("머리의 계좌 고르기('계좌 고르기')로 계좌를 바꾼다 — 줄 단추와 같은 상태, 상세는 열지 않음(읽지 않음), 상자는 초점을 잃지 않음", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
     await settled();
-    const first = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    const picker = within(first).getByRole("combobox", { name: "순자산을 볼 계좌" }) as HTMLSelectElement;
+    const picker = screen.getByRole("combobox", { name: "계좌 고르기" }) as HTMLSelectElement;
+    expect(picker.closest('[data-paper-header-slot="account"]')).not.toBeNull();
     expect(picker.value).toBe("rules");
-    // 선택지는 계좌 행과 같은 계좌·같은 순서(서버 이름)
-    const rows = within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem").length;
-    expect(Array.from(picker.options).map((option) => option.textContent)).toHaveLength(rows);
+    // 선택지는 계좌 표와 같은 계좌·같은 순서(서버 이름)
     expect(Array.from(picker.options).map((option) => option.value)).toEqual((OVERVIEW.books ?? []).map((book) => book.code));
 
     picker.focus();
     fireEvent.change(picker, { target: { value: "claude" } });
-    const hero = screen.getByRole("region", { name: "Claude 계좌 순자산" });
-    expect(within(hero).getByText("100,000.00")).toBeTruthy();
-    expect(within(hero).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
-    // 다시 마운트하지 않아 같은 상자가 초점을 그대로 가짐
-    expect(within(hero).getByRole("combobox", { name: "순자산을 볼 계좌" })).toBe(picker);
+    expect(tileText(screen.getByRole("region", { name: "Claude 계좌 요약" }), "순자산")).toContain("100,000.00");
+    expect(screen.getByRole("combobox", { name: "계좌 고르기" })).toBe(picker);
     expect(document.activeElement).toBe(picker);
     expect(picker.value).toBe("claude");
-    // 상세는 열지 않음(고르기 상자는 히어로만 바꿈) — 계좌 행을 눌러 고른 것과 같은 상태라 행을 누르면 상자도 따라감
+    // 상세는 열지 않음 — 줄 단추로 고르면 상자도 따라감
     expect(screen.queryByRole("region", { name: "Claude 계좌 상세" })).toBeNull();
-    fireEvent.click(row(/^규칙 계좌 상세 보기/));
+    fireEvent.click(trigger(/^규칙 계좌 상세 보기/));
     expect(picker.value).toBe("rules");
   });
 
-  it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·변화 한 줄(서버 값)", async () => {
+  it("지금 값 — KPI 띠는 단계 표기·서버 글 전문·추정 배지·변화(서버 값과 기준)·노출·출처", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
     await settled();
-    fireEvent.click(screen.getByRole("button", { name: "규칙 계좌 상세 보기" }));
-    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    expect(within(hero).getByText("101,234.56")).toBeTruthy();
-    expect(within(hero).getByText("+1.23%")).toBeTruthy();
-    expect(within(hero).getByText("장중 추정 23:58")).toBeTruthy();
-    expect(within(hero).getByText("추정")).toBeTruthy();
-    expect(within(hero).getByText("장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결")).toBeTruthy();
-    expect(within(hero).getByText("오늘")).toBeTruthy();
-    expect(within(hero).getByText("+0.42%")).toBeTruthy();
-    expect(within(hero).getByText("· 10-29 잠정 대비")).toBeTruthy();
-    expect(within(hero).getByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toBeTruthy();
+    const strip = screen.getByRole("region", { name: "규칙 계좌 요약" });
+    expect(tileText(strip, "순자산")).toContain("101,234.56");
+    expect(tileText(strip, "수익률(출발 이후)")).toContain("+1.23%");
+    expect(within(strip).getByText("장중 추정 23:58 · 장중가 1/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전 — 다음 장부 관측치에서 체결")).toBeTruthy();
+    expect(within(strip).getAllByText("추정").length).toBeGreaterThan(0);
+    expect(tileText(strip, "오늘 변화")).toContain("+0.42%");
+    expect(tileText(strip, "오늘 변화")).toContain("10-29 잠정 대비");
+    expect(tileText(strip, "주식 노출")).toContain("98.7%");
+    expect(tileText(strip, "주식 노출")).toContain("현금성(SHY) 포함");
+    expect(within(strip).getByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toBeTruthy();
   });
 
-  it("문지르는 동안 단계 표기·추정 배지·서버 글은 '지금 값 …' 뒤에 — 그 점(순자산 줄)의 값이 '장중 추정'으로 읽히지 않게, 배지는 그대로", async () => {
+  it("문지른 점(검사 칸 곡선)은 그 점의 날짜·값뿐 — 지금 값의 단계 표기·추정 배지는 KPI 띠에 그대로(한 줄에 섞이지 않음)", async () => {
+    stubWide();
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
     await settled();
 
-    fireEvent.click(row(/^규칙 계좌 상세 보기/));
-    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    expect(within(hero).getByText("장중 추정 23:58")).toBeTruthy();
+    const curve = screen.getByRole("region", { name: "규칙 계좌 순자산 곡선" });
+    expect(within(curve).getByText("차트를 누르거나 가리키면 그 날 값")).toBeTruthy();
     // 마지막 점(10-24 순자산 줄 — 꼬리가 아님)을 문지름
-    fireEvent.click(within(hero).getByRole("button", { name: "규칙 계좌 순자산 곡선 마지막 점 문지르기" }));
-    expect(within(hero).getByText("2026-10-24")).toBeTruthy();
-    // 단계 표기 바로 앞에 '지금 값 …'(눈으로만 — 낭독기는 Hero 값 자리의 '지금 값 …'을 이미 읽음)
-    const stage = within(hero).getByText("장중 추정 23:58");
-    expect(stage.textContent).toBe("지금 값 101,234.56 달러 · 장중 추정 23:58");
-    expect(stage.querySelector('[aria-hidden="true"]')?.textContent).toBe("지금 값 101,234.56 달러 · ");
-    expect(within(hero).getByText("추정")).toBeTruthy();
-    expect(within(hero).getByText(/^지금 값: 장중가 1\/2종목 — 나머지는 장부 관측가 · 체결 대기 1건 반영 전/)).toBeTruthy();
+    fireEvent.click(within(curve).getByRole("button", { name: "규칙 계좌 순자산 곡선 마지막 점 문지르기" }));
+    expect(within(curve).getByText("2026-10-24")).toBeTruthy();
+    expect(within(curve).getByText("101,200.00")).toBeTruthy();
+    expect(within(curve).queryByText("추정")).toBeNull();
+    expect(within(curve).queryByText(/장중 추정/)).toBeNull();
     // 그 점은 추정이 아님 — 알림은 날짜와 값뿐
-    expect(hero.querySelector('[aria-live="polite"]')?.textContent).toBe("2026-10-24 101,200.00 달러");
+    expect(curve.querySelector('[aria-live="polite"]')?.textContent).toBe("2026-10-24 101,200.00 달러");
+    // 지금 값의 기준은 KPI 띠에 그대로
+    expect(within(screen.getByRole("region", { name: "규칙 계좌 요약" })).getByText(/^장중 추정 23:58/)).toBeTruthy();
   });
 
-  it("초기화 전(initialized false)이면 히어로 없이 기간 알약은 '순자산 곡선' 카드에", async () => {
+  it("초기화 전(initialized false)이면 KPI 띠·머리 계좌 고르기 없이 기간 탭은 '순자산 곡선' 패널에", async () => {
     const dates = ["2026-06-01", "2026-08-03", "2026-09-28", "2026-10-26"];
     reads["/api/paper/overview"] = () => Promise.resolve({
       ...OVERVIEW, initialized: false,
@@ -325,37 +336,36 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
 
     await settled();
     expect(screen.getByRole("tablist", { name: "순자산 곡선 기간" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: /순자산$/ })).toBeNull();
-    expect(screen.queryByText(/기간은 위 히어로에서 고릅니다/)).toBeNull();
-    expect(screen.queryByText(/위 히어로·아래 장중 시세도/)).toBeNull();
+    expect(screen.queryByRole("region", { name: /요약$/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "계좌 고르기" })).toBeNull();
+    expect(screen.queryByText(/계좌 검사 칸의 곡선과 함께/)).toBeNull();
+    expect(screen.queryByText(/위 요약·아래 장중 시세도/)).toBeNull();
   });
 });
 
-describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
-  it("행은 지금 값과 값의 기준 한 줄(단계 표기·장중가 n/m종목·체결 대기·오늘 변화), 장중 추정만 추정 배지 — 부제는 '지금 값 기준'", async () => {
+describe("지금 값 — 계좌 표(장중 명세 §4-1)", () => {
+  it("줄은 지금 값과 값의 기준 한 줄(단계 표기·장중가 n/m종목·체결 대기·오늘 변화), 장중 추정만 추정 배지 — 부제는 '지금 값 기준'", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(CURRENT_OVERVIEW);
     render(<PaperPage />);
 
     await settled();
-    const rules = screen.getByRole("button", { name: "규칙 계좌 상세 보기" });
+    const rules = row(/^규칙 계좌 상세 보기$/);
     expect(within(rules).getByText("101,234.56")).toBeTruthy();
     expect(within(rules).getByText("+1.23%")).toBeTruthy();
     expect(within(rules).getByText("장중 추정 23:58 · 장중가 1/2종목 · 체결 대기 1건 반영 전 · 오늘 +0.42% · 10-29 잠정 대비")).toBeTruthy();
     expect(within(rules).getByText("추정")).toBeTruthy();
-    // 값의 기준은 펼침 단추의 설명으로도 읽힙니다(이름은 '규칙 계좌 상세 보기' 그대로).
-    const described = (rules.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
-    expect(described).toContain("장중 추정 23:58");
+    expect(within(rules).getByText("98.7%")).toBeTruthy();
 
     // 장부 단계(지금 세션의 시간별 관측)는 배지 없이 단계 표기만
     const mix = row(/^60\/40 계좌 상세 보기/);
     expect(within(mix).getByText("장부 23:15 · 오늘 +0.05% · 10-29 잠정 대비")).toBeTruthy();
     expect(within(mix).queryByText("추정")).toBeNull();
-    // 출발 전 계좌는 기준 한 줄 없이 보조 글('시작 전 · 현금만')
+    // 출발 전 계좌는 기준 한 줄 없이(상태 배지 '시작 전')
     const claude = row(/^Claude 계좌 상세 보기/);
     expect(within(claude).getByText("100,000.00")).toBeTruthy();
     expect(within(claude).queryByText(/출발 전|추정/)).toBeNull();
 
-    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 지금 값 기준\(행마다 단계 표기\) — 장중 추정은 표시 전용 · 행을 누르면/)).toBeTruthy();
+    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 지금 값 기준\(행마다 단계 표기\) — 장중 추정은 표시 전용 · 계좌 이름을 누르면/)).toBeTruthy();
     expect(screen.queryByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준/)).toBeNull();
   });
 
@@ -364,10 +374,10 @@ describe("지금 값 — 계좌 행(장중 명세 §4-1)", () => {
     render(<PaperPage />);
 
     await settled();
-    const rules = screen.getByRole("button", { name: "규칙 계좌 상세 보기" });
+    const rules = row(/^규칙 계좌 상세 보기$/);
     expect(within(rules).queryByText("추정")).toBeNull();
     expect(within(rules).queryByText(/^장중 추정|^장부 /)).toBeNull();
-    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준\(2026-10-24 05:15 KST\) · 행을 누르면/)).toBeTruthy();
+    expect(screen.getByText(/^순자산·수익률\(출발 이후\)은 장부의 마지막 관측치 기준\(2026-10-24 05:15 KST\) · 계좌 이름을 누르면/)).toBeTruthy();
   });
 });
 
@@ -468,7 +478,7 @@ describe("일부 실패", () => {
     render(<PaperPage />);
 
     expect(await screen.findByText(/정기 작업이 꺼져 있습니다/)).toBeTruthy();
-    expect(screen.getByText(/행을 누르면 그 계좌의 상세\(위 히어로·아래 장중 시세도 그 계좌로\) · 설정 v4/)).toBeTruthy();
+    expect(screen.getByText(/계좌 이름을 누르면 그 계좌의 곡선·상세\(위 요약·아래 장중 시세도 그 계좌로\) · 설정 v4/)).toBeTruthy();
   });
 
   it("계좌 상세의 보유 응답이 실패하면 구성 칸만 오류 + 다시 시도 — 정의·핵심 숫자는 개요 값으로", async () => {
@@ -498,9 +508,9 @@ describe("추정에 가까운 상태 — 아직 확정이 아닌 값", () => {
     });
     render(<PaperPage />);
 
-    const spy = await screen.findByRole("button", { name: /^SPY 계좌 상세 보기/ });
+    const spy = (await screen.findByRole("button", { name: /^SPY 계좌 상세 보기/ })).closest("tr") as HTMLElement;
     const warning = within(spy).getByText("출발일 종가 대기 — 사후 체결 전(현금만)");
-    expect(warning.className).toContain("text-warn");
+    expect(warning.closest(".text-warn")).not.toBeNull();
     expect(within(spy).getByText("주의:")).toBeTruthy();
     expect(within(row(/^60\/40 계좌 상세 보기/)).getByText(/출발일 종가 대기/)).toBeTruthy();
     expect(within(row(/^규칙 계좌 상세 보기/)).queryByText(/출발일 종가 대기/)).toBeNull();
@@ -529,7 +539,7 @@ describe("오래됨 — 이전 값 배지는 반드시 보인다", () => {
     });
     render(<PaperPage />);
 
-    const rules = await screen.findByRole("button", { name: /^규칙 계좌 상세 보기/ });
+    const rules = (await screen.findByRole("button", { name: /^규칙 계좌 상세 보기/ })).closest("tr") as HTMLElement;
     expect(within(rules).getByText("이전 값").parentElement?.className).toContain("text-warn");
     expect(within(rules).getByText("· 가격 없음 2종목 — 지난 값으로 평가")).toBeTruthy();
     expect(within(row(/^SPY 계좌 상세 보기/)).queryByText("이전 값")).toBeNull();
@@ -539,7 +549,7 @@ describe("오래됨 — 이전 값 배지는 반드시 보인다", () => {
     reads["/api/paper/overview"] = () => Promise.resolve({ ...OVERVIEW, quotes: { ...QUOTES, stale: true, ageSeconds: 4 * 3600 } });
     render(<PaperPage />);
 
-    const spy = await screen.findByRole("button", { name: /^SPY 계좌 상세 보기/ });
+    const spy = (await screen.findByRole("button", { name: /^SPY 계좌 상세 보기/ })).closest("tr") as HTMLElement;
     expect(within(spy).getByText("이전 값")).toBeTruthy();
     expect(within(spy).getByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-24 05:15")).toBeTruthy();
     expect(within(row(/^Claude 계좌 상세 보기/)).queryByText("이전 값")).toBeNull();
@@ -576,12 +586,14 @@ describe("기간별 순자산 곡선", () => {
         { tradingDate: "2026-10-26", version: 1, status: "USER" },
       ],
     });
+    stubWide();
     render(<PaperPage />);
 
     const tabs = await screen.findByRole("tablist", { name: "순자산 곡선 기간" });
-    // 기간 알약은 히어로(차트 아래) 한 곳 — 아래 '순자산 곡선' 카드에는 탭이 없고 같은 기간을 따릅니다.
-    expect(within(screen.getByRole("region", { name: "규칙 계좌 순자산" })).getByRole("tablist", { name: "순자산 곡선 기간" })).toBe(tabs);
+    // 기간 탭은 '순자산 곡선' 패널 머리 — 검사 칸 곡선의 탭('{계좌} 순자산 곡선 기간')과 같은 기간 상태(작업대 P6 — 예전 히어로 탭).
+    expect(tabs.closest("section")?.querySelector("h2")?.textContent).toBe("순자산 곡선");
     expect(screen.getAllByRole("tablist", { name: "순자산 곡선 기간" })).toHaveLength(1);
+    const inspectorTabs = within(screen.getByRole("region", { name: "규칙 계좌 순자산 곡선" })).getByRole("tablist", { name: "규칙 계좌 순자산 곡선 기간" });
     // 기록이 약 5개월 — 6개월·1년 탭은 그리지 않습니다.
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["1개월", "3개월", "전체"]);
     expect(within(tabs).getByRole("tab", { name: "전체" }).getAttribute("aria-selected")).toBe("true");
@@ -593,9 +605,10 @@ describe("기간별 순자산 곡선", () => {
     expect(within(tabs).getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
     expect(chart().getAttribute("data-rows")).toBe("2");
     expect(chart().getAttribute("data-first")).toBe("2026-09-28");
-    // 히어로 곡선도 같은 기간(두 행)이고, 곡선 카드 부제가 지금 기간을 적습니다.
+    // 검사 칸 곡선도 같은 기간(두 행)이고 그 탭도 1개월, 곡선 패널 부제가 함께 바뀐다고 적습니다.
     expect(screen.getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
-    expect(screen.getByText(/기간은 위 히어로에서 고릅니다\(지금 1개월\)\.$/)).toBeTruthy();
+    expect(within(inspectorTabs).getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/기간은 계좌 검사 칸의 곡선과 함께 바뀝니다\.$/)).toBeTruthy();
     expect(Array.from(chart().querySelectorAll("[data-marker]")).map((li) => li.textContent)).toEqual(["2026-10-26 프레임 v1"]);
     // 기간 밖의 경계를 '그날 기록 없음'으로 적지 않습니다.
     expect(screen.getByText(/2026-08-03부터 임시 v0 · 2026-10-26부터 v1$/)).toBeTruthy();
@@ -607,6 +620,7 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
   const alertOf = (region: HTMLElement) => region.querySelector('[aria-live="polite"]')?.textContent;
 
   it("비교 곡선에 계좌마다 꼬리 — 이름은 그 계좌의 기준 시각, 행은 창 + 1, 곡선 아래 설명과 출처(장중 추정)", async () => {
+    stubWide();
     reads["/api/paper/overview"] = () => Promise.resolve(TAIL_OVERVIEW);
     render(<PaperPage />);
     await settled();
@@ -614,22 +628,22 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 추정 23:57"]);
     expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("3");
     expect(screen.getByText(/^짧은 점선 꼬리\(범례에 없음\) = 10-30 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
-    // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 히어로(규칙 계좌 — 꼬리가 있음)의 출처에도 같은 글
+    // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 KPI 띠(규칙 계좌 — 꼬리가 있음)의 출처에도 같은 글
     expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(2);
-    // 히어로를 출발 전 Claude 계좌로 바꾸면 히어로는 장부 출처(곡선 카드 하나만 남음)
-    fireEvent.change(screen.getByRole("combobox", { name: "순자산을 볼 계좌" }), { target: { value: "claude" } });
+    // 머리에서 출발 전 Claude 계좌로 바꾸면 KPI 띠는 장부 출처(곡선 카드 하나만 남음)
+    fireEvent.change(screen.getByRole("combobox", { name: "계좌 고르기" }), { target: { value: "claude" } });
     expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(1);
-    // 출발 전 계좌의 히어로 곡선에는 꼬리가 없음(navEstimate의 그 계좌 값이 null — 짓지 않음)
+    // 출발 전 계좌의 검사 칸 곡선에는 꼬리가 없음(navEstimate의 그 계좌 값이 null — 짓지 않음)
     expect(screen.getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
   });
 
-  it("히어로 곡선도 꼬리 점 — 문지르면 그 점의 값과 '추정 23:58'(배지와 낭독 알림 둘 다)", async () => {
+  it("검사 칸 곡선도 꼬리 점 — 문지르면 그 점의 값과 '추정 23:58'(배지와 낭독 알림 둘 다)", async () => {
+    stubWide();
     reads["/api/paper/overview"] = () => Promise.resolve(TAIL_OVERVIEW);
     render(<PaperPage />);
     await settled();
 
-    fireEvent.click(row(/^규칙 계좌 상세 보기/));
-    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산 곡선" });
     const line = within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" });
     expect(line.getAttribute("data-values")).toBe("100000,101200,null");
     expect(line.getAttribute("data-estimate")).toBe("null,101200,101234.56");
@@ -642,7 +656,8 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     expect(alertOf(hero)).toBe("2026-10-30 101,234.56 달러 추정 23:58");
   });
 
-  it("현금뿐 계좌의 꼬리는 '장부' — 비교 곡선 이름, 히어로 문지르기는 추정 배지 없이 '장부'", async () => {
+  it("현금뿐 계좌의 꼬리는 '장부' — 비교 곡선 이름, 검사 칸 곡선 문지르기는 추정 배지 없이 '장부'", async () => {
+    stubWide();
     const cash = {
       ...current(), nav: 100500, returnPct: 0.5, exposurePct: 0, dayChangePct: 0, basis: "LEDGER", stage: "FINAL", tradingDate: "2026-10-29",
       atKst: "2026-10-30 05:00 KST", isEstimated: false, livePriced: 0, positionCount: 0, neutral: true,
@@ -656,8 +671,8 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     await settled();
 
     expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 장부"]);
-    fireEvent.click(row(/^SPY 계좌 상세 보기/));
-    const hero = screen.getByRole("region", { name: "SPY 계좌 순자산" });
+    fireEvent.change(screen.getByRole("combobox", { name: "계좌 고르기" }), { target: { value: "bench_spy" } });
+    const hero = screen.getByRole("region", { name: "SPY 계좌 순자산 곡선" });
     fireEvent.click(within(hero).getByRole("button", { name: "SPY 계좌 순자산 곡선 마지막 점 문지르기" }));
     expect(within(hero).getByText("· 장부")).toBeTruthy();
     expect(within(hero).queryByText("추정")).toBeNull();

@@ -65,11 +65,12 @@ function segmentColor(segment: Pick<CompositionSegment, "kind" | "slot">): strin
   return SLOT_COLORS[segment.slot ?? 0] ?? OTHER_COLOR;
 }
 
-/** 상세 패널 제목의 id — 패널을 열면 개요가 초점을 이 제목으로 옮깁니다(OverviewSection). */
+/** 상세 제목의 id — 옆 검사 칸에서 상세를 열면 개요가 초점을 이 제목으로 옮깁니다(OverviewSection — 대화상자 배치는 대화상자 제목). */
 export const accountDetailTitleId = (id: string) => `${id}-title`;
 
 /**
- * 계좌 상세 — 개요의 계좌 카드를 누르면 카드 묶음 바로 아래에 열립니다(한 번에 하나).
+ * 계좌 상세 — 개요 계좌 표의 검사 칸(AccountInspector — 넓은 화면 옆 칸·좁은 화면 위쪽 대화상자) 안에서, 사용자가 그 계좌의 줄 단추나 '상세 열기'를
+ * 눌렀을 때만 열립니다(한 번에 하나 — 그때만 보유·체결·설정을 읽음). '상세 닫기'는 상세만 닫고 요약(곡선·속성)은 남습니다.
  *
  * 머리(이름·상태·한 줄 소개) → 정의(운용 방식·매수·매도·리스크·현금·시작·비교 목적, lib ACCOUNT_PROFILES)와 지금 설정 값(설정 응답 —
  * 문장에 숫자를 박지 않음) → 핵심 숫자 → 구성(도넛 또는 한 줄 막대 + 범례 + 표) → 최근 체결 다섯 건과 다른 탭으로 가는 단추.
@@ -128,37 +129,31 @@ export function AccountDetailPanel({
   const titleId = accountDetailTitleId(id);
 
   return (
-    <section
-      id={id}
-      aria-labelledby={titleId}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
-      }}
-      // 열린 계좌 상세는 잉크 테두리 — 강조 파랑은 누를 수 있는 것에만(명세 A1).
-      className="mt-4 flex flex-col gap-5 rounded-control border border-text bg-bg px-4 py-4"
-    >
+    // 검사 칸 안의 한 절(작업대 P6) — 예전 잉크 테두리 상자는 검사 칸 틀(옆 칸 경계·대화상자)이 맡아 지웠습니다. Esc는 틀이 받습니다(옆 칸은 상세만 닫고 줄
+    // 단추로, 대화상자는 닫고 연 단추로). 칸 배치는 이 상자 폭의 크기 질의(옆 칸 28rem은 한 칸, 대화상자·넓은 칸은 두 칸).
+    <section id={id} aria-labelledby={titleId} className="@container flex min-w-0 flex-col gap-5 border-t border-border pt-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
-            <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-text focus:outline-hidden">{book.label} 상세</h3>
+            <h4 id={titleId} tabIndex={-1} className="text-base font-semibold text-text focus:outline-hidden">{book.label} 상세</h4>
             <span className={`rounded-control border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
           </div>
           {profile && <p className="mt-1 text-xs text-text-2">{profile.summary}</p>}
         </div>
         <div className="flex items-center gap-2">
           <Freshness refreshError={positions.refreshError ?? fills.refreshError} />
-          <Button onClick={onClose}>닫기</Button>
+          <Button onClick={onClose}>상세 닫기</Button>
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 @min-[40rem]:grid-cols-2">
         <section aria-label="정의" className="flex flex-col gap-2">
-          <h4 className="text-xs font-semibold text-text">정의</h4>
+          <h5 className="text-xs font-semibold text-text">정의</h5>
           {profile ? (
             <dl className="flex flex-col gap-2 text-xs leading-relaxed">
               {profile.definitions.map((definition) => (
-                <div key={definition.key} className="grid gap-x-3 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
+                <div key={definition.key} className="grid gap-x-3 @min-[24rem]:grid-cols-[6.5rem_minmax(0,1fr)]">
                   <dt className="font-semibold text-text-3">{definition.label}</dt>
                   <dd className="text-text-2">{definition.text}</dd>
                 </div>
@@ -169,8 +164,8 @@ export function AccountDetailPanel({
           )}
           {settingRows.length > 0 && (
             <div className="mt-2 border-t border-border pt-2">
-              <h4 className="text-xs font-semibold text-text">지금 설정</h4>
-              <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+              <h5 className="text-xs font-semibold text-text">지금 설정</h5>
+              <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs @min-[24rem]:grid-cols-2">
                 {settingRows.map((row) => (
                   <div key={row.key} className="flex min-w-0 items-baseline justify-between gap-2">
                     <dt className="text-text-3" title={row.key}>{row.label}</dt>
@@ -185,11 +180,11 @@ export function AccountDetailPanel({
 
         <section aria-label="핵심 숫자" className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-xs font-semibold text-text">핵심 숫자</h4>
+            <h5 className="text-xs font-semibold text-text">핵심 숫자</h5>
             {/* 장중 추정이면 같은 격자의 장부 타일(현금·보유 수)과 섞여 확정처럼 읽히지 않게 머리 옆에도 배지(반박 검토). */}
             <EstimateBadge estimated={estimated} note={estimated ? "순자산·수익률·주식 노출" : null} />
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 @min-[24rem]:grid-cols-3">
             <Tile label="순자산" value={now ? formatMoney(now.nav, market) : card.nav} caption={estimated ? "장중 추정" : undefined} />
             <Tile
               label="수익률(출발 이후)"
@@ -217,7 +212,7 @@ export function AccountDetailPanel({
 
       <section aria-label="구성" className="flex flex-col gap-3 border-t border-border pt-4">
         <div>
-          <h4 className="text-xs font-semibold text-text">구성 — 순자산 대비 비중</h4>
+          <h5 className="text-xs font-semibold text-text">구성 — 순자산 대비 비중</h5>
           <p className="mt-0.5 text-xs text-text-3">
             상위 {COMPOSITION_TOP_N}종목은 따로, 나머지 종목은 &quot;기타&quot;(하나뿐이면 그 종목 이름), 현금과 현금성 종목({meta.cashLike} 등 — 설정
             {korea ? "kr.cashLikeTickers" : "cashLikeTickers"})은 한 묶음입니다. 비중은 장부의 평가액 ÷ 순자산입니다.
@@ -230,7 +225,7 @@ export function AccountDetailPanel({
       </section>
 
       <section aria-label="최근 체결" className="flex flex-col gap-2 border-t border-border pt-4">
-        <h4 className="text-xs font-semibold text-text">최근 체결 ({RECENT_FILLS}건)</h4>
+        <h5 className="text-xs font-semibold text-text">최근 체결 ({RECENT_FILLS}건)</h5>
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
         {fills.data && !fills.data.available && <Callout tone="warn">{fills.data.message}</Callout>}
@@ -304,7 +299,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
     <>
       {note && <p className="text-xs text-text-3">{note}</p>}
       {form === "donut" && (
-        <div className="grid items-center gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid items-center gap-4 @min-[36rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <DonutChart
             ariaLabel={`${label} 구성 도넛: ${summary}`}
             surface={PANEL_SURFACE}

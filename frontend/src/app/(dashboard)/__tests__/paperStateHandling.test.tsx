@@ -194,10 +194,10 @@ describe("초기화 전", () => {
     // 다시 읽은 개요(책 네 개)가 그려진 뒤에도 카드가 남는다
     expect(await screen.findByText("벤치마크 사후 체결 대기")).toBeTruthy();
     await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
-    const spyRow = await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ });
+    const spyRow = (await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ })).closest("tr") as HTMLElement;
     // 사후 체결을 기다리는 벤치마크 행에는 그 사실이 경고로 보입니다(추정처럼 '아직 확정 아님'을 숨기지 않음).
     expect(within(spyRow).getByText("출발일 종가 대기 — 사후 체결 전(현금만)")).toBeTruthy();
-    expect(within(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ })).queryByText(/출발일 종가 대기/)).toBeNull();
+    expect(within(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ }).closest("tr") as HTMLElement).queryByText(/출발일 종가 대기/)).toBeNull();
     expect(screen.getByText(/SPY 계좌, 60\/40 계좌: 출발일\(2026-10-23\) 종가를 아직 받지 못해/)).toBeTruthy();
     // 서버 사유(skipped.reason)가 보이고, 다시 누를 버튼이 있다
     expect(screen.getByText(/bench_spy 시작하지 않음 — 2026-10-23 SPY 종가가 아직 없습니다/)).toBeTruthy();
@@ -246,9 +246,9 @@ describe("값을 모를 때", () => {
 
     render(<PaperPage />);
 
-    // 계좌 행 — 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략(0.00% 없음), 상태는 글로
-    const claude = await screen.findByRole("button", { name: /Claude 계좌 상세 보기/ });
-    expect(within(claude).getByText("값 없음")).toBeTruthy();
+    // 계좌 표 줄 — 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩 대신 "—"(0.00% 없음), 상태는 배지 글로
+    const claude = (await screen.findByRole("button", { name: /Claude 계좌 상세 보기/ })).closest("tr") as HTMLElement;
+    expect(within(claude).getAllByText("값 없음").length).toBeGreaterThan(0);
     expect(within(claude).queryByText("달러")).toBeNull();
     expect(within(claude).queryByText(/0\.00/)).toBeNull();
     expect(within(claude).getByText(/시작 전 · 현금만/)).toBeTruthy();
@@ -266,7 +266,7 @@ describe("값을 모를 때", () => {
 
     // 값이 있는 책은 서버 값 그대로
     expect(comparisonCell("순자산", "SPY 계좌")).toBe("100,050.12 달러");
-    expect(within(screen.getByRole("button", { name: /SPY 계좌 상세 보기/ })).getByText("100,050.12")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /SPY 계좌 상세 보기/ }).closest("tr") as HTMLElement).getByText("100,050.12")).toBeTruthy();
 
     // 순자산 곡선 계열은 책 순서대로, 관측치 줄은 봉 날짜·티커 수
     expect(within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent))

@@ -121,6 +121,22 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
     setTab(fromPath);
   }, [pathname, tab, market]);
 
+  // 다른 탭으로 옮긴 단추가 검사 대화상자 안(좁은 화면의 계좌 상세 '보유·체결 탭에서 전체 보기' 등 — 작업대 P6)이면, 바로 옮긴 포커스를 대화상자의 포커스
+  // 가두기가 되돌리고 대화상자가 섹션과 함께 사라지며 포커스가 body로 떨어졌습니다. 그래서 그린 뒤(대화상자가 빠진 뒤)에도 한 번, 대화상자의 닫힘 포커스
+  // 처리(다음 틱) 뒤에 한 번 더 그 탭으로 옮깁니다. 대화상자 밖이면 처음 한 번으로 끝납니다(같은 단추에 다시 포커스).
+  const [tabFocus, setTabFocus] = useState<{ key: PaperTabKey } | null>(null);
+  useEffect(() => {
+    if (!tabFocus) return;
+    const focus = () => document.getElementById(`paper-tab-${tabFocus.key}`)?.focus();
+    focus();
+    const timer = window.setTimeout(focus, 0);
+    return () => window.clearTimeout(timer);
+  }, [tabFocus]);
+  const focusTab = (key: PaperTabKey) => {
+    document.getElementById(`paper-tab-${key}`)?.focus();
+    setTabFocus({ key });
+  };
+
   /** 탭을 바꾸고 주소를 그 탭의 것으로 — 기록을 쌓지 않는 replaceState(Next 라우터가 usePathname을 맞춰 줌). */
   const showTab = (key: PaperTabKey) => {
     setTab(key);
@@ -132,12 +148,12 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
     setFocusProposal(null);
     showTab(key);
     // 누른 단추는 개요와 함께 사라지므로, 초점을 새 탭 단추로 옮겨 키보드 위치와 화면 위치를 맞춥니다.
-    document.getElementById(`paper-tab-${key}`)?.focus();
+    focusTab(key);
   };
   const openProposal = (id: number) => {
     setFocusProposal(id);
     showTab("framework");
-    document.getElementById("paper-tab-framework")?.focus();
+    focusTab("framework");
   };
 
   return (
