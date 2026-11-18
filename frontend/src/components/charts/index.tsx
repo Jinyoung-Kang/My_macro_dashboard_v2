@@ -935,5 +935,5 @@ export function DonutChart({
 /** 선 차트(격자 없음·끝값 축·null에서 끊김) — 화면은 이 지정자(@/components/charts)에서 가져옵니다(테스트 mock이 여기에만 걸림). */
 export { LineChart } from "./LineChart";
 
-/** 비중 히트맵(표) — 차트 모듈 안 파일(HeatmapTable.tsx), 화면은 이 지정자에서 가져옵니다. */
-export { WeightHeatmap } from "./HeatmapTable";
+/** 표 히트맵과 그 감싸개 비중 히트맵 — 차트 모듈 안 파일(HeatmapTable.tsx), 화면은 이 지정자에서 가져옵니다. */
+export { type HeatmapColumn, type HeatmapRow, HeatmapTable, WeightHeatmap } from "./HeatmapTable";
