@@ -392,3 +392,55 @@ describe("모양", () => {
     }
   });
 });
+
+// 작업대 P6 선택 prop — 메뉴 항목의 글자 찾기 별칭(textValue)·위험 표지(tone="danger"). 기본값이면 지금 그대로입니다.
+describe("글자 찾기 별칭(textValue)·막힌 항목·위험 표지(tone=\"danger\")", () => {
+  function renderActions(onSelect = vi.fn()) {
+    render(
+      <DropdownMenu label="동작" trigger={<button type="button">동작</button>}>
+        <DropdownMenuItem onSelect={onSelect} textValue="ilsi">
+          일시정지
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled textValue="gyeoljeong">
+          결정 실행
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onSelect} textValue="gyejwa" tone="danger">
+          계좌 초기화
+        </DropdownMenuItem>
+      </DropdownMenu>,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "동작" }), { key: "Enter" });
+    return screen.getByRole("menu", { name: "동작" });
+  }
+
+  it("한글 항목도 별칭의 첫 글자로 찾는다 — 'g'는 막힌 '결정 실행'을 건너뛰고 '계좌 초기화'로", async () => {
+    const menu = renderActions();
+    const [pause, , reset] = within(menu).getAllByRole("menuitem");
+    await waitFor(() => expect(document.activeElement).toBe(pause));
+    fireEvent.keyDown(pause, { key: "g" });
+    await waitFor(() => expect(document.activeElement).toBe(reset));
+  });
+
+  it("막힌 항목은 aria-disabled이고 화살표가 건너뛴다", async () => {
+    const menu = renderActions();
+    const [pause, blocked, reset] = within(menu).getAllByRole("menuitem");
+    expect(blocked.getAttribute("aria-disabled")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(pause));
+    fireEvent.keyDown(pause, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(reset));
+  });
+
+  it("위험 항목은 글 앞에 경고 삼각형 아이콘(장식)과 data-tone — 글자색은 다른 항목과 같은 text(danger 글자 없음), 이름은 항목 글 그대로", () => {
+    const menu = renderActions();
+    const reset = within(menu).getByRole("menuitem", { name: "계좌 초기화" });
+    expect(reset.getAttribute("data-tone")).toBe("danger");
+    const icon = reset.querySelector("svg");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    expect(reset.firstElementChild).toBe(icon);
+    const pause = within(menu).getByRole("menuitem", { name: "일시정지" });
+    expect(reset.className).toBe(pause.className);
+    expect(reset.className.split(/\s+/)).not.toContain("text-danger");
+    expect(pause.hasAttribute("data-tone")).toBe(false);
+    expect(pause.querySelector("svg")).toBeNull();
+  });
+});
