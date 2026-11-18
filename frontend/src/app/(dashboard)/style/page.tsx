@@ -175,13 +175,14 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
                   header: "분기 회전율",
                   align: "right",
                   // 모르면 '—' 아래 줄에 짧은 까닭을 늘 보이게(긴 글은 마우스 설명) — 예전에는 마우스 설명에만 있었고 표 아래 설명 문단은 '읽는 법' 접기 안이었음
-                  // (QA-719). '—' 옆에 두면 줄바꿈 없는 숫자 열이 그만큼 넓어져 1024(대화상자 배치 — 표 706px)에서 이름 칸이 더 꺾여 표가 856 → 956px로
-                  // 자랐습니다(자기 빌드). 아래 줄이면 그 행만 한 줄 늘고 열 폭은 까닭 글 폭까지만 — '유효 종목 수'의 두 줄 칸과 같은 꼴.
+                  // (QA-719). 공용 표의 숫자 열은 줄바꿈이 없어 까닭 글이 한 줄이면 열이 그 글만큼(약 103px) 넓어져, 1024(대화상자 배치 — 표 706px)에서 이름
+                  // 칸이 좁아지며 더 꺾여 표가 856 → 956px로 자랐습니다(자기 빌드). 그래서 까닭은 아래 줄에 두고 낱말 사이에서 꺾이게(whitespace-normal
+                  // break-keep) 합니다 — 열 폭은 머리 글 폭 그대로, 그 칸만 줄이 늘어남('유효 종목 수'의 두 줄 칸과 같은 꼴).
                   cell: (row) =>
                     row.turnover === null ? (
                       <span className="flex flex-col items-end text-text-3" title={TURNOVER_EMPTY_REASON}>
                         <Empty align="end" />
-                        <span className="text-xs">{TURNOVER_EMPTY_SHORT}</span>
+                        <span className="whitespace-normal break-keep text-xs">{TURNOVER_EMPTY_SHORT}</span>
                       </span>
                     ) : (
                       formatWithUnit(row.turnover, 1, "%")
