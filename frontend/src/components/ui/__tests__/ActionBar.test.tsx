@@ -65,13 +65,16 @@ describe("ActionBar", () => {
         label="보유·체결 동작"
         actions={[
           item("reset", "계좌 초기화", { opensDialog: true }),
-          item("run", "지금 결정 실행", { expanded: true, controls: "decision-confirm" }),
+          item("run", "지금 결정 실행", { expanded: true, controls: "decision-confirm", describedBy: "decision-note" }),
           item("plain", "그냥", { disabled: true }),
         ]}
       />,
     );
     const [reset, run, plain] = within(group()).getAllByRole("button");
     expect(reset.getAttribute("aria-haspopup")).toBe("dialog");
+    // 설명 글 id(describedBy)는 aria-describedby로 — 주지 않으면 붙이지 않음(작업대 P6 검토).
+    expect(run.getAttribute("aria-describedby")).toBe("decision-note");
+    expect(reset.hasAttribute("aria-describedby")).toBe(false);
     expect(run.getAttribute("aria-expanded")).toBe("true");
     expect(run.getAttribute("aria-controls")).toBe("decision-confirm");
     expect(plain.hasAttribute("aria-haspopup")).toBe(false);

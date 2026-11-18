@@ -186,7 +186,7 @@
   P6(패턴 단계)에서 선택 `wide="wrap"`(넓은 화면도 30px 태그 줄 — 표 위 한 줄 거르기, 기본 `list`는 그대로 — 고정 사례)을 더했습니다. P6에서 쓰는 곳은 모의 주문 상태·체결 방향·미국 후보 거르기(하나 고름 — 받은 줄만).
   지키는 시험은 `components/patterns/__tests__/FilterList.test.tsx`.
 - 동작 영역 `components/ui/ActionBar.tsx` — 화면 층의 공용 키트(명세 §6 ActionBar — 화면 머리의 '동작'). 동작 목록(이름·의도·막힘·대화상자를 여는가·확인 상자 aria·글자 찾기
-  별칭·`pin`)을 받아 앞의 `maxInline`(기본 3)개는 공용 단추(buttonClasses — 좁은 화면 44px, `data-action`), 넘는 것만 '동작' 메뉴 항목(공용 DropdownMenu — 위험 의도는
+  별칭·`pin`, P6 검토에서 설명 글 id `describedBy` — 늘 보이는 단추의 aria-describedby)을 받아 앞의 `maxInline`(기본 3)개는 공용 단추(buttonClasses — 좁은 화면 44px, `data-action`), 넘는 것만 '동작' 메뉴 항목(공용 DropdownMenu — 위험 의도는
   `tone="danger"`)으로 그리고, 빈 목록이면 그리지 않습니다. 메뉴 항목의 동작은 메뉴가 닫히고 포커스가 '동작' 단추로 돌아간 뒤에 부릅니다(대화상자를 여는 동작이 포커스
   되돌림과 겹치지 않게). Radix 메뉴를 실어 ui 배럴에 넣지 않고 경로로 가져옵니다. 늘 보여야 하는 단추(실제 매매 끄기 — SEC-6)는 넣지 않습니다. 처음 쓰는 곳은 P6 모의매매
   머리(탭마다 다른 목록, 실제 계좌·ISA 탭은 빈 목록 — 명세 §7-1 확장 지점, 머리 칸 계약 `components/screens/paper/PaperTabHeader.tsx`), 지키는 시험은

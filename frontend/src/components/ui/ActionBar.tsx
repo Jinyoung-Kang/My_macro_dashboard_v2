@@ -24,6 +24,11 @@ export type ActionBarItem = {
   expanded?: boolean;
   /** 여닫는 영역의 id → aria-controls. */
   controls?: string;
+  /**
+   * 설명 글의 id → aria-describedby(작업대 P6 검토 — 확인 없이 바로 도는 동작이 무엇을 하는지 늘 보이는 글로 화면에 두고 그 글을 가리킴). 늘 보이는 단추에만
+   * 붙습니다(메뉴로 넘친 항목은 메뉴 글이 이름 — 설명이 필요한 동작은 `pin`으로 단추에 둡니다).
+   */
+  describedBy?: string;
   /** '동작' 메뉴의 글자 찾기 별칭(한국어 이름에 로마자·초성 — DropdownMenuItem textValue). */
   textValue?: string;
   /** 메뉴로 접지 않음 — 늘 닿아야 하는 동작. */
@@ -37,7 +42,7 @@ export type ActionBarItem = {
  *   항목이 됩니다(공용 DropdownMenu — 막힌 항목은 화살표·글자 찾기가 건너뜀, 위험 의도는 경고 삼각형 표지, `textValue`는 글자 찾기 별칭). `pin`인 동작은
  *   넘쳐도 단추입니다. 빈 목록이면 아무것도 그리지 않습니다(null — 모의매매 실제 계좌·ISA 탭은 지금 빈 목록, 명세 §7-1 확장 지점).
  * - 단추는 공용 단추 클래스(buttonClasses — 의도별 바탕, 좁은 화면 44px·넓은 화면 30px)이고 `data-action`이 붙습니다. 대화상자를 여는 동작은
- *   aria-haspopup="dialog", 화면 안 확인 상자를 여닫는 동작은 aria-expanded·aria-controls.
+ *   aria-haspopup="dialog", 화면 안 확인 상자를 여닫는 동작은 aria-expanded·aria-controls, 설명 글을 가리키는 동작(`describedBy`)은 aria-describedby.
  * - 메뉴 항목을 고르면 그 동작의 `onSelect`는 메뉴가 닫히고 포커스가 여는 단추로 돌아간 뒤에 불립니다(onCloseAutoFocus 다음 마이크로태스크). 그래서
  *   대화상자를 여는 동작이 메뉴의 포커스 되돌림과 겹치지 않고, 대화상자를 닫으면 '동작' 단추로 돌아옵니다.
  * - 데모 열람의 막힌 동작(ADR 0013)은 모의매매가 운영자 전용이라 아직 쓰지 않습니다 — 막힘은 `disabled`로 충분합니다.
@@ -75,6 +80,7 @@ export function ActionBar({
           aria-haspopup={action.opensDialog ? "dialog" : undefined}
           aria-expanded={action.expanded}
           aria-controls={action.controls}
+          aria-describedby={action.describedBy}
           onClick={action.onSelect}
           className={buttonClasses(action.intent ?? "default")}
         >
