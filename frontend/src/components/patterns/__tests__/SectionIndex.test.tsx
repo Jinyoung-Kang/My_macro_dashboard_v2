@@ -821,3 +821,22 @@ describe("QA-688 절 닻은 늘 포커스를 받는 자리가 아니다 — 뒤�
     }
   });
 });
+
+// 작업대 P6 선택 — alignHashOnLoad(새로 고침·바로 연 주소의 #절 맞추기, hooks/useHashAlign). 기본은 꺼짐 — 매크로는 그대로입니다.
+describe("SectionIndex — alignHashOnLoad(P6)", () => {
+  it("기본(꺼짐)이면 주소에 목차 칸 해시가 있어도 처음 그릴 때 옮기지 않는다 — 켜면 그 닻(하위 칸 포함)으로", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      window.history.replaceState(null, "", `${window.location.pathname}#macro-cat-fx`);
+      renderIndex();
+      expect(into).not.toHaveBeenCalled();
+      cleanup();
+      renderIndex({ alignHashOnLoad: true });
+      expect(into).toHaveBeenCalledTimes(1);
+      expect((into.mock.contexts[0] as Element).id).toBe("macro-cat-fx");
+    } finally {
+      into.mockRestore();
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  });
+});
