@@ -216,7 +216,8 @@ describe("계산된 트랙레코드", () => {
     await findRow("사이언 (Scion Asset Management)");
     const scion = cellsOf("사이언 (Scion Asset Management)");
     expect(scion[0]).toBe(NONE);
-    expect(scion[2]).toBe(`자격 없음${SCION_REASON}`);
+    // 자격 없음은 주의 태그(공용 Tag — 낭독 머리말 '주의: ', 작업대 P6)
+    expect(scion[2]).toBe(`주의: 자격 없음${SCION_REASON}`);
     expect(scion[3]).toBe(NONE);
 
     const tudor = cellsOf("튜더 (Tudor Investment)");
@@ -251,6 +252,22 @@ describe("계산된 트랙레코드", () => {
     // Esc로 닫습니다(연 단추로 포커스 — 공용 대화상자).
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway) 구간" })).toBeNull();
+  });
+
+  it("후보 거르기(받은 줄 안 — 전체·자격 있음·선정, 칸 이름 뒤 수) — 고르면 그 줄만·표 머리 개수, 새 요청 없음", async () => {
+    await openSelectionTab();
+    const region = await screen.findByRole("region", { name: /후보 기관 트랙레코드 표/ });
+    const group = screen.getByRole("radiogroup", { name: "후보 거르기" });
+    expect(within(group).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["전체3", "자격 있음1", "선정1"]);
+    expect(screen.getByText("3곳")).toBeTruthy();
+    const before = api.apiGetShared.mock.calls.length;
+    fireEvent.click(within(group).getByRole("radio", { name: /^선정/ }));
+    const shown = within(screen.getByRole("region", { name: /후보 기관 트랙레코드 표/ })).getAllByRole("rowheader");
+    expect(shown).toHaveLength(1);
+    expect(shown[0].textContent).toContain("버크셔 해서웨이 (Berkshire Hathaway)");
+    expect(screen.getByText("1곳")).toBeTruthy();
+    expect(api.apiGetShared.mock.calls.length).toBe(before);
+    expect(region).toBeTruthy();
   });
 
   it("한계 문구 세 개, 선정 이력(후보에 없는 CIK는 그대로), 수집 진행률", async () => {
@@ -299,7 +316,7 @@ describe("두 기관 그룹(D27)", () => {
 
     const norges = cellsOf("노르웨이 국부펀드 (Norges Bank / GPFG) (그룹 B)");
     expect(norges[0]).toBe(NONE);
-    expect(norges[2]).toBe("자격 없음평균 커버리지 57.0% < 70%");
+    expect(norges[2]).toBe("주의: 자격 없음평균 커버리지 57.0% < 70%");
     expect(norges[4]).toBe("q8");
   });
 

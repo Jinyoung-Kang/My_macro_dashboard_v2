@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { type Column, DataTable, InspectorFrame } from "@/components/patterns";
+import { type ReactNode, useState } from "react";
+import { type Column, DataTable, FilterList, InspectorFrame } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, Loading, Panel, ROW_TRIGGER } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -36,6 +36,8 @@ import {
   trackSourceText,
   windowLabel,
 } from "@/lib/paper";
+import { type CandidateFilter, candidateFilterOptions, filterCandidates } from "@/lib/paperSelectionView";
+import { PaperBadge } from "./PaperBadge";
 import type {
   PaperRerankResult,
   PaperTrackRecordCandidate,
@@ -176,6 +178,8 @@ export function SelectionSection() {
           rows={history}
           rowKey={(row) => row.asOfDate}
           caption="선정 이력"
+          dense
+          count={(count) => `${count}번`}
           scrollHint="overflow"
           emptyText="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
           columns={[
@@ -248,6 +252,8 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
           rows={rows}
           rowKey={(row) => row.key}
           caption="신호 풀"
+          dense
+          count={(count) => `${count}곳`}
           scrollHint="overflow"
           emptyText="신호 풀이 없습니다 — 이 기준일에 유효한 선정이 아직 없거나, 선정 때 자격 있는 기관이 없었습니다."
           columns={[
@@ -329,6 +335,8 @@ function CandidateTable({
   windowYears: number | null;
   targetQuarters: number | null;
 }) {
+  // 받은 후보 줄 안에서 거르기(전체·자격 있음·선정 — 새 요청 없음, U9 권장안). 표마다 따로.
+  const [filter, setFilter] = useState<CandidateFilter>("all");
   if (rows.length === 0) {
     return (
       <p className="text-sm text-text-3">
@@ -340,6 +348,7 @@ function CandidateTable({
   }
   const span = windowLabel(windowYears);
   const label = (row: PaperTrackRecordCandidate) => `${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`;
+  const shown = filterCandidates(rows, filter);
   const byCik = new Map(rows.map((row) => [row.cik, row]));
   const headed = (header: string, title: string) => <span title={title}>{header}</span>;
 
@@ -450,14 +459,30 @@ function CandidateTable({
           { key: "sharpe", header: "샤프", align: "right", cell: (row) => formatNumber(row.sharpe, 2) },
         ];
         return (
-          <DataTable<PaperTrackRecordCandidate>
-            columns={columns}
-            rows={rows}
-            rowKey={(row) => row.cik}
-            caption={group === "A" ? "후보 기관 트랙레코드 표" : "그룹 B 기관 트랙레코드 표"}
-            scrollHint="overflow"
-            selectedKey={inspector.shownKey}
-          />
+          <>
+            <div className="mb-2">
+              <FilterList
+                label={group === "A" ? "후보 거르기" : "그룹 B 후보 거르기"}
+                items={candidateFilterOptions(rows).map((option) => ({ key: option.key, label: option.label, note: `${option.count}` }))}
+                selected={[filter]}
+                onToggle={(key) => setFilter(key as CandidateFilter)}
+                selection="single"
+                narrow="wrap"
+                wide="wrap"
+              />
+            </div>
+            <DataTable<PaperTrackRecordCandidate>
+              columns={columns}
+              rows={shown}
+              rowKey={(row) => row.cik}
+              caption={group === "A" ? "후보 기관 트랙레코드 표" : "그룹 B 기관 트랙레코드 표"}
+              dense
+              count={(count) => `${count}곳`}
+              scrollHint="overflow"
+              selectedKey={inspector.shownKey}
+              emptyText="고른 칸의 후보가 없습니다."
+            />
+          </>
         );
       }}
     </InspectorFrame>
@@ -501,17 +526,12 @@ function PeriodTable({ name, span, periods }: { name: string; span: string; peri
   );
 }
 
+/** 배지 묶음 — 공용 태그(PaperBadge — 20px, 정상·주의·중립 톤, 마우스 설명 그대로). */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
+        <PaperBadge key={badge.key} badge={badge} />
       ))}
     </span>
   );
