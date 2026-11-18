@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty, FilterList, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
@@ -703,6 +703,8 @@ export function HoldingsSection({
 }) {
   const korea = market === "KR";
   const nameOf = useTickerName();
+  // 머리 '일시정지'·'재개'의 설명 글 id(aria-describedby — 확인 없이 바로 도는 동작이라 하는 일을 '계좌' 패널에 늘 보이는 글로 둠).
+  const pauseNoteId = `${useId()}-pause-note`;
   const [picked, setPicked] = useState(initialBook);
   // 주문 상태·체결 방향 거르기(받은 최근 줄 안에서만 — 새 요청 없음).
   const [orderFilter, setOrderFilter] = useState<OrderStatusFilter>("all");
@@ -799,7 +801,13 @@ export function HoldingsSection({
   // 기본 의도, U1), 계좌 초기화는 확인 창(계좌 코드 입력)을 여는 위험 의도. 확인 창·결과 알림은 아래 '계좌' 패널에 남습니다.
   const headerActions: ActionBarItem[] = [
     ...(action
-      ? [{ id: "status", label: toggle.busy ? "바꾸는 중…" : action.label, onSelect: () => void changeStatus(), disabled: toggle.busy }]
+      ? [{
+        id: "status",
+        label: toggle.busy ? "바꾸는 중…" : action.label,
+        onSelect: () => void changeStatus(),
+        disabled: toggle.busy,
+        describedBy: pauseNoteId,
+      }]
       : []),
     {
       id: "reset",
@@ -873,10 +881,17 @@ export function HoldingsSection({
             />
           </div>
         )}
-        {/* 시작 전이라 일시정지할 것이 없으면 머리에 그 단추가 없고 까닭을 보이는 글로 둡니다. */}
-        {!action && <p className="mt-3 text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>}
-        <ReadingGuide topic="일시정지·계좌 초기화">
-          일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다. 계좌 초기화는{" "}
+        {/* 머리 '일시정지'·'재개'는 확인 없이 바로 돕니다 — 하는 일을 접지 않고 늘 보이는 글로 두고 그 단추가 이 글을 설명으로 가리킵니다(개편 전에는 단추 바로 위
+            글 — 작업대 P6 검토). 시작 전이라 일시정지할 것이 없으면 머리에 그 단추가 없고 까닭을 보이는 글로 둡니다. */}
+        {action ? (
+          <p id={pauseNoteId} className="mt-3 text-xs leading-relaxed text-text-3">
+            일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
+        )}
+        <ReadingGuide topic="계좌 초기화">
+          계좌 초기화는{" "}
           {korea
             ? <>이 계좌의 체결·주문·보유·재진입 금지·확정 조정·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. {KR_RESET_NOTE}</>
             : <>

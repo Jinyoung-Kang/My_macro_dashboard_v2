@@ -96,7 +96,7 @@ describe("보유·체결 — 머리 칸", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it("계좌 패널: 맨 위 알림 영역, 상태 배지·KPI 띠(음수는 '−'), 설명은 '읽는 법' 접기", async () => {
+  it("계좌 패널: 맨 위 알림 영역, 상태 배지·KPI 띠(음수는 '−'), 일시정지 설명은 늘 보임(머리 단추가 가리킴), 초기화 설명은 '읽는 법' 접기", async () => {
     render(<PaperScreen initialTab="holdings" />);
     await settled();
     const strip = screen.getByRole("region", { name: "규칙 계좌 요약" });
@@ -107,9 +107,14 @@ describe("보유·체결 — 머리 칸", () => {
     const panel = strip.closest("section[aria-labelledby]")?.parentElement?.closest("section") ?? document.body;
     const status = within(panel as HTMLElement).getAllByRole("status")[0];
     expect(status.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const guide = screen.getAllByText("읽는 법", { exact: false, selector: "summary" }).find((entry) => entry.textContent?.includes("일시정지·계좌 초기화"));
+    // 일시정지 설명은 접지 않은 글이고, 머리 '일시정지'가 그 글을 설명(aria-describedby)으로 가리킴(확인 없이 바로 도는 동작 — 작업대 P6 검토).
+    const note = screen.getByText("일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다.");
+    expect(note.closest("details")).toBeNull();
+    const pause = within(screen.getByRole("group", { name: "보유·체결 동작" })).getByRole("button", { name: "일시정지" });
+    expect(pause.getAttribute("aria-describedby")).toBe(note.id);
+    const guide = screen.getAllByText("읽는 법", { exact: false, selector: "summary" }).find((entry) => entry.textContent?.includes("계좌 초기화"));
     if (!guide) throw new Error("읽는 법 없음");
-    expect(guide.closest("details")?.textContent).toContain("일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다.");
+    expect(guide.closest("details")?.textContent).toContain("계좌 초기화는 이 계좌의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다.");
   });
 });
 
