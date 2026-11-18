@@ -150,7 +150,7 @@
   가져옴. 패턴 배럴이 아니라 차트 모듈에 둔 까닭은 화면 시험이 `vi.mock("@/components/charts")`로 히트맵을 빼고 있어서 — 옮기면 그 시험들에서 실제 표가 그려짐).
   행 × 열 칸에 숫자를 적고 칸 바탕을 순차 팔레트 다섯 단계로 칠함(값 ÷ 최댓값 (0, 0.2]→1 … (0.8, 1]→5, `data-step`, 단계별 글자색 — 단계 1~3 본문색·4~5 바탕색, 모름(공용 '—' `Empty`)·0(`zeroText`)·0 이하는
   칠하지 않음, 자기 칸(`selfIndex` — 유사도 대각선)은 중립 바탕, 칠한 칸과 범례 견본은 고대비에서도 색 그대로), 범례(견본 다섯 + 단계 글 + '밝은 단계일수록 큼' + 설명 글), 영역 이름 '{표 이름} (좌우 스크롤)',
-  표 구조(낭독용 표 이름 caption·열 머리 scope=col·행 머리 th scope=row — 가로 스크롤 때 왼쪽에 붙음).
+  표 구조(낭독용 표 이름 caption·열 머리 scope=col·행 머리 th scope=row — 가로 스크롤 때 왼쪽에 붙음), 머리 칸은 한글을 낱말 사이에서만 꺾음(`break-keep` — 유사도 행렬의 기관 이름 머리, P5b 분석 갈래).
   단계·팔레트·글자색은 React 없는 `lib/heatmap`(`heatmapStep`·`heatmapStepRange`·`SEQUENTIAL_STEPS`·`SEQUENTIAL_TEXT` — 명세 §3-5 순차 팔레트)이 정하고 표는 그리기만 합니다.
   데이터 칸 강조색 금지 목록·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
   비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/charts/__tests__/HeatmapTable.test.tsx`·
