@@ -276,3 +276,26 @@ describe("FilterList — 하나 고름은 라디오 묶음(QA-711)", () => {
     expect(screen.getAllByRole("radio").map((radio) => radio.tabIndex)).toEqual([0, -1, -1]);
   });
 });
+
+describe("FilterList — 좁은 화면 하나 고름 태그의 고대비 표지(QA-712)", () => {
+  /**
+   * 좁은 화면(lg 미만)에서도 그려지고 고대비(forced-colors)에서도 남는 장식 표지 — 글자색을 따르는 SVG 또는 그 모드의 테두리 클래스를 가진 요소.
+   * 고대비에서는 바탕(surface-2)이 지워지고 테두리는 시스템 색이 되므로, 켠 태그와 끈 태그를 가르는 것은 이런 표지뿐입니다.
+   */
+  const narrowForcedMarks = (button: HTMLElement) =>
+    [...button.querySelectorAll("[aria-hidden='true']")].filter(
+      (element) =>
+        !tokens(element).includes("max-lg:hidden") &&
+        (element.tagName.toLowerCase() === "svg" || tokens(element).some((token) => token.startsWith("forced-colors:border"))),
+    ).length;
+
+  // 수정 전 실패(plain it): { on: 0, off: [0, 0] } — 켠 태그의 잉크 막대(SELECTED_BAR)는 max-lg:hidden이고 체크 상자는 여럿 고름에만 있어, 고대비에서 켠 태그(2px 테두리·
+  // 굵기 600)와 끈 태그(1px 경계 — 그 모드에서 시스템 색으로 남음·굵기 500)를 가르는 것이 테두리 두께와 굵기뿐이었음(/institutions 390 태그 12개).
+  it.fails("켠 태그만 좁은 화면에서도 보이는 고대비 표지를 가진다 — 끈 태그는 없음", () => {
+    render(<FilterList label="분석할 기관" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" narrow="wrap" />);
+    expect({
+      on: narrowForcedMarks(screen.getByRole("radio", { name: "가상 을 연기금" })),
+      off: [screen.getByRole("radio", { name: "가상 갑 자산운용" }), screen.getByRole("radio", { name: "가상 병 투자회사" })].map(narrowForcedMarks),
+    }).toEqual({ on: 1, off: [0, 0] });
+  });
+});
