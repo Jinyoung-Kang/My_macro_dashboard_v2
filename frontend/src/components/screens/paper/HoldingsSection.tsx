@@ -956,7 +956,8 @@ export function HoldingsSection({
                     rowKey={(row) => row.ticker}
                     caption="보유"
                     count={(count) => `${count}종목`}
-                    scrollHint={inspector.inline ? false : "overflow"}
+                    // 열한 칸 표라 옆 검사 칸(18rem) 배치에서도 넘칠 수 있어 넘김 안내는 늘(넘칠 때만 보임 — overflow).
+                    scrollHint="overflow"
                     selectedKey={inspector.shownKey}
                     emptyText="보유가 없습니다 — 현금만 들고 있습니다."
                   />

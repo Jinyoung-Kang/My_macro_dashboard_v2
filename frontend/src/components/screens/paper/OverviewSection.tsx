@@ -889,9 +889,11 @@ function accountColumns(
           </span>
         )}
         {narrow ? <ChangeChip size="sm" changePct={row.returnPct} /> : null}
-        {!narrow && row.caption ? <span className="max-w-[18rem] break-keep text-xs text-text-3">{row.caption}</span> : null}
+        {/* 기준 한 줄·배지는 오른쪽 정렬 칸의 줄바꿈 없음을 풀어 낱말 사이에서 접습니다(최대 16rem) — 그러지 않으면 1440 옆 검사 칸 배치에서 이전 값 사유가
+            한 줄로 늘어 표가 상자보다 넓어지고 오른쪽 칸(주식 노출)이 가로 넘김 밖으로 갔습니다(자기 빌드 — 표 749px · 상자 662px). */}
+        {!narrow && row.caption ? <span className="max-w-[16rem] whitespace-normal break-keep text-xs text-text-3">{row.caption}</span> : null}
         {row.isEstimated || row.isStale ? (
-          <span className="flex flex-wrap justify-end gap-1">
+          <span className="flex max-w-[16rem] flex-wrap justify-end gap-1 whitespace-normal">
             <EstimateBadge estimated={row.isEstimated} />
             <StaleBadge stale={row.isStale} reason={row.staleReason} />
           </span>
