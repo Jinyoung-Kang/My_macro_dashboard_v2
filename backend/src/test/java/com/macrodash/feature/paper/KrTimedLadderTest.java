@@ -59,12 +59,12 @@ class KrTimedLadderTest {
     @Test
     @DisplayName("장중 시장가(MARKET, 단계 2b) — 기준 분 = (생성 + 60초)를 분으로 내린 뒤 + 1분의 창, 창이 저장본에 없으면 기다림, 기준 분이 목표 세션이 아니면 체결하지 않음")
     void marketMinute() {
-        Instant created = Instant.parse("2026-11-03T01:31:20Z");                 // 10:31:20 KST → 기준 분 10:33
+        Instant created = Instant.parse("2026-11-03T01:32:20Z");                 // 10:32:20 KST → 기준 분 10:33
         Quote quote = quote(true, ok(Map.of("10:33", List.of(bar("10:34", 71_034, 0), bar("10:35", 71_035, 300))), Map.of(), Map.of()));
         KrTimedLadder.Result market = KrTimedLadder.price(PaperBooks.MARKET, created, quote, E, NIGHT, CALENDAR, DEADLINE);
         assertThat(market.choice().price()).isEqualByComparingTo("71035");
         assertThat(market.choice().source()).isEqualTo(KrTimedLadder.SOURCE_NEXT);
-        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-03T01:40:00Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
+        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-03T01:41:00Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
                 .reason()).contains("10:42 창이 없음").contains("기다림");
         assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-02T01:31:20Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
                 .reason()).contains("목표 세션이 아님");
@@ -128,7 +128,7 @@ class KrTimedLadderTest {
         List<String> menu = List.of(PaperBooks.MARKET, PaperBooks.AT_1400, PaperBooks.NEXT_CLOSE);
         assertThat(KrTimedLadder.closedTimings(menu, asOf, kst("2026-11-03T11:03"), CALENDAR)).isEmpty();
         Map<String, com.macrodash.analytics.OrderValidator.Closed> late = KrTimedLadder.closedTimings(menu, asOf,
-                kst("2026-11-03T15:18:30"), CALENDAR);
+                kst("2026-11-03T15:19:30"), CALENDAR);
         assertThat(late).containsOnlyKeys(PaperBooks.MARKET, PaperBooks.AT_1400);
         assertThat(late.get(PaperBooks.MARKET).reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
         assertThat(late.get(PaperBooks.MARKET).detail()).contains("15:20").contains("종가 단일가");

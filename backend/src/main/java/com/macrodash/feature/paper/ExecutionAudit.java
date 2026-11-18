@@ -94,10 +94,10 @@ final class ExecutionAudit {
      */
     static final Duration AFTER_CREATED = Duration.ofSeconds(60);
     /**
-     * 장중 시장가(MARKET)의 기준 시각 여유 — T = (생성 + 이만큼)을 분으로 내린 뒤 + 1분({@link #marketTarget}). 수집기 {@code paper_bars.MARKET_AFTER_CREATED}·
-     * {@code kr_paper_timed.KR_MARKET_DELAY}와 같은 값입니다(시험이 대조).
+     * 장중 시장가(MARKET)의 기준 시각 여유 — T = (생성 + 이만큼)을 분으로 내린 뒤 + 1분({@link #marketTarget}) = 생성 뒤 처음 시작하는 분(ADR 0044 — 0).
+     * 수집기 {@code paper_bars.MARKET_AFTER_CREATED}·{@code kr_paper_timed.KR_MARKET_DELAY}와 같은 값입니다(시험이 대조).
      */
-    static final Duration MARKET_AFTER_CREATED = Duration.ofSeconds(60);
+    static final Duration MARKET_AFTER_CREATED = Duration.ZERO;
     /** 지연 기준 종목(저장본 {@code reference}가 없을 때). */
     static final String REFERENCE = "SPY";
 
@@ -143,9 +143,11 @@ final class ExecutionAudit {
     }
 
     /**
-     * 장중 시장가(MARKET — 장중 확인 응답의 주문, 계좌2 명세 §6-2 단계 2)의 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 늘 '생성 + 60초'보다
-     * 뒤입니다(⑤ 엄격 — 생성이 :00.000초여도 T = 생성 + 2분). 명세의 '분으로 올림'은 :00초 생성에서 T = 생성 + 60초가 되어 ⑤에 걸리므로 이 식을
-     * 씁니다. 수집기 {@code paper_bars.market_target}과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
+     * 장중 시장가(MARKET — 장중 확인·장중 판단 응답의 주문, 장중 감시 STOP)의 기준 시각 T = 생성 뒤 처음 시작하는 분((생성 + {@link #MARKET_AFTER_CREATED})를
+     * 분으로 내린 뒤 + 1분 — ADR 0044). 생성 &lt; T ≤ 생성 + 60초이고, 정각 생성(:00.000초)도 다음 분입니다. '분으로 올림'은 정각 생성에서 T = 생성이
+     * 되어 한국 장부 ⑤({@link KrFills#opensAfterOrder} — T &gt; 생성)에 걸리고 실제 계좌 창과 어긋나므로 이 식을 씁니다. 고르는 봉은 미국(봉 시작 라벨)이
+     * 시작 = T, 한국(봉 끝 라벨)이 라벨 T + 1분이라 두 시장 모두 생성 뒤 구간입니다. 수집기 {@code paper_bars.market_target}과 같은 식이고, 두 쪽
+     * 시험이 같은 예시 표로 대조합니다.
      */
     static Instant marketTarget(Instant createdAt) {
         return createdAt.plus(MARKET_AFTER_CREATED).truncatedTo(ChronoUnit.MINUTES).plus(Duration.ofMinutes(1));

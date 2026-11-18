@@ -744,7 +744,7 @@ class KrLedgerTest {
             book(BOOK2, PaperBooks.KIND_CLAUDE, 1_000_000);
             store.upsertPosition(new Position(BOOK2, "035720", 10, 40_000.0, D, CREATED, 40_000.0, CREATED, 40_000.0, CREATED,
                     false, D, 40_000.0, null));
-            Instant intraday = kst("2026-11-03T10:31:20");          // E(D1) 장중 확인 — 기준 분 10:33
+            Instant intraday = kst("2026-11-03T10:32:20");          // E(D1) 장중 확인 — 기준 분 10:33
             long market = order2("005930", PaperBooks.BUY, 15, PaperBooks.MARKET, intraday);
             long two = order2("000660", PaperBooks.BUY, 2, PaperBooks.AT_1400, intraday);
             long sell = order2("035720", PaperBooks.SELL, 10, PaperBooks.AT_1100);   // 밤 결정의 11:00 매도 — MARKET(10:33)보다 뒤

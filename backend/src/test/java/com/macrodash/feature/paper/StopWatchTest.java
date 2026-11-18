@@ -325,24 +325,27 @@ class StopWatchTest {
     class Targets {
 
         @Test
-        @DisplayName("장중 감지는 T = G+2분 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
+        @DisplayName("장중 감지는 T = G+1분(감지 뒤 처음 시작하는 분) 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
         void us() {
             StopWatch.Target mid = StopWatch.target(et(DAY, 10, 15, 25), DAY, US, false);
             assertThat(mid.timing()).isEqualTo(PaperBooks.MARKET);
-            assertThat(mid.at()).isEqualTo(et(10, 17));
+            assertThat(mid.at()).isEqualTo(et(10, 16));
             StopWatch.Target early = StopWatch.target(et(DAY, 9, 37, 30), DAY, US, false);
             assertThat(early.timing()).isEqualTo(PaperBooks.AT_MINUTE);
             assertThat(early.targetLocal()).isEqualTo(LocalTime.of(9, 40));
             StopWatch.Target close = StopWatch.target(et(DAY, 15, 55, 20), DAY, US, false);
             assertThat(close.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
-            assertThat(StopWatch.target(et(DAY, 15, 52, 20), DAY, US, false).timing()).as("T 15:54").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 52, 20), DAY, US, false).timing()).as("T 15:53").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 53, 59), DAY, US, false).timing()).as("T 15:54").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 54, 0), DAY, US, false).timing()).as("T 15:55").isEqualTo(PaperBooks.NEXT_CLOSE);
         }
 
         @Test
         @DisplayName("한국은 15:20부터 종가, 수능일 첫 분은 10:10")
         void kr() {
-            assertThat(StopWatch.target(kst(DAY, 15, 17, 20), DAY, KR, true).timing()).as("T 15:19").isEqualTo(PaperBooks.MARKET);
-            assertThat(StopWatch.target(kst(DAY, 15, 18, 20), DAY, KR, true).timing()).as("T 15:20").isEqualTo(PaperBooks.NEXT_CLOSE);
+            assertThat(StopWatch.target(kst(DAY, 15, 17, 20), DAY, KR, true).timing()).as("T 15:18").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(kst(DAY, 15, 18, 20), DAY, KR, true).timing()).as("T 15:19").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(kst(DAY, 15, 19, 20), DAY, KR, true).timing()).as("T 15:20").isEqualTo(PaperBooks.NEXT_CLOSE);
             StopWatch.Target exam = StopWatch.target(kst(EXAM, 10, 5, 30), EXAM, KR, true);
             assertThat(exam.timing()).isEqualTo(PaperBooks.AT_MINUTE);
             assertThat(exam.targetLocal()).isEqualTo(LocalTime.of(10, 10));

@@ -1287,7 +1287,8 @@ public class PaperLedgerService {
      */
     private void detectStops(BookRun run) {
         double stopPct = run.settings.trailingStopPct();
-        Instant now = clock.instant();
+        // 감지 시각이 지금이면 µs로 잘라 둡니다 — DB가 µs까지만 담으므로 대체 STOP의 근거 시각과 장부가 생성 시각으로 다시 센 기준 분이 갈리지 않게(ADR 0044).
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         Instant detectedAt = run.stopWatch == null || !now.isAfter(run.at) ? run.at : now;
         Set<String> waiting = new TreeSet<>();
         for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {

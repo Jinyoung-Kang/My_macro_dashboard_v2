@@ -193,7 +193,7 @@ class PaperMirrorServiceTest {
     void dueOrdersWindowAndRoots() {
         long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);
         long market = order(A, PaperBooks.SELL, null, 0.5, PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, P,
-                kst("2026-11-06T10:30"), null, null);                                                      // 기준 분 10:32
+                kst("2026-11-06T10:30"), null, null);                                                      // 기준 분 10:31
         long minute = order(C, PaperBooks.BUY, 3.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P, NIGHT,
                 LocalTime.of(10, 45), null);
         long close = order(C, PaperBooks.BUY, 2.0, null, PaperBooks.NEXT_CLOSE, PacketBuilder.SOURCE_CLAUDE);
@@ -217,7 +217,7 @@ class PaperMirrorServiceTest {
         assertThat(reissued.rootOrderId()).as("재발행 사슬의 첫 주문").isEqualTo(r0);
         assertThat(reissued.mirrorAt()).isEqualTo(kst("2026-11-06T10:00"));
         assertThat(at1040.get(1).rootOrderId()).isEqualTo(hourly);
-        assertThat(at1040.get(2).mirrorAt()).isEqualTo(kst("2026-11-06T10:32"));
+        assertThat(at1040.get(2).mirrorAt()).isEqualTo(kst("2026-11-06T10:31"));
         assertThat(at1040.get(2).sellFraction()).isEqualTo(0.5);
         DueOrder unsupported = at1040.get(3);
         assertThat(unsupported.supported()).isFalse();
@@ -733,7 +733,7 @@ class PaperMirrorServiceTest {
         assertThat(prices.get(C).noWindow()).as("그 시각 모의 주문이 없던 종목").isTrue();
         assertThat(prices.get(C).price()).isNull();
 
-        long stop = order(A, PaperBooks.SELL, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, P, kst("2026-11-06T11:30:10"), null,
+        long stop = order(A, PaperBooks.SELL, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, P, kst("2026-11-06T11:31:10"), null,
                 null);                                                                                           // 기준 분 11:32
         assertThat(service().orderLadderPrice(BOOK, stop).orElseThrow().price()).as("그 주문과 같은 사다리").isEqualByComparingTo("9700");
         long open = order(A, PaperBooks.SELL, null, null, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP);

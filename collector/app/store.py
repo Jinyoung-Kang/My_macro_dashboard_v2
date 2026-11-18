@@ -827,7 +827,7 @@ MINUTE_TIMING = "AT_MINUTE"
 def timed_market_targets(market: str) -> list[datetime]:
     """
     1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 책의 ``timing = MARKET`` 주문 가운데 대기이거나
-    최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 + 60초 뒤 첫 분)은 태스크가 셉니다(paper_bars.market_target).
+    최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 뒤 처음 시작하는 분)은 태스크가 셉니다(paper_bars.market_target).
 
     백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 1분봉을 받는 시장
     (``TIMED_ORDER_BOOKS``)이 아니면 빈 목록입니다.

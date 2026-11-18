@@ -111,7 +111,7 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @DisplayName("ON — 두 격자 모두 스탑가 이하면 STOP 한 건(T = 감지 + 60초 뒤 첫 분 시장가), 같은 저장본·다음 저장본에도 다시 내지 않음")
+    @DisplayName("ON — 두 격자 모두 스탑가 이하면 STOP 한 건(T = 감지 뒤 처음 시작하는 분 시장가), 같은 저장본·다음 저장본에도 다시 내지 않음")
     void onPlacesOneStop() {
         settings("ON", "OFF");
         usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
@@ -135,8 +135,8 @@ class PaperStopWatchJobTest {
             assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperStopWatchJob.STOP_MODE);
             assertThat(o.reason().path("stopPrice").asDouble()).isEqualTo(92.0);
             assertThat(o.reason().path("checks")).hasSize(2);
-            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 22, 0).toString());
-            assertThat(o.reason().path("note").asString()).contains("10:15", "10:20", "10:22 ET 시장가 매도");
+            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 21, 0).toString());
+            assertThat(o.reason().path("note").asString()).contains("10:15", "10:20", "10:21 ET 시장가 매도");
         });
         assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.job()).isEqualTo("stopwatch"));
 

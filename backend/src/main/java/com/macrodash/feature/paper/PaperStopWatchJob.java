@@ -570,7 +570,9 @@ public class PaperStopWatchJob {
             if (hit == null || stopPending.contains(ticker)) {
                 continue;
             }
-            Instant now = clock.instant();
+            // DB가 µs까지만 담으므로 시각을 µs로 잘라 T 계산과 생성 시각(created_at)에 같이 씁니다 — 분 경계에서 저장 때 반올림이 갈려 근거의
+            // targetAt과 장부가 다시 센 T가 1분 다르지 않게(ADR 0044).
+            Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
             StopWatch.Target target = StopWatch.target(now, session, calendar, korea);
             if (fullSellBefore(pending, ticker, target.at(), calendar, korea)) {
                 continue;

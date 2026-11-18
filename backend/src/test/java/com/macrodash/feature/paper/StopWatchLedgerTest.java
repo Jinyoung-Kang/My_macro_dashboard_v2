@@ -91,9 +91,9 @@ class StopWatchLedgerTest {
         @Test
         @DisplayName("장중 STOP(시장가 T 10:24)은 다음 관측치의 1분봉 T 봉 시가로 팔리고 재진입 금지(E부터 20거래일), 같은 W의 더 늦은 T 매수는 재진입 금지로 취소")
         void marketStopFillsAtTheNextObservationWithLockout() {
-            long id = stop(PaperBooks.MARKET, et(TUE, 10, 22).plusSeconds(20));
+            long id = stop(PaperBooks.MARKET, et(TUE, 10, 23).plusSeconds(20));
             long rebuy = store.insertOrder(new Order(0, BOOK, 9L, "AAPL", PaperBooks.BUY, 5, null, null, PaperBooks.MARKET,
-                    "CLAUDE", PaperBooks.ORDER_PENDING, null, null, MON, et(TUE, 10, 30).plusSeconds(10), TUE, null));
+                    "CLAUDE", PaperBooks.ORDER_PENDING, null, null, MON, et(TUE, 10, 31).plusSeconds(10), TUE, null));
             when(marketData.barsUs()).thenReturn(Optional.of(new Bars(et(TUE, 11, 21)).market(LocalTime.of(10, 24))
                     .market(LocalTime.of(10, 32)).bar("AAPL", TUE, et(TUE, 10, 24), 91.0, 500.0)
                     .bar("AAPL", TUE, et(TUE, 10, 32), 90.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 40), 90.2, 500.0).snapshot()));
@@ -188,7 +188,7 @@ class StopWatchLedgerTest {
         @Test
         @DisplayName("장중 STOP(시장가 T 10:24)은 그날 밤 그 분 창 시가로 팔리고, 금융위 D 종가가 스탑가 위여도 취소하지 않으며(재판정 없음) 재진입 금지는 그날부터")
         void intradayStopFillsAtNightWithoutRejudge() {
-            long id = stop(PaperBooks.MARKET, kst("2026-11-03T10:22:20"), null, krReason());
+            long id = stop(PaperBooks.MARKET, kst("2026-11-03T10:23:20"), null, krReason());
             java.util.TreeMap<LocalDate, KrConfirmed.Day> days = new java.util.TreeMap<>();
             days.put(D, new KrConfirmed.Day(D, BigDecimal.valueOf(95_000), 5_000L, null, null, "KOSPI"));
             confirmed.put("005930", new KrConfirmed.Series(KrConfirmed.SOURCE_FSC, D, days));

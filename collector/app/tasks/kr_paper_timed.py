@@ -24,7 +24,7 @@ app/tasks/kr_paper_timed.py
 
 - 라벨은 봉 **끝** 시각(KST ``HH:MM`` — 토스 1분봉 그대로, 개장 봉 09:01과 같은 뜻). 창 ``hh:00``의 봉은 라벨 hh:01~hh:05(봉 시작 hh:00~hh:04).
   창 ``09:00``은 개장 창(시가 반사실 — 실행 감사)이고, 장 시간 변경일(10:00 개장)에는 ``10:00`` 창이 그 일을 합니다(고르는 것은 백엔드).
-  장중 시장가 주문은 그 기준 분 T((생성 + 60초)를 분으로 내린 뒤 + 1분 — 백엔드 ExecutionAudit.marketTarget과 같은 식)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
+  장중 시장가 주문은 그 기준 분 T(생성 뒤 처음 시작하는 분 — 백엔드 ExecutionAudit.marketTarget과 같은 식, ADR 0044)의 창 ``HH:MM``(라벨 T+1~T+5)을 같은 모양으로 더합니다
   (같은 종목·세션에 그 주문이 있을 때만 — 키가 매시와 같으면 같은 창). 분 단위 지정 시각(``AT_MINUTE`` — ADR 0027) 대기 주문은 그 지정 시각의
   창 ``HH:MM``을 같은 모양으로 더합니다(어느 한국 계좌의 주문이든 — 그 종목·목표 세션에만). 실행 감사 몫(한국 Claude 계좌1·2의 최근 주문, 상태 무관)의
   지정 시각 주문도 그 목표 세션 E에 같은 창을 더합니다(QA-301).
@@ -99,8 +99,9 @@ KR_TIMED_TIMINGS = ("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1
 KR_AUDIT_BOOKS = ("kr_claude", "kr_claude2")
 KR_AUDIT_RECENT_DAYS = 8
 MARKET_TIMING = "MARKET"
-# 장중 시장가의 기준 분 — (생성 + 이만큼)을 분으로 내린 뒤 + 1분(백엔드 ExecutionAudit.AFTER_CREATED).
-KR_MARKET_DELAY = timedelta(seconds=60)
+# 장중 시장가의 기준 분 — (생성 + 이만큼)을 분으로 내린 뒤 + 1분 = 생성 뒤 처음 시작하는 분(백엔드 ExecutionAudit.MARKET_AFTER_CREATED·미국
+# paper_bars.MARKET_AFTER_CREATED와 같은 값 — ADR 0044).
+KR_MARKET_DELAY = timedelta(0)
 
 
 def _now() -> datetime:
@@ -143,8 +144,9 @@ def _label(hour: int, minute: int) -> str:
 
 def market_target(created_at: datetime) -> str:
     """
-    장중 시장가 주문의 기준 분 T(KST ``HH:MM``) — (생성 + 60초)를 분으로 내린 뒤 + 1분이라 늘 생성 + 60초보다 뒤입니다(백엔드
-    ExecutionAudit.marketTarget·미국 paper_bars.market_target과 같은 식 — :00초 생성이면 T = 생성 + 2분).
+    장중 시장가 주문의 기준 분 T(KST ``HH:MM``) — 생성 뒤 처음 시작하는 분((생성 + KR_MARKET_DELAY)를 분으로 내린 뒤 + 1분 — 백엔드
+    ExecutionAudit.marketTarget·미국 paper_bars.market_target과 같은 식, ADR 0044). 정각 생성도 다음 분이고, 그 창의 R1 봉은 라벨 T+1(봉 끝 —
+    봉 구간 T~T+1분)이라 생성 뒤 구간입니다.
     """
     at = (created_at + KR_MARKET_DELAY).astimezone(KST).replace(second=0, microsecond=0) + timedelta(minutes=1)
     return _label(at.hour, at.minute)

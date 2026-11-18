@@ -281,7 +281,9 @@ class CheckpointPacketTest {
         assertThat(CheckpointPacket.remainingTimings(early, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-27T16:30:00Z")))
                 .containsExactly("MARKET", "AT_1200", "NEXT_CLOSE");
         assertThat(CheckpointPacket.remainingTimings(early, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-27T17:53:00Z")))
-                .as("12:53 ET — MARKET의 T 12:55 = 마감 5분 전").containsExactly("NEXT_CLOSE");
+                .as("12:53 ET — MARKET의 T 12:54는 마감 5분 전(12:55) 앞").containsExactly("MARKET", "NEXT_CLOSE");
+        assertThat(CheckpointPacket.remainingTimings(early, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-27T17:54:00Z")))
+                .as("12:54 ET — MARKET의 T 12:55 = 마감 5분 전").containsExactly("NEXT_CLOSE");
         assertThat(CheckpointPacket.remainingTimings(E, UsMarketCalendar.CALENDAR, Instant.parse("2026-11-02T21:30:00Z")))
                 .as("마감 뒤").isEmpty();
     }
@@ -523,17 +525,19 @@ class CheckpointPacketTest {
 
         var calendar = UsMarketCalendar.CALENDAR;
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T20:52:30Z")))
-                .as("15:52:30 — 시장가 기준 분 15:54는 마감 5분 전(15:55) 앞").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
+                .as("15:52:30 — 시장가 기준 분 15:53은 마감 5분 전(15:55) 앞").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
         assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T20:52:30Z")))
                 .containsExactly(Instant.parse("2026-11-02T20:54:00Z"), Instant.parse("2026-11-02T20:54:00Z"));
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T20:54:00Z")))
-                .as("15:54:00 — 기준 분 15:56은 닫힘").containsExactly("NEXT_CLOSE");
+                .as("15:54:00 — 시장가 기준 분 15:55·지정 시각 첫 분 15:56은 닫힘").containsExactly("NEXT_CLOSE");
         assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T20:54:00Z"))).isNull();
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T21:00:00Z"))).as("마감 뒤").isEmpty();
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T14:35:20Z")))
-                .as("09:35:20 — 시장가 기준 분 09:37은 개장 10분 뒤(09:40) 앞이라 없음").containsExactly("AT_MINUTE", "NEXT_CLOSE");
+                .as("09:35:20 — 시장가 기준 분 09:36은 개장 10분 뒤(09:40) 앞이라 없음").containsExactly("AT_MINUTE", "NEXT_CLOSE");
         assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T14:38:30Z")))
-                .as("09:38:30 — 기준 분 09:40부터 시장가").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
+                .as("09:38:30 — 시장가 기준 분 09:39는 아직 개장 10분 뒤 앞").containsExactly("AT_MINUTE", "NEXT_CLOSE");
+        assertThat(CheckpointPacket.freeRemainingTimings(E, calendar, Instant.parse("2026-11-02T14:39:30Z")))
+                .as("09:39:30 — 기준 분 09:40부터 시장가").containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
         assertThat(CheckpointPacket.freeMinutes(E, calendar, Instant.parse("2026-11-02T14:00:00Z")))
                 .as("개장 전 — 받는 범위의 첫 분 09:40부터(개장 10분 뒤)").containsExactly(Instant.parse("2026-11-02T14:40:00Z"),
                         Instant.parse("2026-11-02T20:54:00Z"));

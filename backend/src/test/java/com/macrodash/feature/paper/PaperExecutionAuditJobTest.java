@@ -283,13 +283,13 @@ class PaperExecutionAuditJobTest {
     @Test
     @DisplayName("장중 시장가(MARKET) 주문의 목표 시각 = 생성 + 60초 뒤 첫 분(10:32:10 → 10:34 ET) — 메뉴 반사실은 지금처럼(생성 전 시각은 null), MARKET 칸은 반사실 표에 없음")
     void marketTargetAtIsWritten() {
-        long id = order("AAPL", PaperBooks.MARKET, "PENDING", MON, et(TUE, 10, 32).plusSeconds(10));
+        long id = order("AAPL", PaperBooks.MARKET, "PENDING", MON, et(TUE, 10, 33).plusSeconds(10));
         bars(tuesdayMorning());
         job(true, et(TUE, 11, 0)).run();
         assertThat(store.execs.get(id).targetAt()).isEqualTo(et(TUE, 10, 34));
         assertThat(store.execs.get(id).timing()).isEqualTo(PaperBooks.MARKET);
         assertThat(cf(id).has(PaperBooks.MARKET)).isFalse();
-        assertThat(cf(id).get("AT_1000").isNull()).as("10:00은 생성(10:32) 전").isTrue();
+        assertThat(cf(id).get("AT_1000").isNull()).as("10:00은 생성(10:33) 전").isTrue();
     }
 
     @Test

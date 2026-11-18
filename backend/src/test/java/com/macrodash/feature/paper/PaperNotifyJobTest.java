@@ -396,7 +396,7 @@ class PaperNotifyJobTest {
     // QA-312: 리뷰 XC-2 — 장중 감시(ADR 0032)가 마감 10분 전 뒤에 낸 종가 STOP(NEXT_CLOSE, 만료 = 감지한 그 세션)을 주문·체결 알림이 '다음 거래일 종가'
     // (미국 '다음 세션 종가')로 적음. 실제로는 그날 종가에 팔리고 같은 알림의 근거 메모는 '그날 종가 매도'라 한 통 안에서 말이 엇갈림.
     @Test
-    @DisplayName("QA-312 장중 감시 STOP의 시점 이름 — 종가 STOP은 '그날 종가', 시장가 STOP은 기준 시각(생성 + 60초 뒤 첫 분, 그 시장 시각)까지. "
+    @DisplayName("QA-312 장중 감시 STOP의 시점 이름 — 종가 STOP은 '그날 종가', 시장가 STOP은 기준 시각(생성 뒤 처음 시작하는 분, 그 시장 시각)까지. "
             + "결정의 종가·밤 대체 지정 시각·감시 밖 STOP은 그대로")
     void qa312WatchStopTimingIsSameSession() {
         Book kr = store.books.get(PaperBooks.KR_CLAUDE2);
@@ -418,13 +418,13 @@ class PaperNotifyJobTest {
         Order usClose = new Order(12, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
                 PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T20:56:10Z"), session, null);
         assertThat(PaperNotifications.orderLine(usClose, Map.of(), false)).isEqualTo("매도 AAPL 전량 · 그날 종가");
-        // 장중 시장가 STOP — 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(ExecutionAudit.marketTarget), 그 시장 시각으로
+        // 장중 시장가 STOP — 기준 시각 T = 생성을 분으로 내린 뒤 + 1분(ExecutionAudit.marketTarget — ADR 0044), 그 시장 시각으로
         Order krMarket = new Order(13, PaperBooks.KR_CLAUDE2, null, "005930", "SELL", null, null, null, PaperBooks.MARKET,
                 PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T01:05:10Z"), session, null);
-        assertThat(PaperNotifications.timingName(krMarket, true)).isEqualTo("장중 시장가 10:07 KST");
+        assertThat(PaperNotifications.timingName(krMarket, true)).isEqualTo("장중 시장가 10:06 KST");
         Order usMarket = new Order(14, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.MARKET,
                 PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T15:22:30Z"), session, null);
-        assertThat(PaperNotifications.timingName(usMarket, false)).isEqualTo("장중 시장가 10:24 ET");
+        assertThat(PaperNotifications.timingName(usMarket, false)).isEqualTo("장중 시장가 10:23 ET");
 
         // 그대로인 것 — 결정이 낸 다음 거래일 종가, 밤 대체 STOP(다음 거래일 첫 분 지정 시각), 감시 근거가 없는 종가 STOP, 장중 확인의 시장가
         Order decided = new Order(15, PaperBooks.KR_CLAUDE2, 5L, "005930", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,

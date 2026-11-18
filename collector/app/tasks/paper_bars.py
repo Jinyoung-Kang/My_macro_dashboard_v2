@@ -11,7 +11,7 @@ app/tasks/paper_bars.py
   + 지연 기준 SPY. 다른 책(규칙 계좌 등)도 시각 지정 시점의 주문이 있으면 그 종목과 그 책 보유가 더해집니다(ADR 0027 — 없으면 그대로).
   표에서 고른 종목이 없으면 EmptyResult이고 Yahoo를 부르지 않습니다 — SPY 혼자서는 묻지 않습니다(잴 주문이 없음).
 [장중 시장가] store.timed_market_targets("US") — MARKET 주문(장중 확인·장중 판단 응답) 가운데 대기·최근 8일 것의 생성 시각. 주문마다 기준 시각
-  T = market_target(생성)(생성 + 60초 뒤 첫 분 — 백엔드 ExecutionAudit와 같은 식)을 그 T의 뉴욕 날짜 세션에만 메뉴처럼 창·첫 거래 봉 키로 더합니다.
+  T = market_target(생성)(생성 뒤 처음 시작하는 분 — 백엔드 ExecutionAudit와 같은 식, ADR 0044)을 그 T의 뉴욕 날짜 세션에만 메뉴처럼 창·첫 거래 봉 키로 더합니다.
 [분 단위 지정 시각] store.timed_minute_targets("US") — AT_MINUTE 주문(ADR 0027) 가운데 대기·최근 8일 것의 (기준 거래일, 지정 시각). 그 시각을
   기준일 뒤 7일 안의 세션에 창·첫 거래 봉 키로 더합니다(minute_labels — 수집기는 달력을 몰라 목표 세션 하나를 고르지 않음).
   MARKET·AT_MINUTE 주문이 없으면 저장본은 메뉴 일곱 키 그대로입니다(더하기만 — contract 1 그대로).
@@ -83,8 +83,9 @@ MENU = {
 }
 # 창 하나 = T ~ T+4분에 시작한 봉(사다리 R1 T 봉·R2 다음 4분 — §6-2).
 WINDOW = timedelta(minutes=5)
-# 장중 시장가(MARKET)의 기준 시각 — 생성 + 60초보다 **엄격히** 뒤인 첫 분(⑤ 'T > 생성 + 60초', 백엔드 ExecutionAudit.AFTER_CREATED와 같은 60초).
-MARKET_AFTER_CREATED = timedelta(seconds=60)
+# 장중 시장가(MARKET)의 기준 시각 여유 — T = (생성 + 이만큼)을 분으로 내린 뒤 + 1분 = 생성보다 **엄격히** 뒤인 첫 분(ADR 0044 — 정각 생성도 다음 분).
+# 백엔드 ExecutionAudit.MARKET_AFTER_CREATED와 이름·값이 같습니다(시험이 대조). 늦은 주문 가드 ⑤의 60초(ExecutionAudit.AFTER_CREATED)와는 다른 값입니다.
+MARKET_AFTER_CREATED = timedelta(0)
 # 분 단위 지정 시각(AT_MINUTE) 주문의 창을 더하는 날짜 폭 — 기준 거래일 뒤 이 달력일 수 안의 세션(목표 세션 E가 그 안에 듦, minute_labels).
 MINUTE_SESSION_DAYS = 7
 SESSIONS_KEPT = 3
@@ -136,9 +137,9 @@ def _traded(row: dict) -> bool:
 
 def market_target(created_at: datetime) -> datetime:
     """
-    장중 시장가(MARKET) 주문의 기준 시각 T(UTC) = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 늘 '생성 + 60초'보다 뒤입니다(생성이 :00.000초여도
-    T = 생성 + 2분). '분으로 올림'이면 :00초 생성에서 T = 생성 + 60초가 되어 ⑤ 엄격 규칙에 걸립니다. 백엔드 ExecutionAudit.marketTarget과 같은
-    식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
+    장중 시장가(MARKET) 주문의 기준 시각 T(UTC) = 생성 뒤 처음 시작하는 분 — (생성 + MARKET_AFTER_CREATED)를 분으로 내린 뒤 + 1분이라
+    생성 < T ≤ 생성 + 60초입니다(ADR 0044). 정각 생성(:00.000초)도 다음 분이고 생성과 같은 분은 쓰지 않습니다('분으로 올림'이면 T = 생성이 되어
+    생성 앞 거래가 섞인 봉을 고르게 됨). 백엔드 ExecutionAudit.marketTarget과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
     """
     shifted = (created_at + MARKET_AFTER_CREATED).astimezone(timezone.utc)
     return shifted.replace(second=0, microsecond=0) + timedelta(minutes=1)

@@ -1400,8 +1400,8 @@ class UsTimedFillsTest {
     @DisplayName("장중 시장가 MARKET — 기준 시각 T = 생성 + 60초 뒤 첫 분, 사다리 R1→R2→R2b→R3·3a")
     class Market {
 
-        /** 10:32:10 ET 생성 → T = 10:34 ET. */
-        private final Instant created = et(TUE, 10, 32).plusSeconds(10);
+        /** 10:33:10 ET 생성 → T = 10:34 ET. */
+        private final Instant created = et(TUE, 10, 33).plusSeconds(10);
         private final Instant target = et(TUE, 10, 34);
 
         @Test
@@ -1486,39 +1486,39 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @DisplayName("⑤ 엄격 — 생성이 :00.000초(10:02:00)면 T = 10:04(생성 + 60초 = 10:03 봉은 쓰지 않음), 검증기도 그 시각을 닫지 않음")
-        void marketTargetIsStrictlyAfterCreationPlus60() {
+        @DisplayName("정각 생성 — 생성이 :00.000초(10:02:00)면 T = 10:03(생성 분 10:02 봉은 쓰지 않음, ADR 0044), 검증기도 그 시각을 닫지 않음")
+        void marketTargetIsTheFirstMinuteAfterCreation() {
             Instant at = et(TUE, 10, 2);
-            assertThat(ExecutionAudit.marketTarget(at)).isEqualTo(et(TUE, 10, 4));
-            assertThat(ExecutionAudit.marketTarget(at.plusMillis(1))).isEqualTo(et(TUE, 10, 4));
-            assertThat(ExecutionAudit.marketTarget(at.minusMillis(1))).isEqualTo(et(TUE, 10, 3));
+            assertThat(ExecutionAudit.marketTarget(at)).isEqualTo(et(TUE, 10, 3));
+            assertThat(ExecutionAudit.marketTarget(at.plusMillis(1))).isEqualTo(et(TUE, 10, 3));
+            assertThat(ExecutionAudit.marketTarget(at.minusMillis(1))).isEqualTo(et(TUE, 10, 2));
             long id = market("AAPL", PaperBooks.BUY, 10, null, at);
-            bars(new Bars(et(TUE, 11, 21)).market(java.time.LocalTime.of(10, 4))
-                    .bar("AAPL", TUE, et(TUE, 10, 3), 98.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 4), 100.0, 500.0)
-                    .bar("AAPL", TUE, et(TUE, 10, 5), 100.2, 500.0));
+            bars(new Bars(et(TUE, 11, 21)).market(java.time.LocalTime.of(10, 3))
+                    .bar("AAPL", TUE, et(TUE, 10, 2), 98.0, 500.0).bar("AAPL", TUE, et(TUE, 10, 3), 100.0, 500.0)
+                    .bar("AAPL", TUE, et(TUE, 10, 4), 100.2, 500.0));
 
             observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 103.0));
 
-            assertThat(barOf(id).barAt()).isEqualTo(et(TUE, 10, 4));
+            assertThat(barOf(id).barAt()).isEqualTo(et(TUE, 10, 3));
             assertThat(fillOf(id).rawPrice()).isEqualTo(100.0);
             assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, at, US)).isEmpty();
         }
 
         @Test
-        @DisplayName("검증기 — MARKET은 기준 시각(지금 + 60초 뒤 첫 분)이 마감 5분 전(보통 날 15:55·조기 폐장일 12:55 ET) 이후거나 정규장 밖이면 MALFORMED")
+        @DisplayName("검증기 — MARKET은 기준 시각(지금 뒤 처음 시작하는 분)이 마감 5분 전(보통 날 15:55·조기 폐장일 12:55 ET) 이후거나 정규장 밖이면 MALFORMED")
         void earlyCloseMarketAfter1255Rejected() {
             LocalDate early = ExecutionAuditFixtures.EARLY_CLOSE;
             LocalDate before = ExecutionAuditFixtures.WED_BEFORE_THANKSGIVING;
             assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), before,
-                    et(early, 12, 52).plusSeconds(59), US)).as("T = 12:54 — 받음").isEmpty();
+                    et(early, 12, 53).plusSeconds(59), US)).as("T = 12:54 — 받음").isEmpty();
             Map<String, com.macrodash.analytics.OrderValidator.Closed> late = UsTimedFills.closedTimings(
-                    List.of(PaperBooks.MARKET), before, et(early, 12, 53), US);
+                    List.of(PaperBooks.MARKET), before, et(early, 12, 54), US);
             assertThat(late).containsOnlyKeys(PaperBooks.MARKET);
             assertThat(late.get(PaperBooks.MARKET).reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
             assertThat(late.get(PaperBooks.MARKET).detail()).contains("마감 5분 전(12:55 ET)");
-            assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, et(TUE, 15, 52).plusSeconds(59), US))
+            assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, et(TUE, 15, 53).plusSeconds(59), US))
                     .as("보통 날 T = 15:54 — 받음").isEmpty();
-            assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, et(TUE, 15, 53), US))
+            assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, et(TUE, 15, 54), US))
                     .as("보통 날 T = 15:55 — 막음").containsOnlyKeys(PaperBooks.MARKET);
             assertThat(UsTimedFills.closedTimings(List.of(PaperBooks.MARKET), MON, et(TUE, 9, 0), US).get(PaperBooks.MARKET)
                     .detail()).as("개장 전").contains("정규장 밖");
@@ -1527,10 +1527,10 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @DisplayName("서머타임이 끝난 주(2026-11-02 EST): 10:02:10 ET 생성 → T = 10:04 ET = 15:04Z = 00:04 KST — 고정 오프셋(14:04Z) 봉은 쓰지 않음")
+        @DisplayName("서머타임이 끝난 주(2026-11-02 EST): 10:03:10 ET 생성 → T = 10:04 ET = 15:04Z = 00:04 KST — 고정 오프셋(14:04Z) 봉은 쓰지 않음")
         void dstEndWeekMarket() {
             LocalDate mon = LocalDate.of(2026, 11, 2);
-            Instant made = Instant.parse("2026-11-02T15:02:10Z");
+            Instant made = Instant.parse("2026-11-02T15:03:10Z");
             long id = timed("AAPL", PaperBooks.BUY, 10, null, null, PaperBooks.MARKET, LocalDate.of(2026, 10, 30), made);
             assertThat(ExecutionAudit.marketTarget(made)).isEqualTo(Instant.parse("2026-11-02T15:04:00Z"));
             bars(new Bars(Instant.parse("2026-11-02T16:21:00Z")).market(java.time.LocalTime.of(10, 4))
@@ -1561,7 +1561,7 @@ class UsTimedFillsTest {
         @DisplayName("MARKET 매도가 대기로 남으면(1분봉 저장본이 T + 6분 전) 그 W의 스탑에서 빼고, 다음 W에서 T 봉으로 먼저 풂 — 스탑·재진입 금지 없음")
         void marketDefersTheStopUntilResolved() {
             hold("XXX", 100, 90, 100, 100.0);
-            long id = market("XXX", PaperBooks.SELL, null, null, et(TUE, 10, 2).plusSeconds(30));
+            long id = market("XXX", PaperBooks.SELL, null, null, et(TUE, 10, 3).plusSeconds(30));
             bars(new Bars(et(TUE, 10, 6)).market(java.time.LocalTime.of(10, 4))
                     .bar("XXX", TUE, et(TUE, 10, 4), 97.0, 500.0).bar("XXX", TUE, et(TUE, 10, 5), 97.0, 500.0)
                     .bar("SPY", TUE, et(TUE, 10, 4), 580.0, 9000.0));
@@ -1583,7 +1583,7 @@ class UsTimedFillsTest {
         }
 
         @Test
-        @DisplayName("룩어헤드 성질 — 생성 시각·봉·받은 시각을 무작위로 만들어도 MARKET은 T(생성 + 60초 뒤 첫 분) 앞 봉·받은 뒤 봉으로 체결하지 않음, 체결가 = 그 봉 시가")
+        @DisplayName("룩어헤드 성질 — 생성 시각·봉·받은 시각을 무작위로 만들어도 MARKET은 T(생성 뒤 처음 시작하는 분) 앞 봉·받은 뒤 봉으로 체결하지 않음, 체결가 = 그 봉 시가")
         void marketNeverFillsBeforeTargetOrCreation() {
             Random random = new Random(20261031L);
             int filled = 0;
@@ -1615,7 +1615,7 @@ class UsTimedFillsTest {
                     continue;
                 }
                 filled++;
-                assertThat(t).isAfter(made.plusSeconds(60));
+                assertThat(t).isAfter(made).isBeforeOrEqualTo(made.plusSeconds(60));
                 assertThat(fill.barAt()).as("생성 " + made).isAfterOrEqualTo(t).isBefore(fetched);
                 assertThat(fill.fill().rawPrice()).as("그 봉의 시가")
                         .isEqualTo(100.0 + Duration.between(et(TUE, 9, 30), fill.barAt()).toMinutes());
@@ -1643,13 +1643,13 @@ class UsTimedFillsTest {
             assertThat(polledCash).isEqualTo(batchCash);
         }
 
-        /** 폴링 불변의 한 판 — 보유 ZZZ, MARKET 매수 AAPL(10:32:10 → T 10:34)·MARKET 매도 ZZZ(13:17:40 → T 13:19). */
+        /** 폴링 불변의 한 판 — 보유 ZZZ, MARKET 매수 AAPL(10:33:10 → T 10:34)·MARKET 매도 ZZZ(13:18:40 → T 13:19). */
         private List<String> runMarketSession(List<Instant> observations) {
             store.states.put(BOOK, new com.macrodash.store.PaperStore.BookState(BOOK, 60_000, 100_000, 40_000, 40, null,
                     null, null, null));
             hold("ZZZ", 400, 95, 100, 100.0);
             timed("AAPL", PaperBooks.BUY, null, 20.0, null, PaperBooks.MARKET, MON, created);
-            timed("ZZZ", PaperBooks.SELL, null, null, 0.5, PaperBooks.MARKET, MON, et(TUE, 13, 17).plusSeconds(40));
+            timed("ZZZ", PaperBooks.SELL, null, null, 0.5, PaperBooks.MARKET, MON, et(TUE, 13, 18).plusSeconds(40));
             for (Instant w : observations) {
                 Instant fetched = w.plusSeconds(60);
                 Bars bars = new Bars(fetched).market(java.time.LocalTime.of(10, 34)).market(java.time.LocalTime.of(13, 19));

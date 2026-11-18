@@ -430,7 +430,7 @@ class ExecutionAuditTest {
     private static final Path COLLECTOR_BARS_TEST = Path.of("../collector/tests/test_paper_bars.py");
 
     @Test
-    @DisplayName("MARKET 기준 시각 = (생성 + 60초)를 분으로 내린 뒤 + 1분 — 수집기 시험의 예시 표(MARKET_TARGETS)와 같은 값(Java·Python), 늘 생성 + 60초보다 뒤")
+    @DisplayName("MARKET 기준 시각 = 생성 뒤 처음 시작하는 분(생성을 분으로 내린 뒤 + 1분, ADR 0044) — 수집기 시험의 예시 표(MARKET_TARGETS)와 같은 값(Java·Python), 생성 < T ≤ 생성 + 60초")
     void marketTargetMatchesTheCollectorTable() throws IOException {
         assumeTrue(Files.exists(COLLECTOR_BARS_TEST), "collector/tests/test_paper_bars.py를 찾을 수 없습니다");
         String text = Files.readString(COLLECTOR_BARS_TEST);
@@ -441,16 +441,17 @@ class ExecutionAuditTest {
         while (row.find()) {
             Instant created = java.time.OffsetDateTime.parse(row.group(1)).toInstant();
             Instant target = java.time.OffsetDateTime.parse(row.group(2)).toInstant();
-            assertThat(ExecutionAudit.marketTarget(created)).as(row.group(1)).isEqualTo(target).isAfter(created.plusSeconds(60));
+            assertThat(ExecutionAudit.marketTarget(created)).as(row.group(1)).isEqualTo(target).isAfter(created)
+                    .isBeforeOrEqualTo(created.plusSeconds(60));
             rows++;
         }
-        assertThat(rows).as("예시 넷(:00초·:30초·:59.999초·서머타임)").isEqualTo(4);
+        assertThat(rows).as("예시 일곱(정각·+1µs·:30초·-1µs·:59.999초·서머타임·사용자 예 13:10:42 KST)").isEqualTo(7);
     }
 
     @Test
-    @DisplayName("MARKET 주문의 기준 시각·반사실·늦게 풂: targetAt(주문) = 생성 + 60초 뒤 첫 분, fromBars(MARKET)는 그 T 창의 R1, 메뉴 반사실(AT_1000)은 생성 전 시각이라 null, 반사실 표에는 MARKET 칸이 없음, 늦게 풂은 그 T 기준")
+    @DisplayName("MARKET 주문의 기준 시각·반사실·늦게 풂: targetAt(주문) = 생성 뒤 처음 시작하는 분, fromBars(MARKET)는 그 T 창의 R1, 메뉴 반사실(AT_1000)은 생성 전 시각이라 null, 반사실 표에는 MARKET 칸이 없음, 늦게 풂은 그 T 기준")
     void marketOrderUsesItsOwnTarget() {
-        Instant created = et(TUE, 10, 32).plusSeconds(10);
+        Instant created = et(TUE, 10, 33).plusSeconds(10);
         Order order = buy(PaperBooks.MARKET, MON, created);
         assertThat(ExecutionAudit.targetAt(order, TUE, US)).isEqualTo(et(TUE, 10, 34));
         assertThat(ExecutionAudit.targetAt(PaperBooks.MARKET, TUE, US)).as("주문 없이 시점 이름만으로는 T가 없음").isNull();

@@ -727,8 +727,8 @@ class PaperIntradayJobTest {
             assertThat(o.expiresOn()).isEqualTo(E);
         });
         Order market = made.stream().filter(o -> PaperBooks.MARKET.equals(o.timing())).findFirst().orElseThrow();
-        assertThat(ExecutionAudit.targetAt(market, E, UsPaperMarket.INSTANCE.calendar())).as("10:03:20 생성 → 10:05 ET")
-                .isEqualTo(T.plus(Duration.ofMinutes(5)));
+        assertThat(ExecutionAudit.targetAt(market, E, UsPaperMarket.INSTANCE.calendar())).as("10:03:20 생성 → 10:04 ET(생성 뒤 처음 시작하는 분)")
+                .isEqualTo(T.plus(Duration.ofMinutes(4)));
         assertThat(verdict(d, "AAA").path("rejectReason").asString()).isEqualTo("LATE_FOR_TIMING");
         Order late = made.stream().filter(o -> "AAA".equals(o.ticker())).findFirst().orElseThrow();
         assertThat(late.reason().path("validation").asString()).as("근거 문구의 세션 말은 '이 세션'이 아니라 지정 시각 그대로").contains("10:02 ET");
