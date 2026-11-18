@@ -235,10 +235,11 @@ describe("고른 기관 패널 — 제목·설명·기관 상세 링크와 요�
     expect(total.textContent).toContain("원/달러 값이 없어 원화 환산은 생략했습니다.");
   });
 
-  it("기관 목록을 아직 못 받으면 제목은 포트폴리오 응답의 기관 이름 — 부제(목록의 설명)는 없음", async () => {
-    served[PORTFOLIO] = summaryPortfolio();
+  it("기관 목록을 아직 못 받으면 제목·부제는 포트폴리오 응답의 기관 이름·설명(같은 백엔드 글)", async () => {
+    served[PORTFOLIO] = summaryPortfolio({ institution: { name: "가상 버크셔 (응답 이름)", desc: "응답의 기관 설명" } });
     render(<InstitutionsPage />);
-    expect(await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (응답 이름)" })).toBeTruthy();
+    const heading = await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (응답 이름)" });
+    expect(within(heading.closest("section") as HTMLElement).getByText("응답의 기관 설명")).toBeTruthy();
     expect(screen.queryByText("합성 기관 설명 — 가치 투자")).toBeNull();
   });
 });
@@ -249,13 +250,39 @@ describe("고른 기관 패널 — 포트폴리오 읽기 상태", () => {
     serve();
   });
 
-  it("읽는 중이면 '불러오는 중' — 제목은 CIK(목록·응답 모두 없음), 기관 상세 링크는 그대로", async () => {
+  it("처음 읽는 중이면 값 꼴의 KPI 자리(세 타일 '… 불러오는 중', 첫 타일 출처 줄) — 제목은 CIK(목록·응답 모두 없음), 부제 한 줄은 비워 둠, 기관 상세 링크는 그대로", async () => {
     render(<InstitutionsPage />);
     const heading = await screen.findByRole("heading", { level: 2, name: `CIK ${BERKSHIRE}` });
     const panel = heading.closest("section") as HTMLElement;
-    expect(within(panel).getByText("13F 공시를 불러오는 중…")).toBeTruthy();
+    const pending = within(panel).getByRole("region", { name: "포트폴리오 요약 불러오는 중" });
+    expect(within(pending).getAllByRole("status").map((node) => node.getAttribute("aria-label"))).toEqual([
+      "최신 공시 기준일 불러오는 중",
+      "포트폴리오 총액 불러오는 중",
+      "수집된 분기 불러오는 중",
+    ]);
+    expect(pending.textContent).toContain("SEC EDGAR 13F");
+    // 값 글(날짜·금액·개수)은 없음 — 출처 글의 '13F'만 숫자.
+    expect(pending.textContent?.replace("SEC EDGAR 13F", "")).not.toMatch(/\d/);
+    expect(within(panel).queryByText("13F 공시를 불러오는 중…")).toBeNull();
+    // 부제 자리 — 글 없는 한 줄(읽기에서 뺌). 늦게 온 설명이 끼어들며 아래를 밀지 않게.
+    const reserved = heading.parentElement?.parentElement?.querySelector("p");
+    expect(reserved?.textContent).toBe("\u00a0");
+    expect(reserved?.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
     expect(within(panel).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe(`/institutions/${BERKSHIRE}`);
     expect(screen.queryByRole("region", { name: "포트폴리오 요약" })).toBeNull();
+  });
+
+  it("실패 뒤 다시 읽는 동안은 값 꼴 자리가 아니라 '불러오는 중' 한 줄(QA-655와 같은 규칙)", async () => {
+    let calls = 0;
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = () => {
+      calls += 1;
+      return calls === 1 ? Promise.reject(new Error("백엔드 API에 연결하지 못했습니다")) : new Promise(() => {});
+    };
+    render(<InstitutionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
+    expect(await screen.findByText("13F 공시를 불러오는 중…")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "포트폴리오 요약 불러오는 중" })).toBeNull();
   });
 
   it("읽기가 실패하면 그 문구와 다시 시도 — 누르면 같은 경로를 한 번 더 읽고, 값이 오면 KPI 띠", async () => {

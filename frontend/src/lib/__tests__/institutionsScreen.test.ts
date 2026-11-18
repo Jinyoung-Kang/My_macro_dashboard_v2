@@ -9,8 +9,10 @@ import {
   holdingRowKeys,
   holdingRowLabels,
   institutionItems,
+  institutionSubtitle,
   institutionTitle,
   portfolioKpis,
+  portfolioKpisPending,
   WEIGHT_LINE_LABEL_WIDTH,
   weightLines,
 } from "../institutionsScreen";
@@ -186,5 +188,27 @@ describe("holdingInspectorItems", () => {
     const items = holdingInspectorItems(holding({}), { toKrw: () => null, note: "원/달러 값이 없어 원화 환산은 생략했습니다." });
     const krwItem = items.find((item) => item.label === "원화 환산");
     expect(krwItem).toMatchObject({ value: null, note: "원/달러 값이 없어 원화 환산은 생략했습니다." });
+  });
+});
+
+describe("institutionSubtitle", () => {
+  const items = [{ key: "0001067983", label: "가상 버크셔", desc: "목록 설명" }];
+
+  it("목록 설명 → 포트폴리오 응답의 기관 설명 → null(빈 글·'—'는 없는 것으로)", () => {
+    expect(institutionSubtitle(items, "0001067983", { institution: { desc: "응답 설명" } })).toBe("목록 설명");
+    expect(institutionSubtitle([], "0001067983", { institution: { desc: "응답 설명" } })).toBe("응답 설명");
+    expect(institutionSubtitle([{ key: "0001067983", label: "x", desc: "" }], "0001067983", { institution: { desc: "응답 설명" } })).toBe("응답 설명");
+    expect(institutionSubtitle([], "0001067983", { institution: { desc: "—" } })).toBeNull();
+    expect(institutionSubtitle([], "0001067983", null)).toBeNull();
+  });
+});
+
+describe("portfolioKpisPending", () => {
+  it("값 띠와 같은 세 이름의 자리표시 — 첫 타일만 출처, 둘째 타일 보조 글 두 줄 자리, 값은 모두 null", () => {
+    const pending = portfolioKpisPending("합성 출처");
+    expect(pending.map((item) => item.label)).toEqual(["최신 공시 기준일", "포트폴리오 총액", "수집된 분기"]);
+    expect(pending.every((item) => item.pending === true && item.value === null)).toBe(true);
+    expect(pending.map((item) => item.source)).toEqual(["합성 출처", undefined, undefined]);
+    expect(pending[1].pendingLines).toBe(2);
   });
 });

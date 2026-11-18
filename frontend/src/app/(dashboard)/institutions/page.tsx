@@ -15,16 +15,19 @@ import {
   PageHeader,
   Panel,
   Select,
+  SKELETON_BAR,
   TEXT_TARGET,
 } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { institutionHref } from "@/lib/detail";
 import {
   type InstitutionEntry,
   institutionItems,
+  institutionSubtitle,
   institutionTitle,
   portfolioKpis,
+  portfolioKpisPending,
   PORTFOLIO_SOURCE,
   weightLines,
 } from "@/lib/institutionsScreen";
@@ -57,7 +60,7 @@ export default function InstitutionsPage() {
   const [quarters, setQuarters] = useState("8");
   const [topN, setTopN] = useState("30");
 
-  const { data, loading, error, reload, refreshError } = useApi<PortfolioResponse>(
+  const { data, loading, error, reload, refreshError, failedAt } = useApi<PortfolioResponse>(
     endpoints.institution.portfolio(cik, quarters, topN),
   );
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다. 여기서 따로 받아 오면
@@ -71,13 +74,22 @@ export default function InstitutionsPage() {
       institutions.error ? (
         <ErrorState message={institutions.error} onRetry={institutions.reload} />
       ) : institutions.loading ? (
-        <Skeleton lines={6} label="기관 목록을 불러오는 중" />
+        firstLoadPending(institutions) ? (
+          <InstitutionListPending />
+        ) : (
+          <Skeleton lines={2} label="기관 목록을 불러오는 중" />
+        )
       ) : undefined
     ) : undefined;
-  const selected = items.find((item) => item.key === cik);
   // 고른 기관 패널 — 제목(목록 이름, 없으면 포트폴리오 응답의 이름·'CIK …')과 요약 KPI(예전 지표 칸 셋과 같은 값·글).
   const title = institutionTitle(items, cik, data);
+  // 부제 — 목록의 설명(없으면 포트폴리오 응답의 같은 글). 둘 다 읽는 중이면 한 줄을 비워 두어, 늦게 온 설명이 끼어들며 아래 KPI 띠를 밀지 않게 합니다.
+  const subtitleText = institutionSubtitle(items, cik, data);
+  const subtitle =
+    subtitleText ?? (institutions.loading || loading ? <span aria-hidden="true">{"\u00a0"}</span> : undefined);
   const kpis = portfolioKpis(data?.available ? data : null, usdKrw, PORTFOLIO_SOURCE);
+  // 포트폴리오를 처음 읽는 동안(값도 앞선 실패도 없음)은 값 꼴의 KPI 자리, 실패 뒤 다시 읽는 동안은 '불러오는 중' 한 줄(QA-655와 같은 규칙).
+  const portfolioFirstLoad = firstLoadPending({ data, loading, failedAt });
   const history = data?.weightHistory;
 
   const chartData = history ? weightHistoryRows(history.dates, history.series) : [];
@@ -142,7 +154,7 @@ export default function InstitutionsPage() {
         */}
         <Panel
           title={title}
-          subtitle={selected?.desc || undefined}
+          subtitle={subtitle}
           actions={
             // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 포커스 링 — 기관 상세 '13F 포트폴리오에서 자세히'와 같은 꼴(중립 잉크·밑줄).
             <Link href={institutionHref(cik)} className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
@@ -150,7 +162,13 @@ export default function InstitutionsPage() {
             </Link>
           }
         >
-          {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
+          {loading && !data &&
+            (portfolioFirstLoad ? (
+              // 이름은 값이 온 뒤의 띠('포트폴리오 요약')와 다르게 — 읽는 중인 영역임을 이름이 말합니다.
+              <KpiStrip label="포트폴리오 요약 불러오는 중" items={portfolioKpisPending(PORTFOLIO_SOURCE)} pendingMatchesValue keepDates />
+            ) : (
+              <Loading label="13F 공시를 불러오는 중…" />
+            ))}
           {error && <ErrorState message={error} onRetry={reload} />}
           {data && !data.available && (
             <Callout tone="warn">{data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}</Callout>
@@ -209,3 +227,61 @@ export default function InstitutionsPage() {
     </div>
   );
 }
+
+/**
+ * 기관 목록을 처음 읽는 동안의 자리 — 값이 온 뒤의 목록 꼴(좁은 화면 44px 태그 줄바꿈, 넓은 화면 세로 목록 줄)로 줄 열두 개를 그립니다. 예전에는 글 줄
+ * 자리표시(Skeleton 6줄 약 140px)라, 목록(390 약 630px·lg 약 664px)이 오면 좁은 화면에서는 아래 조회 조건·고른 기관 패널 전체가, 넓은 화면에서는 왼쪽
+ * 조회 조건이 밀렸습니다(자기 빌드 CLS 390 0.436). 태그 폭·줄 높이는 QA 자료 12곳을 잰 값(PENDING_INSTITUTIONS)이라 목록이 바뀌면 조금 어긋날 수
+ * 있습니다 — 자리일 뿐 보이는 수·이름이 아닙니다. 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
+ */
+function InstitutionListPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="기관 목록을 불러오는 중" className="min-w-0">
+      <span className="sr-only">기관 목록을 불러오는 중</span>
+      {/* 좁은 화면 — 거르기 목록 태그(44px·4px 모서리·1px 경계)와 같은 꼴, 폭은 기관 이름 태그의 잰 폭. */}
+      <ul aria-hidden="true" className="flex min-w-0 flex-wrap gap-2 lg:hidden">
+        {PENDING_INSTITUTIONS.map(({ tag }, index) => (
+          <li key={index} className="max-w-full" style={{ width: tag }}>
+            <span className="flex h-11 items-center rounded-control border border-border px-3">
+              <span className={`block h-3.5 w-full ${SKELETON_BAR}`} />
+            </span>
+          </li>
+        ))}
+      </ul>
+      {/* 넓은 화면 — 세로 목록 줄(이름 줄 20px × 줄 수 + 위 6px·아래 5px + 구분선 1px, 마지막 줄은 위아래 6px — 거르기 목록 줄과 같은 셈). */}
+      <ul aria-hidden="true" className="hidden min-w-0 flex-col lg:flex">
+        {PENDING_INSTITUTIONS.map(({ lines }, index) => (
+          <li
+            key={index}
+            className={`flex flex-col px-3 ${index < PENDING_INSTITUTIONS.length - 1 ? "border-b border-border-subtle pt-1.5 pb-[5px]" : "py-1.5"}`}
+          >
+            {Array.from({ length: lines }, (_, line) => (
+              <span key={line} className="flex h-5 items-center">
+                <span className={`block h-3.5 ${line === lines - 1 && lines > 1 ? "w-3/5" : "w-full"} ${SKELETON_BAR}`} />
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * 기관 목록 자리의 줄 — 좁은 화면 태그 폭(px)과 넓은 화면(왼쪽 13rem 칸) 이름 줄 수. QA 스택 자료 12곳(목록 차례)을 자기 빌드로 잰 값입니다
+ * (390 태그 폭 147~336px, lg 줄 1~3줄 — 합 664px).
+ */
+const PENDING_INSTITUTIONS: readonly { tag: number; lines: number }[] = [
+  { tag: 252, lines: 2 },
+  { tag: 287, lines: 2 },
+  { tag: 225, lines: 2 },
+  { tag: 336, lines: 3 },
+  { tag: 322, lines: 2 },
+  { tag: 147, lines: 1 },
+  { tag: 184, lines: 2 },
+  { tag: 275, lines: 2 },
+  { tag: 322, lines: 3 },
+  { tag: 290, lines: 2 },
+  { tag: 272, lines: 3 },
+  { tag: 300, lines: 2 },
+];

@@ -33,6 +33,18 @@ export function institutionTitle(
   return items.find((item) => item.key === cik)?.label ?? filerName(portfolio?.institution?.name) ?? `CIK ${cik}`;
 }
 
+/**
+ * 고른 기관 패널의 부제 — 기관 목록의 설명, 목록을 아직 못 받았으면 포트폴리오 응답의 기관 설명(같은 백엔드 기관 표의 글 — QA 자료 12곳 모두 같은 글),
+ * 둘 다 없으면 null. 먼저 온 쪽의 글로 바로 그려, 늦게 온 쪽 때문에 부제 줄이 새로 끼어들어 아래 KPI 띠가 밀리지 않게 합니다.
+ */
+export function institutionSubtitle(
+  items: readonly InstitutionItem[],
+  cik: string,
+  portfolio: Pick<PortfolioResponse, "institution"> | null | undefined,
+): string | null {
+  return presentText(items.find((item) => item.key === cik)?.desc) ?? presentText(portfolio?.institution?.desc) ?? null;
+}
+
 /** 요약 KPI 띠 첫 타일의 출처 줄 — 기관 상세 보유 종목 패널과 같은 글. */
 export const PORTFOLIO_SOURCE = "SEC EDGAR 13F";
 
@@ -83,6 +95,19 @@ export function portfolioKpis(
       unit: "개",
       note: quarters.map((quarter) => quarter.reportDate).join(", ") || null,
     },
+  ];
+}
+
+/**
+ * 처음 읽는 동안의 요약 KPI 띠 — 세 타일(이름 같음)의 자리표시. 첫 타일은 값이 온 뒤와 같은 출처 글(띠가 pendingMatchesValue로 그림), 둘째 타일은 보조 글
+ * 두 줄 자리(값이 온 뒤 넓은 타일 — 1280·1440 — 의 원화 줄·분기 목록 두 줄과 같은 높이 126px)를 잡습니다. 값이 오기 전에는 아래에 다른 패널이 없어
+ * 높이가 달라도 밀리는 것은 없습니다(좁은 타일 1024는 분기 목록이 여덟 줄이라 값이 오면 더 높아짐).
+ */
+export function portfolioKpisPending(source: string): KpiItem[] {
+  return [
+    { key: "reportDate", label: "최신 공시 기준일", value: null, pending: true, source },
+    { key: "totalValue", label: "포트폴리오 총액", value: null, pending: true, pendingLines: 2 },
+    { key: "quarters", label: "수집된 분기", value: null, pending: true },
   ];
 }
 
