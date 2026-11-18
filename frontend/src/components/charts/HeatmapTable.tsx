@@ -37,7 +37,8 @@ export type HeatmapRow = {
  * - 칸 바탕은 순차 팔레트 다섯 단계(lib/heatmap — 명세 §3-5, 어두운 단계 = 0에 가까움 → 밝은 단계 = 큼): 값 ÷ `max`가 (0, 0.2]면 단계 1 … (0.8, 1]이면 5.
  *   칸 글자색은 단계마다 정해 두었습니다(단계 1~3 본문색·4~5 바탕색 — 모두 4.5:1 이상). 칠한 칸에는 `data-step`(1~5)을 붙입니다.
  *   고대비(forced-colors)에서도 단계가 남게 칠한 칸과 범례 견본은 색을 시스템 색으로 바꾸지 않습니다(forced-color-adjust: none — 글자·바탕 쌍이 4.5:1 이상이라 그대로 읽힘).
- * - 값을 모르는 칸(null·undefined·유한하지 않은 수)은 공용 '—'(Empty — 낭독 '값 없음'), 0인 칸은 `zeroText`(주면 — 예: 비중의 '·' 미보유), 둘 다 칠하지 않습니다.
+ * - 값을 모르는 칸(null·undefined·유한하지 않은 수)은 공용 '—'(Empty — 낭독 '값 없음'), 0인 칸은 `zeroText`(주면 — 보이는 기호 `text`는 읽기에서 빼고 낭독 글 `sr`을
+ *   읽음, 예: 비중의 '·' = '보유하지 않음' — QA-717), 둘 다 칠하지 않습니다.
  *   0 이하·`max`가 0 이하도 칠하지 않습니다. 자기 칸(`selfIndex`)은 단계 대신 중립 바탕(surface-2)·보조 글자색입니다.
  * - 표 구조: 낭독용 표 이름(sr-only caption = `caption`), 열 머리(th scope=col — 전체 이름은 title), 첫 열은 행 머리(th scope=row — 가로 스크롤 때 왼쪽에 붙어 남음).
  *   머리 칸 글(열 머리·행 머리)은 한글을 낱말 사이에서만 꺾습니다(break-keep — 공용 글 부품 규약 QA-568). 없으면 최소 폭(minWidth)에 눌린 열에서 기관 이름이
@@ -70,7 +71,8 @@ export function HeatmapTable({
   rows: readonly HeatmapRow[];
   max: number;
   format: (value: number) => string;
-  zeroText?: string;
+  /** 0인 칸의 글 — 보이는 기호(`text`)와 낭독 글(`sr`). 주지 않으면 0도 `format`대로. */
+  zeroText?: { text: string; sr: string };
   legend: { stepLabel: (step: 1 | 2 | 3 | 4 | 5) => string; note?: ReactNode };
   minWidth?: number;
   /** 처음 스크롤 자리 — "end"면 오른쪽 끝(가장 최근 열). */
@@ -140,8 +142,19 @@ export function HeatmapTable({
                   // 0인 칸은 "데이터 없음"이 아니라 그 값이 0이라는 뜻입니다(비중이면 그 분기에 보유하지 않음) — 칠하지 않습니다.
                   const step = self ? 0 : heatmapStep(value, max);
                   const title = `${row.title ?? row.label} · ${column.title ?? column.label}`;
+                  // 0 칸의 기호는 읽기에서 빼고 뜻을 읽힙니다(기호만이면 낭독기가 읽지 않거나 '가운뎃점'으로 읽어 모름 칸과 갈리지 않았음 — QA-717). 바깥 span은
+                  // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖으로 빠져 문서 폭을 넓히지 않게(공용 Empty와 같은 까닭).
                   const text =
-                    value === null ? <Empty align="end" /> : value === 0 && zeroText !== undefined ? zeroText : format(value);
+                    value === null ? (
+                      <Empty align="end" />
+                    ) : value === 0 && zeroText !== undefined ? (
+                      <span className="relative">
+                        <span aria-hidden="true">{zeroText.text}</span>
+                        <span className="sr-only">{zeroText.sr}</span>
+                      </span>
+                    ) : (
+                      format(value)
+                    );
                   if (self) {
                     return (
                       <td key={column.key} className="bg-surface-2 px-2 py-1.5 text-right tabular-nums text-text-2" title={title}>
@@ -232,7 +245,7 @@ export function WeightHeatmap({
       // 열은 분기 차례(오래된 것 → 최근) — 상자보다 넓으면 가장 최근 분기가 먼저 보이게 오른쪽 끝에서 시작합니다(QA-713).
       initialScroll="end"
       // 0%는 "미보유"입니다. 값을 모르는 것(EMPTY)과 같은 기호를 쓰면 둘을 구분할 수 없습니다.
-      zeroText="·"
+      zeroText={{ text: "·", sr: "보유하지 않음" }}
       legend={{
         stepLabel: (step) => {
           const [low, high] = heatmapStepRange(step);

@@ -57,7 +57,7 @@ const COLUMNS = [
   { key: "e", label: "마" },
 ];
 
-function renderTable(rows: HeatmapRow[], extra: { max?: number; zeroText?: string; note?: string } = {}) {
+function renderTable(rows: HeatmapRow[], extra: { max?: number; zeroText?: { text: string; sr: string }; note?: string } = {}) {
   return render(
     <HeatmapTable
       caption="합성 행렬"
@@ -101,9 +101,11 @@ describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
   });
 
   it("모름은 '—', 0은 zeroText — 둘 다 칠하지 않는다(단계·바탕·고대비 예외 없음)", () => {
-    renderTable([{ key: "r", label: "가상 행", values: [null, undefined, 0, 40, 0] }], { zeroText: "·" });
+    renderTable([{ key: "r", label: "가상 행", values: [null, undefined, 0, 40, 0] }], { zeroText: { text: "·", sr: "합성 영" } });
     const cells = cellsOf("가상 행");
     expect(cells.map(visibleText)).toEqual(["—", "—", "·", "40.0", "·"]);
+    // 0은 보이는 기호를 읽기에서 빼고 낭독 글을 읽음(QA-717)
+    expect(cells[2].textContent).toBe("·합성 영");
     // 모름은 공용 '—'(기호는 낭독에서 빼고 '값 없음'을 읽음) — 0을 만들지 않음
     expect(cells[0].textContent).toBe("—값 없음");
     expect(cells[0].querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
@@ -261,7 +263,10 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
       "          th class=\"sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC BETA CO\"",
       "          td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2025-12-31\" \"<0.1%\"",
       "          td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2026-03-31\" \"2.0%\"",
-      "          td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-06-30\" \"·\"",
+      "          td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-06-30\"",
+      "            span class=\"relative\"",
+      "              span aria-hidden=\"true\" \"·\"",
+      "              span class=\"sr-only\" \"보유하지 않음\"",
       "          td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-09-30\"",
       "            span class=\"relative inline-flex flex-wrap items-baseline gap-x-1 justify-end\"",
       "              span aria-hidden=\"true\" \"—\"",
@@ -310,7 +315,7 @@ describe("열 머리 nowrap", () => {
 describe("0인 칸의 기호는 낭독기에 뜻을 읽힌다(QA-717)", () => {
   // 수정 전 실패(plain it): { text: "·", hiddenSymbol: false } — 비중 히트맵의 0(미보유) 칸은 기호 '·'만 그려, 낭독기는 읽지 않거나 '가운뎃점'으로 읽음(모름 칸은
   // 공용 Empty가 '값 없음'을 읽어 줌). 뜻은 표 아래 설명 글에만 있었음.
-  it.fails("비중 히트맵 0 칸: 보이는 기호 '·'는 읽기에서 빼고(aria-hidden) '보유하지 않음'을 읽는다 — 모름 칸 '값 없음'과 갈림", () => {
+  it("비중 히트맵 0 칸: 보이는 기호 '·'는 읽기에서 빼고(aria-hidden) '보유하지 않음'을 읽는다 — 모름 칸 '값 없음'과 갈림", () => {
     render(<WeightHeatmap dates={["2026-03-31", "2026-06-30"]} series={{ "SYNTHETIC ALPHA CO": [0, 5], "SYNTHETIC BETA CO": [null, 2] }} />);
     const zero = screen.getByTitle("SYNTHETIC ALPHA CO · 2026-03-31");
     const symbol = within(zero).queryByText("·");
