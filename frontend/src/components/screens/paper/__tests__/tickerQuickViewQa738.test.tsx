@@ -1,7 +1,7 @@
 /**
  * QA-738 — 모의 표의 종목 글 단추(TickerQuickView — 누르면 화면 안 시세 창)가 좁은 화면(lg 미만) 누름 자리 44px 미만(진행 기록 넘긴 항목
  * touch-targets-lt-lg-missed-by-qa458의 '종목 글 단추'). 표·목록 줄의 이름 단추와 같은 공용 조각(ui/classes ROW_TRIGGER — 좁은 화면 높이·폭 44px,
- * 넓은 화면 24px, 중립 잉크·밑줄·포커스 링)이어야 합니다. 보유 표·장중 시세 표·결정 상세가 이 단추를 씁니다.
+ * 넓은 화면 24px, 중립 잉크·밑줄·포커스 링)이어야 합니다. 보유 표·장중 시세 표가 이 단추를 씁니다.
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";

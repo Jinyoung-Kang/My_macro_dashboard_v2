@@ -314,12 +314,14 @@ describe("값을 모를 때", () => {
     // 처음 시작한 책(bench_spy)을 먼저 보여 줍니다 — 규칙·Claude 책은 아직 비어 있습니다.
     expect((screen.getByLabelText("계좌 고르기") as HTMLSelectElement).value).toBe("bench_spy");
     const spyRow = (await screen.findByText("가격 없음 · 평단 평가")).closest("tr") as HTMLElement;
+    // 맨 앞 칸은 검사 칸 줄 단추(작업대 P6 — 아이콘, 글은 낭독기 '… 보유 자세히')라 값 칸은 하나씩 뒤입니다.
     const cells = within(spyRow).getAllByRole("cell").map((td) => td.textContent);
-    expect(cells[2]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
-    expect(cells[3]).toBe(NONE);   // 가격
-    expect(cells[4]).toBe(NONE);   // 실시간(ADR 0024 — 받은 시세가 없으면 —)
-    expect(cells[7]).toBe(NONE);   // 평가 손익
-    expect(cells[9]).toBe(NONE);   // 스탑 가격
+    expect(cells[0]).toBe("SPY 보유 자세히");
+    expect(cells[3]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
+    expect(cells[4]).toBe(NONE);   // 가격
+    expect(cells[5]).toBe(NONE);   // 실시간(ADR 0024 — 받은 시세가 없으면 —)
+    expect(cells[8]).toBe(NONE);   // 평가 손익
+    expect(cells[10]).toBe(NONE);   // 스탑 가격
     expect(await screen.findByText("사후 체결")).toBeTruthy();
     expect(screen.getByText("재진입 금지 종목이 없습니다.")).toBeTruthy();
     expect(screen.getByText("주문이 없습니다.")).toBeTruthy();
@@ -354,12 +356,13 @@ describe("주당 가격", () => {
 
     // XYZ는 보유·체결 두 표에 다 있어, 보유 표에만 있는 보유 기간 칸으로 줄을 찾습니다.
     const holdingRow = (await screen.findByText("2026-10-23부터 · 1거래일")).closest("tr") as HTMLElement;
+    // 맨 앞 칸은 검사 칸 줄 단추(작업대 P6)라 값 칸은 하나씩 뒤입니다.
     const holding = within(holdingRow).getAllByRole("cell").map((td) => td.textContent);
-    expect(holding[2]).toBe("9.0045");   // 평단
-    expect(holding[3]).toBe("9.1000");   // 가격
-    expect(holding[5]).toBe("910.00");   // 평가액은 총액 — 2자리(4는 실시간 칸)
-    expect(holding[8]).toBe("9.2000");   // 최고가
-    expect(holding[9]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
+    expect(holding[3]).toBe("9.0045");   // 평단
+    expect(holding[4]).toBe("9.1000");   // 가격
+    expect(holding[6]).toBe("910.00");   // 평가액은 총액 — 2자리(5는 실시간 칸)
+    expect(holding[9]).toBe("9.2000");   // 최고가
+    expect(holding[10]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
 
     const fillRow = (await screen.findByText("paper.quotes")).closest("tr") as HTMLElement;
     const fill = within(fillRow).getAllByRole("cell").map((td) => td.textContent);
@@ -453,8 +456,9 @@ describe("보유·재진입 금지 표", () => {
       fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
 
       const box = await screen.findByRole("region", { name: "보유 (좌우 스크롤)" });
-      const hint = box.previousElementSibling as HTMLElement;
-      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      // 개수 줄(작업대 P6 — 표 머리 개수)이 있으면 안내는 그 줄 오른쪽 — 상자 바로 앞 줄 안에서 찾습니다.
+      const hint = within(box.previousElementSibling as HTMLElement).getByText("← 표를 좌우로 넘겨 보세요");
+      expect(hint.previousElementSibling?.textContent).toBe("1종목");
       await waitFor(() => expect(hint.className).not.toContain("sm:hidden"), { timeout: 500 });
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;

@@ -252,7 +252,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
               )}
               {current.opensIn === null && current.key === "selection" && (korea ? <KrSelectionSection /> : <SelectionSection />)}
               {data?.available && current.opensIn === null && current.key === "holdings" && (
-                <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} market={market} />
+                <HoldingsSection books={data.books ?? []} onChanged={reload} initialBook={preselect} market={market} onOpenTab={openTab} />
               )}
               {data?.available && current.opensIn === null && current.key === "decisions" && (
                 <DecisionsSection
