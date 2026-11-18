@@ -101,3 +101,36 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(card);
   });
 });
+
+describe("교집합 — 동시 매수·매도·새로 담은 기관 수는 개수라 등락색이 아니다(QA-703)", () => {
+  // 수정 전 실패: 동시 매수 칸 'text-up'(빨강)·동시 매도 칸 'text-down'(파랑)·새로 담은 기관 칸 'text-up' — 개수(기관 몇 곳)가 오르내린 값처럼 칠해짐.
+  it.fails("교집합 표·공통 신규 매수 표의 개수 칸에 상승·하락 글자색이 없고, 개수 글은 그대로 보인다", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/consensus")) {
+        return Promise.resolve({
+          available: true, participants: ["가상 연기금"], participantCount: 1, availableDates: [reportDate], reportDate: null, minHolders: 2,
+          rows: [{ key: "cusip:000000301", name: "SYNTHETIC COUNT CO", cusip: "000000301", holders: ["가상 연기금"], actions: [], holderCount: 3,
+            totalValue: 1_000_000, avgWeight: 1.5, maxWeight: 2.5, buyCount: 2, sellCount: 1 }],
+        });
+      }
+      if (path.startsWith("/api/sec13f/new-buys")) {
+        return Promise.resolve({
+          available: true, participants: ["가상 연기금"], participantCount: 1, availableDates: [], minHolders: 3, note: "13F는 분기 공시입니다.",
+          rows: [{ key: "cusip:000000302", name: "SYNTHETIC FRESH CO", cusip: "000000302", buyers: ["가상 연기금"], buyerCount: 3,
+            totalValue: 100, avgWeight: 0.5, reportDate }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+    const both = (await screen.findByText("SYNTHETIC COUNT CO")).closest("table") as HTMLElement;
+    const fresh = (await screen.findByText("SYNTHETIC FRESH CO")).closest("table") as HTMLElement;
+    const tinted = [...both.querySelectorAll(".text-up, .text-down"), ...fresh.querySelectorAll(".text-up, .text-down")].map(
+      (element) => `${element.className} '${element.textContent}'`,
+    );
+    expect(tinted).toEqual([]);
+    expect(within(both).getByText("2")).toBeTruthy();
+    expect(within(both).getByText("1")).toBeTruthy();
+    expect(within(fresh).getByText("3곳")).toBeTruthy();
+  });
+});
