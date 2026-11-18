@@ -230,6 +230,42 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
+
+  // 기관 배지가 공용 SourceBadge(바탕 surface-2만, 테두리 없음)라 같은 surface-2인 대화상자 면 위에서 보통 모드 1.00:1로 상자가 사라지고, 고대비에서도 바탕이
+  // Canvas로 지워져 상자가 없었음(P5b QA 스택 확인 — 배지를 표 열에서 검사 대화상자로 옮긴 뒤. 13F 보유 표 QA-697과 같은 무리). jsdom이라 그리지 않고
+  // 클래스로 셉니다(QA-697 사례 꼴 — 테두리가 있거나, 없으면 놓인 면과 다른 바탕).
+  // 수정 전 실패(plain it): 배지 둘 모두 { bordered: false, same: ["bg-surface-2"] }.
+  it.fails("대화상자의 기관 배지는 테두리 있는 상자 — 놓인 대화상자 면과 같은 바탕의 테두리 없는 배지가 없다(QA-725)", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/consensus")) {
+        return Promise.resolve({
+          available: true, participants: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"], participantCount: 2, availableDates: [], reportDate: null, minHolders: 2,
+          rows: [{ key: "issuer:000000", name: "SYNTHETIC HOLDER CO", cusip: "000000501", holders: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"],
+            actions: [], holderCount: 2, totalValue: 2_000_000_000, avgWeight: 4.5, maxWeight: 6.25, buyCount: 1, sellCount: 1 }],
+        });
+      }
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "SYNTHETIC HOLDER CO" }));
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC HOLDER CO" });
+    const holders = within(dialog).getByRole("region", { name: "보유 기관" });
+    const bg = (element: Element) => [...element.classList].filter((name) => name.startsWith("bg-"));
+    // 배지가 놓인 면 — 배지 목록에서 위로 올라가 처음 만나는 바탕(대화상자 면 bg-surface-2).
+    let surface: HTMLElement | null = holders;
+    while (surface && bg(surface).length === 0) surface = surface.parentElement;
+    expect(surface !== null && dialog.contains(surface) ? bg(surface) : []).toContain("bg-surface-2");
+    const boxes = within(holders).getAllByRole("listitem").map((item) => item.firstElementChild as HTMLElement);
+    expect(
+      boxes.map((box) => {
+        const bordered = box.classList.contains("border");
+        return { bordered, same: bordered ? [] : bg(box).filter((token) => surface !== null && bg(surface).includes(token)) };
+      }),
+    ).toEqual([
+      { bordered: true, same: [] },
+      { bordered: true, same: [] },
+    ]);
+  });
 });
 
 describe("교집합 — 왼쪽 칸 차례(2026-11-18 결정(사용자 위임 — 권장안 가) lg-conditions-below-list)", () => {
