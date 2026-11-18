@@ -727,6 +727,33 @@ class RealTradePlannerTest {
                         kst("2026-11-06T15:19:30")));
     }
 
+    @Test
+    @DisplayName("ADR 0045 관문 G5 — 모의 쪽 SessionWindows.krStopMirrorEnd(모의 달력의 개장·종가 단일가 시작·기준 시각 T)가 실제 매매 stopWindow의 끝과 같음"
+            + "(개장 09:00·10:00 × T 개장 직후·장중·마감 근처), 창이 비면 둘 다 없음 — 상수(창 길이·시작·끝 여유)도 같은 값")
+    void paperStopGateMatchesStopWindow() {
+        assertThat(com.macrodash.analytics.SessionWindows.KR_STOP_MIRROR_LENGTH).isEqualTo(RealTradePlanner.MIRROR_LENGTH);
+        assertThat(com.macrodash.analytics.SessionWindows.KR_MIRROR_OPEN_AFTER).isEqualTo(RealTradePlanner.FOLLOWUP_OPEN_AFTER);
+        assertThat(com.macrodash.analytics.SessionWindows.KR_MIRROR_CLOSE_BEFORE).isEqualTo(RealTradePlanner.MIRROR_CLOSE_BEFORE);
+        List<CollectorTradeClient.Session> sessions = List.of(normalSession(), new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-06T09:00"), kst("2026-11-06T09:50"), kst("2026-11-06T10:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-06T10:00"), kst("2026-11-06T16:20"), kst("2026-11-06T16:30"))));
+        int compared = 0;
+        for (CollectorTradeClient.Session session : sessions) {
+            Day day = RealTradePlanner.windows(DAY, session);
+            Instant open = session.regular().start();
+            Instant auction = session.regular().closingAuctionStart();
+            for (Instant t : List.of(open.plusSeconds(60), open.plusSeconds(9 * 60), open.plusSeconds(10 * 60), open.plusSeconds(11 * 60),
+                    open.plusSeconds(3 * 3_600 + 11 * 60), auction.minusSeconds(5 * 60), auction.minusSeconds(3 * 60), auction.minusSeconds(60),
+                    auction.minusSeconds(15))) {
+                Window window = RealTradePlanner.stopWindow(day, t, false);
+                Instant end = com.macrodash.analytics.SessionWindows.krStopMirrorEnd(open, auction, t);
+                assertThat(end).as("T " + t).isEqualTo(window == null ? null : window.end());
+                compared++;
+            }
+        }
+        assertThat(compared).isEqualTo(18);
+    }
+
     // ------------------------------------------------------------------ 쉬는 날
     private static CollectorTradeClient.Calendar calendar(CollectorTradeClient.Session session, Double skew) {
         return new CollectorTradeClient.Calendar(DAY, skew, session, DAY.minusDays(1), DAY.plusDays(3));

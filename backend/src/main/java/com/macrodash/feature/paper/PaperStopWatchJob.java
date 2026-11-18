@@ -75,6 +75,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * (그 세션 전날까지 — {@link PaperLedgerService#watermarkFrom}) 가운데 큰 값입니다(금융위 D 값은 D+1 낮에 들어와 밤 장부보다 먼저 볼 수 있음).
  * 현금성·한국 미처리 기업행위 보유·갭 가드에 걸린 종목은 보지 않습니다.
  *
+ * <p><b>한국 장중 체결 단계</b>(ADR 0045 — {@link KrStopFillStep}): 한국 판정 뒤 주기마다(판정 쪽 조기 반환·예외와 상관없이) 스위치
+ * {@value KrStopFill#KEY}의 유효 값이 SHADOW·ON이면 감시 STOP의 R1 체결을 장중에 셈해 근거를 남기고, 밤 처리가 닫은 뒤 밤 체결과 견줍니다. 결과·오류는
+ * 판정 쪽과 따로입니다.
+ *
  * <p>장부 잠금({@link PaperLedgerService#exclusively}) 안에서 책마다 한 트랜잭션입니다 — 관측치 처리와 같은 종목을 함께 팔지 않게. Claude 호출을 하지
  * 않아 몇 초 안에 끝납니다. 저장본은 {@link StoreReader#quietly}로만 읽습니다(ADR 0008). {@code dashboard.paper.enabled=false}면 아무것도 하지 않습니다.
  */
@@ -105,9 +109,13 @@ public class PaperStopWatchJob {
     private final Clock clock;
     private final PaperMarkets markets;
     private final StopWatchStatus status;
+    /** 한국 장중 감시 STOP 체결의 장중 단계(ADR 0045) — 한국 판정 뒤 주기마다(판정 쪽 조기 반환·예외와 상관없이). */
+    private final KrStopFillStep fillStep;
     private final ReentrantLock running = new ReentrantLock();
     /** 시장 코드 → 이 프로세스가 본 것(세션 중 재기동하면 비어 가장 최근 격자부터). */
     private final Map<String, MarketState> states = new HashMap<>();
+    /** 마지막 한국 장중 체결 단계 결과({@link #lastFill}). */
+    private volatile KrStopFillStep.Outcome lastFill;
     /** 시장 코드 → 마지막으로 남긴 오류(같은 오류를 되풀이해 남기지 않게). */
     private final Map<String, String> lastErrors = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -166,6 +174,7 @@ public class PaperStopWatchJob {
         this.mapper = mapper;
         this.clock = clock;
         this.markets = markets;
+        this.fillStep = new KrStopFillStep(store, reader, marketData, ledger, config, mapper, clock, markets);
     }
 
     /**
@@ -233,11 +242,43 @@ public class PaperStopWatchJob {
                     status.cycled(market.code(), clock.instant(), outcome.error() != null ? "오류 — " + outcome.error() : outcome.skipped());
                 }
                 out.add(outcome);
+                if (market.auctionFills()) {
+                    runFillStep(market);
+                }
             }
             return out;
         } finally {
             running.unlock();
         }
+    }
+
+    /**
+     * 한국 장중 체결 단계(ADR 0045 — {@link KrStopFillStep}) 한 번 — 판정 쪽 결과·예외와 따로입니다. 오류는 바뀔 때만 경고로 남깁니다(20초마다 같은 줄이
+     * 쌓이지 않게). 결과는 시험이 읽게 남깁니다({@link #lastFill}).
+     */
+    private void runFillStep(PaperMarket market) {
+        String key = market.code() + "|fill";
+        try {
+            KrStopFillStep.Outcome fill = fillStep.run(market);
+            lastFill = fill;
+            if (fill.error() != null) {
+                if (!fill.error().equals(lastErrors.put(key, fill.error()))) {
+                    log.warn("한국 장중 스탑 체결 단계 실패 — 다음 주기에 다시 봅니다: {}", fill.error());
+                }
+                return;
+            }
+            lastErrors.remove(key);
+            if (!fill.recorded().isEmpty()) {
+                log.info("한국 장중 스탑 체결 단계: 근거 {}건 {}", fill.recorded().size(), fill.recorded());
+            }
+        } catch (RuntimeException e) {
+            log.warn("한국 장중 스탑 체결 단계 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+        }
+    }
+
+    /** 마지막 한국 장중 체결 단계 결과(시험용 — 아직 돌지 않았으면 null). */
+    KrStopFillStep.Outcome lastFill() {
+        return lastFill;
     }
 
     private Outcome runMarket(PaperMarket definition) {
