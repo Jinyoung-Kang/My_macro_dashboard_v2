@@ -103,9 +103,9 @@ function changePortfolio(): PortfolioResponse {
 }
 
 describe("보유 표 '비중 변화' — 색만으로 방향을 전하지 않는다(QA-696)", () => {
-  // 수정 전(plain it으로 잼): 칸이 deltaColor 글자색과 숫자 글만으로 방향을 나름 — 내린 칸 <span class="text-down">-0.29%p</span>(ASCII '-'),
-  // 오른 칸 <span class="text-up">1.50%p</span>('+' 없음), 둘 다 ▲▼·sr 방향 글 없음. 모르는 칸은 '—'(text-text-3)로 이미 맞음.
-  it.fails("내린 값은 ▼·U+2212·sr '하락', 오른 값은 ▲·'+'·sr '상승', 모르면 '—'", async () => {
+  // 수정 전에는(재현 커밋에서는 it.fails) 칸이 deltaColor 글자색과 숫자 글만으로 방향을 나름 — 내린 칸 <span class="text-down">-0.29%p</span>(ASCII '-'),
+  // 오른 칸 <span class="text-up">1.50%p</span>('+' 없음), 둘 다 ▲▼·sr 방향 글 없음. 모르는 칸은 '—'(text-text-3)로 이미 맞았음.
+  it("내린 값은 ▼·U+2212·sr '하락', 오른 값은 ▲·'+'·sr '상승', 모르면 '—'", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
       if (path.startsWith("/api/sec13f/portfolio")) return Promise.resolve(changePortfolio());
@@ -127,7 +127,9 @@ describe("보유 표 '비중 변화' — 색만으로 방향을 전하지 않는
     expect(within(rise).getByText("상승").className).toContain("sr-only");
 
     const unknown = holdingCell("SYNTHETIC FIRST CO", "비중 변화");
-    expect(unknown.textContent).toBe("—");
+    // 공용 '—'(Empty — 눈에는 '—', 낭독은 sr '값 없음'), 숫자를 만들지 않음.
+    expect(within(unknown).getByText("—")).toBeTruthy();
+    expect(unknown.textContent).not.toMatch(/\d/);
     expect(unknown.querySelector(".text-up, .text-down")).toBeNull();
   });
 });

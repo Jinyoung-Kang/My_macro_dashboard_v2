@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
+import { ChangeCell } from "@/components/patterns";
 import { distinctLabels } from "@/lib/chartAxis";
 import { weightHistoryRows } from "@/lib/chartData";
 import {
@@ -29,7 +30,6 @@ import { HoldingQuickLink } from "@/components/screens/detail/HoldingQuickLink";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import {
-  deltaColor,
   EMPTY,
   formatCurrency,
   formatNumber, formatWeightPercent } from "@/lib/format";
@@ -229,11 +229,8 @@ export default function InstitutionsPage() {
                   key: "weightDiff",
                   header: "비중 변화",
                   align: "right",
-                  render: (row) => (
-                    <span className={deltaColor(row.weightDiff)}>
-                      {row.weightDiff === null ? EMPTY : `${formatNumber(row.weightDiff, 2)}%p`}
-                    </span>
-                  ),
+                  // 공용 표 칸 변화(ChangeCell) — ▲▼·부호(−는 U+2212)·sr '상승/하락'과 등락색, 모르면 '—'(QA-696: 예전에는 색과 ASCII '-'만으로 방향을 나름).
+                  render: (row) => <ChangeCell change={row.weightDiff} digits={2} unit="%p" />,
                 },
                 {
                   key: "value",
