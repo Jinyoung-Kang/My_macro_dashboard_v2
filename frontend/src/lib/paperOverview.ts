@@ -780,10 +780,15 @@ function signedPercent(value: number): string {
  *
  * - 순자산: 값 글·단위, 보조 글 = 단계 표기 · 서버 글 전문(섞임·가격 없음·체결 대기), 추정·이전 값 배지, 출처 줄, 경고(사후 체결 대기)는 주의 상태 글.
  * - 수익률(출발 이후)·변화: 부호 글(양수 '+', 음수 '−') — 띠 값은 본문 잉크(등락색은 표의 변화 칩이 나름 — 색만으로 전하지 않음). 변화의 이름은 서버 기준
- *   ('오늘 변화'·'10-30 변화'), 보조 글은 그 기준('10-29 잠정 대비'). 모르면 '—'(0을 짓지 않음).
- * - 주식 노출: 소수 한 자리 %, 보조 글 '현금성(SHY) 포함'(평가액 ÷ 순자산이라 현금성 ETF도 듦), 순자산이 추정이면 추정 배지.
+ *   ('오늘 변화'·'10-30 변화'), 보조 글은 그 기준('10-29 잠정 대비'). 모르면 '—'(0을 짓지 않음). 순자산과 같은 값(지금 값·실시간 순자산)에서 나오므로 같은
+ *   추정·이전 값 배지를 답니다(이전 값 사유 글은 순자산 타일에만 — 예전 히어로의 배지 하나가 셋을 덮던 것을 타일마다, QA-770).
+ * - 주식 노출: 소수 한 자리 %, 보조 글 '현금성(SHY) 포함'(평가액 ÷ 순자산이라 현금성 ETF도 듦). 추정 배지는 그 값의 출처(`exposure.isEstimated` — 서버 지금 값의
+ *   추정)로 답니다 — 실시간 순자산은 노출을 다시 세지 않으므로 히어로 모델의 추정을 따르지 않습니다(QA-770).
  */
-export function overviewKpiItems(model: OverviewHeroModel, exposure: { pct: number | null; cashLike: string }): KpiItem[] {
+export function overviewKpiItems(
+  model: OverviewHeroModel,
+  exposure: { pct: number | null; cashLike: string; isEstimated?: boolean },
+): KpiItem[] {
   const note = [model.stageLabel, model.note].filter((part): part is string => typeof part === "string" && part !== "").join(" · ");
   const day = model.day;
   return [
@@ -799,13 +804,22 @@ export function overviewKpiItems(model: OverviewHeroModel, exposure: { pct: numb
       source: model.source,
       ...(model.warning ? { status: { tone: "warn" as const, text: model.warning } } : {}),
     },
-    { key: "return", label: "수익률(출발 이후)", value: model.returnPct, format: signedPercent },
+    {
+      key: "return",
+      label: "수익률(출발 이후)",
+      value: model.returnPct,
+      format: signedPercent,
+      isEstimated: model.isEstimated && model.returnPct !== null,
+      isStale: model.isStale,
+    },
     {
       key: "day",
       label: day ? (day.label === "오늘" ? "오늘 변화" : day.label) : "변화",
       value: day?.pct ?? null,
       format: signedPercent,
       note: day?.base ?? null,
+      isEstimated: model.isEstimated && day !== null && day.pct !== null,
+      isStale: model.isStale,
     },
     {
       key: "exposure",
@@ -814,7 +828,7 @@ export function overviewKpiItems(model: OverviewHeroModel, exposure: { pct: numb
       format: (value: number) => formatNumber(value, 1),
       unit: "%",
       note: `현금성(${exposure.cashLike}) 포함`,
-      isEstimated: model.isEstimated && exposure.pct !== null,
+      isEstimated: exposure.isEstimated === true && exposure.pct !== null,
     },
   ];
 }

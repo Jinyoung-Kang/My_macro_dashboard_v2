@@ -242,8 +242,9 @@ export function OverviewSection({
   // KPI 띠·검사 칸 곡선은 시작한 장부(초기화 뒤)에 계좌가 있을 때만 — 장중 시세 카드와 같은 조건.
   const hero = overview.initialized !== false && heroCode ? overviewHeroModel(overview, heroCode, navWindow, market, realtimeNav) : null;
   const heroBook = books.find((book) => book.code === heroCode) ?? null;
-  const kpi = hero && heroBook
-    ? overviewKpiItems(hero, { pct: currentView(heroBook, { market, session: overview.liveSession ?? null }).exposurePct, cashLike: marketMeta(market).cashLike })
+  const heroView = heroBook ? currentView(heroBook, { market, session: overview.liveSession ?? null }) : null;
+  const kpi = hero && heroView
+    ? overviewKpiItems(hero, { pct: heroView.exposurePct, cashLike: marketMeta(market).cashLike, isEstimated: heroView.isEstimated })
     : null;
   const tableRows = accountTableRows(books, { pendingBackfill: overview.pendingBackfill, quotes: overview.quotes ?? null, market, session: overview.liveSession ?? null });
   const rowOf = new Map(tableRows.map((entry) => [entry.code, entry]));

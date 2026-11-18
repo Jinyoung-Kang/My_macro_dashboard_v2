@@ -32,7 +32,7 @@ const overview = (books: PaperOverviewBook[]) =>
 const WINDOW = { dates: ["2026-10-29", "2026-10-30"], books: { rules: [100000, 101200] } };
 
 describe("QA-770 — KPI 타일마다 그 값의 추정 플래그", () => {
-  it.fails("서버 지금 값이 장중 추정이면 순자산·수익률·변화·노출 네 타일 모두 추정 배지", () => {
+  it("서버 지금 값이 장중 추정이면 순자산·수익률·변화·노출 네 타일 모두 추정 배지", () => {
     const model = overviewHeroModel(overview([book({ current: current() })]), "rules", WINDOW);
     if (!model) throw new Error("모델 없음");
     // 노출 타일의 플래그는 그 값의 출처(서버 지금 값)에서 — 부르는 쪽이 넘깁니다(변수로 넘겨 옛 형도 받음).
@@ -42,7 +42,7 @@ describe("QA-770 — KPI 타일마다 그 값의 추정 플래그", () => {
     expect([nav.isEstimated, ret.isEstimated, day.isEstimated, share.isEstimated]).toEqual([true, true, true, true]);
   });
 
-  it.fails("실시간 순자산(표시 전용 추정)만 추정이면 수익률은 추정 배지, 노출(장부 값)은 배지 없음", () => {
+  it("실시간 순자산(표시 전용 추정)만 추정이면 수익률은 추정 배지, 노출(장부 값)은 배지 없음", () => {
     const realtime = { code: "rules", nav: 101500, returnPct: 1.5, dayChangePct: null, at: null, priced: 2, total: 2 };
     const model = overviewHeroModel(overview([book()]), "rules", WINDOW, "US", realtime);
     if (!model) throw new Error("모델 없음");
