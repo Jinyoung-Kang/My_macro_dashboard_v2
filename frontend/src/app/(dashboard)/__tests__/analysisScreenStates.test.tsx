@@ -469,11 +469,13 @@ describe("스타일 — 기관 간 유사도 행렬이 계열 파랑 농도로 �
 });
 
 describe("스타일 — 머리 '새로고침'·13F 한계 안내·'읽는 법' 접기", () => {
-  it("'새로고침'은 화면 머리(h1과 같은 머리)의 동작이고 이름은 '기관별 성격 새로고침'(보이는 글 '새로고침'을 담음), 누르면 기관별 성격만 한 번 더", async () => {
+  it("'성격 새로고침'은 화면 머리(h1과 같은 머리)의 동작이고 이름은 '기관별 성격 새로고침'(보이는 글을 담음), 읽는 동안 aria-busy, 누르면 기관별 성격만 한 번 더", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     render(<GuruPage />);
     const button = screen.getByRole("button", { name: "기관별 성격 새로고침" });
-    expect(button.textContent).toBe("새로고침");
+    // 보이는 글에도 다시 읽는 범위(기관별 성격 응답 하나)를 적습니다 — 예전 '새로고침'만으로는 화면 전체로 읽혔음(P5b 검토 지적).
+    expect(button.textContent).toBe("성격 새로고침");
+    expect(button.getAttribute("aria-busy")).toBe("true");
     expect(button.closest("header")?.querySelector("h1")?.textContent).toBe("기관 13F 스타일·위험");
     // 성격 패널 머리에는 단추가 없습니다(머리 동작으로 옮김).
     const panel = screen.getByRole("heading", { name: "기관별 성격" }).closest("section") as HTMLElement;

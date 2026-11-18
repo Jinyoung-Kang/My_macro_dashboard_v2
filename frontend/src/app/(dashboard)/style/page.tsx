@@ -58,7 +58,7 @@ import {
  * 들어가 <b>어떤 식으로</b> 들고 있는지를 봅니다 — 몇 종목에 쏠려 있는지,
  * 누구와 닮았는지, 그 포트폴리오가 얼마나 흔들렸는지.
  *
- * 배치(작업대 화면 언어 — 명세 §7 4행): 머리(동작 '새로고침' = 기관별 성격 다시 읽기) → 13F 공시의 한계(중립 안내 상자 — 늘 보임) → '기관별 성격' →
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리(동작 '성격 새로고침' = 기관별 성격 다시 읽기) → 13F 공시의 한계(중립 안내 상자 — 늘 보임) → '기관별 성격' →
  * '기관 간 유사도' → '포트폴리오 위험' → '이 종목을 누가 들고 있나'. 패널 아래의 긴 설명 문단은 '읽는 법' 접기입니다(글 그대로).
  */
 export default function GuruPage() {
@@ -71,9 +71,17 @@ export default function GuruPage() {
         title="기관 13F 스타일·위험"
         description="집중도 · 회전율 · 기관 간 유사도 · 포트폴리오 위험 (13F 공시 기준)"
         actions={
-          // 보이는 글 '새로고침', 이름은 무엇을 다시 읽는지까지 '기관별 성격 새로고침'(보이는 글을 담음 — WCAG 2.5.3). 공용 단추(Button)와 같은 모양입니다.
-          <button type="button" onClick={profiles.reload} aria-label="기관별 성격 새로고침" className={buttonClasses("default", "md")}>
-            새로고침
+          // 다시 읽는 것은 '기관별 성격' 응답 하나라 보이는 글에도 범위를 적습니다('성격 새로고침' — 예전 '새로고침'만으로는 화면 전체를 새로 읽는 것처럼
+          // 읽혔음), 이름은 '기관별 성격 새로고침'(보이는 글을 담음 — WCAG 2.5.3). 읽는 동안은 aria-busy(포커스를 빼앗지 않게 비활성으로 두지 않음).
+          // 공용 단추(Button)와 같은 모양입니다.
+          <button
+            type="button"
+            onClick={profiles.reload}
+            aria-label="기관별 성격 새로고침"
+            aria-busy={profiles.loading || undefined}
+            className={buttonClasses("default", "md")}
+          >
+            성격 새로고침
           </button>
         }
       />
