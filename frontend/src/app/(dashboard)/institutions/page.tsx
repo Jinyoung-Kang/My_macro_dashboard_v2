@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
 import { ChangeCell } from "@/components/patterns";
-import { distinctLabels } from "@/lib/chartAxis";
 import { weightHistoryRows } from "@/lib/chartData";
 import {
   Banner,
@@ -33,7 +32,8 @@ import {
   EMPTY,
   formatCurrency,
   formatNumber, formatWeightPercent } from "@/lib/format";
-import { filerName, holdingActionView, type HoldingActionKind } from "@/lib/holdings";
+import { holdingActionView, type HoldingActionKind } from "@/lib/holdings";
+import { holdingRowKeys, type InstitutionEntry, institutionItems, weightLines } from "@/lib/institutionsScreen";
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -48,9 +48,6 @@ const SERIES_COLORS = [
   "#22a2bd", "#dd6836", "#8b8dd1", "#81a022", "#cf7787",
 ];
 
-/** 선 이름표 폭 — 예전 '앞 18자 + …'와 같은 폭입니다. 구분자가 붙은 이름표는 구분자만큼 더 길 수 있습니다. */
-const LINE_LABEL_WIDTH = 19;
-
 /**
  * 기관 13F 포트폴리오 분석.
  *
@@ -58,7 +55,7 @@ const LINE_LABEL_WIDTH = 19;
  * 분기말 스냅샷이라는 점을 화면이 계속 상기시켜야 합니다.
  */
 export default function InstitutionsPage() {
-  const institutions = useApi<{ institutions: { key: string; name: string; cik: string; desc: string }[] }>(
+  const institutions = useApi<{ institutions: InstitutionEntry[] }>(
     endpoints.institution.institutions,
   );
   const [cik, setCik] = useState("0001067983");   // 버크셔 해서웨이
@@ -72,20 +69,16 @@ export default function InstitutionsPage() {
   // 같은 포트폴리오가 메뉴마다 다른 원화 금액으로 보입니다.
   const usdKrw = useUsdKrw();
 
-  const selected = institutions.data?.institutions.find((entry) => entry.cik === cik);
+  const items = institutionItems(institutions.data?.institutions);
+  const selected = items.find((item) => item.key === cik);
   const history = data?.weightHistory;
 
   const chartData = history ? weightHistoryRows(history.dates, history.series) : [];
 
-  // 범례·툴팁 이름표. 키 뒤의 구분자(' · 클래스', ' · CUSIP …')는 남기고 이름 쪽을 줄입니다 — 앞에서 자르면
-  // 같은 이름의 두 줄이 같은 이름표가 됩니다(QA-120).
-  const lineKeys = Object.keys(history?.series ?? {}).slice(0, 10);
-  const lineLabels = distinctLabels(lineKeys, LINE_LABEL_WIDTH);
-  const chartSeries = lineKeys.map((key, index) => ({
-    key,
-    name: lineLabels[index],
-    color: SERIES_COLORS[index % SERIES_COLORS.length],
-  }));
+  // 범례·툴팁 이름표(구분자를 남기고 이름 쪽을 줄임 — QA-120)와 선 색(이 파일의 SERIES_COLORS 차례) — lib/institutionsScreen weightLines.
+  const chartSeries = weightLines(history?.series, SERIES_COLORS);
+  // 보유 표 줄 키 — 'CUSIP:클래스'(겹치면 '#n' 꼬리).
+  const holdingKeys = holdingRowKeys(data?.holdings ?? []);
 
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
@@ -101,10 +94,7 @@ export default function InstitutionsPage() {
             label="분석할 기관"
             value={cik}
             onChange={setCik}
-            options={(institutions.data?.institutions ?? []).map((entry) => ({
-              value: entry.cik,
-              label: filerName(entry.name) ?? `CIK ${entry.cik}`,
-            }))}
+            options={items.map((item) => ({ value: item.key, label: item.label }))}
           />
           <Select
             label="조회 분기 수"
@@ -204,7 +194,7 @@ export default function InstitutionsPage() {
           >
             <Table
               rows={data.holdings ?? []}
-              rowKey={(row, index) => `${row.cusip}-${index}`}
+              rowKey={(_, index) => holdingKeys[index]}
               columns={[
                 {
                   key: "name",
