@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { HorizontalBars } from "@/components/charts";
+import { HeatmapTable, HorizontalBars } from "@/components/charts";
 import { DataTable } from "@/components/patterns";
 import {
   Banner,
@@ -22,6 +22,7 @@ import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
+import { heatmapStepRange } from "@/lib/heatmap";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
@@ -259,61 +260,32 @@ function SimilarityCard() {
       )}
 
       {matrix && names.length > 0 && (
-        <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="기관 간 유사도 행렬 (좌우 스크롤)">
-          <table className="w-full min-w-[720px] border-collapse text-xs">
-            <thead>
-              <tr className="text-xs text-text-3">
-                <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">기관</th>
-                {names.map((entry) => (
-                  <th
-                    key={entry.cik}
-                    title={filerName(entry.name) ?? entry.name}
-                    className="whitespace-nowrap px-2 py-2 text-right font-medium"
-                  >
-                    {shortName(entry.name)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {names.map((entry, row) => (
-                <tr key={entry.cik} className="border-t border-border">
-                  <td
-                    title={filerName(entry.name) ?? entry.name}
-                    className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-text-2"
-                  >
-                    {shortName(entry.name)}
-                  </td>
-                  {names.map((other, col) => {
-                    const value = matrix[row]?.[col];
-                    // 대각선은 자기 자신이라 항상 최대입니다. 색을 입히면
-                    // 그 줄만 눈에 띄어 정작 읽어야 할 곳에서 시선을 뺏습니다.
-                    const self = row === col;
-                    const intensity =
-                      value === undefined || self ? 0 : Math.min(1, Math.max(0, value / max));
-                    return (
-                      <td
-                        key={other.cik}
-                        className="px-2 py-2 text-right tabular-nums"
-                        style={{
-                          // 농도는 계열 첫 색(SERIES_COLORS.blue #3987e5)의 투명도 — 예전 옛 강조색(#58A6FF) 위 흰 글자는 다크 전용이라
-                          // 라이트 표면에서 1.8:1까지 떨어졌습니다. 숫자는 본문색(text)으로, 농도 전 범위(0.08~0.63)에서 라이트 9.0:1·다크 5.7:1 이상.
-                          backgroundColor: self
-                            ? "rgba(139, 148, 158, 0.12)"
-                            : `rgba(57, 135, 229, ${0.08 + intensity * 0.55})`,
-                          color: self ? undefined : "var(--text)",
-                        }}
-                      >
-                        {value === undefined
-                          ? EMPTY
-                          : formatNumber(value, mode === "overlap" ? 1 : 2)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-5">
+          {/* 표 히트맵(차트 모듈 HeatmapTable — 순차 팔레트 다섯 단계, 칸마다 숫자): 예전에는 칸을 계열 파랑(#3987e5)의 rgba 농도로, 대각선을 토큰 밖
+              회색 rgba로 칠했고 0도 옅게 칠했습니다(QA-707). 대각선은 자기 자신이라 늘 최대 — 칠하면 그 줄만 눈에 띄어 정작 읽어야 할 곳에서 시선을
+              뺏으므로 중립 면(selfIndex), 0(겹치는 종목 없음)은 칠하지 않습니다. 행·열은 짧은 이름, 마우스 설명은 국기를 뗀 전체 이름(QA-153). */}
+          <HeatmapTable
+            caption="기관 간 유사도 행렬"
+            rowHeader="기관"
+            columns={names.map((entry) => ({ key: entry.cik, label: shortName(entry.name), title: filerName(entry.name) ?? entry.name }))}
+            rows={names.map((entry, row) => ({
+              key: entry.cik,
+              label: shortName(entry.name),
+              title: filerName(entry.name) ?? entry.name,
+              values: names.map((_, col) => matrix[row]?.[col]),
+              selfIndex: row,
+            }))}
+            max={max}
+            format={(value) => formatNumber(value, mode === "overlap" ? 1 : 2)}
+            minWidth={720}
+            legend={{
+              stepLabel: (step) => {
+                const [low, high] = heatmapStepRange(step);
+                return mode === "overlap" ? `${Math.round(low * 100)}~${Math.round(high * 100)}%` : `${formatNumber(low, 1)}~${formatNumber(high, 1)}`;
+              },
+              note: "대각선(자기 자신과 견준 칸)과 0(겹치는 종목 없음)은 칠하지 않습니다.",
+            }}
+          />
         </div>
       )}
 

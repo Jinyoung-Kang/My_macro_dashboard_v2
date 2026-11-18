@@ -391,7 +391,7 @@ describe("스타일 — '가장 닮은 짝' 막대가 고대비에서 사라진�
 describe("스타일 — 기관 간 유사도 행렬이 계열 파랑 농도로 칠해진다(QA-707)", () => {
   // 수정 전 실패: 칸이 인라인 rgba(57, 135, 229, 0.08~0.63)(계열 파랑 #3987e5 — 강조 파랑과 ΔE 3.4, 명세 §3-5 '순차는 accent·up·down과 다른 계열' 위반)이고
   // 대각선이 인라인 rgba(139, 148, 158, 0.12)(토큰 밖 회색), 단계 범례가 없음.
-  it.fails("칸은 순차 팔레트 단계(data-step — 겹침 비중이면 최댓값 100의 비율), 대각선(자기 자신)은 중립 면, 0은 칠하지 않고, 단계 범례가 있다", async () => {
+  it("칸은 순차 팔레트 단계(data-step — 겹침 비중이면 최댓값 100의 비율), 대각선(자기 자신)은 중립 면, 0은 칠하지 않고, 단계 범례가 있다", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY_BODY) : new Promise(() => {}));
     render(<GuruPage />);
