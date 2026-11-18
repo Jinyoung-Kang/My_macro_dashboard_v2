@@ -8,6 +8,7 @@ import { endpoints } from "@/lib/endpoints";
 import { CLAUDE_COST_NOTE } from "@/lib/paper";
 import { intradayBookView, runIntradayResultText } from "@/lib/paperIntraday";
 import type { PaperIntradayStatus, PaperMarketCode, PaperRunIntradayResult } from "@/lib/types/paper";
+import { PaperBadge } from "./PaperBadge";
 
 /**
  * 자유 시점 판의 장중 판단(ADR 0027 결정 3) — 그 계좌의 오늘(또는 다음) 세션 계획 행과 '지금 장중 판단 요청' 단추. 상태 응답에 그 계좌의 묶음이
@@ -70,7 +71,7 @@ export function IntradayPlansPanel({
         <ul className="mt-2 flex flex-col gap-1.5">
           {view.rows.map((row) => (
             <li key={row.key} className="text-xs leading-relaxed">
-              <span className={`mr-2 inline-flex rounded-control px-1.5 py-0.5 ${row.badge.className}`}>{row.badge.label}</span>
+              <span className="mr-2 inline-flex whitespace-nowrap align-top"><PaperBadge badge={row.badge} /></span>
               <span>{row.text}</span>
               {row.question && <span className="text-text-3"> — {row.question}</span>}
               {row.trigger && <span className="block text-text-3">{row.trigger}</span>}

@@ -4,7 +4,7 @@
  *  - 불러오는 중: 결정 기록·작업 기록이 오기 전에는 읽는 중 표시
  *  - 빈 상태(출발 전): 결정 기록이 비었다고 말하고 출발 단추(개요)를 안내, 규칙 계좌에는 수동 결정 단추가 없음, 출발 기록도 없음
  *  - 오류: 결정 기록·작업 기록을 못 읽으면 오류 + 다시 시도
- *  - 자료: 규칙 계좌 기한 지남 행(기한·판정 근거·판정 시각·기다린 게이트·③ 창 구멍 링크), 출발 INITIAL(설정 출발일·미룸), Claude 기한 지남
+ *  - 자료(결정 줄을 고르면 상세 — jsdom은 좁은 배치라 대화상자): 규칙 계좌 기한 지남 행(기한·판정 근거·판정 시각·기다린 게이트·③ 창 구멍 링크), 출발 INITIAL(설정 출발일·미룸), Claude 기한 지남
  *    SKIPPED, Claude 출발(출발 호출 수·검증 UNFILLABLE 이름표·사건 줄 '창 앞'), 출발 기록(과금 호출)·마지막 게이트 판정, 수동 결정은
  *    kr_claude에만 있고 확인 창에 수동 문턱·결정 창 → POST /api/paper/run/decision?market=KR
  */
@@ -191,9 +191,19 @@ afterEach(() => cleanup());
 
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => String(path));
 
+/** 결정 줄 — '{거래일} {종류}'의 거래일 묶음(목록 이름 '거래일 {날짜}') 안에서 종류 태그 글로 찾는 줄 단추(시각순 목록 — 목록-검사). */
+async function line(name: string): Promise<HTMLElement> {
+  const [date, ...kind] = name.split(" ");
+  const group = await screen.findByRole("list", { name: `거래일 ${date}` });
+  const lines = within(group).getAllByRole("button").filter((button) => within(button).queryByText(kind.join(" ")) !== null);
+  expect(lines, `${name} 줄`).toHaveLength(1);
+  return lines[0];
+}
+
+/** 결정 줄을 눌러 상세를 엽니다(jsdom은 좁은 배치 — 위쪽 대화상자, 이름 '{거래일} {종류}') — 상세 영역 '{거래일} {종류} 상세'. */
 async function expand(name: string): Promise<HTMLElement> {
-  const row = await screen.findByRole("row", { name });
-  fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+  fireEvent.click(await line(name));
+  await screen.findByRole("dialog", { name });
   return screen.findByRole("region", { name: `${name} 상세` });
 }
 
@@ -260,7 +270,7 @@ describe("오류", () => {
     expect(await screen.findByText("결정 기록을 읽지 못했습니다.")).toBeTruthy();
     expect(await screen.findByText("상태를 읽지 못했습니다.")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: /다시 시도/ })[0]);
-    expect(await screen.findByRole("row", { name: "2026-11-03 정기" })).toBeTruthy();
+    expect(await line("2026-11-03 정기")).toBeTruthy();
   });
 });
 
@@ -279,7 +289,7 @@ describe("자료", () => {
 
   it("목록 — 종류 '출발(초기 결정)', 가격 칸 '잠정(토스)'", async () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
-    const start = await screen.findByRole("row", { name: "2026-10-30 출발(초기 결정)" });
+    const start = await line("2026-10-30 출발(초기 결정)");
     expect(within(start).getByText("잠정(토스)")).toBeTruthy();
   });
 
@@ -335,7 +345,8 @@ describe("자료", () => {
     const skipped = await expand("2026-11-03 정기");
     expect(within(skipped).getByText(/Claude를 부르지 않음 — 결정 기한/)).toBeTruthy();
     expect(within(within(skipped).getByRole("region", { name: "기한 지남" })).getByText("기한 전 마지막 판정(작업 기록 claudeGates)")).toBeTruthy();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-11-03 정기" })).getByRole("button", { name: "상세 접기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "2026-11-03 정기" })).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     const start = await expand("2026-10-30 출발(초기 결정)");
     expect(within(within(start).getByRole("region", { name: "출발" })).getByText("2회")).toBeTruthy();
@@ -348,6 +359,9 @@ describe("자료", () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
     const records = await screen.findByRole("list", { name: "출발 기록" });
     expect(records.textContent).toContain("2026-10-29 22:40 START_POSTPONED");
+    // 결과 코드는 서버 식별자라 시스템 고정폭, 시각은 자릿수 맞춤.
+    expect(within(records).getByText("START_POSTPONED").className).toContain("font-mono");
+    expect(within(records).getByText("2026-10-29 22:40").className).toContain("tabular-nums");
     expect(records.textContent).toContain("과금 호출 kr_claude 2회(결정 행 없음 — 사용량에 셈)");
     expect(records.textContent).toContain("시도 1번째");
     expect(screen.getByRole("heading", { name: "규칙 계좌 몫 마지막 게이트 판정 — 세션 2026-11-03 · 2026-11-03 23:00" })).toBeTruthy();
@@ -356,11 +370,15 @@ describe("자료", () => {
   it("수동 결정은 kr_claude에만 — 확인 창에 수동 문턱·결정 창, 확인하면 POST /api/paper/run/decision?market=KR", async () => {
     api.apiPost.mockResolvedValue({ ok: true, market: "KR", decision: CLAUDE_SKIPPED });
     render(<PaperPage market="KR" initialTab="decisions" />);
-    await screen.findByRole("row", { name: "2026-11-03 정기" });
+    await line("2026-11-03 정기");
     expect(screen.queryByRole("button", { name: "지금 결정 실행" })).toBeNull();
+    // 한국 규칙 계좌는 머리 동작이 없습니다(빈 목록 — 묶음도 그리지 않음).
+    expect(screen.queryByRole("group", { name: "결정 동작" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "kr_claude" } });
-    fireEvent.click(await screen.findByRole("button", { name: "지금 결정 실행" }));
+    const run = await screen.findByRole("button", { name: "지금 결정 실행" });
+    expect(run.closest('[data-paper-header-slot="actions"]')).not.toBeNull();
+    fireEvent.click(run);
     expect(await screen.findByText(/수동 문턱\(13회 — 하루 상한 − 정기 몫 예약\) 미만일 때만, 결정 창\(22:30 ~ 01:00\(다음 날\) KST\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "결정 실행 확인" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/decision?market=KR", { book: "kr_claude" }));

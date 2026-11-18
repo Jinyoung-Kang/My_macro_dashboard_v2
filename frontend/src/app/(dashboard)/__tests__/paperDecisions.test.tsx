@@ -1,8 +1,8 @@
 /**
  * 모의 매매 — 결정 로그 탭과 개요의 규칙 책 시작·신호 기관·게이트 지표(참고). 서버 값을 그대로 보이고, 지어내지 않는다.
  *
- *  - 결정 로그: 규칙 책이 기본, 목록(거래일·종류·상태·주문 수·요약), 행을 펼치면 GET /api/paper/decisions/{id} 상세
- *    (선정 순위·신호 이벤트·매수 후보·전량 매도·주문·고르지 못한 후보·게이트 참고). 두 그룹을 섞은 뒤(D27) 기록은 신호 풀 표·
+ *  - 결정 로그: 규칙 책이 기본, 시각순 목록(거래일 묶음·결정 시각·종류·상태·주문 수·가격·요약), 줄을 고르면 GET /api/paper/decisions/{id} 상세를
+ *    검사 칸(jsdom은 좁은 배치 — 대화상자)에(선정 순위·신호 이벤트·매수 후보·전량 매도·주문·고르지 못한 후보·게이트 참고). 두 그룹을 섞은 뒤(D27) 기록은 신호 풀 표·
  *    후보 점수·점수 기여 표·배분 방식, 섞기 전 기록은 순위표·순위 합 — 둘 다 그린다
  *  - 숫자 null은 "—"(0으로 채우지 않음), 순위표에 없는 기관은 CIK 그대로
  *  - "지금 결정 실행"은 POST /api/paper/run/decision {book} → 경과 초 → 결과 + 목록 다시 읽기, 시작 전 책은 막힘
@@ -249,7 +249,23 @@ async function openDecisionsTab() {
   fireEvent.click(await screen.findByRole("tab", { name: "결정 로그" }));
 }
 
-const cellsOf = (row: HTMLElement) => within(row).getAllByRole("cell").map((td) => td.textContent);
+/** 결정 줄 — 거래일 묶음(목록 이름 '거래일 {날짜}') 안에서 종류 태그 글로 찾는 줄 단추(시각순 목록 — 목록-검사). */
+async function decisionLine(date: string, kind: string): Promise<HTMLElement> {
+  const group = await screen.findByRole("list", { name: `거래일 ${date}` });
+  const lines = within(group).getAllByRole("button").filter((button) => within(button).queryByText(kind) !== null);
+  expect(lines, `${date} ${kind} 줄`).toHaveLength(1);
+  return lines[0];
+}
+
+/** 결정 줄을 눌러 상세를 엽니다(좁은 배치 — 위쪽 대화상자, 이름 '{거래일} {종류}') — 상세 영역 '{거래일} {종류} 상세'. */
+async function openDecision(date: string, kind: string): Promise<HTMLElement> {
+  fireEvent.click(await decisionLine(date, kind));
+  await screen.findByRole("dialog", { name: `${date} ${kind}` });
+  return screen.findByRole("region", { name: `${date} ${kind} 상세` });
+}
+
+/** 공용 표(DataTable)의 모르는 값 칸 — '—'와 낭독용 '값 없음'(patterns Empty). */
+const NONE = "—값 없음";
 const headersOf = (region: HTMLElement) => within(region).getAllByRole("columnheader").map((th) => th.textContent);
 const rowsOf = (region: HTMLElement) =>
   within(region).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
@@ -272,25 +288,44 @@ describe("결정 로그 탭", () => {
     // 자리 문구는 이제 없습니다.
     expect(screen.queryByText(/탭은 다음 단계에서 엽니다/)).toBeNull();
 
-    const initial = await screen.findByRole("row", { name: "2026-10-23 초기 결정" });
-    expect(cellsOf(initial)).toEqual([
-      "2026-10-23상세 펼치기", "초기 결정", "주문 냄", "2건", "매수 AAPL · 남는 현금 SHY", "확정 종가", "2026-10-24 09:12",
-    ]);
-    const scheduled = screen.getByRole("row", { name: "2026-10-26 정기" });
-    expect(cellsOf(scheduled)).toEqual(["2026-10-26상세 펼치기", "정기", "주문 없음", "—", "—", "—", "2026-10-27 07:31"]);
+    // 거래일 묶음(최근이 위) — 줄마다 결정 시각·종류·상태·주문 수·가격·서버 요약.
+    const initial = await decisionLine("2026-10-23", "초기 결정");
+    const days = within(screen.getByRole("list", { name: "결정 기록" })).getAllByRole("heading", { level: 3 });
+    expect(days.map((heading) => heading.textContent)).toEqual(["거래일 2026-10-26", "거래일 2026-10-23"]);
+    expect(within(initial).getByText("10-24 09:12").getAttribute("datetime")).toBe("2026-10-24T09:12+09:00");
+    expect(within(initial).getByText("주문 냄")).toBeTruthy();
+    expect(within(initial).getByText("주문 2건")).toBeTruthy();
+    expect(within(initial).getByText("확정 종가")).toBeTruthy();
+    expect(within(initial).getByText("매수 AAPL · 남는 현금 SHY")).toBeTruthy();
+    // 규칙 계좌 줄에는 목표 노출이 없습니다(늘 비는 값).
+    expect(initial.textContent).not.toContain("목표 노출");
+    // 값을 모르는 결정 — 주문 수·가격·요약은 '—'(0으로 채우지 않음).
+    const scheduled = await decisionLine("2026-10-26", "정기");
+    expect(within(scheduled).getByText("10-27 07:31")).toBeTruthy();
+    expect(within(scheduled).getByText("주문 없음")).toBeTruthy();
+    expect(within(scheduled).getByText("주문 —")).toBeTruthy();
+    expect(scheduled.textContent).toContain("가격 —");
+    expect(within(scheduled).getAllByText("—")).toHaveLength(2);
+    // 화면을 열 때 상세를 읽지 않습니다(누를 때 한 번).
+    expect(api.apiGetShared.mock.calls.some(([path]) => /^\/api\/paper\/decisions\/\d+$/.test(String(path)))).toBe(false);
   });
 
-  it("행을 펼치면 상세 — 선정·신호 이벤트·후보·전량 매도·주문·건너뛴 후보·게이트(참고)", async () => {
+  it("줄을 고르면 상세 — 선정·신호 이벤트·후보·전량 매도·주문·건너뛴 후보·게이트(참고)", async () => {
     await openDecisionsTab();
 
-    const row = await screen.findByRole("row", { name: "2026-10-23 초기 결정" });
-    const toggle = within(row).getByRole("button", { name: "상세 펼치기" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(toggle);
+    const line = await decisionLine("2026-10-23", "초기 결정");
+    expect(line.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(line);
 
     const detail = await screen.findByRole("region", { name: "2026-10-23 초기 결정 상세" });
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/decisions/7", 0);
-    // 규칙 책 기록에는 Claude 책 칸(모델·프레임·노출)이 없습니다.
+    // 맨 위 속성 — 상태·주문과 결정 기록 칸. 규칙 책 기록에는 Claude 책 칸(모델·프레임·노출)이 없습니다.
+    const head = detail.querySelector("dl") as HTMLElement;
+    const property = (label: string) => within(head).getByText(label).nextElementSibling?.textContent;
+    expect(property("상태")).toBe("주문 냄");
+    expect(property("주문")).toBe("2건");
+    expect(property("결정 시각")).toBe("2026-10-24 09:12");
     expect(within(detail).getByText("선정 기준일")).toBeTruthy();
     expect(within(detail).queryByText("모델")).toBeNull();
     expect(within(detail).getByText("퍼싱 스퀘어: 직전 분기 공시 없음")).toBeTruthy();
@@ -299,14 +334,14 @@ describe("결정 로그 탭", () => {
     expect(within(selection).getByText(/신호 기관: 버크셔 해서웨이 · 1위, 퍼싱 스퀘어 · 2위/)).toBeTruthy();
     expect(rowsOf(selection)).toEqual([
       ["1", "버크셔 해서웨이", "선정", "+14.21%", "+3.50%p", "0.83"],
-      ["2", "퍼싱 스퀘어", "선정", "+12.10%", "—", "—"],
+      ["2", "퍼싱 스퀘어", "선정", "+12.10%", NONE, NONE],
     ]);
 
     expect(rowsOf(within(detail).getByRole("region", { name: "13F 신호 이벤트" }))).toEqual([
       ["버크셔 해서웨이 · 1위", "AAPL", "확대", "+31.50%", "4.20%", "3.10%"],
-      ["퍼싱 스퀘어 · 2위", "AAPL", "신규 편입", "—", "2.05%", "—"],
+      ["퍼싱 스퀘어 · 2위", "AAPL", "신규 편입", NONE, "2.05%", NONE],
       // 순위표에 없는 기관은 CIK 그대로(이름을 지어내지 않음)
-      ["CIK 0009999999", "XOM", "전량 매도", "—", "0.00%", "1.50%"],
+      ["CIK 0009999999", "XOM", "전량 매도", NONE, "0.00%", "1.50%"],
     ]);
 
     const candidates = within(detail).getByRole("region", { name: "매수 후보" });
@@ -316,7 +351,7 @@ describe("결정 로그 탭", () => {
 
     const orders = rowsOf(within(detail).getByRole("region", { name: "주문" }));
     expect(orders).toHaveLength(1);
-    expect(orders[0].slice(0, 6)).toEqual(["AAPL", "매수", "순자산의 10.00% 매수", "체결", "사후 체결", "—"]);
+    expect(orders[0].slice(0, 6)).toEqual(["AAPL", "매수", "순자산의 10.00% 매수", "체결", "사후 체결", NONE]);
     // 근거 문장을 자르지 않고 그대로 — 둘째 기관까지 보입니다.
     expect(orders[0][6]).toBe("2곳 동시 매수(순위 합 3): 1위 버크셔 해서웨이(0001067983) +31.5%, 2위 퍼싱 스퀘어(0001336528) 신규");
 
@@ -332,9 +367,10 @@ describe("결정 로그 탭", () => {
     expect(within(detail).getByText("결정 기록 원본(JSON)")).toBeTruthy();
     expect(within(detail).queryByText("입력 패킷(JSON)")).toBeNull();
 
-    // 다시 누르면 접습니다.
-    fireEvent.click(within(row).getByRole("button", { name: "상세 접기" }));
-    expect(screen.queryByRole("region", { name: "2026-10-23 초기 결정 상세" })).toBeNull();
+    // 닫으면 상세가 빠지고 그 줄로 포커스가 돌아갑니다.
+    fireEvent.click(within(screen.getByRole("dialog", { name: "2026-10-23 초기 결정" })).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "2026-10-23 초기 결정 상세" })).toBeNull());
+    expect(document.activeElement).toBe(line);
   });
 
   it("두 그룹을 섞은 뒤 기록 — 신호 풀 표, 그룹 순위가 붙은 이벤트, 후보 점수, 점수 기여 표, 배분 방식", async () => {
@@ -343,9 +379,7 @@ describe("결정 로그 탭", () => {
     });
     reads["/api/paper/decisions/9"] = () => Promise.resolve(BLEND_DETAIL);
     await openDecisionsTab();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-11-17 재선정일" })).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-11-17 재선정일 상세" });
+    const detail = await openDecision("2026-11-17", "재선정일");
     const selection = within(detail).getByRole("region", { name: "선정 — 2026-11-17 기준" });
     // 선정된 줄만 이름표에(순위표 3위 서드 포인트는 없음), 그룹 A 몫은 선정 때 값
     expect(within(selection).getByText(
@@ -357,8 +391,8 @@ describe("결정 로그 탭", () => {
     expect(headersOf(pool)).toEqual(["기관", "그룹", "그룹 A 순위", "그룹 B 순위", "기관 가중"]);
     expect(rowsOf(pool)).toEqual([
       ["듀케인", "AB", "1위", "1위", "53.3%"],
-      ["아팔루사", "A", "2위", "—", "13.3%"],
-      ["버크셔 해서웨이", "B", "—", "2위", "33.3%"],
+      ["아팔루사", "A", "2위", NONE, "13.3%"],
+      ["버크셔 해서웨이", "B", NONE, "2위", "33.3%"],
     ]);
     expect(rowsOf(within(selection).getByRole("region", { name: "그룹 A 순위표" }))).toEqual([
       ["1", "듀케인", "선정", "+19.00%", "+4.00%p", "1.00"],
@@ -393,11 +427,34 @@ describe("결정 로그 탭", () => {
     ]);
   });
 
+  it("상세 표는 공용 조밀 표(넓은 화면 28px 행) — 칸이 많은 표만 640px 넘김, 한국어 글 칸은 낱말 사이에서 꺾고 배지는 공용 태그", async () => {
+    await openDecisionsTab();
+    const detail = await openDecision("2026-10-23", "초기 결정");
+    const tableIn = (name: string) => within(within(detail).getByRole("region", { name })).getByRole("table");
+
+    const orders = tableIn("주문");
+    expect(orders.className).toContain("border-separate");
+    expect(orders.className).toContain("min-w-[640px]");
+    const [ticker, side, , status, timing, expires, reason] = within(orders).getAllByRole("row")[1].querySelectorAll("td");
+    // 조밀 행 — 넓은 화면 위아래 4px(마지막 행은 구분선 없이 lg:py-1).
+    expect(ticker.className).toMatch(/\blg:(pt|py)-1\b/);
+    expect(ticker.className).toContain("break-keep");
+    expect(side.className).toContain("whitespace-nowrap");
+    expect(status.className).toContain("break-keep");
+    expect(timing.className).toContain("whitespace-nowrap");
+    expect(expires.className).toContain("whitespace-nowrap");
+    expect(reason.className).toContain("break-keep");
+    // 칸 둘인 표는 상자 폭에 맞춥니다(최소 폭 없음).
+    expect(tableIn("고르지 못한 후보").className).not.toContain("min-w-[640px]");
+    // 배지 — 공용 태그(테두리·20px), 옛 자체 배지(px-2 py-px) 없음.
+    const badge = within(orders).getByText("체결").parentElement as HTMLElement;
+    expect(badge.className).toContain("leading-4");
+    expect(detail.querySelector(".px-2.py-px")).toBeNull();
+  });
+
   it("섞기 전 기록에는 점수 기여 표·배분 줄이 없고 순위 합 칸", async () => {
     await openDecisionsTab();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-23 초기 결정" })).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-10-23 초기 결정 상세" });
+    const detail = await openDecision("2026-10-23", "초기 결정");
     expect(within(detail).queryByRole("region", { name: "점수 기여" })).toBeNull();
     const candidates = within(detail).getByRole("region", { name: "매수 후보" });
     expect(within(candidates).queryByText(/^배분:/)).toBeNull();
@@ -410,9 +467,7 @@ describe("결정 로그 탭", () => {
       ...DETAIL, decision: { ...DETAIL.decision, response: { stance: "neutral" } }, orders: [],
     });
     await openDecisionsTab();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-23 초기 결정" })).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-10-23 초기 결정 상세" });
+    const detail = await openDecision("2026-10-23", "초기 결정");
     expect(within(detail).queryByRole("region", { name: "13F 신호 이벤트" })).toBeNull();
     expect(within(detail).queryByRole("region", { name: "게이트 (참고)" })).toBeNull();
     expect(within(detail).getByText("이 결정은 주문을 내지 않았습니다.")).toBeTruthy();
@@ -456,7 +511,7 @@ describe("결정 로그 탭", () => {
     }));
 
     await openDecisionsTab();
-    await screen.findByRole("row", { name: "2026-10-23 초기 결정" });
+    await decisionLine("2026-10-23", "초기 결정");
     fireEvent.click(screen.getByRole("button", { name: "지금 결정 실행" }));
 
     const busy = await screen.findByRole("button", { name: /결정 중… \d+초/ });
@@ -473,11 +528,70 @@ describe("결정 로그 탭", () => {
   it("수동 결정이 실패하면 서버 문구를 경고로", async () => {
     api.apiPost.mockRejectedValue(new Error("선정이 없습니다 — 규칙 계좌를 먼저 시작하세요."));
     await openDecisionsTab();
-    await screen.findByRole("row", { name: "2026-10-23 초기 결정" });
+    await decisionLine("2026-10-23", "초기 결정");
     fireEvent.click(screen.getByRole("button", { name: "지금 결정 실행" }));
 
     const warning = await screen.findByText("선정이 없습니다 — 규칙 계좌를 먼저 시작하세요.");
     expect(warning.closest("div")?.className).toContain("text-warn");
+  });
+});
+
+describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", () => {
+  const CLAUDE_ACTIVE = { ...CLAUDE, status: "ACTIVE", startedOn: "2026-10-23" };
+
+  beforeEach(() => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(RULES_ACTIVE, { books: [RULES_ACTIVE, CLAUDE_ACTIVE, book("bench_spy")] }));
+    reads["/api/paper/decisions?book=rules"] = () => Promise.resolve(LIST);
+    reads["/api/paper/decisions?book=claude"] = () => Promise.resolve({ available: true, decisions: [] });
+  });
+
+  it("계좌 고르기·'지금 결정 실행'은 화면 머리 칸에 — 결정 칸에는 안내·확인 상자·결과만", async () => {
+    await openDecisionsTab();
+    await decisionLine("2026-10-23", "초기 결정");
+
+    const picker = screen.getByLabelText("계좌 고르기");
+    expect(picker.closest('[data-paper-header-slot="account"]')).not.toBeNull();
+    const actions = screen.getByRole("group", { name: "결정 동작" });
+    expect(actions.closest('[data-paper-header-slot="actions"]')).not.toBeNull();
+    const run = within(actions).getByRole("button", { name: "지금 결정 실행" });
+    // 규칙 계좌는 확인 상자 없이 바로 실행 — 여닫는 표지가 없습니다.
+    expect(run.getAttribute("aria-expanded")).toBeNull();
+    expect(run.getAttribute("aria-controls")).toBeNull();
+    const panel = screen.getByRole("heading", { name: "결정" }).closest("section") as HTMLElement;
+    expect(within(panel).queryByRole("button", { name: "지금 결정 실행" })).toBeNull();
+    expect(within(panel).queryByRole("combobox")).toBeNull();
+  });
+
+  it("Claude 계좌: 머리 동작이 화면 안 확인 상자를 여닫는다 — 열면 '결정 실행 확인'으로, 취소하면 머리 동작으로 포커스", async () => {
+    await openDecisionsTab();
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude" } });
+    const run = await screen.findByRole("button", { name: "지금 결정 실행" });
+    expect(run.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(run);
+    const box = document.getElementById(run.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(within(box).getByText(/Claude를 지금 부를까요\?/)).toBeTruthy();
+    expect(run.getAttribute("aria-expanded")).toBe("true");
+    expect((run as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(within(box).getByRole("button", { name: "결정 실행 확인" })));
+    expect(api.apiPost).not.toHaveBeenCalled();
+
+    fireEvent.click(within(box).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(document.activeElement).toBe(run));
+    expect(run.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(/Claude를 지금 부를까요/)).toBeNull();
+    expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
+  it("주간 복기 보기에서는 머리에 계좌 고르기·결정 동작이 없다(복기는 계좌를 고르지 않음)", async () => {
+    reads["/api/paper/reviews"] = () => Promise.resolve({ available: true, latestWeekEnding: null, reviews: [] });
+    await openDecisionsTab();
+    await decisionLine("2026-10-23", "초기 결정");
+    fireEvent.click(screen.getByRole("button", { name: "주간 복기" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("계좌 고르기")).toBeNull());
+    expect(screen.queryByRole("group", { name: "결정 동작" })).toBeNull();
   });
 });
 

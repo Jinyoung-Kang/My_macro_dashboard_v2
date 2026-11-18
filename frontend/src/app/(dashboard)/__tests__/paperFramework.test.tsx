@@ -8,7 +8,7 @@
  *    /api/paper/framework/proposals {noteId} → 그 자리에 제안 → 승인 확인(비용 없음) → POST …/{id}/approve → 판·제안 다시 읽기
  *  - 제안 목록: 기준 판이 지금 판과 다르면 승인을 막고, 거절은 확인 뒤 POST …/{id}/reject, 서버 400 문구는 경고로
  *  - 직접 고치기: 규칙마다 글자 수(4,000자), 넘으면 저장을 막음, 규칙 추가 → 저장 확인 → POST /api/paper/framework {body(status USER), changelog}
- *  - 메모: 목록(서버 상태 그대로)·만료 포함 토글, 쓰기(빈 날짜는 빼고 — 만료 기본 안내는 설정값), 보관은 확인 뒤 DELETE
+ *  - 메모: 목록-검사(서버 상태 그대로 — 줄을 고르면 본문·보관 단추)·만료 포함 토글, 쓰기(빈 날짜는 빼고 — 만료 기본 안내는 설정값), 보관은 확인 뒤 DELETE
  *  - 개요: 순자산 곡선에 프레임 경계선("프레임 v0")과 한 줄
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -495,11 +495,11 @@ describe("메모 탭", () => {
     const card = (await screen.findByText("메모", { selector: "h2" })).closest("section") as HTMLElement;
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/notes?includeExpired=false", 0);
     await within(card).findByText("유가 급등");
-    // 제목·본문 칸의 최소 폭 — 390px에서 다른 칸(줄바꿈 없음)에 눌려 제목이 한 글자씩 세로로 쌓이지 않게(jsdom에는 배치가 없어 칸 정의로 확인).
-    expect(within(card).getByRole("columnheader", { name: "제목·본문" }).className).toContain("min-w-[12rem]");
-    expect(rowsOf(card).map((cells) => [cells[0], cells[1], cells[3], cells[4]])).toEqual([
-      ["#12", "시황유효 — 패킷에 실음", "2026-10-23", "2026-10-28"],
-      ["#10", "방법론프레임 제안용", "2026-10-20", "만료 없음"],
+    // 목록-검사(작업대 P6) — 줄마다 번호·종류·상태·제목과 기준일·만료일(서버 값 그대로).
+    const lines = within(within(card).getByRole("list", { name: "메모" })).getAllByRole("button");
+    expect(lines.map((line) => line.textContent)).toEqual([
+      "#12시황유효 — 패킷에 실음유가 급등기준일 2026-10-23 · 만료일 2026-10-28",
+      "#10방법론프레임 제안용투자 OS 원문기준일 2026-10-20 · 만료 없음",
     ]);
     expect(within(card).getByText(/기준일이 출발일\(2026-10-23\) 이하인 메모만 실립니다/)).toBeTruthy();
     expect(within(card).getByText(/메모의 숫자보다 패킷의 숫자가 우선합니다/)).toBeTruthy();
@@ -566,7 +566,11 @@ describe("메모 탭", () => {
     api.apiDelete.mockResolvedValue({ ok: true });
     await openTab("메모");
 
-    fireEvent.click(await screen.findByRole("button", { name: "보관 #12" }));
+    // 메모 줄을 고르면 검사 칸(jsdom은 좁은 배치 — 대화상자)에 본문과 보관 단추.
+    fireEvent.click(await screen.findByRole("button", { name: /^#12/ }));
+    const dialog = await screen.findByRole("dialog", { name: "#12 유가 급등" });
+    expect(within(dialog).getByText("브렌트 95 돌파")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "보관 #12" }));
     expect(api.apiDelete).not.toHaveBeenCalled();
     expect(screen.getByText(/이 메모\(#12 유가 급등\)를 보관할까요\? 지우지 않고/)).toBeTruthy();
     const listReads = counts["/api/paper/notes?includeExpired=false"];

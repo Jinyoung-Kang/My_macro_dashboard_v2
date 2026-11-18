@@ -1008,14 +1008,15 @@ describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·�
       fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
       await settled();
       expect(screen.getByLabelText("오늘 장중 확인").textContent).toContain("예정");
-      // 두 줄 모두 이름이 '기준일 종류'(2026-10-30 장중 확인)라 요약 글로 고릅니다.
-      expect(screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })).toHaveLength(2);
-      const byText = (text: string) => screen.getAllByRole("row").find((tr) => tr.textContent?.includes(text)) as HTMLElement;
+      // 두 줄 모두 같은 거래일 묶음(2026-10-30)의 '장중 확인'이라 요약 글로 고릅니다(시각순 목록 줄 단추).
+      const day = screen.getByRole("list", { name: "거래일 2026-10-30" });
+      expect(within(day).getAllByRole("button").filter((button) => within(button).queryByText("장중 확인") !== null)).toHaveLength(2);
+      const byText = (text: string) => within(day).getAllByRole("button").find((button) => button.textContent?.includes(text)) as HTMLElement;
       expect(within(byText("API 오류 — 장중 확인 재시도 없음")).getByText("API 오류(재시도 없음)")).toBeTruthy();
 
       const row = byText("AAPL 갭 메움 — 대신함");
       expect(within(row).getByText("장중 확인")).toBeTruthy();
-      fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+      fireEvent.click(row);
       await settled();
       const part = screen.getByRole("region", { name: "장중 확인" });
       expect(within(part).getByText("대신함(REPLACE)")).toBeTruthy();
@@ -1054,8 +1055,8 @@ describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·�
 
     fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
     await settled();
-    const row = screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })[0];
-    fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+    const day = screen.getByRole("list", { name: "거래일 2026-10-30" });
+    fireEvent.click(within(day).getAllByRole("button").find((button) => within(button).queryByText("장중 확인") !== null) as HTMLElement);
     await settled();
     const judged = screen.getByRole("region", { name: "판단" });
     expect(within(judged).getByText("계획대로")).toBeTruthy();

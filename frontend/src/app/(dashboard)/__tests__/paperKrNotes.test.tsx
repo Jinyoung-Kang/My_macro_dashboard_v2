@@ -25,6 +25,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 const OVERVIEW = {
   available: true, market: "KR", currency: "KRW", dormantReason: null, initialized: true, pendingBackfill: [],
@@ -54,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const renderNotes = () => render(<PaperPage market="KR" initialTab="notes" />);
@@ -100,8 +102,8 @@ describe("한국 메모 탭", () => {
     renderNotes();
     expect(await screen.findByText("외국인 반도체 매수")).toBeTruthy();
     expect(screen.getByText("유효 — 패킷에 실음")).toBeTruthy();
-    // 제목·본문 칸의 최소 폭 — 390px에서 다른 칸(줄바꿈 없음)에 눌려 제목이 한 글자씩 세로로 쌓이지 않게(jsdom에는 배치가 없어 칸 정의로 확인).
-    expect(screen.getByRole("columnheader", { name: "제목·본문" }).className).toContain("min-w-[12rem]");
+    // 목록-검사 줄 — 제목은 낱말 사이에서 꺾고(좁은 화면에서 한 글자씩 세로로 쌓이지 않게), 기준일·만료일은 아래 줄.
+    expect(screen.getByText("외국인 반도체 매수").className).toContain("break-keep");
 
     const form = screen.getByRole("form", { name: "메모 쓰기" });
     expect(within(form).getByText(
@@ -141,3 +143,76 @@ describe("한국 메모 탭", () => {
     expect(screen.getByText(/\(출발 결정도 같은 규칙\)/)).toBeTruthy();
   });
 });
+
+describe("한국 메모 탭 — 목록-검사(작업대 P6)", () => {
+  const ARCHIVED = { ...NOTE, id: 19, title: "옛 환율 메모", body: "원/달러 1,380", archived: true, active: false, createdAtKst: null };
+
+  it("좁은 화면: 줄을 누르면 위쪽 대화상자(첫 포커스 제목)에 속성·본문(running 글자)·보관 단추 — 보관한 메모는 '보관함'", async () => {
+    reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: null, referenceDate: "2026-10-28", notes: [NOTE, ARCHIVED] });
+    renderNotes();
+    const list = await screen.findByRole("list", { name: "메모" });
+    expect(screen.getByText("2건")).toBeTruthy();
+    const [line] = within(list).getAllByRole("button");
+    expect(line.getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(line);
+
+    const dialog = await screen.findByRole("dialog", { name: "#21 외국인 반도체 매수" });
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("heading", { name: "#21 외국인 반도체 매수" })));
+    const head = dialog.querySelector("dl") as HTMLElement;
+    const property = (label: string) => within(head).getByText(label).nextElementSibling?.textContent;
+    expect(property("종류")).toBe("시황");
+    expect(property("상태")).toBe("유효 — 패킷에 실음");
+    expect(property("기준일")).toBe("2026-10-28");
+    expect(property("만료일")).toBe("2026-11-02");
+    expect(property("길이")).toBe("16자");
+    expect(property("쓴 시각")).toBe("2026-10-28 21:10");
+    const body = within(dialog).getByText("삼성전자·하이닉스 순매수 지속");
+    expect(body.className).toContain("text-[15px]");
+    expect(body.className).toContain("max-w-[72ch]");
+    expect(within(dialog).getByRole("button", { name: "보관 #21" })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(within(list).getAllByRole("button")[1]);
+    const archived = await screen.findByRole("dialog", { name: "#19 옛 환율 메모" });
+    expect(within(archived).getByText("보관함")).toBeTruthy();
+    expect(within(archived).queryByRole("button", { name: /^보관 #/ })).toBeNull();
+  });
+
+  it("보관 확인 상자를 열면 '보관 확인'으로 포커스, 확인 없이 대화상자를 닫으면 확인을 접는다(다른 메모의 보관 단추가 막히지 않음)", async () => {
+    const OTHER = { ...NOTE, id: 22, title: "환율", body: "원/달러 1,420" };
+    reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: null, referenceDate: "2026-10-28", notes: [NOTE, OTHER] });
+    renderNotes();
+    const list = await screen.findByRole("list", { name: "메모" });
+    fireEvent.click(within(list).getAllByRole("button")[0]);
+    const dialog = await screen.findByRole("dialog", { name: "#21 외국인 반도체 매수" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "보관 #21" }));
+    expect(within(dialog).getByText(/이 메모\(#21 외국인 반도체 매수\)를 보관할까요\?/)).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "보관 확인" })));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(within(list).getAllByRole("button")[1]);
+    const other = await screen.findByRole("dialog", { name: "#22 환율" });
+    expect((within(other).getByRole("button", { name: "보관 #22" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/를 보관할까요\?/)).toBeNull();
+    expect(api.apiDelete).not.toHaveBeenCalled();
+  });
+
+  it("넓은 화면: 틀이 넓으면 목록 옆 검사 칸 — 처음에는 안내, 줄을 고르면 그 메모", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+    );
+    reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: null, referenceDate: "2026-10-28", notes: [NOTE] });
+    renderNotes();
+    const hint = await screen.findByRole("region", { name: "메모 — 고른 줄 없음" });
+    expect(within(hint).getByText(/메모를 고르면 이 칸에/)).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("list", { name: "메모" })).getAllByRole("button")[0]);
+    const inspector = await screen.findByRole("region", { name: "메모 — #21 외국인 반도체 매수" });
+    expect(within(inspector).getByText("삼성전자·하이닉스 순매수 지속")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+

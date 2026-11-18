@@ -1,14 +1,15 @@
 "use client";
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Button, Callout, ErrorState, Freshness, Loading, Panel, Table } from "@/components/ui";
+import { DataTable, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
+import { Button, Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
+import { EMPTY } from "@/lib/format";
 import {
-  type Badge,
   latestReviewNote,
   PAPER_SOURCES,
   resolveReviewWeek,
@@ -16,9 +17,7 @@ import {
   REVIEW_SCHEDULE_NOTE,
   reviewDetailView,
   type ReviewDetailKey,
-  type ReviewRow,
   reviewRowSignature,
-  reviewRows,
   reviewRunResultView,
   type ReviewVerdictRow,
   shouldReloadReviewDetail,
@@ -36,6 +35,7 @@ import {
   krReviewInputRows,
 } from "@/lib/paperKr";
 import type { PaperMarketCode } from "@/lib/paperMarket";
+import { type ReviewTimelineRow, reviewTimelineEntries } from "@/lib/paperTimeline";
 import type {
   PaperBookSummary,
   PaperReviewResponse,
@@ -43,13 +43,16 @@ import type {
   PaperRunReviewResult,
   PaperStatusResponse,
 } from "@/lib/types";
+import { DetailFold } from "./DetailFold";
+import { PaperBadge } from "./PaperBadge";
 import { TickerName } from "./TickerName";
 
 /**
  * 결정 로그 탭의 '주간 복기'(2단계 명세 §3 D1~D6) — 주마다 한 건, Claude 계좌의 지난 4주 결정을 그 뒤 가격과 대조한 복기 메모.
  *
- * 위에서부터: 복기가 언제 생기는지·가장 최근 주와 수동 실행(Claude를 한 번 부르므로 확인 단계), 복기 목록(상태·창·판정 수·연결된 제안),
- * 고른 주의 복기(판정 표 — 결정 날짜는 서버가 입력에서 찾아 붙인 값, 반복 오류·지킬 것, 프레임 제안으로 이동, 사용량, 입력·응답 원본).
+ * 위에서부터: 복기가 언제 생기는지·가장 최근 주와 수동 실행(Claude를 한 번 부르므로 확인 단계), 복기 목록(시각순 목록 — 상태·창·판정 수·연결된 제안),
+ * 고른 주의 복기(검사 칸 — 넓은 틀은 목록 오른쪽, 좁은 화면은 대화상자: 상태·판정 수·복기 기록 칸, 판정 표 — 결정 날짜는 서버가 입력에서 찾아 붙인 값,
+ * 반복 오류·지킬 것, 프레임 제안으로 이동, 사용량, 입력·응답 원본). 읽는 주는 지금처럼 고른 주(없으면 가장 최근 주)이고 화면을 열 때 한 번 읽습니다.
  * 제안 링크는 프레임 탭으로 옮겨 그 제안을 강조합니다(page.tsx) — 승인·거절은 프레임 탭에서만 합니다(자동 반영 없음).
  *
  * 숫자(수익률·낙폭·판정 수)는 서버 값 그대로이고 화면은 이름을 붙여 늘어놓기만 합니다(ADR 0004). 모르는 값은 "—".
@@ -95,7 +98,7 @@ export function ReviewsSection({
     if (shouldReloadReviewDetail(seen.current, next)) void reloadDetail();
     seen.current = next;
   }, [week, signature, reloadDetail]);
-  const rows = reviewRows(reviews);
+  const rows = reviewTimelineEntries(reviews);
   const runView = run.result ? reviewRunResultView(run.result) : null;
   const note = latestReviewNote(list.data?.latestWeekEnding, list.data?.latestOpensAtKst, reviews)
     ?? (korea ? krLatestWeekReasonText(list.data?.latestWeekEnding, list.data?.latestWeekEndingReason) : null);
@@ -146,72 +149,129 @@ export function ReviewsSection({
 
       <Panel
         title="복기 기록 (최근 52주)"
-        subtitle="주마다 한 건(같은 주에 다시 돌아도 새로 만들지 않음). '보기'로 그 주의 판정 표·반복 오류·제안을 펼칩니다."
+        subtitle="주마다 한 건(같은 주에 다시 돌아도 새로 만들지 않음). 주를 고르면 그 주의 판정 표·반복 오류·제안을 봅니다."
         source={source}
       >
-        {rows.length === 0 ? (
-          <p className="text-sm text-text-3">
-            {korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 일요일 21:00(KST) 뒤에 첫 복기가 생깁니다."}
-          </p>
-        ) : (
-          <Table<ReviewRow>
-            label="복기 기록"
-            rows={rows}
-            rowKey={(row) => row.key}
-            columns={[
-              {
-                key: "week",
-                header: "복기 주",
-                render: (row) => (
-                  <Button variant="ghost" onClick={() => setPicked(row.weekEnding)} expanded={row.weekEnding === week}>
-                    {`${row.weekEnding} 보기`}
-                  </Button>
-                ),
-              },
-              {
-                key: "status",
-                header: "상태",
-                render: (row) => (
-                  <span className="flex flex-col gap-1">
-                    <Chip badge={row.status} />
-                    {row.note && <span className="text-xs text-text-3">{row.note}</span>}
-                  </span>
-                ),
-              },
-              { key: "window", header: "창", render: (row) => <span className="text-xs text-text-2">{row.window}</span> },
-              { key: "counts", header: "판정", render: (row) => <span className="text-xs text-text-2">{row.counts}</span> },
-              {
-                key: "proposal",
-                header: "제안",
-                render: (row) => {
-                  const id = row.proposalId;
-                  return id !== null && onOpenProposal ? (
-                    <Button variant="ghost" onClick={() => onOpenProposal(id)}>{row.proposal}</Button>
-                  ) : (
-                    <span className="text-xs text-text-2">{row.proposal}</span>
-                  );
-                },
-              },
-              { key: "createdAt", header: "남긴 시각", render: (row) => <span className="text-xs text-text-3">{row.createdAt}</span> },
-            ]}
-          />
-        )}
+        <ReviewTimeline
+          rows={rows}
+          week={week}
+          onPick={setPicked}
+          empty={korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 일요일 21:00(KST) 뒤에 첫 복기가 생깁니다."}
+          renderBody={(row) => (
+            <ReviewPane
+              row={row}
+              week={week}
+              onShow={setPicked}
+              detail={detail}
+              onOpenProposal={onOpenProposal}
+              korea={korea}
+              books={books}
+            />
+          )}
+        />
       </Panel>
-
-      {week && (
-        <Panel title={`${week} 주 복기`} source={source}>
-          {detail.loading && !detail.data && <Loading label="복기를 읽는 중…" />}
-          {detail.error && <ErrorState message={detail.error} onRetry={detail.reload} />}
-          {detail.data && !detail.data.available && (
-            <Callout tone="warn">{detail.data.message ?? "복기를 읽을 수 없습니다."}</Callout>
-          )}
-          {detail.data?.available && detail.data.review && (
-            <ReviewBody review={detail.data.review} onOpenProposal={onOpenProposal} korea={korea} books={books} />
-          )}
-        </Panel>
-      )}
     </>
   );
+}
+
+/**
+ * 복기 기록 — 공용 시각순 목록(Timeline, 작업대 P6). 주마다 한 줄(시각 열 = 복기 주, 종류 태그 '주간 복기', 요약 = 상태 배지·창·판정 수·연결된 제안·남긴 시각·
+ * 안내 — 값은 lib/paperTimeline). 줄을 고르면 그 주의 복기를 틀 48rem부터 목록 오른쪽 넓은 검사 칸에, 그 아래(좁은 화면·좁은 틀)는 위쪽 대화상자(첫 포커스 제목)에
+ * 그립니다. 넓은 배치에서 고른 줄은 부모가 읽는 주(resolveReviewWeek — 고른 주, 없으면 가장 최근 주)라 화면을 열면 가장 최근 주가 검사 칸에 있습니다.
+ * 줄 단추 안이라 제안 링크는 검사 칸(복기 한 건의 속성 '제안'·프레임 제안 칸)에 있습니다.
+ */
+function ReviewTimeline({
+  rows,
+  week,
+  onPick,
+  empty,
+  renderBody,
+}: {
+  rows: ReviewTimelineRow[];
+  week: string | null;
+  onPick: (week: string) => void;
+  empty: string;
+  renderBody: (row: ReviewTimelineRow) => ReactNode;
+}) {
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const entries: TimelineEntry[] = rows.map((row) => ({
+    key: row.key,
+    at: row.at,
+    dateTime: row.dateTime,
+    kind: { label: "주간 복기" },
+    summary: <ReviewLineSummary row={row} />,
+    title: row.title,
+  }));
+  return (
+    <Timeline
+      label="복기 기록"
+      entries={entries}
+      renderDetail={(entry) => {
+        const row = byKey.get(entry.key);
+        return row ? renderBody(row) : null;
+      }}
+      inspectorWidth="wide"
+      dialogFocus="title"
+      selectedKey={week}
+      // 넓은 배치에서 Esc로 고름을 풀어도 부모의 주(가장 최근 주)가 남습니다 — 고른 주만 받습니다.
+      onSelectedKeyChange={(key) => {
+        if (key !== null) onPick(key);
+      }}
+      inspectorHint="주를 고르면 이 칸에 그 주의 복기를 보입니다(j/k·↑↓로 옮김)."
+      emptyText={empty}
+    />
+  );
+}
+
+/** 복기 줄의 요약 — 1행 상태 배지·창·판정 수(13px 보조 글), 2행 연결된 제안·남긴 시각, 오류·재시도 안내는 작은 보조 글. 줄 단추 안이라 링크가 없습니다. */
+function ReviewLineSummary({ row }: { row: ReviewTimelineRow }) {
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums text-text-2">
+        <PaperBadge badge={row.status} />
+        <span className="whitespace-nowrap">창 {row.window}</span>
+        <span className="whitespace-nowrap">판정 {row.counts}</span>
+      </span>
+      <span className="text-text">
+        {row.proposal === EMPTY ? <span className="text-text-3">제안 —</span> : row.proposal}
+        <span className="text-text-3"> · 남긴 시각 {row.createdAt}</span>
+      </span>
+      {row.note && <span className="text-xs leading-snug text-text-3">{row.note}</span>}
+    </span>
+  );
+}
+
+/**
+ * 고른 주의 복기 한 건 — 부모가 읽은 그 주의 상세(GET …/reviews/{주}, 읽는 때는 부모가 정함)를 그립니다. 대화상자로 연 주가 부모의 주와 다르면(좁은 배치에서
+ * 다른 주를 누름) 그 주를 부모에 알려 읽게 하고, 그동안은 읽는 중입니다 — 예전 '{주} 보기' 단추와 같은 요청(그 주 상세 한 번).
+ */
+function ReviewPane({
+  row,
+  week,
+  onShow,
+  detail,
+  onOpenProposal,
+  korea,
+  books,
+}: {
+  row: ReviewTimelineRow;
+  week: string | null;
+  onShow: (week: string) => void;
+  detail: { data: PaperReviewResponse | null; loading: boolean; error: string | null; reload: () => void };
+  onOpenProposal?: (id: number) => void;
+  korea: boolean;
+  books: readonly PaperBookSummary[];
+}) {
+  const shown = row.weekEnding === week;
+  useEffect(() => {
+    if (!shown) onShow(row.weekEnding);
+  }, [shown, onShow, row.weekEnding]);
+  const review = shown && detail.data?.available ? (detail.data.review ?? null) : null;
+  if (!shown || (detail.loading && !detail.data)) return <Loading label="복기를 읽는 중…" />;
+  if (detail.error) return <ErrorState message={detail.error} onRetry={detail.reload} />;
+  if (detail.data && !detail.data.available) return <Callout tone="warn">{detail.data.message ?? "복기를 읽을 수 없습니다."}</Callout>;
+  if (!review || review.weekEnding !== row.weekEnding) return <Loading label="복기를 읽는 중…" />;
+  return <ReviewBody review={review} onOpenProposal={onOpenProposal} korea={korea} books={books} />;
 }
 
 function ReviewBody({
@@ -230,30 +290,32 @@ function ReviewBody({
   const proposal = view.proposal;
   const entries = korea ? krReviewInputRows(review.input) : [];
   const comparison = korea ? krReviewComparison(review.input, new Map(books.map((book) => [book.code, book.label]))) : null;
+  // 맨 위 속성 — 상태·판정 수와 복기 기록 칸(복기 주·창·모델·기준 프레임·남긴 시각·재시도 — lib/paper reviewDetailView).
+  const properties: PropertyItem[] = [
+    { key: "status", label: "상태", value: <PaperBadge badge={view.status} /> },
+    { key: "counts", label: "판정", value: view.counts },
+    ...view.meta.map((cell): PropertyItem => ({ key: cell.key, label: cell.label, value: cell.value })),
+  ];
   return (
     <section aria-label={view.title} className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-center gap-2">
-        <Chip badge={view.status} />
-        <span className="text-xs text-text-3">{`판정 ${view.counts}`}</span>
-      </header>
-      <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-        {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
-      </dl>
+      <PropertyList items={properties} dense />
       {view.notices.map((text) => <Callout key={text} tone="warn">{text}</Callout>)}
 
       {view.verdicts.length > 0 && (
         <Part title="논거 판정" note="결정마다 Claude가 그 뒤 사실(서버가 계산한 수익률·낙폭·스탑·무효화 평가, 결정 뒤 지수·계좌 수익률과 관심 종목의 그 뒤 가격)로 내린 판정입니다.">
-          <Table<ReviewVerdictRow>
-            label="논거 판정"
+          <DataTable<ReviewVerdictRow>
+            caption="논거 판정"
+            dense
+            scrollHint
             rows={view.verdicts}
             rowKey={(row) => row.key}
             columns={[
-              { key: "decision", header: "결정", render: (row) => <code className="text-xs text-text-2">{row.decision}</code> },
-              { key: "book", header: "계좌", render: (row) => <span className="whitespace-nowrap text-xs text-text-3">{row.book}</span> },
-              { key: "asOf", header: "기준 거래일", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.asOf}</span> },
-              { key: "kind", header: "종류", render: (row) => <span className="text-xs text-text-3">{row.kind}</span> },
-              { key: "thesis", header: "판정", render: (row) => <Chip badge={row.thesisHeld} /> },
-              { key: "note", header: "근거", render: (row) => <span className="text-xs text-text-2">{row.note}</span> },
+              { key: "decision", header: "결정", className: "break-keep", cell: (row) => <code className="text-xs text-text-2">{row.decision}</code> },
+              { key: "book", header: "계좌", className: "whitespace-nowrap", cell: (row) => <span className="whitespace-nowrap text-xs text-text-3">{row.book}</span> },
+              { key: "asOf", header: "기준 거래일", className: "whitespace-nowrap", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.asOf}</span> },
+              { key: "kind", header: "종류", className: "break-keep", cell: (row) => <span className="text-xs text-text-3">{row.kind}</span> },
+              { key: "thesis", header: "판정", className: "whitespace-nowrap", cell: (row) => <PaperBadge badge={row.thesisHeld} /> },
+              { key: "note", header: "근거", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.note}</span> },
             ]}
           />
           {view.missing && <p className="mt-2 text-xs text-text-3">{view.missing}</p>}
@@ -262,35 +324,38 @@ function ReviewBody({
 
       {entries.length > 0 && (
         <Part title="가정 진입(거절 주문)" note={KR_REVIEW_ENTRY_NOTE}>
-          <Table<KrReviewEntryRow>
-            label="가정 진입"
+          <DataTable<KrReviewEntryRow>
+            caption="가정 진입"
+            dense
+            scrollHint
             rows={entries}
             rowKey={(row) => row.key}
             columns={[
-              { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.decision}</span> },
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+              { key: "decision", header: "결정", className: "break-keep", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.decision}</span> },
+              { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
               // 방향이 있어야 변화의 부호를 읽을 수 있습니다 — 매도의 음수는 피한 하락(손실이 아님).
               {
                 key: "side",
                 header: "방향",
                 className: "whitespace-nowrap",
-                render: (row) => <span className={`text-xs ${sideClass(row.sideCode)}`}>{row.side}</span>,
+                cell: (row) => <span className={`text-xs ${sideClass(row.sideCode)}`}>{row.side}</span>,
               },
-              { key: "reject", header: "거절 사유", render: (row) => <span className="text-xs text-warn">{row.rejectReason}</span> },
-              { key: "entryDate", header: "진입일", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.entryDate}</span> },
-              { key: "entryPrice", header: "진입가(원)", align: "right", className: "whitespace-nowrap", render: (row) => row.entryPrice },
+              { key: "reject", header: "거절 사유", className: "break-keep", cell: (row) => <span className="text-xs text-warn">{row.rejectReason}</span> },
+              { key: "entryDate", header: "진입일", className: "whitespace-nowrap", cell: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.entryDate}</span> },
+              { key: "entryPrice", header: "진입가(원)", align: "right", className: "whitespace-nowrap", cell: (row) => row.entryPrice },
               {
                 key: "source",
                 header: "진입가 출처",
-                render: (row) => (row.badges.length > 0 ? (
-                  <span className="flex flex-wrap gap-1">{row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}</span>
+                className: "break-keep",
+                cell: (row) => (row.badges.length > 0 ? (
+                  <span className="flex flex-wrap gap-1 whitespace-nowrap">{row.badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}</span>
                 ) : <span className="text-xs text-text-3">—</span>),
               },
               {
                 key: "returnPct",
                 header: "진입가 → 기준일 종가",
                 align: "right",
-                render: (row) => (row.afterSell || row.reason ? (
+                cell: (row) => (row.afterSell || row.reason ? (
                   <span className="flex flex-col items-end">
                     <span>{row.returnPct}</span>
                     {row.afterSell && <span className="whitespace-nowrap text-xs text-text-3">{row.afterSell}</span>}
@@ -314,7 +379,7 @@ function ReviewBody({
                 <span className="font-medium text-text-2" title={row.code}>{row.book}</span>
                 <span className="tabular-nums font-semibold text-text">{row.returnPct}</span>
                 {row.reason && <span className="text-text-3">{row.reason}</span>}
-                {row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}
+                {row.badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
               </li>
             ))}
           </ul>
@@ -360,32 +425,21 @@ function ReviewBody({
       {view.noProposal && <p className="text-xs text-text-3">제안 없음 — 이번 복기는 프레임을 고칠 반복 오류를 찾지 않았습니다.</p>}
 
       {view.usage.length > 0 && (
-        <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-          {view.usage.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
-        </dl>
+        <Part title="사용량">
+          <PropertyList items={view.usage.map((cell) => ({ key: cell.key, label: cell.label, value: cell.value }))} dense />
+        </Part>
       )}
       {view.input && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
+        <DetailFold summary="복기 입력(JSON — 서버가 장부에서 만든 사실)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.input}</pre>
-        </details>
+        </DetailFold>
       )}
       {view.response && (
-        <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-text-3">복기 응답(JSON)</summary>
+        <DetailFold summary="복기 응답(JSON)">
           <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.response}</pre>
-        </details>
+        </DetailFold>
       )}
     </section>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-1">
-      <dt className="text-text-3">{label}</dt>
-      <dd className="text-text-2">{value}</dd>
-    </div>
   );
 }
 
@@ -396,13 +450,5 @@ function Part({ title, note, children }: { title: string; note?: string; childre
       {note && <p className="text-xs text-text-3">{note}</p>}
       {children}
     </section>
-  );
-}
-
-function Chip({ badge }: { badge: Badge }) {
-  return (
-    <span title={badge.title} className={`w-fit whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-      {badge.label}
-    </span>
   );
 }
