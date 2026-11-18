@@ -3,6 +3,7 @@
  * (ADR 0004 규칙 3). 값이 없으면 null(화면은 "—"), 0으로 채우지 않습니다.
  */
 import { distinctLabels } from "./chartAxis";
+import { type DetailProperty, holdingDetailItems, holdingItemLabels } from "./detailEntity";
 import { EMPTY, formatCurrency, formatNumber } from "./format";
 import { filerName } from "./holdings";
 import type { KpiItem } from "./kpi";
@@ -109,4 +110,33 @@ export function holdingRowKeys(holdings: readonly Pick<Holding, "cusip" | "class
     seen.set(base, count);
     return count === 1 ? base : `${base}#${count}`;
   });
+}
+
+/**
+ * 보유 표 줄 이름표(검사 칸 제목·대화상자 이름·줄 단추 이름) — 키는 `holdingRowKeys`의 줄 키. 기관 상세 보유 줄과 같은 규칙(lib/detailEntity
+ * holdingItemLabels — 공시 이름이 겹치는 줄에만 ' · 클래스'·' · CUSIP …')이고, 'CUSIP:클래스'까지 같은 줄('#n' 꼬리 키)은 그 꼬리를 이름표에도 붙여
+ * 서로 다르게 둡니다(QA 자료는 중복 0).
+ */
+export function holdingRowLabels(holdings: readonly Pick<Holding, "name" | "cusip" | "class">[]): Map<string, string> {
+  const base = holdingItemLabels(holdings);
+  const keys = holdingRowKeys(holdings);
+  const out = new Map<string, string>();
+  holdings.forEach((holding, index) => {
+    const key = keys[index];
+    const label = base.get(`${holding.cusip}:${holding.class}`) ?? holding.name;
+    const tail = key.slice(`${holding.cusip}:${holding.class}`.length);
+    out.set(key, tail ? `${label} ${tail}` : label);
+  });
+  return out;
+}
+
+/**
+ * 보유 줄 검사 칸의 속성 — 기관 상세 보유 종목 검사 칸과 같은 줄(공시 이름·클래스·CUSIP·비중·평가액·주식 수·주식 수 변화·비중 변화·동작 — lib/detailEntity
+ * holdingDetailItems)에 '원화 환산'(평가액을 화면이 받은 같은 원/달러로 — 환율·평가액을 모르면 "—", 보조 글은 환율 문구)을 평가액 다음에 더합니다.
+ */
+export function holdingInspectorItems(holding: Holding, krw: KrwConversion): DetailProperty[] {
+  const items = holdingDetailItems(holding);
+  const at = items.findIndex((item) => item.label === "평가액");
+  const krwItem: DetailProperty = { label: "원화 환산", value: krw.toKrw(holding.value), note: krw.note };
+  return at < 0 ? [...items, krwItem] : [...items.slice(0, at + 1), krwItem, ...items.slice(at + 1)];
 }

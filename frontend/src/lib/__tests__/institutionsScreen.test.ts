@@ -1,18 +1,20 @@
 /**
- * 13F 포트폴리오 화면 모델(lib/institutionsScreen) — 기관 목록 줄·고른 기관 제목·요약 KPI·비중 추이 선·보유 표 줄 키.
+ * 13F 포트폴리오 화면 모델(lib/institutionsScreen) — 기관 목록 줄·고른 기관 제목·요약 KPI·비중 추이 선·보유 표 줄 키·이름표·검사 칸 속성.
  */
 import { describe, expect, it } from "vitest";
 
 import { formatCurrency } from "../format";
 import {
+  holdingInspectorItems,
   holdingRowKeys,
+  holdingRowLabels,
   institutionItems,
   institutionTitle,
   portfolioKpis,
   WEIGHT_LINE_LABEL_WIDTH,
   weightLines,
 } from "../institutionsScreen";
-import type { PortfolioResponse } from "../types/institution";
+import type { Holding, PortfolioResponse } from "../types/institution";
 
 describe("institutionItems", () => {
   it("키는 CIK, 이름은 국기를 뗀 글, 설명은 그대로 — 받은 차례", () => {
@@ -137,5 +139,50 @@ describe("portfolioKpis", () => {
     expect(kpis[2]).toMatchObject({ value: 0, note: null });
     expect(kpis[1].value).toBeNull();
     expect(portfolioKpis(null, krw, "합성 출처")).toEqual([]);
+  });
+});
+
+function holding(overrides: Partial<Holding>): Holding {
+  return { name: "SYNTHETIC CO", cusip: "000000001", class: "COM", value: 100, shares: 10, weight: 10, weightDiff: null, sharesDiff: null, action: "유지 (Unchanged)", ...overrides };
+}
+
+describe("holdingRowLabels", () => {
+  it("겹치지 않는 이름은 그대로, 겹치는 이름에만 클래스(기관 상세와 같은 규칙) — 키는 줄 키", () => {
+    const labels = holdingRowLabels([
+      holding({ name: "APPLE INC", cusip: "037833100", class: "COM" }),
+      holding({ name: "ALPHABET INC", cusip: "02079K305", class: "CAP STK CL A" }),
+      holding({ name: "ALPHABET INC", cusip: "02079K107", class: "CAP STK CL C" }),
+    ]);
+    expect([...labels]).toEqual([
+      ["037833100:COM", "APPLE INC"],
+      ["02079K305:CAP STK CL A", "ALPHABET INC · CAP STK CL A"],
+      ["02079K107:CAP STK CL C", "ALPHABET INC · CAP STK CL C"],
+    ]);
+  });
+
+  it("'CUSIP:클래스'까지 같은 줄은 키의 '#n' 꼬리를 이름표에도 — 서로 다른 이름표", () => {
+    const labels = holdingRowLabels([holding({ name: "SAME CO" }), holding({ name: "SAME CO" })]);
+    expect(labels.size).toBe(2);
+    expect(new Set(labels.values()).size).toBe(2);
+    expect(labels.get("000000001:COM#2")).toMatch(/ #2$/);
+  });
+});
+
+describe("holdingInspectorItems", () => {
+  const krw = { toKrw: (usd: number | null | undefined) => (usd == null ? null : `약 ${usd * 2}원`), note: "원/달러 2.00 기준" };
+
+  it("기관 상세 보유 검사 칸과 같은 줄 + 평가액 다음에 '원화 환산'(보조 = 환율 글)", () => {
+    const items = holdingInspectorItems(holding({ value: 500, shares: 1234, sharesDiff: -34, weightDiff: -0.25, action: "비중 축소 (Reduced)" }), krw);
+    expect(items.map((item) => item.label)).toEqual(["공시 이름", "클래스", "CUSIP", "비중", "평가액", "원화 환산", "주식 수", "주식 수 변화", "비중 변화", "동작"]);
+    expect(items[5]).toMatchObject({ value: "약 1000원", note: "원/달러 2.00 기준" });
+    expect(items[6].value).toBe("1,234주");
+    expect(items[7].value).toBe("\u221234주");
+    expect(items[8].value).toBe("\u22120.25%p");
+  });
+
+  it("환율·평가액을 모르면 원화 환산은 null('—') — 보조 글은 그대로", () => {
+    const items = holdingInspectorItems(holding({}), { toKrw: () => null, note: "원/달러 값이 없어 원화 환산은 생략했습니다." });
+    const krwItem = items.find((item) => item.label === "원화 환산");
+    expect(krwItem).toMatchObject({ value: null, note: "원/달러 값이 없어 원화 환산은 생략했습니다." });
   });
 });

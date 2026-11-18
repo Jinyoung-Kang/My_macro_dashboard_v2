@@ -8,7 +8,7 @@
  * 개편 전 코드에서 통과시켜 두고, 개편 커밋들이 그대로 통과해야 합니다(계획 §4-2 '요청 지킴 시험'). 검사 칸처럼 개편이 새로 만드는 조작의 '+0' 사례는
  * 그 조작을 만드는 커밋에서 더합니다.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -25,6 +25,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import { endpoints } from "@/lib/endpoints";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { PortfolioResponse } from "@/lib/types";
 import InstitutionsPage from "../institutions/page";
 
@@ -50,7 +51,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** 넓은 화면(lg 이상 — 셸의 왼쪽 메뉴가 보이는 폭)으로 흉내 냅니다. 틀 폭은 jsdom에서 0이라 크기 질의 배치(옆 칸)에 맡깁니다. */
+function stubWide() {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+  );
+}
 
 /** 부른 경로 목록(부른 차례 그대로). */
 const calledPaths = () => (api.apiGetShared.mock.calls as unknown as [string][]).map(([path]) => path);
@@ -150,5 +161,27 @@ describe("13F 포트폴리오 화면의 요청", () => {
     await waitFor(() => expect(counts()[next]).toBe(1));
     await act(async () => {});
     expect(counts()).toEqual({ [INSTITUTIONS]: 1, [PORTFOLIO]: 1, [USDKRW]: 1, [next]: 1 });
+  });
+
+  it("보유 줄 검사 단추로 대화상자를 열고 닫아도(좁은 화면) 요청은 늘지 않는다", async () => {
+    answerAll();
+    render(<InstitutionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "SYNTHETIC BETA CO 13F 줄 자세히" }));
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC BETA CO" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => {});
+    expect(counts()).toEqual({ [INSTITUTIONS]: 1, [PORTFOLIO]: 1, [USDKRW]: 1 });
+  });
+
+  it("넓은 화면 옆 검사 칸에서 다른 줄을 골라도 요청은 늘지 않는다", async () => {
+    stubWide();
+    answerAll();
+    render(<InstitutionsPage />);
+    await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC ALPHA CO" });
+    fireEvent.click(screen.getByRole("button", { name: "SYNTHETIC BETA CO 13F 줄 자세히" }));
+    await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC BETA CO" });
+    await act(async () => {});
+    expect(counts()).toEqual({ [INSTITUTIONS]: 1, [PORTFOLIO]: 1, [USDKRW]: 1 });
   });
 });

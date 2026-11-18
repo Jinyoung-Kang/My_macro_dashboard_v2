@@ -25,7 +25,8 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import { endpoints } from "@/lib/endpoints";
-import { formatCurrency, formatKrw } from "@/lib/format";
+import { formatCurrency, formatKrw, formatUsd } from "@/lib/format";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { kstToday, rangeStart } from "@/lib/infoSearch";
 import type { PortfolioResponse } from "@/lib/types";
 import InstitutionsPage from "../institutions/page";
@@ -57,7 +58,10 @@ beforeEach(() => {
   api.apiGetShared.mockReset();
   api.apiGetShared.mockImplementation((path: string) => (path in reads ? Promise.resolve(reads[path]) : new Promise(() => {})));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 /** root 안에 아주 작은 비중이 '<0.01%'로 보이고 '0.00%'는 없는지. */
 function expectTiny(root: HTMLElement) {
@@ -331,5 +335,99 @@ describe("보유 표 '직전 분기 대비' 배지 — 행 바탕에 묻히지 �
     const cell = badge.closest("td, th") as HTMLElement;
     const nowrap = badge.closest(".whitespace-nowrap");
     expect(nowrap !== null && cell.contains(nowrap)).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------------ 보유 표 검사 칸
+
+/** 넓은 화면(lg 이상 — 셸의 왼쪽 메뉴가 보이는 폭)으로 흉내 냅니다. 틀 폭은 jsdom에서 0이라 크기 질의 배치(옆 칸)에 맡깁니다. */
+function stubWide() {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+  );
+}
+
+function twoHoldings(): PortfolioResponse {
+  return summaryPortfolio({
+    holdings: [
+      { name: "SYNTHETIC ALPHA CO", cusip: "000000501", class: "COM", value: 60_000_000_000, shares: 600, weight: 60, weightDiff: 1, sharesDiff: 10, action: "비중 확대 (Added)" },
+      { name: "SYNTHETIC BETA CO", cusip: "000000502", class: "CL B", value: 40_000_000_000, shares: null, weight: 40, weightDiff: null, sharesDiff: null, action: "비교 불가 (주식 수 없음)" },
+    ],
+  });
+}
+
+/** 속성 목록에서 이름이 `label`인 줄의 값 칸(dd). */
+function propertyValue(root: HTMLElement, label: string): HTMLElement {
+  const term = within(root).getByText(label, { selector: "dt" });
+  return term.parentElement?.querySelector("dd") as HTMLElement;
+}
+
+describe("보유 표 검사 칸 — 맨 앞 아이콘 줄 단추", () => {
+  beforeEach(() => {
+    served = {};
+    serve();
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = twoHoldings();
+    served[USDKRW] = { available: true, rate: 1400, lastTs: "2026-11-18 09:00" };
+  });
+
+  it("좁은 화면은 대화상자 — 이름 = 줄 이름표, 기관 상세와 같은 속성 + 원화 환산(환율 글), 주식 수는 표가 아니라 여기, 닫으면 연 단추로", async () => {
+    render(<InstitutionsPage />);
+    const open = await screen.findByRole("button", { name: "SYNTHETIC ALPHA CO 13F 줄 자세히" });
+    expect(open.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(open.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    // 보유 주식수 열은 없음 — 검사 칸의 '주식 수'로 옮김.
+    const table = open.closest("table") as HTMLElement;
+    expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["자세히", "종목", "비중", "비중 변화", "평가액", "직전 분기 대비"]);
+
+    fireEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC ALPHA CO" });
+    expect(propertyValue(dialog, "공시 이름").textContent).toBe("SYNTHETIC ALPHA CO");
+    expect(propertyValue(dialog, "클래스").textContent).toBe("COM");
+    expect(within(propertyValue(dialog, "CUSIP")).getByText("000000501").className).toContain("font-mono");
+    expect(propertyValue(dialog, "비중").textContent).toBe("60.00%");
+    expect(propertyValue(dialog, "평가액").textContent).toBe(formatUsd(60_000_000_000));
+    const krw = propertyValue(dialog, "원화 환산");
+    expect(krw.textContent).toContain(`약 ${formatKrw(84_000_000_000_000)}`);
+    expect(krw.textContent).toContain("원/달러 1,400.00 기준 · 2026-11-18 09:00");
+    expect(propertyValue(dialog, "주식 수").textContent).toBe("600주");
+    expect(propertyValue(dialog, "주식 수 변화").textContent).toBe("+10주");
+    expect(propertyValue(dialog, "비중 변화").textContent).toBe("+1.00%p");
+    expect(propertyValue(dialog, "동작").textContent).toBe("비중 확대 (Added)");
+    expect(within(dialog).getByRole("link", { name: "정보 검색에서 찾기" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("SYNTHETIC ALPHA CO")}`);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(open);
+  });
+
+  it("모르는 주식 수·변화는 '—'(0으로 채우지 않음)", async () => {
+    render(<InstitutionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "SYNTHETIC BETA CO 13F 줄 자세히" }));
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC BETA CO" });
+    for (const label of ["주식 수", "주식 수 변화", "비중 변화"]) {
+      const value = propertyValue(dialog, label);
+      expect(within(value).getByText("—")).toBeTruthy();
+      expect(value.textContent).not.toMatch(/\d/);
+    }
+  });
+
+  it("넓은 화면은 표 옆 검사 칸 — 처음은 첫 줄, 다른 줄 단추를 누르면 그 줄(고른 행 aria-current·단추 aria-controls)", async () => {
+    stubWide();
+    render(<InstitutionsPage />);
+    const first = await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC ALPHA CO" });
+    expect(within(first).getByRole("heading", { level: 3, name: "SYNTHETIC ALPHA CO" })).toBeTruthy();
+    expect(screen.getByText("SYNTHETIC ALPHA CO", { selector: "button" }).closest("tr")?.getAttribute("aria-current")).toBe("true");
+
+    const beta = screen.getByRole("button", { name: "SYNTHETIC BETA CO 13F 줄 자세히" });
+    expect(beta.getAttribute("aria-controls")).toBe(first.id);
+    fireEvent.click(beta);
+    const shown = await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC BETA CO" });
+    expect(propertyValue(shown, "클래스").textContent).toBe("CL B");
+    expect(beta.closest("tr")?.getAttribute("aria-current")).toBe("true");
+    expect(beta.getAttribute("aria-current")).toBe("true");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
