@@ -1,10 +1,10 @@
 "use client";
 
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 
 import { PropertyList } from "@/components/patterns";
 import { Button } from "@/components/ui";
-import { positionProperties } from "@/lib/paperHoldingsView";
+import { type PositionProperty, positionProperties } from "@/lib/paperHoldingsView";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { LivePrice, PaperPosition } from "@/lib/types";
 
@@ -30,7 +30,7 @@ export function HoldingInspector({
   const items = positionProperties(position, market, live).map((property) => ({
     key: property.key,
     label: property.label,
-    value: property.tone && property.value !== "—" ? <span className={property.tone}>{property.value}</span> : property.value,
+    value: tonedValue(property),
     note: property.note,
   }));
   return (
@@ -45,5 +45,18 @@ export function HoldingInspector({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** 값 글 — 등락 조각(`tone.text` — 값 글의 끝)만 등락색으로 칠합니다(실시간 가격은 본문색 — QA-774). 조각이 값 글의 끝이 아니면 칠하지 않습니다. */
+function tonedValue(property: PositionProperty): ReactNode {
+  const tone = property.tone;
+  if (!tone || !property.value.endsWith(tone.text)) return property.value;
+  const head = property.value.slice(0, property.value.length - tone.text.length);
+  return (
+    <>
+      {head}
+      <span className={tone.className}>{tone.text}</span>
+    </>
   );
 }

@@ -12,13 +12,16 @@ import { krPositionBadges, krPositionPriceTitle } from "./paperKr";
 import type { PaperMarketCode } from "./paperMarket";
 import type { LivePrice, PaperPosition } from "./types";
 
-/** 보유 검사 칸의 속성 한 줄 — 이름·값 글(모르면 '—')·값 글자색(등락 칸만)·보조 글. 공용 속성 목록(PropertyList)이 그립니다. */
+/** 보유 검사 칸의 속성 한 줄 — 이름·값 글(모르면 '—')·등락 글자색(등락 값만)·보조 글. 공용 속성 목록(PropertyList)이 그립니다. */
 export interface PositionProperty {
   key: string;
   label: string;
   value: string;
-  /** 등락 값의 글자색(평가 손익·실시간 평단 대비 — lib/format deltaColor, 값이 부호를 함께 적음). 없으면 본문색. */
-  tone?: string;
+  /**
+   * 등락 값의 글자색(평가 손익·실시간 평단 대비 — lib/format deltaColor, 값이 부호를 함께 적음)과 칠할 글 — `text`는 값 글의 끝 조각입니다(평가 손익은 값 전체,
+   * 실시간은 '평단 대비' 뒤 % 글만 — 가격은 오르내린 값이 아니라 칠하지 않음, QA-774). 등락 값을 모르면 없음(본문색).
+   */
+  tone?: { className: string; text: string };
   note?: string | null;
 }
 
@@ -45,7 +48,12 @@ export function positionProperties(
     { key: "lastPrice", label: "가격(장부)", value: withUnit(price(position.lastPrice)), note: priceNote },
     { key: "marketValue", label: "평가액", value: withUnit(formatNumber(position.marketValue, korea ? 0 : 2)) },
     { key: "weight", label: "비중(순자산 대비)", value: formatWithUnit(position.weightPct, 1, "%") },
-    { key: "unrealized", label: "평가 손익(평단 대비)", value: unrealized, ...(unrealized === EMPTY ? {} : { tone: deltaColor(position.unrealizedPct) }) },
+    {
+      key: "unrealized",
+      label: "평가 손익(평단 대비)",
+      value: unrealized,
+      ...(unrealized === EMPTY ? {} : { tone: { className: deltaColor(position.unrealizedPct), text: unrealized } }),
+    },
     { key: "high", label: "최고가", value: withUnit(price(position.highWatermark)) },
     { key: "stop", label: "스탑 가격 · 거리", value: stopText(position, market) },
     { key: "held", label: "보유 기간", value: heldText(position, market) },
@@ -64,7 +72,7 @@ export function positionProperties(
       key: "live",
       label: "실시간(표시 전용)",
       value: `${withUnit(price(shown.price))} · 평단 대비 ${pctText}`,
-      ...(pctText === EMPTY ? {} : { tone: deltaColor(pct) }),
+      ...(pctText === EMPTY ? {} : { tone: { className: deltaColor(pct), text: pctText } }),
       note: `${shown.session ? `${shown.session} ` : ""}${tradedAtText(shown.tradedAt)} 거래 — ${livePriceTitle(live, price)}`,
     });
   }

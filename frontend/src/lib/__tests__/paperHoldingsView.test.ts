@@ -26,7 +26,7 @@ describe("positionProperties", () => {
     expect(value("avgCost")?.value).toBe("200.0000 달러");
     expect(value("lastPrice")?.value).toBe("—");
     expect(value("lastPrice")?.note).toBeNull();
-    expect(value("unrealized")).toMatchObject({ value: "-1.50%", tone: "text-down" });
+    expect(value("unrealized")).toMatchObject({ value: "-1.50%", tone: { className: "text-down", text: "-1.50%" } });
     expect(value("stop")?.value).toBe("—");
     expect(value("held")?.value).toBe("2026-10-23부터 · —");
     expect(value("badges")?.value).toContain("가격 없음");
@@ -42,6 +42,8 @@ describe("positionProperties", () => {
     const live = rows.find((row) => row.key === "live");
     expect(live?.label).toBe("실시간(표시 전용)");
     expect(live?.value).toMatch(/^72,000 원 · 평단 대비 \+2\.86%$/);
+    // 등락색은 % 글에만(가격은 오르내린 값이 아님 — QA-774).
+    expect(live?.tone).toEqual({ className: "text-up", text: "+2.86%" });
   });
 });
 

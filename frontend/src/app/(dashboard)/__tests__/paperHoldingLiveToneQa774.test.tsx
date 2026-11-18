@@ -27,7 +27,7 @@ function painted(element: Element | null, stop: Element): boolean {
 }
 
 describe("QA-774 — 실시간 속성은 평단 대비 %만 등락색", () => {
-  it.fails("가격 글은 본문색, '+2.86%'만 상승색", () => {
+  it("가격 글은 본문색, '+2.86%'만 상승색", () => {
     render(<HoldingInspector position={POSITION} market="KR" live={LIVE} />);
     const term = screen.getByText("실시간(표시 전용)", { selector: "dt" });
     const value = term.parentElement?.querySelector("dd") as HTMLElement;
