@@ -403,11 +403,15 @@ export function OverviewSection({
       <Panel
         title="계좌"
         count={books.length > 0 ? `${books.length}개` : undefined}
-        subtitle={`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 계좌 이름을 누르면 그 계좌의 곡선·상세${
-          hero ? "(위 요약·아래 장중 시세도 그 계좌로)" : ""
-        }${
-          status.data?.settingsVersion ? ` · 설정 v${status.data.settingsVersion}` : ""
-        }${korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}`}
+        subtitle={
+          <>
+            {`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 계좌 이름을 누르면 그 계좌의 곡선·상세${
+              hero ? "(위 요약·아래 장중 시세도 그 계좌로)" : ""
+            }`}
+            <SettingsVersionTail version={status.data?.settingsVersion ?? null} pending={status.loading && status.data === null} />
+            {korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}
+          </>
+        }
         source={ledgerSource}
         actions={
           overview.initialized !== false && (
@@ -931,4 +935,26 @@ function accountColumns(
     },
     { key: "exposure", header: "주식 노출", align: "right", cell: (row) => row.exposureText },
   ];
+}
+
+/** 설정 판 번호 자리(두 자리 — 운영 판 번호의 자릿수). 글자는 보이지 않고 읽히지 않습니다(aria-hidden). */
+const SETTINGS_VERSION_DIGITS = 2;
+
+/**
+ * 계좌 패널 부제 끝의 ' · 설정 v{n}'. 상태 응답은 개요보다 늦게 올 수 있어, 읽는 동안에는 같은 꼴의 보이지 않는 자리(' · 설정 v00')를 두고 온 뒤에는
+ * 판 번호가 두 자리보다 짧으면 모자란 자리를 보이지 않는 '0'으로 채웁니다 — 부제 폭이 상태 응답 전후로 같아야 패널 머리(공용 Panel — flex-wrap
+ * justify-between)가 '리스크 지금 실행'을 다음 줄로 보냈다 되돌리며 계좌 표를 밀지 않습니다(QA-811 — 1280 첫 적재 CLS 0.215). 판 번호 글은 부제
+ * 글과 같은 글 마디(span 없이)라 낭독·글자 찾기는 예전 그대로이고, 읽기에 실패하거나 판 번호가 없으면 아무것도 그리지 않습니다(예전과 같음).
+ */
+function SettingsVersionTail({ version, pending }: { version: number | null; pending: boolean }) {
+  if (version) {
+    const pad = Math.max(0, SETTINGS_VERSION_DIGITS - String(version).length);
+    return (
+      <>
+        {` · 설정 v${version}`}
+        {pad > 0 ? <span aria-hidden="true" className="invisible">{"0".repeat(pad)}</span> : null}
+      </>
+    );
+  }
+  return pending ? <span aria-hidden="true" className="invisible">{` · 설정 v${"0".repeat(SETTINGS_VERSION_DIGITS)}`}</span> : null;
 }
