@@ -2419,3 +2419,12 @@ P5b 검토의 지적 31건(브라우저 확인 요약 한 건 포함 — 같은 
 (마지막 344개 파일 4,318건 통과). 흔들림: `NavChartHoldQa601`의 처리되지 않은 오류 둘이 두 번(`fb6c4f4a` 전 실행·`f52f7f48` 실행) — 다시 돌려 통과(코드 변경 없음). 끝에 작업 폴더에서
 `NEXT_TELEMETRY_DISABLED=1 npx next build --webpack` 통과(`.next`는 지움), 문서를 읽는 수집기 시험(`test_task_registry`·`test_deploy_migrations`·`test_code_defaults` 22개) 통과.
 QA 스택 확인(D4 전)은 하지 않았습니다 — 위 측정은 자기 빌드 + QA API GET.
+
+### P5b 반박 검증과 뒤 고침 — QA-720·721 (2026-11-18, `bd0f416f`에서)
+
+- 반박 검증(검토 지적 31건의 처리를 고친 코드·시험·자기 빌드로 다시 봄): 고침 27, 일부 고침 2(중복 도우미 — `moneyCell`·`finite`·`TWO`는 위 '지적별 처리'대로 남김, 세 분석 화면
+  첫 적재 이동 — 스코어카드 390), 까닭 있는 남김 3(결정 거리 1·2, `quickview-detail-link-target`). 새로 적은 문제 둘을 결함 번호로 고쳤습니다([결함 기록](../qa/2026-11-12-defects.md)
+  'P5b 반박 검증 뒤'):
+  - QA-720(`7edfb022`·`cd2dfe93`): 표 히트맵이 빈 상태로 먼저 그려진 뒤 행이 오면 넘침 재기·처음 스크롤 자리가 다시 돌지 않던 것 — 두 효과의 의존에 `hasTable`.
+  - QA-721(`e2739b6f`·`b3628700`): 스코어카드가 처음 읽는 동안 빠진 것 목록을 응답과 같은 글(`MISSING_FALLBACK`)로 둠 — 위 표의 /scorecard 390 0.1905 가운데 안내 상자 몫(181 → 213px).
+    남은 몫은 머리 신선도 줄(`page-header-freshness-late-row` — P8)입니다. 390 CLS는 QA 스택 확인에서 다시 잽니다.
