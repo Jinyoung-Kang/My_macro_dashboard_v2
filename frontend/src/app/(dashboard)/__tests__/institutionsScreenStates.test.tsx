@@ -347,22 +347,34 @@ describe("보유 표 '직전 분기 대비' 배지 — 행 바탕에 묻히지 �
   // 줄을 바꾸지 않아야 합니다(좁은 칸에서 '비중 축소 / (Reduced)' 두 줄로 접힘). jsdom이라 그리지 않고 클래스로 셉니다.
   // 수정 전에는(재현 커밋에서는 it.fails) 옛 ui Table 행 'hover:bg-surface-2'와 SourceBadge 'bg-surface-2'(테두리 없음)가 같았음 — same = ['bg-surface-2'],
   // 배지 칸 'break-keep px-3 py-1.5 tabular-nums text-left'(whitespace-nowrap 없음).
-  it("행 바탕(hover·고름)과 같은 바탕의 테두리 없는 배지가 없고, 배지는 줄바꿈 없는 칸 안", async () => {
+  // 행 바탕은 넓은 화면 옆 칸 배치에서 봅니다 — 검사 칸 틀이 처음에 첫 줄을 고르고 공용 표가 그 행을 칠합니다(bg-surface-2). 좁은 배치에는 고른 행이 없고 공용 표의
+  // 누를 수 없는 행에는 hover 바탕도 없어, 그 배치로 보면 행 바탕이 늘 비어 배지를 테두리 없는 SourceBadge로 되돌려도 통과했습니다(P5b 검토 지적 —
+  // 이 꼴로 바꾼 뒤 HoldingActionTag를 개편 전 SourceBadge 꼴로 되돌려 plain it으로 돌리면 { rowPainted: true, bordered: false, same: ["bg-surface-2"] }로 실패).
+  it("고른 행(넓은 화면 옆 칸 배치의 첫 줄) 바탕과 같은 바탕의 테두리 없는 배지가 없고, 배지는 줄바꿈 없는 칸 안", async () => {
+    stubWide();
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
       if (path.startsWith("/api/sec13f/portfolio")) return Promise.resolve(changePortfolio());
       return new Promise(() => {});
     });
     render(<InstitutionsPage />);
-    const badge = await screen.findByText("비중 축소 (Reduced)");
+    await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC RISE CO" });
+    // 옆 검사 칸의 '동작' 줄에도 같은 글이 있어 표 안에서 찾습니다.
+    const table = screen.getByRole("region", { name: "보유 종목 상세 (좌우 스크롤)" });
+    const badge = within(table).getByText("비중 확대 (Added)");
     const row = badge.closest("tr") as HTMLElement;
-    const box = badge.closest('[class*="bg-"]') as HTMLElement;
-    const bordered = box.classList.contains("border");
-    const rowBackgrounds = [...bgTokens(row), ...bgTokens(row, "hover:")];
-    const same = bordered ? [] : rowBackgrounds.filter((token) => bgTokens(box).includes(token));
-    expect(same).toEqual([]);
-
+    expect(row.getAttribute("aria-current")).toBe("true");
+    // 배지 상자 = '직전 분기 대비' 칸의 첫 자식(공용 표는 칸 내용을 그대로 넣음).
     const cell = badge.closest("td, th") as HTMLElement;
+    const box = cell.firstElementChild as HTMLElement;
+    const rowBackgrounds = [...bgTokens(row), ...bgTokens(row, "hover:")];
+    const bordered = box.classList.contains("border");
+    expect({
+      rowPainted: rowBackgrounds.includes("bg-surface-2"),
+      bordered,
+      same: bordered ? [] : rowBackgrounds.filter((token) => bgTokens(box).includes(token)),
+    }).toEqual({ rowPainted: true, bordered: true, same: [] });
+
     const nowrap = badge.closest(".whitespace-nowrap");
     expect(nowrap !== null && cell.contains(nowrap)).toBe(true);
   });
