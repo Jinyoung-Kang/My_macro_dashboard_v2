@@ -24,7 +24,7 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 recharts가 크기 0이라 아무것도 그리지 않습니다 — 차트 이름·계열 이름·색·행 수를 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
-  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  // 개요 검사 칸의 곡선 패널(선 차트) — 이 시험은 그 그림을 보지 않습니다.
   LineChart: () => null,
   MultiLineSeries: ({
     data,
@@ -34,7 +34,7 @@ vi.mock("@/components/charts", () => ({
     tooltipSeriesColors,
   }: {
     data: unknown[];
-    series: { key: string; name: string; color?: string }[];
+    series: { key: string; name: string; color?: string; dashed?: boolean }[];
     ariaLabel?: string;
     tooltipOrder?: string;
     tooltipSeriesColors?: boolean;
@@ -45,7 +45,7 @@ vi.mock("@/components/charts", () => ({
       data-tooltip-order={tooltipOrder ?? ""}
       data-tooltip-colors={String(Boolean(tooltipSeriesColors))}
     >
-      {series.map((entry) => <li key={entry.key} data-color={entry.color}>{entry.name}</li>)}
+      {series.map((entry) => <li key={entry.key} data-color={entry.color} data-dashed={String(Boolean(entry.dashed))}>{entry.name}</li>)}
     </ul>
   ),
   DonutChart: () => null,
@@ -652,6 +652,12 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const exposure = screen.getByRole("list", { name: "차트 Claude 노출 추이(목표 대비 실제)" });
     expect(within(exposure).getAllByRole("listitem").map((li) => li.textContent))
       .toEqual(["목표 노출(Claude가 정함)", "실제 노출(장부)", "계좌2 실제 노출(장부)"]);
+    // 색 = 계좌(순자산 곡선과 같은 색 — 진행 기록 exposure-chart-colour-mapping): 계좌1 목표·실제는 계좌1 주황(목표는 점선), 계좌2 실제는 계좌2 자주.
+    expect(within(exposure).getAllByRole("listitem").map((li) => [li.getAttribute("data-color"), li.getAttribute("data-dashed")])).toEqual([
+      ["#d95926", "true"], ["#d95926", "false"], ["#ba5db3", "false"],
+    ]);
+    const navColors = within(screen.getByRole("list", { name: "차트 순자산 곡선" })).getAllByRole("listitem");
+    expect(navColors.find((li) => li.textContent === "Claude 계좌1")?.getAttribute("data-color")).toBe("#d95926");
     expect(screen.queryByRole("button", { name: "계좌2 시작" })).toBeNull();
   });
 

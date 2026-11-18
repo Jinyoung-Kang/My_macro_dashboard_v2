@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTickerName } from "@/hooks/useTickerNames";
-import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
+import { MultiLineSeries } from "@/components/charts";
 import { ChangeChip, type Column, DataTable, Empty, EstimateBadge, InspectorFrame, type InspectorContext, KpiStrip, RangeTabs, StaleBadge } from "@/components/patterns";
 import { Button, Callout, Freshness, Panel, ROW_TRIGGER, Table } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
@@ -102,14 +102,15 @@ import { PaperBadge } from "./PaperBadge";
 import { PaperTabAccount } from "./PaperTabHeader";
 
 /**
- * Claude 노출 추이의 두 선 — 목표는 순자산 곡선의 Claude 책 색(주황), 실제는 검증된 팔레트의 다음 색(파랑). 두 색은 charts의
- * 팔레트 검증을 통과한 이웃 쌍이라 색약에서도 갈립니다. 한 축(%)이고, 범례가 이름을 함께 적어 색만으로 구분하지 않습니다.
+ * Claude 노출 추이의 선 색 = 계좌 색(순자산 곡선과 같은 계좌가 같은 색 — 진행 기록 exposure-chart-colour-mapping, 작업대 P6 U5): 계좌1의 목표·실제는
+ * 계좌1 주황(목표는 점선 — 결정이 정한 값, 실제는 실선 — 장부), 미국 계좌2의 실제는 계좌2 자주. 예전에는 실제 노출이 파랑이라 같은 화면 순자산 곡선의
+ * 파랑(규칙 계좌)과 뜻이 엇갈렸습니다. 같은 색 두 선은 선 모양(점선/실선)과 범례 이름이 가르고(색만으로 구분하지 않음), 주황↔자주는 검증한 계좌 색
+ * 쌍입니다(bookColors.ts). 한 축(%)입니다. 한국도 같은 자리(kr_claude 주황).
  */
-const EXPOSURE_COLORS: Record<string, string> = {
-  target: SERIES_COLORS.orange,
-  actual: SERIES_COLORS.blue,
-  // 미국 Claude 계좌2의 실제 노출 — 순자산 곡선의 계좌2 색(위 BOOK_COLORS). 파랑과 색약 ΔE 9.0·주황과 19.2라 색으로도 갈리고, 범례 이름이 함께 나릅니다(bookColors.ts).
-  [CLAUDE2_EXPOSURE_KEY]: BOOK_COLORS.claude2,
+const EXPOSURE_STYLE: Record<string, { color: string; dashed?: boolean }> = {
+  target: { color: BOOK_COLORS.claude, dashed: true },
+  actual: { color: BOOK_COLORS.claude },
+  [CLAUDE2_EXPOSURE_KEY]: { color: BOOK_COLORS.claude2 },
 };
 
 /** 계좌 상세 영역의 id(한 번에 하나만 열림) — 열 때 그 제목으로 포커스를 옮깁니다. */
@@ -125,7 +126,7 @@ const NARROW_TABLE_MEDIA = "(width < 48rem)";
  * (InspectorFrame wide — 틀 64rem부터 28rem), 좁은 화면·좁은 틀은 위쪽 대화상자: 그 계좌의 곡선 패널·장부 속성, 사용자가 고른 계좌면 상세 — 정의·지금 설정·핵심
  * 숫자·구성·최근 체결, AccountInspector), 장중 시세 카드, 기간별 순자산 곡선(검사 칸 곡선과 같은 기간, 프레임 판 경계 세로선), 계좌 비교 표(예전 카드의 칸 전부 —
  * 상태·종류·출발·처음 현금·순자산·수익률·노출·현금·보유·마지막 관측·가격 없음·통계 일곱 칸·비교 기준, 그 아래 표본 설명), Claude 노출 추이(목표 vs
- * 실제), Claude 호출 사용량(오늘·이달·추정 비용 — 상태 응답), 신호 기관(최근
+ * 실제 — 선 색 = 계좌 색), Claude 호출 사용량(오늘·이달·추정 비용 — 상태 응답), 신호 기관(최근
  * 선정), OS 게이트 지표(참고), 장부 관측치 신선도(와 재무 수집 범위 한 줄 — 상태 응답, D28), 작업 기록. 초기화 전이거나 벤치마크가
  * 아직 사후 체결을 기다리면(pendingBackfill) "초기화" 버튼, 규칙 책이 시작 전이면
  * "규칙 계좌 시작" 버튼, Claude 계좌가 시작 전이면 "미리보기"·"Claude 계좌 시작" 버튼(ClaudeStartSection).
@@ -289,7 +290,7 @@ export function OverviewSection({
     overview.claudeExposureSeries,
     book2?.startedOn && book2Nav.data?.available ? (book2Nav.data.series ?? []) : null,
   );
-  const exposureSeries = exposure.series.map((line) => ({ ...line, color: EXPOSURE_COLORS[line.key] ?? SPARE_COLORS[0] }));
+  const exposureSeries = exposure.series.map((line) => ({ ...line, ...(EXPOSURE_STYLE[line.key] ?? { color: SPARE_COLORS[0] }) }));
   // 한국 카드는 수동 호출 문턱(상한 − 정기 작업 몫 예약)을 함께 — 한국 출발 단추·수동 결정이 그 문턱에서 막힙니다(미국 카드는 그대로).
   const usage = status.data?.available ? apiUsageView(status.data.apiUsage, korea ? { manual: true } : {}) : null;
   // 재무 수집 범위(D28) — 상태 응답에만 있고, 이 필드를 보내지 않는 백엔드면 줄을 그리지 않습니다.
