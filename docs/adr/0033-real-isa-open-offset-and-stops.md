@@ -37,6 +37,10 @@
    보유가 0이라 겹쳐도 더 팔 수 없다. 묶음의 회전율 멈춤(60%)은 따라 하는 책의 대기 STOP 종목의 매도와, 그 대금(묶음의 스탑 매도 + 스탑 경로가 먼저 보낸 스탑 매도)까지의
    현금성 매수를 빼고 센다(QA-302) — 스탑이 멈춤을 걸면 같은 주기의 스탑 경로까지 서서 손절이 사라지기 때문이다. 시가 맞추기 날 묶음이 흡수하는 `NEXT_OPEN` STOP도 같다.
    스탑이 아닌 몫이 60%를 넘으면 예전처럼 이상 멈춤이고, 이상 멈춤(사유와 상관없이) 동안에는 스탑 매도도 나가지 않는다.
+   **덧붙임(2026-11-19 — [ADR 0028](0028-real-trade-mirror.md) 덧붙임, 규칙 계좌 재선정 다음 묶음의 회전율 예외)**: 예외 판정의 책 변화량 B는 이 결정의 스탑 기준(스탑
+   감소분과 그만큼의 현금성 증가를 뺌)을 그대로 쓰고, 교차 확인(판정 회전율 ≤ 기준 + 20%p)은 스탑 감소분만 뺀 B°로 한다(지난 세션 STOP이 장부에서 대기이고 실제는 어제
+   팔렸을 때 B가 회전율보다 작아지므로). 계좌 어긋남·노출 감소·유지 종목 축소·주식 종목 수는 대기 STOP 종목을 뺀다. 목표 합은 스탑 크레딧 없이 Σ목표다 — 결정 전 STOP의
+   대금은 결정이 이미 153130·종목에 썼고, 장중 감시 STOP은 기준 시각이 09:12 뒤라 09:10 목표에 반영되지 않는다.
 4. **매수 직전 대기 STOP 종목을 뺀다.** 묶음 재시도·마무리·따라 하기 매수를 보내기 직전에 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지
    않는다(방금 판 종목을 재시도가 다시 사지 않게).
 5. **배포와 함께 바로 켠다**(사용자 결정 2026-11-06). 실제 계좌의 장중 스탑은 한국 감시 스위치(`kr.stopWatch.mode=ON`)와 실제 매매 상태(켜짐)를 함께 따른다 —
@@ -125,6 +129,9 @@
     지키는 시험: `RealTradeJobDbTest`의 `timedSyncWaitsForViOnHoldingNotInBook`·`timedSyncLaterLiquidationHasNoThreshold`·`timedSyncRefusedKeepsLaterLiquidations`·
     `lateSyncStartFollowupSellsHoldingNotInBook`·`waitingLiquidationCountsTowardTurnover`·`waitingLiquidationWithinTurnoverProceeds`·
     `batchTargetsMarkWholeHoldingsNotInBook`·`followupLeavesHoldingsThatAppearedAfterTheBatch`.
+    **덧붙임(2026-11-19 — [ADR 0028](0028-real-trade-mirror.md) 덧붙임)**: 규칙 계좌 재선정 다음 묶음의 회전율 예외 판정은 매매 제한 종목도 센다(판정 회전율·계좌 어긋남 —
+    막는 종목은 이 기능의 미종료 주문만), 그 밖에 판정에서 빠진 종목(반대 방향 미체결·이 기능 미종료 주문·잔량 모름·가격 모름·매도 가능 0, 스탑 종목 제외)이 있으면
+    예외를 주지 않는다. 이 멈춤 판정 자체(책 종목의 제한 몫을 세지 않음)는 그대로다.
 - 실제 돈의 주문 시각이 바뀐다. `kr.rules.timing=AT_MINUTE`을 저장한 뒤 첫 시각 맞추기는 그 세션 시가에 체결될 STOP이 아닌 대기 주문이 없는 첫 세션이다. 11-09가 어느 쪽인지는
   배포 전(금요일 11-06 밤) 규칙 계좌 결정에 달렸다(QA-304).
   - 그 결정이 STOP이 아닌 시가(`NEXT_OPEN`) 주문을 남겼으면 11-09는 전환일(옛 08:50 `OPG`)이고, 11-09 밤 결정의 주문부터 09:10이라 첫 시각 맞추기는 2026-11-10 09:10이다.

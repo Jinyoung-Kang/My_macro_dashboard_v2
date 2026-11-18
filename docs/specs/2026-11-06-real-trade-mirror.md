@@ -93,6 +93,14 @@
 - 차이가 **1주 이상이고 |차이 금액| ≥ E의 1%** 일 때만 주문(책에 없는 보유는 1% 조건 없이 전량).
 - 회전율 한도: 한 SYNC 묶음의 매수 + 매도 금액 합이 E의 60%를 넘으면 그 묶음을 보내지 않고 이상 멈춤(`turnover`) — 단 `sync_pending`을 켠 마지막 일(ENABLE·책을 바꾼 UPDATE·HALTED에서의 RESUME) 뒤 **첫 묶음**은 예외(켜기 창에서 확인). 남은 몫으로 `sync_pending`이 이어진 2·3번째 묶음은
   목표 변화량 Σ|w_now − w_prev|(바로 앞 SYNC 묶음 목표, 합집합 종목, 없는 종목 0%)가 60% 이하일 때만 예외이고, 넘으면 `turnover` 이상 멈춤(detail `turnoverPct`·`targetDriftPct`, 묶음·주문 없음). `sync_pending`을 끄는 때는 §12.2.
+- **네 번째 예외 — 규칙 계좌 재선정 다음 묶음(ADR 0028 덧붙임 2026-11-19)**: 위 규칙이 멈춤을 낼 때만, 따라 하는 책의 종류가 `RULES`이고(아니면 지금과 같은 멈춤·같은 detail) 매수 멈춤 아님·
+  형식 밖 종목의 앱 매수 없음, 앞 거래일 D(모의 달력)의 정기 결정이 `REBALANCE`·`OK`, 가장 최근 SYNC 묶음이 D 세션의 같은 책 묶음이면 열두 확인(`RealTradeRebalance` — E 대비 %,
+  같음은 통과)을 차례로 본다: 값 모름 없음 · 판정에서 빠진 종목 0 · 하루 한도로 오늘 못 내는 매수 ≤ 20·밀린 매도 없음 · 계좌 어긋남 ≤ 20 · 가격 배율 ≤ 1.5 · 종목 목표 증가 ≤ 12%p ·
+  유지 종목 축소 ≤ 5%p · 주식 목표 종목(목표 1% 이상) ≥ 1 · 비현금성 노출 감소 ≤ 30%p · 목표 합 90~101 · 판정 회전율 ≤ 스탑 감소만 뺀 책 변화량 + 20%p · 판정 회전율 ≤ 150.
+  판정 회전율·계좌 어긋남은 막는 종목 자리에 이 기능의 미종료 주문만 두어 매매 제한(VI·거절 대기) 종목도 센다. 모두 지나면 그 묶음 하나를 보내고 `TURNOVER_EXEMPT` 이벤트, 하나라도
+  어긋나면 `turnover` 이상 멈춤에 detail `rebalanceCheck`(입구 `buys-paused`·`buys-unpriced`·`calendar-unknown`·`no-rebalance`·`prior-batch`, 확인 `value-unknown`·`uncounted`·
+  `daily-cap-short`·`account-drift`·`price-mismatch`·`name-jump`·`name-cut`·`no-names`·`derisk-over`·`targets-thin`·`targets-over`·`over-allowance`·`over-cap`)와 셌으면 숫자 칸.
+  판정 중 예외는 그 주기 건너뜀(`rebalance-check-error` — 묶음·멈춤 없음, 30초 뒤에도 실패하면 `UNAVAILABLE` 사유 `rebalance-check-unavailable`). 묶음은 세션마다 하나라 한 번만이다.
 
 ### 3.2 장중 따라 하기의 목표
 - 대상: 따라 하는 책의 PENDING 주문 중 목표 세션 = 오늘, timing ∈ {`AT_MINUTE`, `AT_1000`…`AT_1500`, `MARKET`, `NEXT_CLOSE`}, 기준 시각 T ≤ 지금. 그 밖의 timing(모르는 값)은 보내지 않고 `skipped`(`timing-unsupported`)·알림.
@@ -162,7 +170,7 @@
 - `real_trade_config`: `market TEXT PK CHECK(market IN ('KR','US'))`, `state TEXT NOT NULL CHECK(IN 'OFF','LIVE','HALTED','STOPPING')`, `source_book TEXT`, `book_generation TEXT`(책 `startedOn`·`createdAt`),
   `loss_limit_pct NUMERIC(5,2) NOT NULL DEFAULT 15 CHECK(1~50)`, `baseline_equity NUMERIC(20,2)`, `buys_paused BOOLEAN NOT NULL DEFAULT false`, `sync_pending BOOLEAN NOT NULL DEFAULT false`,
   `halt_reason TEXT`, `halt_detail JSONB`, `version INTEGER NOT NULL DEFAULT 0`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_by BIGINT`.
-- `real_trade_events`: `id BIGSERIAL PK`, `market`, `at TIMESTAMPTZ DEFAULT now()`, `kind TEXT`(ENABLE·DISABLE·UPDATE·RESUME·HALT·BUYS_PAUSED·SKIP_DAY·WINDOW_SUMMARY·PASSWORD_FAILED·RESTORED …), `user_id BIGINT NULL`,
+- `real_trade_events`: `id BIGSERIAL PK`, `market`, `at TIMESTAMPTZ DEFAULT now()`, `kind TEXT`(ENABLE·DISABLE·UPDATE·RESUME·HALT·BUYS_PAUSED·SKIP_DAY·WINDOW_SUMMARY·PASSWORD_FAILED·RESTORED·TURNOVER_EXEMPT …), `user_id BIGINT NULL`,
   `detail JSONB`(사유 코드·건수 — 종목·금액은 넣어도 되지만 알림 글에는 쓰지 않음), `notify BOOLEAN NOT NULL DEFAULT false`, `notified_at TIMESTAMPTZ NULL`.
 - `real_trade_batches`: `id BIGSERIAL PK`, `market`, `session DATE`, `kind TEXT CHECK(IN 'SYNC')`, `source_book`, `targets JSONB`(종목 → 비중 — 비중 0은 묶음을 만들 때의 전량 매도 대상 표시, §12.2 QA-376), `absorbed_order_ids BIGINT[]`, `equity NUMERIC`, `created_at`, `UNIQUE(market, session, kind)`.
 - `real_trade_orders`: `id BIGSERIAL PK`, `market`, `session DATE`, `purpose TEXT CHECK(IN 'SYNC','SYNC_FOLLOWUP','MIRROR')`, `batch_id BIGINT NULL REFERENCES real_trade_batches`, `source_book`, `book_generation`,
@@ -219,6 +227,9 @@
 ### 7.4 알림(텔레그램 — 건수·상태만)
 - `PaperTelegram`으로, `notify=true` 이벤트를 `notified_at`이 빌 때까지 다음 주기에 다시 보낸다. 글은 고정 문구 + 상태 + 건수 + 사유 코드: 예 `<b>[실제 매매] 시가 맞추기</b>` / `접수 5 · 체결 5 · 놓침 0 · 건너뜀 1 · 막힘 0`,
   `<b>[실제 매매] 멈춤</b>` / `사유: unknown-order`. **종목·수량·금액·계좌 식별자를 쓰지 않는다.** 이모지 없음.
+- 회전율 예외(`TURNOVER_EXEMPT`, ADR 0028 덧붙임 2026-11-19)는 `[실제 매매] 회전율 예외` / `규칙 계좌 재선정 다음 맞추기 — 계좌 어긋남·가격·종목·노출·하루 한도 확인을 통과해 보냈습니다`
+  고정 글뿐(detail의 %·배율·개수 칸을 싣지 않음). 예외가 걸리지 않은 회전율 멈춤은 지금처럼 `사유: turnover`. 판정 오류의 '준비 안 됨'(사유 `rebalance-check-unavailable`)은 둘째 줄이
+  `재선정 다음 맞추기의 회전율 예외를 판정하지 못해 이번 맞추기 묶음을 미루고 있습니다. 스탑 매도는 계속합니다`.
 
 ## 8. 화면 계약
 
@@ -231,6 +242,8 @@
 - 끄기: 확인 창 없이 바로(누른 뒤 "새 주문 멈춤 — 미체결 취소 중" → 결과).
 - 칸 내용: 상태 칩(꺼짐·켜짐·멈춤(사유)·끄는 중·서버에서 꺼짐), 따라 하는 책, 운용 평가액·기준 대비 손익(부호와 색), 오늘 창과 쉬는 사유, 최근 실제 주문 표(용도·종목·방향·수량·상태·체결가),
   이벤트, 멈춤 해제·설정 바꾸기 단추(같은 확인). 미국 탭은 "미국 실제 매매는 준비 중입니다"(꺼진 단추).
+- 이벤트 줄(`eventDetailText`): 회전율 멈춤에 `rebalanceCheck`가 있으면 사유 뒤에 '재선정 예외 아님: 이름표(코드)', 그 뒤 % 칸(회전율·판정 회전율·목표 변화량·책 변화량·계좌 어긋남·
+  하루 한도로 못 내는 매수 — 숫자일 때만). `TURNOVER_EXEMPT`도 같은 % 칸. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만.
 - 화면 경계 시험 `realtradeBoundary.test.ts`: realtrade 모듈을 밖에서 가져오는 곳은 `PaperScreen` 하나, lib/paper*·lib/home*·배럴은 realtrade를 가져오지 않음, realtrade는 brokerage 모듈을 가져오지 않음,
   apiPost는 `endpoints.realtrade.*`에만. 기존 `brokerageBoundary.test.ts`는 그대로(brokerage 모듈은 쓰기 함수를 가져오지 않음). 배너 문구는 '조회는 읽기 전용 — 자동 매매는 위 실제 매매 칸'.
 
@@ -315,6 +328,9 @@
   회전율 멈춤을 비켜 가지 않게. 책의 종목이 매매 제한으로 빠진 몫은 지금처럼 세지 않는다.
 - 그날 묶음의 책이 지금 책과 다르거나, 묶음을 `sync_pending`을 켠 마지막 일(ENABLE, 책을 바꾼 UPDATE, HALTED에서의 RESUME)보다 먼저 만들었으면 그날 시가 재시도·마무리를 하지 않는다(`batch-stale`).
 - `sync_pending`은 묶음 계획에 `capped`·`deferred-cash`·`deferred-daily-cap`이 없으면 묶음을 만들 때 끈다. 있으면 켠 뒤 3번째 SYNC 묶음 전까지 켜 두고 3번째 묶음에서 끈다.
+  규칙 계좌 재선정 다음 묶음의 회전율 예외(§3.1)는 이 규칙을 바꾸지 않는다 — 남은 몫으로 이어진 묶음이 목표 변화량으로 멈출 때도 재선정 다음 묶음이면 그 판정이 이어서 보고, 예외 묶음의
+  남은 몫(`capped`·`deferred-*`)은 같은 창 안 마무리·재시도가 회전율 검사 없이 보낸다. 다음 날까지 남은 몫이 60%를 넘으면 지금처럼 멈춘다(이어 주기는 넣지 않음 — 하루 한도 몫은 예외
+  판정이 20%로 묶음).
 
 ### 12.3 취소 재시도
 - 다시 보내지 않는 끝난 거절: `REJECTED` 중 `already-filled`·`already-canceled`·`already-rejected`·`already-modified`·`cancel-restricted`·`order-not-found`·`http-404`. 수집기는 취소의 409
@@ -423,6 +439,8 @@ MIRROR는 모의 주문 번호·뿌리, SYNC·SYNC_FOLLOWUP은 묶음 번호 필
 - 묶음의 회전율 한도(§3.1)는 대기 STOP 종목(`pendingStopSymbols`)의 매도와, 그 대금(묶음의 스탑 매도 + 이 기능이 오늘 먼저 접수한 스탑 종목 매도 — 진행 중이면 수량, 끝났으면 체결 수량 × 기준가)까지의
   현금성 매수를 빼고 센다(QA-302 — 스탑이 `turnover` 멈춤을 걸어 같은 주기의 스탑 경로까지 세우지 않게, 시가 맞추기 날 흡수한 `NEXT_OPEN` STOP도 같음). 남은 몫 묶음의 목표 변화량도
   STOP 종목이 줄어든 몫과 그만큼까지의 현금성 증가를 뺀다. 보내는 주문은 그대로이고, 스탑이 아닌 몫이 60%를 넘으면 예전처럼 멈춘다(멈춤 동안은 스탑도 없음).
+  규칙 계좌 재선정 다음 묶음의 회전율 예외(§3.1)도 같은 스탑 집합·스탑 대금으로 판정 회전율을 세고, 교차 확인 기준은 스탑 감소분만 뺀 책 변화량, 계좌 어긋남·노출 감소·유지 종목 축소·
+  주식 종목 수는 스탑 종목을 빼며, 목표 합에는 스탑 크레딧을 주지 않는다(ADR 0033 결정 3 덧붙임).
 - 손실 한도로 매수가 멈춘 동안에도 판다. 장부가 밀린 날(`ledgerCaughtUp=false`)에도 스탑만은 보내고(묶음·장중 따라 하기 없음), 토스 장 시간이 모의 달력과 다른 날은 스탑도 보내지 않는다.
 - **개정(QA-377, 2026-11-12 사용자 승인)**: 그날의 쉬는 날 판정(§3 — 판정 전에는 스탑 매도를 포함해 아무것도 보내지 않음)을 '첫 창 3분 전'이 아니라
   **min(첫 창의 시작, 정규장 시작 + 10분)의 3분 전**에 한다. 예전에는 맞추기 시각 T가 개장 10분 뒤보다 늦은 날(규칙 계좌의 지정 시각을 09:10이 아닌 값으로 둔 설정 —
