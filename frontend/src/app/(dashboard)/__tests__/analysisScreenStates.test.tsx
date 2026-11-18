@@ -743,6 +743,19 @@ describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기�
     render(<ConsensusPage />);
     expect(document.querySelectorAll("[data-shell-filter]")).toHaveLength(0);
   });
+
+  // 패널 본문의 기본 조작(라벨 있는 검색 입력 + '찾기' 단추)은 넓은 화면 30px(명세 §3-7 — 24px는 카드 머리·표 안의 작은 조작). 입력이 inputClasses("sm")이라
+  // lg 이상 24px로 옆 '찾기'(md 30px)보다 6px 낮고 윗변이 어긋났음(P5b QA 스택 확인 1024~1920 194x24 / 50x30 — 전부터, P1 '크기 이름'이 정보 검색 두 곳만 고침).
+  // jsdom이라 높이는 클래스로 봅니다(lg 높이 클래스 — lg:min-h-*).
+  // 수정 전 실패(plain it): { input: ["lg:min-h-6"], button: ["lg:min-h-[30px]"] }.
+  it.fails("보유 기관 검색 입력은 같은 form의 '찾기' 단추와 같은 넓은 화면 높이(30px — lg:min-h-[30px], 24px lg:min-h-6 아님)(QA-728)", () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<GuruPage />);
+    const input = screen.getByPlaceholderText("NVIDIA");
+    const submit = input.closest("form")?.querySelector("button[type='submit']") as HTMLElement;
+    const lgHeight = (element: Element) => [...element.classList].filter((name) => name.startsWith("lg:min-h-"));
+    expect({ input: lgHeight(input), button: lgHeight(submit) }).toEqual({ input: ["lg:min-h-[30px]"], button: ["lg:min-h-[30px]"] });
+  });
 });
 
 /** 스코어카드 응답(합성) — 지표 다섯(모멘텀 하나는 음수, 변동성·최대낙폭은 양수 크기), 원자료 1개월 수익률 −0.297(QA 자료와 같은 값). */
