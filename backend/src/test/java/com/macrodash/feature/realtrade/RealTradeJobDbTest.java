@@ -4131,8 +4131,8 @@ class RealTradeJobDbTest {
         assertThat(haltDetail().path("dailyShortPct").asDouble()).isEqualTo(39.0);
     }
 
+    // 수정 전(재현 커밋 3b237f2b에서는 @Disabled): 판정은 daily-cap-short로 맞게 멈추지만 HALT detail에 sellsDropped 칸이 없음.
     @Test
-    @org.junit.jupiter.api.Disabled("QA-801 재현 — 수정 전에는 HALT detail에 밀리는 매도 수가 없음")
     @DisplayName("QA-801: 남은 하루 건수가 매도 다리보다 적음(N2 매도 넷, 남은 건수 3) → daily-cap-short, HALT detail에 밀리는 매도 1")
     void rebalanceDailyCapDroppedSellsRecorded() {
         rebalanceDay(P2, H2, NOW_N2, Set.of());

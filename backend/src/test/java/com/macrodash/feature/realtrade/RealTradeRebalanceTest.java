@@ -10,7 +10,6 @@ import com.macrodash.feature.realtrade.RealTradePlanner.Rules;
 import com.macrodash.feature.realtrade.RealTradeRebalance.DailyShort;
 import com.macrodash.feature.realtrade.RealTradeRebalance.Inputs;
 import com.macrodash.feature.realtrade.RealTradeRebalance.Verdict;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -527,9 +526,8 @@ class RealTradeRebalanceTest {
     }
 
     // QA-801 — daily-cap-short는 '못 내는 매수 > 20 또는 밀리는 매도 있음'인데 밀리는 매도 수가 기록 칸·로그 요약에 없어, 남은 하루 건수가 매도 다리보다 적어
-    // 걸린 멈춤(못 내는 매수는 20 안)의 까닭이 어디에도 남지 않았다. 수정 전: detail에 sellsDropped 없음, 요약에 '밀리는 매도' 없음.
+    // 걸린 멈춤(못 내는 매수는 20 안)의 까닭이 어디에도 남지 않았다. 수정 전(재현 커밋 3b237f2b에서는 @Disabled): detail에 sellsDropped 없음, 요약에 '밀리는 매도' 없음.
     @Test
-    @Disabled("QA-801 재현 — 수정 전에는 밀리는 매도 수가 기록 칸·로그 요약에 없음")
     @DisplayName("QA-801: 밀리는 매도로 daily-cap-short면 그 수를 기록 칸(sellsDropped)·로그 요약에 남김 — 못 내는 매수가 20% 안이어도")
     void dailyCapShortRecordsDroppedSells() {
         Inputs dropped = with(with(base(), "D", 13.0), "drop", 4);

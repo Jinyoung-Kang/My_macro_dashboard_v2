@@ -828,7 +828,8 @@ const REBALANCE_CHECK: Readonly<Record<string, string>> = {
   "prior-batch": "앞 묶음이 그 결정일의 같은 책 묶음이 아님",
   "value-unknown": "값을 셀 수 없음",
   uncounted: "판정에서 빠진 종목이 있음(앱 미체결·미종료 주문·가격 모름)",
-  "daily-cap-short": "하루 한도로 못 내는 매수가 20% 초과",
+  // 하루 한도 판정의 두 갈래 — 못 내는 매수 > 20% 또는 남은 하루 건수로 밀리는 매도(detail sellsDropped — QA-801)
+  "daily-cap-short": "하루 한도로 못 내는 매수가 20% 초과 또는 밀리는 매도 있음",
   "account-drift": "계좌 어긋남 20% 초과",
   "price-mismatch": "책 가격과 실제 가격이 1.5배 넘게 다름",
   "name-jump": "한 종목 목표가 12%p 넘게 늚",
@@ -869,8 +870,8 @@ const EVENT_PCTS: readonly [string, string][] = [
 /**
  * 이벤트 detail → 한 줄("시가 맞추기 · 사유 unknown-order · 접수 5 · 체결 5"). 용도·사유 코드·건수·책만 적고 그 밖의 칸은 적지 않습니다.
  * 이상 멈춤(HALT) 이벤트의 사유는 멈춤 사유 이름표와 코드로 적습니다("사유 수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)").
- * 회전율 멈춤에 재선정 예외 판정 코드가 있으면 "재선정 예외 아님: 이름표(코드)"를 사유 뒤에, 그 뒤 % 칸({@link EVENT_PCTS} — 숫자일 때만, "회전율 80.0%")을
- * 적습니다. 아무것도 없으면 null.
+ * 회전율 멈춤에 재선정 예외 판정 코드가 있으면 "재선정 예외 아님: 이름표(코드)"를 사유 뒤에, 그 뒤 % 칸({@link EVENT_PCTS} — 숫자일 때만, "회전율 80.0%")과
+ * 하루 한도로 밀리는 매도 수(0보다 클 때만, "밀리는 매도 4")를 적습니다. 아무것도 없으면 null.
  */
 export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTradeEvent["kind"]): string | null {
   if (!detail || typeof detail !== "object") {
@@ -894,6 +895,9 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
     const pct = toNumber(detail[key]);
     if (pct !== null) parts.push(`${label} ${formatNumber(pct, 1)}%`);
   }
+  // 하루 한도로 밀리는 매도 수(재선정 예외 판정 daily-cap-short의 다른 갈래 — QA-801). 0이면 적지 않습니다.
+  const dropped = toNumber(detail.sellsDropped);
+  if (dropped !== null && dropped > 0) parts.push(`밀리는 매도 ${formatNumber(dropped, 0)}`);
   for (const [key, label] of EVENT_COUNTS) {
     const count = toNumber(detail[key]);
     if (count !== null) parts.push(`${label} ${formatNumber(count, 0)}`);

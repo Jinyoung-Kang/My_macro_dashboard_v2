@@ -244,7 +244,8 @@
   이벤트, 멈춤 해제·설정 바꾸기 단추(같은 확인). 미국 탭은 "미국 실제 매매는 준비 중입니다"(꺼진 단추).
 - 이벤트 줄(`eventDetailText`): 회전율 멈춤에 `rebalanceCheck`가 있으면 사유 뒤에 '재선정 예외 아님: 이름표(코드)', 그 뒤 % 칸(회전율·판정 회전율·허용폭·목표 변화량·책 변화량·
   계좌 어긋남·하루 한도로 못 내는 매수 — 숫자일 때만). 허용폭(`allowancePct` = min(스탑 감소만 뺀 책 변화량 + 20, 150))은 교차 확인(`over-allowance`)의 기준이고, '책 변화량'
-  (`bookDriftPct` — 현금성 상쇄까지 뺀 값)은 그 기준이 아니다(QA-800). `TURNOVER_EXEMPT`도 같은 % 칸. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만.
+  (`bookDriftPct` — 현금성 상쇄까지 뺀 값)은 그 기준이 아니다(QA-800). 하루 한도 판정(`daily-cap-short` — 못 내는 매수 > 20 또는 밀리는 매도 있음)의 밀리는 매도 수
+  (`sellsDropped`)는 0보다 클 때 '밀리는 매도 n'으로 적는다(QA-801). `TURNOVER_EXEMPT`도 같은 % 칸. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만.
 - 화면 경계 시험 `realtradeBoundary.test.ts`: realtrade 모듈을 밖에서 가져오는 곳은 `PaperScreen` 하나, lib/paper*·lib/home*·배럴은 realtrade를 가져오지 않음, realtrade는 brokerage 모듈을 가져오지 않음,
   apiPost는 `endpoints.realtrade.*`에만. 기존 `brokerageBoundary.test.ts`는 그대로(brokerage 모듈은 쓰기 함수를 가져오지 않음). 배너 문구는 '조회는 읽기 전용 — 자동 매매는 위 실제 매매 칸'.
 

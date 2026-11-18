@@ -154,7 +154,8 @@ final class RealTradeRebalance {
 
         /**
          * 이벤트 detail에 더할 칸 — 멈춤이면 {@value #DETAIL_CHECK}, 셌으면 숫자 칸(판정 회전율·책 변화량·계좌 어긋남·하루 한도로 못 내는 매수·가격 배율·
-         * 종목 증가·유지 종목 축소·주식 종목 수·노출 감소·목표 합·허용폭)과 멈춤이면 빠진 종목 수. 모르는 값은 넣지 않습니다. 종목·수량·금액은 없습니다.
+         * 종목 증가·유지 종목 축소·주식 종목 수·노출 감소·목표 합·허용폭)과 멈춤이면 빠진 종목 수·하루 건수로 밀리는 매도 수({@code sellsDropped} —
+         * {@value #CHECK_DAILY_CAP_SHORT}의 다른 갈래, QA-801). 모르는 값은 넣지 않습니다. 종목·수량·금액은 없습니다.
          */
         Map<String, Object> detail() {
             Map<String, Object> out = new LinkedHashMap<>();
@@ -176,6 +177,7 @@ final class RealTradeRebalance {
                 putIf(out, "allowancePct", inputs.allowancePct());
                 if (check != null) {
                     putIf(out, "uncounted", inputs.uncounted());
+                    putIf(out, "sellsDropped", inputs.sellsDropped());
                 }
             }
             return out;
@@ -425,9 +427,10 @@ final class RealTradeRebalance {
         return round(now.values().stream().mapToDouble(Double::doubleValue).sum());
     }
 
-    /** 관찰 로그 한 줄(계획 3-8 — %·배율·개수만, 종목·수량·금액 없음). 모르는 값은 '?'. */
+    /** 관찰 로그 한 줄(계획 3-8 — %·배율·개수만, 종목·수량·금액 없음). 모르는 값은 '?'. 하루 한도 판정의 두 갈래(못 내는 매수·밀리는 매도 — QA-801)도 적습니다. */
     static String summary(Inputs in) {
-        return "판정 회전율 " + text(in.checkTurnoverPct()) + "% · 빠진 종목 " + text(in.uncounted()) + " · 계좌 어긋남 " + text(in.accountDriftPct())
+        return "판정 회전율 " + text(in.checkTurnoverPct()) + "% · 빠진 종목 " + text(in.uncounted()) + " · 하루 한도로 못 내는 매수 "
+                + text(in.dailyShortPct()) + "% · 밀리는 매도 " + text(in.sellsDropped()) + " · 계좌 어긋남 " + text(in.accountDriftPct())
                 + "% · 가격 배율 " + text(in.priceRatio()) + " · 종목 증가 " + text(in.nameJumpPct()) + "%p · 유지 종목 축소 " + text(in.nameCutPct())
                 + "%p · 주식 종목 " + text(in.stockNames()) + " · 노출 감소 " + text(in.deriskPct()) + "%p · 목표 합 " + text(in.investedPct())
                 + "% · 책 변화량 " + text(in.bookDriftPct()) + "%p · 교차 기준 " + text(in.crossDriftPct()) + "%p";
