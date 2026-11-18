@@ -286,6 +286,8 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     const cell = (checkbox.closest("label") ?? checkbox).parentElement;
     expect(cell).not.toBeNull();
     expect(smallTargets(cell as HTMLElement)).toEqual([]);
+    // 높이만이 아니라 폭도 — '예' 글 하나면 감싼 label이 35px이었습니다(QA-757, 넓은 화면 24px는 paperSettingsQa757).
+    expect(checkbox.closest("label")?.className.split(/\s+/)).toContain("min-w-11");
   });
 
   //  - 정렬할 수 있는 표 머리(DataTable — 보유·체결 표 등): ↕ 단추

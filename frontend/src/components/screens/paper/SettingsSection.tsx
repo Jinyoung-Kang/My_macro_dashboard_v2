@@ -522,13 +522,14 @@ function SettingInput({
 }) {
   switch (row.kind) {
     case "boolean":
-      // 감싼 label이 '예·아니오' 글까지 누르는 자리로 넓힙니다 — 좁은 화면(lg 미만) 44px(QA-458, 13px 상자만 눌렸음). 그래서 모든 폭에서
-      // '예·아니오' 글을 눌러도 상자가 바뀝니다(저장은 그대로 '설정 저장' 단추 — 규칙 계좌 영향 키는 확인 창도). 블록 상자(flex)에 폭만
-      // 내용에 맞춰(w-fit) 넓은 화면은 예전 줄 높이 그대로이고, 누르는 자리는 행 전체가 아니라 상자와 글까지입니다. 상자의 이름은 키
+      // 감싼 label이 '예·아니오' 글까지 누르는 자리로 넓힙니다 — 좁은 화면(lg 미만) 높이·폭 44px(QA-458, 13px 상자만 눌렸음 — 폭은 '예'면 35px이던
+      // 것을 QA-757에서 min-w-11로), 넓은 화면 높이·폭 24px(명세 §3-7 표 안 작은 조작 — lg:min-h-0이라 글 줄 20px이던 것, QA-757). 그래서 모든 폭에서
+      // '예·아니오' 글을 눌러도 상자가 바뀝니다(저장은 그대로 '설정 저장' 단추 — 규칙 계좌 영향 키는 확인 창도). 블록 상자(flex)에 폭은
+      // 내용에 맞추고(w-fit — 최소 폭까지), 누르는 자리는 행 전체가 아니라 상자와 글까지입니다. 상자의 이름은 키
       // label(htmlFor)과 설명 앞마디(aria-labelledby — 작업대 P6)이고, 켬·끔은 상자가 읽어 주므로 '예·아니오' 글은 낭독기에서 뺍니다(이름에 붙어 '키 예'로
       // 읽히지 않게).
       return (
-        <label className="flex w-fit min-h-11 cursor-pointer items-center gap-2 text-sm text-text-2 lg:min-h-0">
+        <label className="flex w-fit min-h-11 min-w-11 cursor-pointer items-center gap-2 text-sm text-text-2 lg:min-h-6 lg:min-w-6">
           <input
             id={id}
             type="checkbox"

@@ -55,7 +55,7 @@ function sizePx(classes: string, axis: "w" | "h", variant: "" | "lg"): number {
 }
 
 describe("QA-757 모의 설정 참·거짓 체크 상자 누름 자리", () => {
-  it.fails("감싼 label — lg 미만 폭 44px 이상, lg 이상 높이 24px 이상", async () => {
+  it("감싼 label — lg 미만 폭 44px 이상, lg 이상 높이 24px 이상", async () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "설정" }));
     const checkbox = (await screen.findByLabelText("parkCashInShy")) as HTMLInputElement;
