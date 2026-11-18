@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
-import { type Column, DataTable, FilterList, InspectorFrame } from "@/components/patterns";
+import { type Column, DataTable, InspectorFrame } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, Loading, Panel, ROW_TRIGGER } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -38,6 +38,7 @@ import {
 } from "@/lib/paper";
 import { type CandidateFilter, candidateFilterOptions, filterCandidates } from "@/lib/paperSelectionView";
 import { PaperBadge } from "./PaperBadge";
+import { RowFilter } from "./RowFilter";
 import type {
   PaperRerankResult,
   PaperTrackRecordCandidate,
@@ -460,17 +461,12 @@ function CandidateTable({
         ];
         return (
           <>
-            <div className="mb-2">
-              <FilterList
-                label={group === "A" ? "후보 거르기" : "그룹 B 후보 거르기"}
-                items={candidateFilterOptions(rows).map((option) => ({ key: option.key, label: option.label, note: `${option.count}` }))}
-                selected={[filter]}
-                onToggle={(key) => setFilter(key as CandidateFilter)}
-                selection="single"
-                narrow="wrap"
-                wide="wrap"
-              />
-            </div>
+            <RowFilter
+              label={group === "A" ? "후보 거르기" : "그룹 B 후보 거르기"}
+              options={candidateFilterOptions(rows)}
+              value={filter}
+              onChange={(key) => setFilter(key as CandidateFilter)}
+            />
             <DataTable<PaperTrackRecordCandidate>
               columns={columns}
               rows={shown}

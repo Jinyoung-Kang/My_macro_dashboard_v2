@@ -2,7 +2,7 @@
 
 import { type ReactNode, useId, useMemo, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
-import { type Column, DataTable, Empty, FilterList, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
+import { type Column, DataTable, Empty, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
 import type { ActionBarItem } from "@/components/ui/ActionBar";
 import { PanelRightIcon } from "@/components/ui/icons";
@@ -72,7 +72,6 @@ import {
   filterOrders,
   type OrderStatusFilter,
   orderStatusOptions,
-  type RowFilterOption,
 } from "@/lib/paperHoldingsView";
 import { formatMoney, marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import type {
@@ -94,6 +93,7 @@ import type {
 } from "@/lib/types";
 import { HoldingInspector } from "./HoldingInspector";
 import { PaperBadge } from "./PaperBadge";
+import { RowFilter } from "./RowFilter";
 import { PaperTabAccount, PaperTabActions } from "./PaperTabHeader";
 import { TickerQuickView } from "./TickerQuickView";
 import { TickerName } from "./TickerName";
@@ -1172,31 +1172,4 @@ function inspectColumn(inspector: InspectorContext, nameOf: (code: string) => st
       </InspectorTrigger>
     ),
   };
-}
-
-/** 받은 줄 거르기 — 공용 거르기 목록(하나 고름, 넓은 화면도 30px 태그 줄 — wide "wrap"), 칸 이름 뒤 줄 수. 표 위 한 줄. */
-function RowFilter({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: readonly RowFilterOption[];
-  value: string;
-  onChange: (key: string) => void;
-}) {
-  return (
-    <div className="mb-2">
-      <FilterList
-        label={label}
-        items={options.map((option) => ({ key: option.key, label: option.label, note: `${option.count}` }))}
-        selected={[value]}
-        onToggle={onChange}
-        selection="single"
-        narrow="wrap"
-        wide="wrap"
-      />
-    </div>
-  );
 }
