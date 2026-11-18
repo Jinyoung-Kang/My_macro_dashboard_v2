@@ -21,7 +21,8 @@ import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { consensusBars, securityNote } from "@/lib/consensus";
 import { EMPTY, formatCurrency, formatWeightPercent } from "@/lib/format";
-import { filerName, filerShortName } from "@/lib/holdings";
+import { filerBadges, participantsLine } from "@/lib/consensusScreen";
+import { filerName } from "@/lib/holdings";
 import { isSelected, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
@@ -186,20 +187,14 @@ export default function ConsensusPage() {
                   key: "holders",
                   header: "보유 기관 목록",
                   render: (row) => (
-                    <span className="flex flex-wrap gap-1">
-                      {row.holders.map((holder) => (
-                        <FilerBadge key={holder} name={holder} />
-                      ))}
-                    </span>
+                    <FilerBadges names={row.holders} />
                   ),
                 },
               ]}
             />
           </Card>
 
-          <p className="text-xs text-text-3">
-            참여 기관: {data.participants.map((name) => filerName(name) ?? name).join(", ") || EMPTY}
-          </p>
+          <p className="text-xs text-text-3">{participantsLine(data.participants)}</p>
         </>
       )}
 
@@ -302,11 +297,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 key: "buyers",
                 header: "기관 목록",
                 render: (row) => (
-                  <span className="flex flex-wrap gap-1">
-                    {row.buyers.map((buyer) => (
-                      <FilerBadge key={buyer} name={buyer} />
-                    ))}
-                  </span>
+                  <FilerBadges names={row.buyers} />
                 ),
               },
             ]}
@@ -320,11 +311,15 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
   );
 }
 
-/** 기관 배지 — 짧은 이름(국기를 뗀 첫 낱말, lib/holdings.filerShortName), 전체 이름은 마우스 설명으로. */
-function FilerBadge({ name }: { name: string }) {
+/** 기관 배지 목록 — 짧은 이름(국기를 뗀 첫 낱말, lib/consensusScreen filerBadges), 전체 이름은 마우스 설명으로. */
+function FilerBadges({ names }: { names: readonly string[] }) {
   return (
-    <span title={filerName(name) ?? name}>
-      <SourceBadge>{filerShortName(name)}</SourceBadge>
+    <span className="flex flex-wrap gap-1">
+      {filerBadges(names).map((badge) => (
+        <span key={badge.key} title={badge.full}>
+          <SourceBadge>{badge.short}</SourceBadge>
+        </span>
+      ))}
     </span>
   );
 }
