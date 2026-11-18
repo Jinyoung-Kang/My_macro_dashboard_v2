@@ -33,6 +33,7 @@ vi.mock("@/components/charts", async () => {
 import { kstToday, rangeStart } from "@/lib/infoSearch";
 import type { GuruHoldersResponse } from "@/lib/types";
 import ConsensusPage from "../consensus/page";
+import ScorecardPage from "../scorecard/page";
 import GuruPage from "../style/page";
 
 const TINY = "<0.01%";
@@ -559,5 +560,38 @@ describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기�
 
     render(<ConsensusPage />);
     expect(document.querySelectorAll("[data-shell-filter]")).toHaveLength(0);
+  });
+});
+
+/** 스코어카드 응답(합성) — 지표 다섯(모멘텀 하나는 음수, 변동성·최대낙폭은 양수 크기), 원자료 1개월 수익률 −0.297(QA 자료와 같은 값). */
+function scorecardBody(over: Record<string, unknown> = {}) {
+  return {
+    available: true, symbol: "SYNQ", name: "Synthetic Quote Inc.", sector: "Technology", benchmark: "SPY", years: 1, universeLabel: "S&P 500 대형주",
+    universeSize: 136, missing: ["재무 안정성", "성장성"], caveat: "가격으로 잴 수 있는 것만 담은 카드입니다.", collectedAtKst: "2026-11-04 19:40 KST", ageSeconds: 60,
+    stale: false,
+    metrics: [
+      { label: "12개월 모멘텀", how: "12개월 수익률(최근 1개월 제외)", value: -5.2, unit: "%", score: 31, direction: "높을수록 좋음" },
+      { label: "3개월 모멘텀", how: "3개월 수익률", value: 4.4, unit: "%", score: 62, direction: "높을수록 좋음" },
+      { label: "변동성", how: "연율 표준편차", value: 23.4, unit: "%", score: 40, direction: "낮을수록 좋음" },
+      { label: "최대낙폭", how: "구간 고점 대비 최대 하락", value: 13.8, unit: "%", score: 55, direction: "낮을수록 좋음" },
+      { label: "추세 위치", how: "200일 이동평균 대비", value: null, unit: "%", score: null, direction: "높을수록 좋음" },
+    ],
+    priceScore: 47, scoredCount: 4, raw: { momentum1m: -0.297, momentum6m: 4.1, beta: 1.12, samples: 250 },
+    ...over,
+  };
+}
+
+describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => {
+  // 수정 전 실패: '실제 값' 칸이 deltaColor라 양수인 변동성·최대낙폭까지 상승 빨강(text-up)·음수 모멘텀은 하락 파랑이고, 음수 부호가 ASCII '-'
+  // (표 '-5.2%', 원자료 1개월 수익률 '-0.30%').
+  it.fails("지표 표의 실제 값 칸에 상승·하락 글자색이 없고, 표·원자료의 음수는 −(U+2212)", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody()) : new Promise(() => {}));
+    render(<ScorecardPage />);
+    const table = (await screen.findByText("변동성")).closest("table") as HTMLElement;
+    const tinted = [...table.querySelectorAll(".text-up, .text-down")].map((element) => `${element.className} '${element.textContent}'`);
+    const hyphen = [...table.querySelectorAll("td, th")].map((cell) => cell.textContent ?? "").filter((text) => /(^|\s)-\d/.test(text));
+    const raw = (screen.getByText("1개월 수익률").parentElement as HTMLElement).textContent?.replace("1개월 수익률", "") ?? "";
+    expect({ tinted, hyphen, raw }).toEqual({ tinted: [], hyphen: [], raw: "−0.30%" });
   });
 });
