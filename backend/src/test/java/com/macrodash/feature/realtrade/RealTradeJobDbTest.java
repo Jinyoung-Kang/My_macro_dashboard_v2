@@ -4612,6 +4612,73 @@ class RealTradeJobDbTest {
         assertThat(cfg().syncPending()).isTrue();
     }
 
+    // QA-803 — sync_pending이 켜진 채 들어온 재선정 묶음이 예외로 나가면 잠금 안 keep(= sync_pending ∧ 남은 몫 ∧ 켠 뒤 세 번째 묶음 전)이 참이라 sync_pending이
+    // 그대로 켜져 있고, 다음 날 turnoverHalt가 앞 묶음(= 예외 묶음)과의 목표 변화량(≈ 0)만 보아 회전율 60%를 넘는 남은 몫이 열두 확인 없이 나갔다(계획 3-6
+    // 셋째 줄·명세 §12.2 '다음 날까지 남은 몫이 60%를 넘으면 지금처럼 멈춘다(이어 주기 없음)'와 어긋남).
+    // 수정 전: S 묶음 로그 '(남은 몫 — 회전율 예외 유지)', S+1 로그 '남은 몫 묶음 — 회전율 119.92%지만 목표 변화량 0.00%라 회전율 예외 유지'로 주문 4건이 나가
+    // 'expected: "HALTED" but was: "LIVE"'(그날 관찰 로그의 계좌 어긋남 119.92% — 열두 확인을 봤다면 account-drift), 그 묶음에서 sync_pending 꺼짐(세 번째 묶음).
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-803 재현 — 수정 전에는 예외 묶음 뒤에도 sync_pending이 남아 다음 날 남은 몫이 회전율 검사 없이 나감")
+    @DisplayName("QA-803: sync_pending이 켜진 채 재선정 예외 묶음(S) → 예외 잠금에서 sync_pending 끔 → S+1(결정 SCHEDULED)의 남은 몫 회전율 > 60이면 지금처럼 멈춤")
+    void rebalanceExemptTurnsOffSyncPendingSoLeftoverHaltsNextDay() {
+        // 단계 S = 2026-11-05(목) — 앞 거래일 11-04가 재선정 결정일. 켬(ENABLE) → 11-04 묶음(켠 뒤 첫 묶음, 남은 몫으로 sync_pending 유지) → 11-05 예외 묶음
+        LocalDate stepDay = DECISION_DAY;
+        LocalDate stepDecision = DECISION_DAY.minusDays(1);
+        Instant stepSyncAt = kst("2026-11-05T09:10");
+        Slot s = slot(2, 0);
+        enableEvent();
+        priorBatch(stepDecision, s.prev());
+        RealTradeFixtures.live(store, true, d("10000000"));
+        rulesBook();
+        when(paper.sessionHours(stepDecision)).thenReturn(Optional.of(new SessionHours(stepDecision, true, kst("2026-11-04T09:00"),
+                kst("2026-11-04T15:30"))));
+        when(paper.decisionState(BOOK, stepDecision)).thenReturn(Optional.of(new PaperMirrorService.DecisionState(stepDecision, 76L, "REBALANCE",
+                "OK", kst("2026-11-05T01:00"))));
+        when(paper.ledgerCaughtUp(BOOK, stepDay)).thenReturn(true);
+        Map<String, Double> price = new java.util.HashMap<>();
+        s.now().keySet().forEach(sym -> price.put(sym, 1000.0));
+        when(paper.dailySyncAt(BOOK, stepDay)).thenReturn(Optional.of(stepSyncAt));
+        when(paper.targetsAt(BOOK, stepDay, stepSyncAt)).thenReturn(Optional.of(new OpenTargets(BOOK, stepDay, s.now(), price, 1e7, 0, List.of(),
+                List.of(), List.of())));
+        when(paper.pendingStopSymbols(BOOK, stepDay)).thenReturn(Set.of());
+        when(client.calendar()).thenReturn(Reply.of(new CollectorTradeClient.Calendar(stepDay, 0.3, new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-05T08:00"), kst("2026-11-05T08:50"), kst("2026-11-05T09:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-05T09:00"), kst("2026-11-05T15:20"), kst("2026-11-05T15:30"))),
+                stepDecision, SESSION)));
+        Set<String> quoted = new java.util.TreeSet<>(s.now().keySet());
+        quoted.addAll(s.prev().keySet());
+        clock.set(kst("2026-11-05T09:10:05"));
+        rulesAccount(s.prev(), quoted, Set.of());
+        job.cycle(clock.now);
+
+        assertThat(events("TURNOVER_EXEMPT")).as("S — 재선정 예외 묶음").hasSize(1);
+        assertThat(store.batch("KR", stepDay, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(store.ordersOn("KR", stepDay)).isNotEmpty();
+        assertThat(cfg().state()).isEqualTo("LIVE");
+
+        // S의 주문은 체결 없이 끝남(남은 몫 그대로 — 153130·유지 종목 둘 매도와 새 종목 매수 전부)
+        store.unfinishedOrders("KR").forEach(row -> store.recordTracking(row.id(), new RealTradeStore.Tracking("CANCELED", true, d("0"), null, null,
+                null, null, null)));
+
+        // 단계 S+1 = 2026-11-06(금) — 앞 거래일 11-05의 정기 결정은 SCHEDULED, 목표는 S와 같음(남은 몫 회전율 약 120%)
+        decision("SCHEDULED", "OK");
+        when(client.calendar()).thenReturn(Reply.of(calendar(normalSession(), 0.3)));
+        rulesTargets(s.now(), Map.of());
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of());
+        clock.set(kst("2026-11-06T09:10:05"));
+        rulesAccount(s.prev(), quoted, Set.of());
+        run("09:10:05");
+
+        assertThat(cfg().state()).as("S+1 — 남은 몫 회전율 > 60").isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(haltDetail().path("rebalanceCheck").asString()).isEqualTo("no-rebalance");
+        assertThat(haltDetail().path("turnoverPct").asDouble()).isGreaterThan(60.0);
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        assertThat(store.ordersOn("KR", SESSION)).isEmpty();
+        assertThat(events("TURNOVER_EXEMPT")).hasSize(1);
+        assertThat(cfg().syncPending()).as("예외 묶음을 만든 잠금에서 끔").isFalse();
+    }
+
     @Test
     @DisplayName("관찰 로그 — 회전율 60% 안의 평소 규칙 계좌 묶음은 측정이 실패해도(대기 STOP 읽기가 던짐) 묶음·주문이 그대로 나감")
     void observationLogDoesNotChangeBatch() {
