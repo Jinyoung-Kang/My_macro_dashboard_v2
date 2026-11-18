@@ -414,9 +414,16 @@ describe("스타일 — '가장 닮은 짝' 표가 좁은 화면에서 패널 �
       nowrapNames,
     }).toEqual({
       region: "가장 닮은 짝 — 겹침 비중 순 상위 3 (좌우 스크롤)",
-      headers: ["#", "짝", "겹침 비중 (%)"],
+      headers: ["#순위", "짝", "겹침 비중 (%)"],
       nowrapNames: [],
     });
+    // 순위 열 머리는 보이는 기호 '#'(장식)와 낭독 이름 '순위'
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent === "#순위" && cell.querySelector('[aria-hidden="true"]')?.textContent === "#")).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(within(table).getByRole("columnheader", { name: "순위" })).toBeTruthy();
   });
 });
 

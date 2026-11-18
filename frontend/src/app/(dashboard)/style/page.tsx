@@ -311,7 +311,19 @@ function SimilarityCard() {
             rows={pairs}
             rowKey={(pair) => pair.key}
             columns={[
-              { key: "rank", header: "#", align: "right", className: "w-8 text-text-3", cell: (pair) => pair.rank },
+              // 보이는 머리는 기호 '#'(장식 — 읽기에서 뺌), 낭독기에는 열 이름 '순위'(칸마다 머리로 읽힘 — 섹터 표의 순위 기준 열 QA-649와 같은 꼴).
+              {
+                key: "rank",
+                header: (
+                  <>
+                    <span aria-hidden="true">#</span>
+                    <span className="sr-only">순위</span>
+                  </>
+                ),
+                align: "right",
+                className: "w-8 text-text-3",
+                cell: (pair) => pair.rank,
+              },
               {
                 key: "pair",
                 header: "짝",
