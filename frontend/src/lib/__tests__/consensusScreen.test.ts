@@ -125,10 +125,10 @@ describe("교집합 화면 — 검사 칸", () => {
     });
   });
 
-  it("기관 배지는 짧은 이름(국기 없음)과 전체 이름, 참여 기관 줄은 국기를 뗀 이름(없으면 '—')", () => {
+  it("기관 배지는 국기를 뗀 전체 이름, 참여 기관 줄은 국기를 뗀 이름(없으면 '—')", () => {
     expect(filerBadges([FLAG, "Berkshire Hathaway"])).toEqual([
-      { key: FLAG, short: "국민연금", full: "국민연금 (National Pension Service)" },
-      { key: "Berkshire Hathaway", short: "Berkshire", full: "Berkshire Hathaway" },
+      { key: FLAG, name: "국민연금 (National Pension Service)" },
+      { key: "Berkshire Hathaway", name: "Berkshire Hathaway" },
     ]);
     expect(participantsLine([FLAG, "Berkshire"])).toBe("참여 기관: 국민연금 (National Pension Service), Berkshire");
     expect(participantsLine([])).toBe("참여 기관: —");

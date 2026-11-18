@@ -119,7 +119,7 @@ describe("QA-122 합친 클래스가 없는 보통주 행", () => {
 describe("기관 이름의 국기", () => {
   // 예전에는 보유 기관 배지가 이름의 첫 낱말이라 국기가 붙은 이름에서는 국기만 남았다.
   // 보유 기관 배지는 P5b부터 표 칸이 아니라 종목 검사 칸(줄 단추가 여는 대화상자)에 있어, 그 칸을 연 뒤 찾습니다(단언은 그대로).
-  it("기관 고르기·보유 기관 배지·참여 기관 줄은 국기를 뗀 이름 — 배지는 짧은 이름, 전체 이름은 마우스 설명", async () => {
+  it("기관 고르기·보유 기관 배지·참여 기관 줄은 국기를 뗀 이름 — 배지는 전체 이름(대화상자로 옮긴 뒤 — 예전 짧은 이름 + 마우스 설명)", async () => {
     const flagged = "🇰🇷 국민연금 (National Pension Service)";
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/institutions")) {
@@ -139,8 +139,8 @@ describe("기관 이름의 국기", () => {
     expect(await screen.findByRole("button", { name: "국민연금 (National Pension Service)" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "APPLE INC" }));
     const dialog = await screen.findByRole("dialog", { name: "APPLE INC" });
-    const badge = within(dialog).getByText("국민연금");
-    expect(badge.closest("[title]")?.getAttribute("title")).toBe("국민연금 (National Pension Service)");
+    const holders = within(dialog).getByRole("region", { name: "보유 기관" });
+    expect(within(holders).getByRole("listitem").textContent).toBe("국민연금 (National Pension Service)");
     expect(screen.getByText("참여 기관: 국민연금 (National Pension Service)")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\p{Regional_Indicator}/u);
   });

@@ -420,13 +420,16 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
   );
 }
 
-/** 기관 배지 목록 — 짧은 이름(국기를 뗀 첫 낱말, lib/consensusScreen filerBadges), 전체 이름은 마우스 설명으로. */
+/**
+ * 기관 배지 목록 — 국기를 뗀 전체 이름(lib/consensusScreen filerBadges). 예전 표 열에서는 행 높이를 아끼려 첫 낱말만 적고 전체 이름은 마우스 설명(title)에
+ * 두었는데, 넓은 검사 대화상자로 옮긴 뒤에도 그대로라 터치·키보드·낭독기로는 전체 이름에 닿지 않았고 첫 낱말이 같은 두 기관을 가를 수 없었습니다(P5b 검토 지적).
+ */
 function FilerBadges({ names }: { names: readonly string[] }) {
   return (
     <ul className="flex flex-wrap gap-1">
       {filerBadges(names).map((badge) => (
-        <li key={badge.key} title={badge.full}>
-          <SourceBadge>{badge.short}</SourceBadge>
+        <li key={badge.key}>
+          <SourceBadge>{badge.name}</SourceBadge>
         </li>
       ))}
     </ul>

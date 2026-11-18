@@ -7,7 +7,7 @@
 import { securityNote } from "./consensus";
 import type { DetailProperty } from "./detailEntity";
 import { EMPTY, formatNumber, formatUsd, formatWeightPercent } from "./format";
-import { filerName, filerShortName } from "./holdings";
+import { filerName } from "./holdings";
 import type { KpiItem } from "./kpi";
 import type { ConsensusResponse, ConsensusRow, NewBuysResponse } from "./types";
 
@@ -142,9 +142,9 @@ export function newBuyRowItems(row: NewBuyRow, krw: KrwNote): DetailProperty[] {
   ];
 }
 
-/** 기관 배지 — 짧은 이름(국기를 뗀 첫 낱말 — lib/holdings filerShortName)과 전체 이름(국기를 뗀 이름 — 마우스 설명). 받은 차례 그대로, 키는 받은 이름. */
-export function filerBadges(names: readonly string[]): { key: string; short: string; full: string }[] {
-  return names.map((name) => ({ key: name, short: filerShortName(name), full: filerName(name) ?? name }));
+/** 기관 배지 — 국기를 뗀 전체 이름(검사 대화상자의 배지 글). 받은 차례 그대로, 키는 받은 이름. */
+export function filerBadges(names: readonly string[]): { key: string; name: string }[] {
+  return names.map((name) => ({ key: name, name: filerName(name) ?? name }));
 }
 
 /** 참여 기관 줄 — '참여 기관: A, B'(국기를 뗀 이름). 없으면 '참여 기관: —'. */

@@ -224,9 +224,10 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
     expect(value("합산 평가액")).toBe("20.0억 달러");
     expect(value("원화 환산")).toContain("원/달러 1,400.00 기준");
     const holders = within(dialog).getByRole("region", { name: "보유 기관" });
+    // 배지 글은 국기를 뗀 전체 이름 — 첫 낱말이 같은 두 기관도 갈리고, 마우스 설명(title)에만 두지 않음(P5b 검토 지적).
     expect(within(holders).getAllByRole("listitem").map((item) => [item.textContent, item.getAttribute("title")])).toEqual([
-      ["가상", "가상 자산운용 (Synthetic AM)"],
-      ["가상", "가상 연기금"],
+      ["가상 자산운용 (Synthetic AM)", null],
+      ["가상 연기금", null],
     ]);
 
     fireEvent.keyDown(dialog, { key: "Escape" });
