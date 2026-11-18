@@ -142,24 +142,29 @@ describe("쉬는 한국", () => {
     expect(screen.getByText(/PAPER_KR_START_DATE/)).toBeTruthy();
     expect(screen.getByText(/한국 계좌가 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("table", { name: "계좌 비교" })).toBeNull();
-    // 한계 문구(§6)는 쉬어도 보입니다 — 접어 둔 채 시작하고 단추로 펼칩니다(사용자 요청 2026-11-02).
-    expect(screen.getByText("이 장부의 한계")).toBeTruthy();
+    // 한계 문구(§6)는 쉬어도 닿습니다 — 닫힌 서랍으로 시작하고 머리 단추로 엽니다(사용자 요청 2026-11-02 접힌 채 시작, 작업대 P6 서랍).
+    const opener = screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ });
+    expect(opener.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText(/수익률을 서로 비교하지 않습니다/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
-    expect(screen.getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "접기" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(opener);
+    const drawer = screen.getByRole("dialog", { name: "이 장부의 한계" });
+    expect(within(drawer).getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
   });
 
-  // QA-494: 접힌 한계 카드는 머리만 있는 상자여야 합니다 — 공용 Panel이 false 본문에도 빈 본문 칸(p-3 lg:p-4)과 머리 아래 경계를 그려 빈 띠가
-  // 남았습니다(/paper/kr 아홉 탭, 1440 32px·390 24px). 재현 커밋에서는 it.fails였습니다.
-  it("QA-494: 접힌 '이 장부의 한계' 카드는 머리(header)만 — 펼치면 본문 칸이 생긴다", async () => {
+  // QA-494: 접힌 한계 카드가 빈 본문 칸(p-3 lg:p-4)과 머리 아래 경계를 그려 빈 띠가 남았습니다(/paper/kr 아홉 탭, 1440 32px·390 24px — 재현 커밋에서는
+  // it.fails). 작업대 P6부터 한계는 카드가 아니라 머리 단추 + 서랍이라, 닫힌 동안 본문에 한계 상자가 없습니다 — 그 뜻(접힌 동안 빈 띠 없음)을 지킵니다.
+  it("QA-494: 닫힌 '이 장부의 한계'는 머리 단추뿐(본문에 상자 없음) — 열면 서랍에 목록", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
     render(<PaperPage market="KR" />);
     expect(await screen.findByText(/한국 계좌가 쉬고 있습니다/)).toBeTruthy();
-    const limits = screen.getByText("이 장부의 한계").closest("section") as HTMLElement;
-    expect(limits.lastElementChild?.tagName).toBe("HEADER");
-    fireEvent.click(within(limits).getByRole("button", { name: /펼치기/ }));
-    expect(limits.lastElementChild?.tagName).not.toBe("HEADER");
+    expect(screen.queryByRole("region", { name: "이 장부의 한계" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const opener = screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ });
+    expect(opener.closest("header")).not.toBeNull();
+    fireEvent.click(opener);
+    expect(within(screen.getByRole("dialog", { name: "이 장부의 한계" })).getAllByRole("listitem").length).toBeGreaterThan(0);
   });
 });
 
@@ -216,10 +221,11 @@ describe("자료", () => {
     expect(nav.getAttribute("data-axis-width")).toBe("84");
     expect(screen.getByText(/KR 거래일별 순자산\(원\)/)).toBeTruthy();
 
-    // 한계 문구(§6) — 펼친 뒤
-    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
-    const limits = screen.getByText("이 장부의 한계").closest("section") ?? document.body;
+    // 한계 문구(§6) — 머리 단추로 서랍을 연 뒤(닫으면 다음 확인이 뒤 화면을 봄)
+    fireEvent.click(screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ }));
+    const limits = screen.getByRole("dialog", { name: "이 장부의 한계" });
     expect(within(limits).getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
+    fireEvent.keyDown(limits, { key: "Escape" });
 
     // 미국 전용 카드는 없음
     for (const title of ["신호 기관", "OS 게이트 지표", "장부 초기화", "벤치마크 사후 체결 대기"]) {

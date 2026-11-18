@@ -7,7 +7,7 @@
  *  - 추정에 가까운 상태: 사후 체결을 기다리는 벤치마크 행에 경고, 가격 없는 보유가 있으면 비교 표 '가격 없음'이 경고색
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
- *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
+ *  - 시장 고르기: 넓은 화면(lg)만 머리의 시장 세그먼트(같은 탭의 두 시장 링크 — 작업대 P6), 좁은 화면은 셸의 하위 메뉴 줄(Shell.test.tsx), 제목은 '(미국)'
  *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 규칙 계좌 — 사용자 결정 2026-11-13, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
  *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
  *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·변화 한 줄)·추정 배지,
@@ -691,15 +691,21 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
 });
 
 describe("시장 고르기", () => {
-  it("화면 안에는 시장 고르기가 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크, Shell.test.tsx)이 맡고, 제목이 미국 책임을 말한다", async () => {
+  it("머리의 시장 세그먼트는 넓은 화면(lg)만 — 같은 탭의 두 시장 링크(지금 시장 aria-current), 좁은 화면은 셸의 하위 메뉴 줄이 맡는다", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
-    render(<PaperPage />);
+    render(<PaperPage initialTab="holdings" />);
 
     expect(await screen.findByRole("tablist", { name: "모의 매매 화면" })).toBeTruthy();
-    // 예전에는 제목 아래에 같은 고르기가 한 줄 더 있어 셸의 하위 메뉴 줄과 두 줄로 겹쳐 보였습니다.
-    expect(screen.queryByRole("navigation", { name: "모의매매 시장" })).toBeNull();
-    // 한국 화면으로 가는 링크도 화면 안에는 없습니다(셸 하위 메뉴의 '한국' 링크 하나).
-    expect(document.querySelector('a[href^="/paper/kr"]')).toBeNull();
+    // 넓은 화면은 셸의 하위 메뉴 줄이 없어(작업대 W2) 머리가 시장을 고릅니다(명세 §7-1 — 한 줄 머리의 시장 세그먼트). lg 미만에서는 그리지 않아(hidden)
+    // 셸 하위 메뉴 줄(미국 | 한국 두 링크, Shell.test.tsx)과 두 줄로 겹치지 않습니다.
+    const nav = screen.getByRole("navigation", { name: "모의 매매 시장", hidden: true });
+    expect(nav.className).toContain("hidden");
+    expect(nav.className).toContain("lg:inline-flex");
+    const links = within(nav).getAllByRole("link", { hidden: true });
+    expect(links.map((link) => [link.textContent, link.getAttribute("href"), link.getAttribute("aria-current")])).toEqual([
+      ["미국", "/paper/us/holdings", "page"],
+      ["한국", "/paper/kr/holdings", null],
+    ]);
     expect(screen.getByRole("heading", { level: 1, name: "모의 알고리즘 매매(미국)" })).toBeTruthy();
   });
 });

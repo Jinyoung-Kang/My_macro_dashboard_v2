@@ -145,9 +145,12 @@ describe("초기화 전", () => {
 
     render(<PaperPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /펼치기/ }));
-    expect(await screen.findByText(LIMITS[0])).toBeTruthy();
-    expect(screen.getByText(LIMITS[1])).toBeTruthy();
+    // 한계 문구는 머리 단추로 여는 서랍(작업대 P6) — 열어 읽고 닫습니다(연 동안 뒤 화면은 보조 기술에서 가려짐).
+    fireEvent.click(await screen.findByRole("button", { name: /^이 장부의 한계 \(2줄\)$/ }));
+    const limits = screen.getByRole("dialog", { name: "이 장부의 한계" });
+    expect(within(limits).getByText(LIMITS[0])).toBeTruthy();
+    expect(within(limits).getByText(LIMITS[1])).toBeTruthy();
+    fireEvent.keyDown(limits, { key: "Escape" });
     // 책이 없으니 리스크 실행 버튼은 아직 없습니다.
     expect(screen.queryByRole("button", { name: "리스크 지금 실행" })).toBeNull();
 
