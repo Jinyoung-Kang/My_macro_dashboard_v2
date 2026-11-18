@@ -119,7 +119,7 @@ function userScroll(to: number) {
 
 describe("표 히트맵이 끝에 붙어 있는 동안 폭이 바뀌면 다시 끝(가장 최근 열)으로 간다(QA-722)", () => {
   // 수정 전 실패(plain it): { hint: "shown", scrollLeft: 0 } — 안내는 다시 재지만 스크롤은 0(가장 오래된 열)에 남음.
-  it.fails("표가 들어가던 폭(654)에서 넘치는 폭(640 > 482)으로 바뀌면(메뉴 펴기) 안내가 보이고 스크롤이 오른쪽 끝으로 간다", () => {
+  it("표가 들어가던 폭(654)에서 넘치는 폭(640 > 482)으로 바뀌면(메뉴 펴기) 안내가 보이고 스크롤이 오른쪽 끝으로 간다", () => {
     const box = stubBox({ content: 654, visible: 654 });
     render(table());
     expect(observed()).toEqual({ hint: "phone-only", scrollLeft: 0 });
@@ -128,7 +128,7 @@ describe("표 히트맵이 끝에 붙어 있는 동안 폭이 바뀌면 다시 �
   });
 
   // 수정 전 실패(plain it): 펼친 뒤 { hint: "shown", scrollLeft: 0 } — 접을 때 0으로 줄어든 자리에 남음.
-  it.fails("끝에서 시작해 메뉴를 접었다 펴도(482 → 654 → 482) 끝으로 돌아온다", () => {
+  it("끝에서 시작해 메뉴를 접었다 펴도(482 → 654 → 482) 끝으로 돌아온다", () => {
     const box = stubBox({ content: 640, visible: 482 });
     render(table());
     expect(observed().scrollLeft).toBe(158);
@@ -139,7 +139,7 @@ describe("표 히트맵이 끝에 붙어 있는 동안 폭이 바뀌면 다시 �
   });
 
   // 수정 전 실패(plain it): scrollLeft 82(옛 끝) — 새 끝은 158.
-  it.fails("끝에 있던 채로 넘침이 커지면(558 → 482 — 창 줄이기) 새 끝으로 간다", () => {
+  it("끝에 있던 채로 넘침이 커지면(558 → 482 — 창 줄이기) 새 끝으로 간다", () => {
     const box = stubBox({ content: 640, visible: 558 });
     render(table());
     expect(observed().scrollLeft).toBe(82);
