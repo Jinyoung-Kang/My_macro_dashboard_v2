@@ -859,8 +859,9 @@ final class CheckpointPacket {
 
     private static Map<String, Object> hardRules(JsonNode morningPacket, boolean free, boolean stopWatch) {
         Map<String, Object> out = new LinkedHashMap<>();
-        // 끈 판 줄은 바이트 그대로(고정본 packet-us-claude2-checkpoint-*.json) — MARKET 문장('생성 + 60초가 지난 첫 분')은 ADR 0044 뒤 실제 체결 시점과
-        // 다른 알려진 차이(ADR 0044 결정 D2). 켠 판 줄은 freeHardRuleLines.
+        // 끈 판 줄은 바이트 그대로(고정본 packet-us-claude2-checkpoint-*.json) — ADR 0044 뒤 MARKET에는 두 문장이 맞지 않는 알려진 차이(ADR 0044 결정 7·D2):
+        // 받는 조건 '기준 시각이 지금 + 60초보다 뒤인 것'(MARKET의 T는 지금 + 60초 이하인데 remainingTimings에 실리고 검증을 통과)과 체결 문장
+        // '생성 + 60초가 지난 첫 분'(실제는 생성 뒤 처음 시작하는 분). 켠 판 줄은 freeHardRuleLines.
         List<String> lines = free ? freeHardRuleLines(stopWatch) : List.of(
                 "주문 timing은 " + String.join("·", TIMINGS) + " 가운데 기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 "
                         + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절. MARKET은 응답 뒤 생성 + 60초가 "

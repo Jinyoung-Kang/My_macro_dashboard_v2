@@ -325,7 +325,7 @@ class StopWatchTest {
     class Targets {
 
         @Test
-        @DisplayName("장중 감지는 T = G+1분(감지 뒤 처음 시작하는 분) 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
+        @DisplayName("장중 감지는 T = 감지를 분으로 내린 뒤 + 1분(감지 뒤 처음 시작하는 분) 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
         void us() {
             StopWatch.Target mid = StopWatch.target(et(DAY, 10, 15, 25), DAY, US, false);
             assertThat(mid.timing()).isEqualTo(PaperBooks.MARKET);

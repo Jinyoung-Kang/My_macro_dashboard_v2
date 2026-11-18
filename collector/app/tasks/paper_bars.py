@@ -138,8 +138,9 @@ def _traded(row: dict) -> bool:
 def market_target(created_at: datetime) -> datetime:
     """
     장중 시장가(MARKET) 주문의 기준 시각 T(UTC) = 생성 뒤 처음 시작하는 분 — (생성 + MARKET_AFTER_CREATED)를 분으로 내린 뒤 + 1분이라
-    생성 < T ≤ 생성 + 60초입니다(ADR 0044). 정각 생성(:00.000초)도 다음 분이고 생성과 같은 분은 쓰지 않습니다('분으로 올림'이면 T = 생성이 되어
-    생성 앞 거래가 섞인 봉을 고르게 됨). 백엔드 ExecutionAudit.marketTarget과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
+    생성 < T ≤ 생성 + 60초입니다(ADR 0044). 정각 생성(:00.000초)도 다음 분이고 생성과 같은 분은 쓰지 않습니다('분으로 올림'이면 정각 생성에서
+    T = 생성이 되어 한국 장부 ⑤ KrFills.opensAfterOrder의 T > 생성에 걸리고, ⑤를 보지 않는 실제 계좌 창과 어긋남 — ADR 0044 결정 1). 백엔드
+    ExecutionAudit.marketTarget과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
     """
     shifted = (created_at + MARKET_AFTER_CREATED).astimezone(timezone.utc)
     return shifted.replace(second=0, microsecond=0) + timedelta(minutes=1)

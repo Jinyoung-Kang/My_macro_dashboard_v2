@@ -87,8 +87,9 @@ final class PaperBooks {
     static final List<String> CLAUDE2_TIMINGS = List.of(NEXT_OPEN, AT_1000, AT_1100, AT_1200, AT_1300, AT_1400, AT_1500,
             NEXT_CLOSE);
     /**
-     * 장중 시장가(V18 timing CHECK — 계좌2 명세 §6-2 단계 2): 장중 확인·판단 응답의 주문과 장중 감시 STOP만(아침 결정 메뉴에는 없음). 기준 시각 T = 주문
-     * 생성 뒤 처음 시작하는 분({@link ExecutionAudit#marketTarget} — ADR 0044, 생성 &lt; T ≤ 생성 + 60초, 수집기 {@code paper_bars.market_target}과 같은 식).
+     * 장중 시장가(V18 timing CHECK — 계좌2 명세 §6-2 단계 2): 장중 확인·판단 응답의 주문, 장중 감시 STOP, 한국 밤 대체 STOP 가운데 장중에 내는 것
+     * (QA-317) — 아침 결정 메뉴에는 없음. 기준 시각 T = 주문 생성 뒤 처음 시작하는 분({@link ExecutionAudit#marketTarget} — ADR 0044, 생성 &lt; T ≤
+     * 생성 + 60초, 수집기 {@code paper_bars.market_target}과 같은 식).
      */
     static final String MARKET = "MARKET";
     /**
