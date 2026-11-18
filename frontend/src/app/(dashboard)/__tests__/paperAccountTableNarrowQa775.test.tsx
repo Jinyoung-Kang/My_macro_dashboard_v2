@@ -63,7 +63,7 @@ function navCell(label: string): HTMLElement {
 }
 
 describe("QA-775 — 좁은 계좌 표의 수익률 칩은 '출발 이후' 이름과 함께, 모르면 '—'", () => {
-  it.fails("값이 있으면 '출발 이후' 글과 칩, 모르면 '출발 이후' 글과 '—'(값 없음)", async () => {
+  it("값이 있으면 '출발 이후' 글과 칩, 모르면 '출발 이후' 글과 '—'(값 없음)", async () => {
     render(<PaperScreen initialTab="overview" market="US" />);
     await act(async () => {});
     expect(screen.getByRole("table", { name: "계좌 목록" }).querySelectorAll("thead th")).toHaveLength(2);

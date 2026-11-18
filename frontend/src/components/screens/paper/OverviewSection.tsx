@@ -888,7 +888,19 @@ function accountColumns(
             <span className="font-semibold text-text">{row.navText}</span> <span className="text-xs text-text-3">{row.unit}</span>
           </span>
         )}
-        {narrow ? <ChangeChip size="sm" changePct={row.returnPct} /> : null}
+        {/* 좁은 표(두 칸)는 수익률 칸이 없어 이 칸 둘째 줄에 — 무엇의 변화인지 이름('출발 이후')을 붙이고, 모르면 넓은 칸처럼 '—'(QA-775). */}
+        {narrow ? (
+          <span className="flex flex-wrap items-baseline justify-end gap-x-1">
+            <span className="text-xs text-text-3">출발 이후</span>
+            {row.returnPct === null ? (
+              <span className="text-xs text-text-3">
+                <Empty align="end" />
+              </span>
+            ) : (
+              <ChangeChip size="sm" changePct={row.returnPct} />
+            )}
+          </span>
+        ) : null}
         {/* 기준 한 줄·배지는 오른쪽 정렬 칸의 줄바꿈 없음을 풀어 낱말 사이에서 접습니다(최대 16rem) — 그러지 않으면 1440 옆 검사 칸 배치에서 이전 값 사유가
             한 줄로 늘어 표가 상자보다 넓어지고 오른쪽 칸(주식 노출)이 가로 넘김 밖으로 갔습니다(자기 빌드 — 표 749px · 상자 662px). */}
         {!narrow && row.caption ? <span className="max-w-[16rem] whitespace-normal break-keep text-xs text-text-3">{row.caption}</span> : null}
