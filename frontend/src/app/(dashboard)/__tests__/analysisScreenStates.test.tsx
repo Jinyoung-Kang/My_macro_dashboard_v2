@@ -324,3 +324,46 @@ describe("스타일 — 위험 지표 VaR·ES의 음수 부호(QA-709)", () => {
     expect(shown.map((text) => text.match(/−\d[\d.]*%/)?.[0] ?? null)).toEqual(["−1.13%", "−1.92%", "−1.63%", "−2.27%"]);
   });
 });
+
+/** 스타일 화면 유사도 응답(합성 — 기관 셋, 이름은 백엔드처럼 국기 + 괄호 영문). */
+const SIMILARITY_BODY = {
+  available: true, note: "겹침 비중·코사인 — 최신 분기 기준",
+  institutions: [
+    { cik: "0000000021", key: "a", name: "🇺🇸 가상 자산운용 (Synthetic Asset Management)", reportDate: "2026-06-30" },
+    { cik: "0000000022", key: "b", name: "🇳🇴 가상 국부펀드 (Synthetic Sovereign Fund)", reportDate: "2026-06-30" },
+    { cik: "0000000023", key: "c", name: "🇰🇷 가상 연기금 (Synthetic Pension)", reportDate: "2026-06-30" },
+  ],
+  overlap: [[100, 42.5, 12.25], [42.5, 100, 0], [12.25, 0, 100]],
+  cosine: [[1, 0.81, 0.2], [0.81, 1, 0.05], [0.2, 0.05, 1]],
+  topPairs: [],
+};
+
+/** '가장 닮은 짝' 표 — 그 제목(h3) 다음에 오는 첫 표(뒤의 유사도 행렬보다 앞). */
+async function pairsTable(): Promise<HTMLTableElement> {
+  const heading = await screen.findByText(/^가장 닮은 짝/, { selector: "h3" });
+  return heading.parentElement?.querySelector("table") as HTMLTableElement;
+}
+
+describe("스타일 — '가장 닮은 짝' 표가 좁은 화면에서 패널 밖으로 넘친다(QA-706)", () => {
+  // 수정 전 실패(D1 QA — 390에서 값 끝이 잘리고 막대가 0폭, 가로 스크롤 없음)의 구조: 표가 가로 스크롤 상자 밖, 열 넷(#·기관 A·기관 B·값),
+  // 두 이름 칸이 줄바꿈 금지(whitespace-nowrap)라 표가 패널 폭보다 넓어짐.
+  it.fails("짝 표는 가로 스크롤 상자 안의 세 칸 표(#·짝·값)이고 이름 칸은 줄을 바꿀 수 있다", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY_BODY) : new Promise(() => {}));
+    render(<GuruPage />);
+    const table = await pairsTable();
+    const region = table.closest('[role="region"]');
+    const nowrapNames = [...table.querySelectorAll("tbody .whitespace-nowrap")]
+      .map((cell) => cell.textContent ?? "")
+      .filter((text) => /[가-힣A-Za-z]/.test(text));
+    expect({
+      region: region?.getAttribute("aria-label") ?? null,
+      headers: [...table.querySelectorAll("thead th")].map((cell) => cell.textContent),
+      nowrapNames,
+    }).toEqual({
+      region: "가장 닮은 짝 — 겹침 비중 순 상위 3 (좌우 스크롤)",
+      headers: ["#", "짝", "겹침 비중 (%)"],
+      nowrapNames: [],
+    });
+  });
+});
