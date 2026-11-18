@@ -1,7 +1,8 @@
 /**
  * 모의 매매 — 설정 탭(명세 S1~S3). 서버 값을 그대로 보이고, 형·범위는 서버가 검사한다.
  *
- *  - GET /api/paper/settings의 keys 순서대로 키마다 지금 값·기본값·범위·설명·규칙 책 영향 배지, GET /api/paper/settings/history는 표
+ *  - GET /api/paper/settings의 keys 순서대로 키마다 지금 값·기본값·범위·설명·규칙 책 영향 배지(공용 주의 태그 — 낭독기 '주의: ' 머리말),
+ *    GET /api/paper/settings/history는 표
  *  - 값을 바꾸면 "바꿀 값"에 모이고, 저장은 POST /api/paper/settings에 바꾼 키만(`{"키": 값}`, 키는 점 경로)
  *  - 규칙 책 영향 키가 있으면 저장 전에 확인 창(ConfirmDialog)에서 경고와 함께 한 번 더 묻고, 저장 뒤 서버 warning을 경고로 그대로 —
  *    창은 저장이 끝난 뒤(성공·실패 모두) 닫히고, 실패면 서버 400 문구가 경고로 남는다
@@ -169,7 +170,7 @@ describe("설정 탭", () => {
     fireEvent.change(slippage, { target: { value: "7" } });
     fireEvent.change(overrides, { target: { value: "2026-11-19 10:00~16:30" } });
     expect(changes()).toEqual([
-      "kr.slippageBp: 5 → 7한국 규칙 계좌 영향",
+      "kr.slippageBp: 5 → 7주의: 한국 규칙 계좌 영향",
       "kr.calendar.openTimeOverrides: (없음) → 2026-11-19 10:00~16:30",
     ]);
 
@@ -213,9 +214,9 @@ describe("설정 탭", () => {
     const history = (await screen.findByText("v3")).closest("table") as HTMLElement;
     const rows = within(history).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent));
     expect(rows).toEqual([
-      ["v3", "2026-10-25 10:02", "trackRecord.windowYears = 5", "규칙 계좌 영향"],
-      ["v2", "2026-10-24 21:00", "slippageBp", "—"],
-      ["v1", "2026-10-24 09:00", "처음 값(초기화)", "—"],
+      ["v3", "2026-10-25 10:02", "trackRecord.windowYears = 5", "주의: 규칙 계좌 영향"],
+      ["v2", "2026-10-24 21:00", "slippageBp", "—영향 없음"],
+      ["v1", "2026-10-24 09:00", "처음 값(초기화)", "—영향 없음"],
     ]);
   });
 
@@ -247,7 +248,7 @@ describe("설정 탭", () => {
 
     fireEvent.change(screen.getByLabelText("trackRecord.windowYears"), { target: { value: "6" } });
     fireEvent.click(screen.getByLabelText("parkCashInShy"));
-    expect(changes()).toEqual(["parkCashInShy: 예 → 아니오규칙 계좌 영향", "trackRecord.windowYears: 5 → 6규칙 계좌 영향"]);
+    expect(changes()).toEqual(["parkCashInShy: 예 → 아니오주의: 규칙 계좌 영향", "trackRecord.windowYears: 5 → 6주의: 규칙 계좌 영향"]);
 
     // 첫 누름은 확인 창만 엽니다 — 아직 서버를 부르지 않습니다.
     fireEvent.click(saveButton());
@@ -324,7 +325,7 @@ describe("설정 탭", () => {
 
     fireEvent.change(screen.getByLabelText("trackRecord.windowYears"), { target: { value: "8" } });
     expect(screen.queryByRole("button", { name: "저장 확인" })).toBeNull();
-    expect(changes()).toEqual(["trackRecord.windowYears: 5 → 8규칙 계좌 영향"]);
+    expect(changes()).toEqual(["trackRecord.windowYears: 5 → 8주의: 규칙 계좌 영향"]);
   });
 
   it("숫자가 아니면 그 키 아래 문구와 함께 저장이 막히고, 서버 400 문구는 경고로 그대로", async () => {

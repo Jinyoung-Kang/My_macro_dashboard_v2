@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  type Column,
+  DataTable,
   type InspectorContext,
   InspectorFrame,
   InspectorTrigger,
@@ -11,7 +13,7 @@ import {
   SectionIndex,
   type SectionIndexItem,
 } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel, Select, Table, Tag } from "@/components/ui";
+import { Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel, Select, Tag } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PanelRightIcon } from "@/components/ui/icons";
 import { SELECTED_BAR } from "@/components/ui/classes";
@@ -47,9 +49,6 @@ import {
 } from "@/lib/paperSettingsInspector";
 import type { PaperSettingKey, PaperSettingsHistoryResponse, PaperSettingsResponse, PaperSettingsSaveResult } from "@/lib/types";
 
-/** 배지 색 — lib/paper의 배지와 같은 팔레트(불투명 틴트). '바꿈'은 데이터 배지라 강조 파랑이 아니라 중립입니다(명세 원칙 A1 — 글이 뜻을 나름). */
-const RULES_BADGE = "border-warn/40 bg-warn-tint text-warn";
-const CHANGED_BADGE = "border-border bg-surface-2 text-text-2";
 const INPUT = `w-full ${inputClasses()}`;
 
 /** 목차 칸·닻 id — 묶음 닻(lib/paperSettingsInspector settingGroupAnchorId — 'paper-settings-{묶음}')과 겹치지 않는 이름. */
@@ -170,7 +169,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
             source={PAPER_SOURCES.settings}
           >
             <p className="text-xs leading-relaxed text-text-3">
-              형·범위는 저장할 때 서버가 검사합니다. <span className={`rounded-control border px-1.5 ${RULES_BADGE}`}>규칙 계좌 영향</span>이 붙은
+              형·범위는 저장할 때 서버가 검사합니다. <RulesTag>규칙 계좌 영향</RulesTag>이 붙은
               키는 규칙 계좌(동결된 대조군)의 조건을 바꿉니다(한국 키 kr.*는 한국 규칙 계좌) — 저장 전에 한 번 더 묻습니다. 결정 기록마다 그때의
               설정 버전이 남습니다.
               계좌 일시정지·재개는 보유·체결 탭에서 합니다.
@@ -196,11 +195,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                     <li key={change.key} className="flex flex-wrap items-center gap-1">
                       <code className="text-text">{change.key}</code>
                       <span>: {change.from} → {change.to}</span>
-                      {change.affectsRules && (
-                        <span className={`rounded-control border px-1.5 text-xs ${RULES_BADGE}`}>
-                          {change.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
-                        </span>
-                      )}
+                      {change.affectsRules && <RulesTag>{change.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}</RulesTag>}
                     </li>
                   ))}
                 </ul>
@@ -306,23 +301,15 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
               <Callout tone="warn">{history.data.message ?? "설정 이력을 읽을 수 없습니다."}</Callout>
             )}
             {historyRows && (
-              <Table<SettingsHistoryRow>
-                label="바꾼 기록"
+              <DataTable<SettingsHistoryRow>
+                caption="바꾼 기록"
                 rows={historyRows}
                 rowKey={(row) => row.key}
-                emptyMessage="아직 설정 이력이 없습니다 — 초기화하면 v1(처음 값)이 남습니다."
-                columns={[
-                  { key: "version", header: "버전", render: (row) => <span className="font-semibold text-text">{row.version}</span> },
-                  { key: "createdAt", header: "저장 시각", render: (row) => <span className="whitespace-nowrap">{row.createdAt}</span> },
-                  { key: "changes", header: "바뀐 값", render: (row) => <span className="text-xs text-text-2">{row.changes}</span> },
-                  {
-                    key: "rules",
-                    header: "규칙 계좌 영향",
-                    render: (row) => (row.rulesAffected
-                      ? <span className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${RULES_BADGE}`}>규칙 계좌 영향</span>
-                      : <span className="text-text-3">{EMPTY}</span>),
-                  },
-                ]}
+                columns={HISTORY_COLUMNS}
+                emptyText="아직 설정 이력이 없습니다 — 초기화하면 v1(처음 값)이 남습니다."
+                dense
+                count
+                scrollHint
               />
             )}
           </Panel>
@@ -331,6 +318,48 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
     </>
   );
 }
+
+/**
+ * 규칙 계좌 영향 표지 — 공용 주의 태그(아이콘 + 글, 낭독기 '주의: ' — 명세 §3-4), 줄을 바꾸지 않습니다. 마우스 설명(title)은 감싼 span에.
+ */
+function RulesTag({ title, children }: { title?: string; children: string }) {
+  return (
+    <span title={title} className="whitespace-nowrap">
+      <Tag tone="warn">{children}</Tag>
+    </span>
+  );
+}
+
+/** 중립 표지('미국 계좌'·'바꿈') — 공용 중립 태그, 줄을 바꾸지 않습니다. */
+function NeutralTag({ children }: { children: string }) {
+  return (
+    <span className="whitespace-nowrap">
+      <Tag>{children}</Tag>
+    </span>
+  );
+}
+
+/**
+ * 바꾼 기록 표(공용 DataTable — 조밀 행 28px, 위 개수 줄, 좁은 화면 최소 640px + 넘김 안내 — 옛 표와 같은 넘김). 규칙 계좌 영향은 주의 태그, 아니면 '—'
+ * (옛 표와 같은 표기) — 값을 모르는 칸이 아니라 영향이 없는 칸이라 공용 표의 빈 칸('—' + 낭독 '값 없음') 대신 낭독기에 '영향 없음'을 읽힙니다.
+ */
+const HISTORY_COLUMNS: readonly Column<SettingsHistoryRow>[] = [
+  { key: "version", header: "버전", cell: (row) => <span className="font-semibold text-text">{row.version}</span>, className: "whitespace-nowrap" },
+  { key: "createdAt", header: "저장 시각", cell: (row) => row.createdAt, className: "whitespace-nowrap" },
+  { key: "changes", header: "바뀐 값", cell: (row) => <span className="break-keep wrap-anywhere text-text-2">{row.changes}</span> },
+  {
+    key: "rules",
+    header: "규칙 계좌 영향",
+    cell: (row) => (row.rulesAffected ? (
+      <RulesTag>규칙 계좌 영향</RulesTag>
+    ) : (
+      <span className="text-text-3">
+        <span aria-hidden="true">{EMPTY}</span>
+        <span className="sr-only">영향 없음</span>
+      </span>
+    )),
+  },
+];
 
 /**
  * 한국 화면 설정 탭 머리의 안내 — 두 시장이 한 행을 함께 씀(사용자 결정 2026-10-29). 보이는 글이 미국 키의 '미국 계좌' 표시와 맞습니다.
@@ -434,20 +463,17 @@ function SettingField({
     .join(" · ");
   const badges = (
     <>
-      {marketLabel && (
-        <span className="whitespace-nowrap rounded-control border border-border px-2 py-px text-xs text-text-2">{marketLabel}</span>
-      )}
+      {marketLabel && <NeutralTag>{marketLabel}</NeutralTag>}
       {row.affectsRules && (
-        <span
+        <RulesTag
           title={row.market === "KR"
             ? "한국 규칙 계좌(kr_rules, 동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."
             : "규칙 계좌(동결된 대조군)의 조건을 바꾸는 키입니다 — 저장 전에 한 번 더 묻습니다."}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${RULES_BADGE}`}
         >
           {row.market === "KR" ? "한국 규칙 계좌 영향" : "규칙 계좌 영향"}
-        </span>
+        </RulesTag>
       )}
-      {changed && <span className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${CHANGED_BADGE}`}>바꿈</span>}
+      {changed && <NeutralTag>바꿈</NeutralTag>}
     </>
   );
 
