@@ -311,7 +311,7 @@ describe("스타일 — 종목별 위험 기여는 등락이 아니다(QA-704)",
 
 describe("스타일 — 위험 지표 VaR·ES의 음수 부호(QA-709)", () => {
   // 수정 전 실패: VaR·ES 값이 formatWithUnit 글 그대로라 '-1.13%'·'-1.92%'·'-1.63%'·'-2.27%'(ASCII 하이픈) — 화면의 다른 음수는 −(U+2212).
-  it.fails("VaR(95·99%)·ES(95·99%)의 음수 값은 −(U+2212)로 적는다", async () => {
+  it("VaR(95·99%)·ES(95·99%)의 음수 값은 −(U+2212)로 적는다", async () => {
     api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/guru/risk") ? Promise.resolve(riskBody()) : new Promise(() => {})));
     render(<GuruPage />);
     await screen.findByText("SYNTHETIC GOLD CO");

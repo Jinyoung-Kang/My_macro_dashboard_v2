@@ -403,36 +403,37 @@ function RiskCard() {
         </Banner>
       )}
 
+      {/* 값은 손실·변동 폭이라 등락색 없이 본문 잉크, 음수(VaR·ES는 손실이라 음수)는 −(U+2212)(QA-709). */}
       {metrics && (
         <>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric
               label="연율 변동성"
-              value={formatWithUnit(metrics.volatility, 2, "%")}
+              value={withMinusSign(formatWithUnit(metrics.volatility, 2, "%"))}
               caption={`표본 ${metrics.samples}일 · ${metrics.from} ~ ${metrics.to}`}
             />
             <Metric
               label={`베타 (vs ${data!.benchmark})`}
-              value={formatNumber(metrics.beta, 2)}
+              value={withMinusSign(formatNumber(metrics.beta, 2))}
               caption="1.0이면 벤치마크와 같은 폭으로 움직였다는 뜻"
             />
             <Metric
               label="추적오차 (연율)"
-              value={formatWithUnit(metrics.trackingError, 2, "%")}
+              value={withMinusSign(formatWithUnit(metrics.trackingError, 2, "%"))}
               caption="벤치마크와 얼마나 달랐나 — 좋고 나쁨은 말하지 않습니다"
             />
             <Metric
               label="최대낙폭"
-              value={formatWithUnit(metrics.maxDrawdown, 2, "%")}
+              value={withMinusSign(formatWithUnit(metrics.maxDrawdown, 2, "%"))}
               caption="구간 내 고점 대비 최대 하락"
             />
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="VaR (95%)" value={formatWithUnit(metrics.var95, 2, "%")} caption="일일 최대 예상 손실" />
-            <Metric label="VaR (99%)" value={formatWithUnit(metrics.var99, 2, "%")} caption="극단 상황" />
-            <Metric label="ES (95%)" value={formatWithUnit(metrics.es95, 2, "%")} caption="VaR 초과 시 평균 손실" />
-            <Metric label="ES (99%)" value={formatWithUnit(metrics.es99, 2, "%")} caption="VaR 초과 시 평균 손실" />
+            <Metric label="VaR (95%)" value={withMinusSign(formatWithUnit(metrics.var95, 2, "%"))} caption="일일 최대 예상 손실" />
+            <Metric label="VaR (99%)" value={withMinusSign(formatWithUnit(metrics.var99, 2, "%"))} caption="극단 상황" />
+            <Metric label="ES (95%)" value={withMinusSign(formatWithUnit(metrics.es95, 2, "%"))} caption="VaR 초과 시 평균 손실" />
+            <Metric label="ES (99%)" value={withMinusSign(formatWithUnit(metrics.es99, 2, "%"))} caption="VaR 초과 시 평균 손실" />
           </div>
         </>
       )}
