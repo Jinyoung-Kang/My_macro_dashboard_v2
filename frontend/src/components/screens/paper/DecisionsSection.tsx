@@ -1,7 +1,9 @@
 "use client";
 
-import { Fragment, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
+import { type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
 import { Button, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
+import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -9,7 +11,7 @@ import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatKst, formatWithUnit } from "@/lib/format";
+import { EMPTY } from "@/lib/format";
 import {
   type Badge,
   bookOptions,
@@ -39,7 +41,6 @@ import {
   PAPER_SOURCES,
   type PoolRow,
   prettyJson,
-  pricesFinalText,
   type RankingRow,
   resolveDecisionBook,
   ruleDecisionView,
@@ -66,6 +67,7 @@ import {
   krStartRecords,
 } from "@/lib/paperKr";
 import type { PaperMarketCode } from "@/lib/paperMarket";
+import { type DecisionTimelineRow, decisionTimelineEntries } from "@/lib/paperTimeline";
 import type {
   PaperBookSummary,
   PaperDecisionDetailResponse,
@@ -82,15 +84,16 @@ import { Claude2CheckpointLine, Claude2WindowList } from "./Claude2StartSection"
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
+import { PaperBadge } from "./PaperBadge";
 import { ReviewsSection } from "./ReviewsSection";
 
 /** 결정 목록에 보일 최근 건수. */
 const RECENT_LIMIT = 50;
 
 /**
- * 결정 로그 탭 — 책(규칙·Claude)을 골라 거래일마다의 결정 기록을 봅니다. 행을 펼치면 그 결정의 상세(규칙 책: 선정·신호 풀·13F 신호
- * 이벤트·매수 후보와 점수 기여·매도 신호·주문·고르지 못한 후보·게이트 참고, Claude 책: 판단·제안 주문·검증·사용량·입력 패킷)를 그때
- * 읽습니다 — 목록 50건의 상세를 미리 다 읽으면 신호 이벤트·패킷이 수백 줄씩 붙어 탭이 무거워집니다.
+ * 결정 로그 탭 — 책(규칙·Claude)을 골라 거래일마다의 결정 기록을 시각순 목록(거래일 묶음)으로 봅니다. 줄을 고르면 그 결정의 상세(규칙 책: 선정·신호 풀·
+ * 13F 신호 이벤트·매수 후보와 점수 기여·매도 신호·주문·고르지 못한 후보·게이트 참고, Claude 책: 판단·제안 주문·검증·사용량·입력 패킷)를 검사 칸(좁은
+ * 화면은 대화상자)에 그때 읽습니다 — 목록 50건의 상세를 미리 다 읽으면 신호 이벤트·패킷이 수백 줄씩 붙어 탭이 무거워집니다.
  *
  * Claude 책의 '지금 결정 실행'은 Claude를 한 번 부르므로(비용·하루 호출 상한) 확인 단계를 한 번 거칩니다.
  *
@@ -135,7 +138,8 @@ export function DecisionsSection({
   const elapsed = useElapsedSeconds(run.busy);
   // 버튼 결과는 그 책을 보고 있을 때만 — 다른 책으로 바꾼 뒤 옛 책의 결과가 새 책 이름 아래 남지 않게(보유 탭과 같음).
   const [ranFor, setRanFor] = useState<string | null>(null);
-  const [open, setOpen] = useState<number[]>([]);
+  // 넓은 배치(옆 검사 칸)에서 고른 결정(줄 키 = 결정 번호). 좁은 배치는 줄을 누르면 대화상자로 열고 고름을 쥐지 않습니다(목록-검사). 계좌를 바꾸면 비웁니다.
+  const [openKey, setOpenKey] = useState<string | null>(null);
   // Claude 책 수동 결정의 확인 단계 — 어느 책에서 열었는지(책을 바꾸면 닫힌 것으로 봄).
   const [confirmingFor, setConfirmingFor] = useState<string | null>(null);
   // 한국 — 출발·게이트 기록(작업 기록)과 수동 호출 문턱(호출 사용량), 확인 창의 결정 창(설정). 미국 Claude 계좌2를 고르면 — 결정 창 세 줄(상태 응답
@@ -210,8 +214,6 @@ export function DecisionsSection({
       onChanged();
     }
   };
-  const toggle = (id: number) =>
-    setOpen((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
 
   return (
     <>
@@ -227,7 +229,7 @@ export function DecisionsSection({
             value={code}
             onChange={(value) => {
               setPicked(value);
-              setOpen([]);
+              setOpenKey(null);
             }}
             options={bookOptions(decisionBooks(books))}
           />
@@ -285,15 +287,21 @@ export function DecisionsSection({
       <Panel
         title={`결정 기록 (최근 ${RECENT_LIMIT}건)`}
         subtitle={korea
-          ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 자료 게이트·기한 지남·선정·주문을 봅니다."
-          : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 선정·신호·주문·게이트(참고)를 봅니다."}
+          ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 자료 게이트·기한 지남·선정·주문을 봅니다."
+          : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 선정·신호·주문·게이트(참고)를 봅니다."}
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
       >
         {list.loading && !list.data && <Loading label="결정 기록을 읽는 중…" />}
         {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
         {list.data && !list.data.available && <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>}
         {list.data?.available && (
-          <DecisionTable rows={list.data.decisions ?? []} open={open} onToggle={toggle} showExposure={claude} market={market} />
+          <DecisionTimeline
+            rows={list.data.decisions ?? []}
+            showExposure={claude}
+            market={market}
+            selectedKey={openKey}
+            onSelectedKeyChange={setOpenKey}
+          />
         )}
       </Panel>
 
@@ -363,131 +371,82 @@ function KrStartRecordsCard({
   );
 }
 
-/** 결정 목록의 칸 하나. 행 아래에 상세를 펼쳐야 해서 표를 이 파일이 그립니다(기관 선정 탭의 후보 표와 같은 방식). */
-interface Column {
-  key: string;
-  header: string;
-  align?: "left" | "right";
-  render: (row: PaperDecisionSummary) => ReactNode;
-}
-
-function DecisionTable({
+/**
+ * 결정 기록 — 공용 시각순 목록(Timeline, 작업대 P6 — 명세 §7-1·W13). 거래일 묶음 머리 아래 결정마다 한 줄(시각 열 = 결정 시각, 종류 태그 — 장중 확인·장중 판단은
+ * 시계 아이콘, 요약 = 상태 배지·주문 수·목표 노출(Claude 계좌)·가격·서버 요약·오류 — 값은 lib/paperTimeline). 줄을 고르면 그 결정의 상세를 표 밖의 검사 칸에
+ * 그립니다 — 틀이 48rem 이상인 넓은 화면은 목록 오른쪽 넓은 칸, 그 밖(좁은 화면·좁은 틀)은 위쪽 대화상자(첫 포커스 제목). 예전에는 820px 표의 colSpan 칸
+ * 안에 그려 좁은 화면에서 상세가 화면 밖으로 넓어졌습니다(QA-747). 상세는 고를 때(대화상자는 열 때) 그 결정 한 건만 한 번 읽습니다 — 화면을 열 때 저절로
+ * 고르지 않습니다(autoSelectFirst 끔).
+ */
+function DecisionTimeline({
   rows,
-  open,
-  onToggle,
   showExposure,
   market,
+  selectedKey,
+  onSelectedKeyChange,
 }: {
   rows: PaperDecisionSummary[];
-  open: readonly number[];
-  onToggle: (id: number) => void;
-  /** Claude 책이면 목표 노출 칸을 더합니다(규칙 책은 늘 비어 있는 칸이라 그리지 않음). */
+  /** Claude 책이면 요약에 목표 노출을 더합니다(규칙 책은 늘 비는 값이라 두지 않음). */
   showExposure: boolean;
   market: PaperMarketCode;
+  selectedKey: string | null;
+  onSelectedKeyChange: (key: string | null) => void;
 }) {
   const korea = market === "KR";
-  const kindLabel = korea ? krDecisionKindLabel : decisionKindLabel;
-  if (rows.length === 0) {
-    return (
-      <p className="text-sm text-text-3">
-        {korea
-          ? "아직 결정 기록이 없습니다 — 한국 네 계좌가 출발하면(개요의 '출발 지금 실행' 또는 출발일 밤 정기 출발) 출발 결정부터 KR 거래일마다 결정 창에서 남깁니다."
-          : "아직 결정 기록이 없습니다 — 계좌를 시작한 뒤 거래일마다(KST 07:30 이후) 결정 작업이 남깁니다."}
-      </p>
-    );
-  }
-
-  const columns: Column[] = [
-    {
-      key: "date",
-      header: "거래일",
-      render: (row) => {
-        const expanded = open.includes(row.id);
-        return (
-          <div className="flex flex-col items-start gap-1">
-            <span className="whitespace-nowrap font-semibold text-text">{row.asOfTradingDate}</span>
-            <Button variant="ghost" expanded={expanded} onClick={() => onToggle(row.id)}>
-              {expanded ? "상세 접기" : "상세 펼치기"}
-            </Button>
-          </div>
-        );
-      },
-    },
-    { key: "kind", header: "종류", render: (row) => <span className="whitespace-nowrap">{kindLabel(row.kind)}</span> },
-    {
-      key: "status",
-      header: "상태",
-      render: (row) => (
-        <div className="flex min-w-[7rem] flex-col items-start gap-1">
-          <Badges badges={[decisionStatusBadge(row.status, row.kind)]} />
-          {row.error && <span className="text-xs leading-snug text-warn">{storedText(row.error)}</span>}
-        </div>
-      ),
-    },
-    { key: "orders", header: "주문", align: "right", render: (row) => <span className="whitespace-nowrap">{decisionOrdersText(row)}</span> },
-    ...(showExposure
-      ? [{
-        key: "exposure",
-        header: "목표 노출",
-        align: "right" as const,
-        render: (row: PaperDecisionSummary) => <span className="whitespace-nowrap">{formatWithUnit(row.targetExposurePct, 1, "%")}</span>,
-      }]
-      : []),
-    { key: "summary", header: "요약", render: (row) => <span className="text-xs text-text-2">{row.summary || EMPTY}</span> },
-    {
-      key: "prices",
-      header: "가격",
-      render: (row) => {
-        const prices: { label: string; className: string; title?: string } = korea
-          ? krPricesFinalText(row.pricesFinal) : pricesFinalText(row.pricesFinal);
-        return <span className={`whitespace-nowrap text-xs ${prices.className}`} title={prices.title}>{prices.label}</span>;
-      },
-    },
-    { key: "decidedAt", header: "결정 시각", render: (row) => <span className="whitespace-nowrap">{formatKst(row.decidedAtKst)}</span> },
-  ];
-  const align = (column: Column) => (column.align === "right" ? "text-right" : "text-left");
-
+  const lines = decisionTimelineEntries(rows, { market, showExposure });
+  const byKey = new Map(lines.map((line) => [line.key, line]));
+  const entries: TimelineEntry[] = lines.map((line) => ({
+    key: line.key,
+    at: line.at,
+    dateTime: line.dateTime,
+    kind: { label: line.kind, icon: line.intraday ? <ClockIcon size={12} /> : undefined },
+    summary: <DecisionLineSummary line={line} />,
+    title: line.title,
+  }));
   return (
-    <>
-      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="결정 기록 표 (좌우 스크롤)">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-xs uppercase tracking-wide text-text-3">
-              {columns.map((column) => (
-                <th key={column.key} className={`px-3 py-2 font-medium ${align(column)}`}>{column.header}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <Fragment key={row.id}>
-                <tr
-                  className="border-b border-border/50 align-top hover:bg-surface-2/60"
-                  aria-label={`${row.asOfTradingDate} ${kindLabel(row.kind)}`}
-                >
-                  {columns.map((column) => (
-                    <td key={column.key} className={`px-3 py-2 tabular-nums ${align(column)}`}>{column.render(row)}</td>
-                  ))}
-                </tr>
-                {open.includes(row.id) && (
-                  <tr className="border-b border-border/50 bg-bg">
-                    <td colSpan={columns.length} className="px-3 py-3">
-                      <DecisionDetail id={row.id} market={market} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <Timeline
+      label="결정 기록"
+      entries={entries}
+      renderDetail={(entry) => {
+        const line = byKey.get(entry.key);
+        return line ? <DecisionDetail id={line.id} market={market} /> : null;
+      }}
+      groupBy={(entry) => byKey.get(entry.key)?.group ?? null}
+      groupHeadingLevel={3}
+      inspectorWidth="wide"
+      dialogFocus="title"
+      selectedKey={selectedKey}
+      onSelectedKeyChange={onSelectedKeyChange}
+      inspectorHint="결정을 고르면 이 칸에 그 결정의 상세를 읽어 보입니다(j/k·↑↓로 옮김)."
+      emptyText={korea
+        ? "아직 결정 기록이 없습니다 — 한국 네 계좌가 출발하면(개요의 '출발 지금 실행' 또는 출발일 밤 정기 출발) 출발 결정부터 KR 거래일마다 결정 창에서 남깁니다."
+        : "아직 결정 기록이 없습니다 — 계좌를 시작한 뒤 거래일마다(KST 07:30 이후) 결정 작업이 남깁니다."}
+    />
+  );
+}
+
+/** 결정 줄의 요약 — 1행 상태 배지·주문 수·목표 노출·가격(13px 보조 글), 2행 서버 요약(없으면 '—'), 저장된 오류는 주의색 한 줄. 줄 단추 안이라 링크·단추가 없습니다. */
+function DecisionLineSummary({ line }: { line: DecisionTimelineRow }) {
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums text-text-2">
+        <PaperBadge badge={line.status} />
+        <span className="whitespace-nowrap">주문 {line.orders}</span>
+        {line.exposure !== null && <span className="whitespace-nowrap">목표 노출 {line.exposure}</span>}
+        <span className="whitespace-nowrap">
+          가격 <span className={line.price.className} title={line.price.title}>{line.price.label}</span>
+        </span>
+      </span>
+      {line.error && <span className="text-xs leading-snug text-warn">{line.error}</span>}
+      <span className={line.summary ? "text-text" : "text-text-3"}>{line.summary ?? EMPTY}</span>
+    </span>
   );
 }
 
 /**
- * 결정 한 건의 상세 — 펼칠 때 GET /api/paper/decisions/{id}를 한 번 읽습니다(결정 기록은 바뀌지 않아 자동 갱신하지 않음).
+ * 결정 한 건의 상세 — 검사 칸(넓은 틀)이나 대화상자(좁은 화면·좁은 틀)에 그려질 때 GET /api/paper/decisions/{id}를 한 번 읽습니다(결정 기록은 바뀌지 않아
+ * 자동 갱신하지 않음). 맨 위는 속성 목록(상태·주문과 결정 시각·선정 기준일·설정 버전·가격·있을 때만 붙는 모델·프레임·목표 노출·소요·재시도·패킷 해시·
+ * 참조 메모·계좌2 입력 동결 — lib/paper decisionMeta; 거래일·종류는 검사 칸 제목), 저장된 오류는 주의 상자입니다.
  * Claude 책 기록이면 판단·제안 주문·검증·사용량을, 규칙 책 기록이면 선정·신호 표를 그립니다. 둘 다 아닌 모양이면 표 대신 원본 JSON만
  * 보입니다 — 모르는 모양을 빈 표로 그리면 "신호 없음"으로 읽힙니다.
  */
@@ -522,6 +481,16 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
   const meta = decisionMeta(decision).map((cell) => (korea && cell.key === "pricesFinal"
     ? { ...cell, value: krPricesFinalText(decision.pricesFinal).label, title: krPricesFinalText(decision.pricesFinal).title }
     : cell));
+  // 마우스 설명(title — 프레임 판 제목·입력 동결 설명)이 있는 칸은 값 글을 그 설명을 단 span으로 둡니다.
+  const properties: PropertyItem[] = [
+    { key: "status", label: "상태", value: <PaperBadge badge={decisionStatusBadge(decision.status, decision.kind)} /> },
+    { key: "orders", label: "주문", value: decisionOrdersText(decision) },
+    ...meta.map((cell): PropertyItem => ({
+      key: cell.key,
+      label: cell.label,
+      value: cell.title && cell.value !== EMPTY ? <span title={cell.title}>{cell.value}</span> : cell.value,
+    })),
+  ];
   const orders = data.orders ?? [];
   const response = prettyJson(decision.response);
   const packet = prettyJson(decision.packet);
@@ -529,14 +498,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
 
   return (
     <section aria-label={`${decision.asOfTradingDate} ${kindLabel(decision.kind)} 상세`} className="flex flex-col gap-4">
-      <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-        {meta.map((cell) => (
-          <div key={cell.key}>
-            <dt className="text-text-3">{cell.label}</dt>
-            <dd className="tabular-nums font-semibold text-text" title={cell.title}>{cell.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <PropertyList items={properties} dense />
       {decision.error && <Callout tone="warn">오류 — {storedText(decision.error)}</Callout>}
 
       {claude.recognized && (
