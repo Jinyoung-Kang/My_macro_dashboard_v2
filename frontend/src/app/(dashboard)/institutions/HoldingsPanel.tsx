@@ -24,8 +24,8 @@ import {
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { latestHoldingCount } from "@/lib/detailEntity";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent } from "@/lib/format";
-import { holdingActionView, type HoldingActionKind } from "@/lib/holdings";
-import { holdingInspectorItems, holdingRowKeys, holdingRowLabels, type KrwConversion } from "@/lib/institutionsScreen";
+import { holdingActionView, type HoldingActionKind, type KrwConversion } from "@/lib/holdings";
+import { holdingInspectorItems, holdingRowKeys, holdingRowLabels } from "@/lib/institutionsScreen";
 import { infoSearchEntry } from "@/lib/search";
 import { SOURCES } from "@/lib/sources";
 import type { Holding, PortfolioResponse } from "@/lib/types";

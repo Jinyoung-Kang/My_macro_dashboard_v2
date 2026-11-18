@@ -29,6 +29,7 @@ import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { CONSENSUS_BAR_LIMIT, consensusBars, securityNote } from "@/lib/consensus";
+import type { KrwConversion } from "@/lib/holdings";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent } from "@/lib/format";
 import {
   consensusKpis,
@@ -253,15 +254,13 @@ const PENDING_CONSENSUS: readonly FilterListPendingRow[] = [
   { tag: 332, tagLines: 2, lines: 3 },
 ];
 
-/** 원/달러 병기 — 공용 환율 훅(useUsdKrw)이 돌려주는 것. */
-type UsdKrw = ReturnType<typeof useUsdKrw>;
 
 /**
  * 교집합 상세 표 — 공용 표 + 검사 대화상자(늘 대화상자 — 일곱 칸 표라 옆 칸을 두면 표가 눌림, 섹터 표와 같은 판단). 종목 이름이 검사를 여는 줄 단추이고,
  * 보유 기관 목록(배지)은 검사 칸으로 옮겼습니다 — 표에 두면 행이 배지 줄 수만큼 높아졌습니다(사용자 결정 거리 4 — 권장안 가). 검사는 받은 값만
  * 보이고 새로 읽지 않습니다. 동시 매수·매도는 기관 수라 본문 잉크입니다(QA-703).
  */
-function ConsensusTable({ rows, krw }: { rows: ConsensusRow[]; krw: UsdKrw }) {
+function ConsensusTable({ rows, krw }: { rows: ConsensusRow[]; krw: KrwConversion }) {
   const titles = securityTitles(rows);
   return (
     <InspectorFrame
@@ -296,7 +295,7 @@ function ConsensusTable({ rows, krw }: { rows: ConsensusRow[]; krw: UsdKrw }) {
 }
 
 /** 공통 신규 매수 표 — 교집합 상세와 같은 틀(검사 대화상자), 기관 목록은 검사 칸에. 새로 담은 기관 수는 개수라 본문 잉크입니다(QA-703). */
-function NewBuysTable({ rows, krw }: { rows: NewBuyRow[]; krw: UsdKrw }) {
+function NewBuysTable({ rows, krw }: { rows: NewBuyRow[]; krw: KrwConversion }) {
   const titles = securityTitles(rows);
   return (
     <InspectorFrame
@@ -329,7 +328,7 @@ function NewBuysTable({ rows, krw }: { rows: NewBuyRow[]; krw: UsdKrw }) {
 }
 
 /** 합산 평가액 칸 — 달러(조·억 단위)와 그 아래 원화(환율을 알 때만). 값을 모르면 null(표가 '—'). */
-function moneyCell(value: number | null, krw: UsdKrw) {
+function moneyCell(value: number | null, krw: KrwConversion) {
   const usd = formatCurrency(value);
   if (usd === EMPTY) return null;
   const won = krw.toKrw(value);

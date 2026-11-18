@@ -5,7 +5,7 @@
 import { distinctLabels } from "./chartAxis";
 import { type DetailProperty, holdingDetailItems, holdingItemLabels } from "./detailEntity";
 import { EMPTY, formatKoreanScale, formatNumber } from "./format";
-import { filerName } from "./holdings";
+import { filerLabel, filerName, type KrwConversion } from "./holdings";
 import type { KpiItem } from "./kpi";
 import { presentText } from "./patterns";
 import type { Holding, PortfolioResponse } from "./types/institution";
@@ -18,7 +18,7 @@ export type InstitutionItem = { key: string; label: string; desc: string };
 
 /** 기관 목록 줄 — 받은 차례 그대로. 목록을 받기 전이면 빈 목록. */
 export function institutionItems(list: readonly InstitutionEntry[] | null | undefined): InstitutionItem[] {
-  return (list ?? []).map((entry) => ({ key: entry.cik, label: filerName(entry.name) ?? `CIK ${entry.cik}`, desc: entry.desc }));
+  return (list ?? []).map((entry) => ({ key: entry.cik, label: filerLabel(entry), desc: entry.desc }));
 }
 
 /**
@@ -47,9 +47,6 @@ export function institutionSubtitle(
 
 /** 요약 KPI 띠 첫 타일의 출처 줄 — 기관 상세 보유 종목 패널과 같은 글. */
 export const PORTFOLIO_SOURCE = "SEC EDGAR 13F";
-
-/** 원화 환산(공용 환율 훅 useUsdKrw의 두 칸) — 환율을 모르면 toKrw가 null, note는 그 사실을 적은 글. */
-export type KrwConversion = { toKrw: (usd: number | null | undefined) => string | null; note: string };
 
 /**
  * 고른 기관의 포트폴리오 요약 KPI 띠 — 최신 공시 기준일(보조 '제출일 …') · 포트폴리오 총액(값 '…억' + 단위 '달러', 보조 '약 …원 · 원/달러 … 기준 · 시각' — 환율을 모르면 그

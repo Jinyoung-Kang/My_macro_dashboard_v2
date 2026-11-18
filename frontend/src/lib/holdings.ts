@@ -15,6 +15,14 @@ export function filerName(name: string | null | undefined): string | null {
   return withoutLeadingIcon(name ?? "") || null;
 }
 
+/** 기관 표시 이름 — 국기를 뗀 이름, 비면 'CIK …'(이름을 지어내지 않음). 13F 기관 목록·교집합 거르기 목록·스타일 화면 표·고르기 상자가 같은 규칙을 씁니다. */
+export function filerLabel(entry: { cik: string; name: string | null | undefined }): string {
+  return filerName(entry.name) ?? `CIK ${entry.cik}`;
+}
+
+/** 원화 환산 — 공용 환율 훅(useUsdKrw)의 환산 함수와 환율 문구. 환율을 모르면 toKrw가 null, note는 그 사실을 적은 글(13F 세 화면이 같은 꼴로 받음). */
+export type KrwConversion = { toKrw: (usd: number | null | undefined) => string | null; note: string };
+
 /** new 신규 · closed 전량 매도 · added 확대 · reduced 축소 · unchanged 유지 · none 비교할 수 없음(직전 분기 없음 등). */
 export type HoldingActionKind = "new" | "closed" | "added" | "reduced" | "unchanged" | "none";
 

@@ -4,18 +4,16 @@
  * 값을 모르면 null(화면 "—") — 0으로 채우지 않습니다. 음수는 −(U+2212)입니다(VaR·ES·위험 기여 — QA-704·709).
  */
 import type { DetailProperty } from "./detailEntity";
-import { EMPTY, formatNumber, formatUsd, formatWithUnit, withMinusSign } from "./format";
+import { formatNumber, formatUsd, formatWithUnit, withMinusSign } from "./format";
 import { heatmapStepRange } from "./heatmap";
-import { filerName } from "./holdings";
+import { filerLabel, filerName, type KrwConversion } from "./holdings";
 import type { KpiItem } from "./kpi";
+import { presentText } from "./patterns";
 import { topPairs } from "./transforms";
 import type { GuruProfile, GuruRiskResponse } from "./types";
 
 /** 유사도 기준 — 겹침 비중(%, 대각선 100)·코사인(0~1, 대각선 1). */
 export type SimilarityMode = "overlap" | "cosine";
-
-/** 원화 병기 — 공용 환율 훅(useUsdKrw)의 환산 함수와 환율 문구(lib/consensusScreen과 같은 꼴). */
-export type KrwNote = { toKrw: (usd: number | null | undefined) => string | null; note: string };
 
 /**
  * 표 머리·행렬·짝 표에 쓰는 짧은 이름 — 국기를 뗀 이름(lib/holdings filerName)에서 끝의 괄호 설명(영문 이름)을 뗍니다.
@@ -109,21 +107,15 @@ export function similarityStepLabel(mode: SimilarityMode, step: 1 | 2 | 3 | 4 | 
   return mode === "overlap" ? `${Math.round(low * 100)}~${Math.round(high * 100)}%` : `${formatNumber(low, 1)}~${formatNumber(high, 1)}`;
 }
 
-/** 기관 표시 이름 — 국기를 뗀 이름, 비면 'CIK …'. */
+/** 기관 표시 이름 — 국기를 뗀 이름, 비면 'CIK …'(lib/holdings filerLabel과 같은 규칙). */
 export function profileName(row: Pick<GuruProfile, "cik" | "name">): string {
-  return filerName(row.name) ?? `CIK ${row.cik}`;
+  return filerLabel(row);
 }
 
 /** 성격 검사 칸 제목 — 그 CIK의 기관 이름. 자료에 없는 CIK면 null(검사 칸 틀이 '고른 줄이 지금 자료에 없습니다'). */
 export function profileTitle(rows: readonly Pick<GuruProfile, "cik" | "name">[] | null | undefined, cik: string): string | null {
   const row = (rows ?? []).find((entry) => entry.cik === cik);
   return row ? profileName(row) : null;
-}
-
-/** 글 값 — 비었거나 "—"면 null. */
-function present(text: string | null | undefined): string | null {
-  const trimmed = (text ?? "").trim();
-  return trimmed && trimmed !== EMPTY ? trimmed : null;
 }
 
 /** 유한한 수인가. */
@@ -142,13 +134,13 @@ export const TURNOVER_EMPTY_SHORT = "직전 분기 없음";
  * HHI(허핀달 지수 — 비중 제곱의 합, 소수 넷째 자리)·상위 10종목 비중·분기 회전율(모르면 '—'과 까닭)·수집 분기 수. 응답에 오는데 표에는 없는 HHI·
  * 수집 분기 수를 여기서 보입니다(새 요청 없음).
  */
-export function profileItems(row: GuruProfile, krw: KrwNote): DetailProperty[] {
-  const desc = present(row.desc);
+export function profileItems(row: GuruProfile, krw: KrwConversion): DetailProperty[] {
+  const desc = presentText(row.desc);
   return [
     ...(desc ? [{ label: "기관 소개", value: desc, block: true }] : []),
-    { label: "CIK", value: present(row.cik), mono: true },
-    { label: "기준 분기", value: present(row.reportDate) },
-    { label: "포트폴리오 총액", value: present(formatUsd(row.totalValue)) },
+    { label: "CIK", value: presentText(row.cik), mono: true },
+    { label: "기준 분기", value: presentText(row.reportDate) },
+    { label: "포트폴리오 총액", value: presentText(formatUsd(row.totalValue)) },
     { label: "원화 환산", value: krw.toKrw(row.totalValue), note: krw.note },
     { label: "종목 수", value: finite(row.holdingCount) ? `${formatNumber(row.holdingCount, 0)}종목` : null },
     { label: "유효 종목 수", value: finite(row.effectiveHoldings) ? formatNumber(row.effectiveHoldings, 1) : null, note: "1 ÷ HHI" },

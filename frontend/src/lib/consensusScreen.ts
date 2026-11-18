@@ -7,27 +7,20 @@
 import { securityNote } from "./consensus";
 import type { DetailProperty } from "./detailEntity";
 import { EMPTY, formatNumber, formatUsd, formatWeightPercent } from "./format";
-import { filerName } from "./holdings";
+import { filerLabel, filerName, type KrwConversion } from "./holdings";
 import type { KpiItem } from "./kpi";
+import { presentText } from "./patterns";
 import type { ConsensusResponse, ConsensusRow, NewBuysResponse } from "./types";
 
 /** 거르기 목록 줄 하나 — components/patterns `FilterListItem`과 같은 꼴(lib는 components를 가져오지 않음 — ADR 0004). */
 export type FilterChoice = { key: string; label: string };
 
-/** 원화 병기 — 공용 환율 훅(useUsdKrw)의 환산 함수와 환율 문구를 그대로 넘깁니다(환율을 모르면 환산은 null). */
-export type KrwNote = { toKrw: (usd: number | null | undefined) => string | null; note: string };
-
 /** 신규 매수 줄 하나(응답 형). */
 export type NewBuyRow = NewBuysResponse["rows"][number];
 
-/** 기관 표시 이름 — 국기를 뗀 이름, 비면 'CIK …'(교집합 기관 단추·스타일 화면과 같은 규칙). */
-function institutionLabel(entry: { cik: string; name: string }): string {
-  return filerName(entry.name) ?? `CIK ${entry.cik}`;
-}
-
 /** '분석 대상' 거르기 목록의 줄 — 키는 CIK(요청 ciks와 같은 값), 이름은 국기를 뗀 이름. 받은 차례 그대로입니다. */
 export function institutionChoices(institutions: readonly { cik: string; name: string }[] | null | undefined): FilterChoice[] {
-  return (institutions ?? []).map((entry) => ({ key: entry.cik, label: institutionLabel(entry) }));
+  return (institutions ?? []).map((entry) => ({ key: entry.cik, label: filerLabel(entry) }));
 }
 
 /** '분석 대상' 패널 머리의 개수 — 'n곳 / m곳'(고른 수 / 전체). 기관 목록을 아직 모르거나 비었으면 null(개수를 적지 않음 — '0곳'으로 지어내지 않음). */
@@ -93,21 +86,15 @@ export function securityTitles(rows: readonly { key: string; name: string; cusip
   return out;
 }
 
-/** 글 값 — 비었거나 "—"면 null(화면이 "—"를 그림). */
-function present(text: string | null | undefined): string | null {
-  const trimmed = (text ?? "").trim();
-  return trimmed && trimmed !== EMPTY ? trimmed : null;
-}
-
 /** 기관 수 글 — 'n곳'. 숫자가 아니면 null. */
 function placeCount(value: number | null | undefined): string | null {
   return typeof value === "number" && Number.isFinite(value) ? `${formatNumber(value, 0)}곳` : null;
 }
 
 /** 합산 평가액과 원화 환산 두 줄 — 원화 줄의 보조 글은 환율 문구(어느 환율로 언제 — 원화를 적는 화면은 늘 함께 적음). */
-function valueItems(total: number | null | undefined, krw: KrwNote): DetailProperty[] {
+function valueItems(total: number | null | undefined, krw: KrwConversion): DetailProperty[] {
   return [
-    { label: "합산 평가액", value: present(formatUsd(total)) },
+    { label: "합산 평가액", value: presentText(formatUsd(total)) },
     { label: "원화 환산", value: krw.toKrw(total), note: krw.note },
   ];
 }
@@ -117,28 +104,28 @@ function valueItems(total: number | null | undefined, krw: KrwNote): DetailPrope
  * 합산 평가액·원화 환산. 동시 매수·매도의 보조 글은 백엔드가 세는 규칙(Sec13FService — 직전 분기 대비 동작이 신규 매수·비중 확대면 매수, 비중 축소·
  * 전량 매도면 매도)입니다. 보유 기관 목록은 화면이 배지로 따로 그립니다.
  */
-export function consensusRowItems(row: ConsensusRow, krw: KrwNote): DetailProperty[] {
+export function consensusRowItems(row: ConsensusRow, krw: KrwConversion): DetailProperty[] {
   return [
-    { label: "공시 이름", value: present(row.name) },
-    { label: "증권 구분", value: present(securityNote(row)) },
+    { label: "공시 이름", value: presentText(row.name) },
+    { label: "증권 구분", value: presentText(securityNote(row)) },
     { label: "보유 기관 수", value: placeCount(row.holderCount) },
     { label: "동시 매수", value: placeCount(row.buyCount), note: "직전 분기보다 새로 사거나(신규 매수) 늘린(비중 확대) 기관 수" },
     { label: "동시 매도", value: placeCount(row.sellCount), note: "직전 분기보다 줄이거나(비중 축소) 모두 판(전량 매도) 기관 수" },
-    { label: "평균 비중", value: present(formatWeightPercent(row.avgWeight)) },
-    { label: "최대 비중", value: present(formatWeightPercent(row.maxWeight)) },
+    { label: "평균 비중", value: presentText(formatWeightPercent(row.avgWeight)) },
+    { label: "최대 비중", value: presentText(formatWeightPercent(row.maxWeight)) },
     ...valueItems(row.totalValue, krw),
   ];
 }
 
 /** 공통 신규 매수 줄 하나의 속성(검사 칸) — 공시 이름·증권 구분·새로 담은 기관 수·평균 비중·합산 평가액·원화 환산·기준 분기. 기관 목록은 배지로 따로. */
-export function newBuyRowItems(row: NewBuyRow, krw: KrwNote): DetailProperty[] {
+export function newBuyRowItems(row: NewBuyRow, krw: KrwConversion): DetailProperty[] {
   return [
-    { label: "공시 이름", value: present(row.name) },
-    { label: "증권 구분", value: present(securityNote(row)) },
+    { label: "공시 이름", value: presentText(row.name) },
+    { label: "증권 구분", value: presentText(securityNote(row)) },
     { label: "새로 담은 기관 수", value: placeCount(row.buyerCount) },
-    { label: "평균 비중", value: present(formatWeightPercent(row.avgWeight)) },
+    { label: "평균 비중", value: presentText(formatWeightPercent(row.avgWeight)) },
     ...valueItems(row.totalValue, krw),
-    { label: "기준 분기", value: present(row.reportDate) },
+    { label: "기준 분기", value: presentText(row.reportDate) },
   ];
 }
 

@@ -24,7 +24,7 @@ import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit } from "@/lib/format";
-import { filerName } from "@/lib/holdings";
+import { filerLabel, type KrwConversion } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
   GuruProfile,
@@ -238,11 +238,9 @@ function ProfilesTablePending() {
   );
 }
 
-/** 원/달러 병기 — 공용 환율 훅(useUsdKrw)이 돌려주는 것. */
-type UsdKrw = ReturnType<typeof useUsdKrw>;
 
 /** 포트폴리오 총액 칸 — 달러(조·억 단위)와 그 아래 원화(환율을 알 때만). 값을 모르면 null(표가 '—'). */
-function moneyCell(value: number | null, krw: UsdKrw) {
+function moneyCell(value: number | null, krw: KrwConversion) {
   const usd = formatCurrency(value);
   if (usd === EMPTY) return null;
   const won = krw.toKrw(value);
@@ -260,7 +258,7 @@ function moneyCell(value: number | null, krw: UsdKrw) {
  * 기관 성격 검사 칸 — 속성 목록(lib/styleScreen profileItems — 표에서 뺀 기관 소개, 표에 없는 HHI·수집 분기 수 포함)과 그 기관의 상세 화면 링크
  * (요청 없음 — 목록 → 검사 칸 → 대상 화면, 명세 W5). 받은 값만 보입니다(새로 읽지 않음).
  */
-function ProfileDetail({ row, krw }: { row: GuruProfile; krw: UsdKrw }) {
+function ProfileDetail({ row, krw }: { row: GuruProfile; krw: KrwConversion }) {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <PropertyList items={profileItems(row, krw)} source={SOURCES.sec13f} />
@@ -428,7 +426,7 @@ function RiskCard() {
           onChange={setCik}
           options={(profiles.data?.rows ?? []).map((row) => ({
             value: row.cik,
-            label: filerName(row.name) ?? `CIK ${row.cik}`,
+            label: profileName(row),
           }))}
         />
         <Select
@@ -651,7 +649,7 @@ function HoldersCard() {
             count
             scrollHint="overflow"
             columns={[
-              { key: "institution", header: "기관", rowHeader: true, className: "break-keep", cell: (row) => filerName(row.institution) ?? `CIK ${row.cik}` },
+              { key: "institution", header: "기관", rowHeader: true, className: "break-keep", cell: (row) => filerLabel({ cik: row.cik, name: row.institution }) },
               {
                 key: "name",
                 header: "종목",
