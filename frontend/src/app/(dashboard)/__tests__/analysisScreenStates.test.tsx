@@ -807,6 +807,8 @@ describe("모르는 값 '—'의 까닭을 늘 보이는 글로 적는다(QA-719
     const table = row.closest("table") as HTMLElement;
     const turnoverIndex = [...table.querySelectorAll("thead th")].findIndex((cell) => cell.textContent === "분기 회전율");
     const turnover = row.children[turnoverIndex].textContent;
+    // 까닭은 '—' 아래 줄(세로로 쌓음) — 옆에 두면 줄바꿈 없는 숫자 열이 넓어져 1024에서 표가 856 → 956px로 자랐음.
+    expect((row.children[turnoverIndex].firstElementChild as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "flex-col", "items-end"]));
     style.unmount();
 
     api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody()) : new Promise(() => {})));
@@ -815,5 +817,6 @@ describe("모르는 값 '—'의 까닭을 늘 보이는 글로 적는다(QA-719
     const scoreTable = trend.closest("table") as HTMLElement;
     const scoreIndex = [...scoreTable.querySelectorAll("thead th")].findIndex((cell) => cell.textContent === "백분위");
     expect({ turnover, percentile: trend.children[scoreIndex].textContent }).toEqual({ turnover: "—값 없음직전 분기 없음", percentile: "—값 없음표본 부족" });
+    expect((trend.children[scoreIndex].firstElementChild as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "flex-col", "items-end"]));
   });
 });
