@@ -251,7 +251,8 @@ export function AccountDetailPanel({
                   </span>
                 ),
               },
-              { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+              // 짧은 한국어 칸 — 머리 '방향'·칸 '매수'를 글자 사이에서 접지 않음(QA-737).
+              { key: "side", header: "방향", className: "whitespace-nowrap", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
               { key: "qty", header: "수량", align: "right", render: (row) => formatNumber(row.qty, 0) },
               {
                 key: "price",

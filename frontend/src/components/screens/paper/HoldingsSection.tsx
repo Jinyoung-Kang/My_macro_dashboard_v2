@@ -129,7 +129,8 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
   },
   { key: "highWatermark", header: "최고가", align: "right", cell: (row) => formatSharePrice(row.highWatermark) },
   { key: "stop", header: "스탑 가격", align: "right", cell: (row) => stopText(row) },
-  { key: "held", header: "보유 기간", cell: (row) => heldText(row) },
+  // 보유 기간은 낱말 사이에서만 줄바꿈(break-keep — '15거래/일'처럼 한 글자씩 접지 않음, QA-737), 최소 폭은 날짜 한 줄(한국 표와 같음).
+  { key: "held", header: "보유 기간", className: "min-w-[8rem] break-keep", cell: (row) => heldText(row) },
 ];
 
 /**
@@ -173,13 +174,14 @@ const LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
   { key: "reason", header: "사유", cell: (row) => row.reason || EMPTY },
 ];
 
+// 짧은 한국어 칸(방향 '매수'·출처 '사후 체결')은 줄을 바꾸지 않습니다 — CSS 기본은 한글 음절 사이 어디서나 접어 좁은 칸에서 '매/수'가 됐습니다(QA-737).
 const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "createdAt", header: "낸 시각", cell: (row) => formatKst(row.createdAtKst) },
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
-  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
   { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
-  { key: "timing", header: "체결 시점", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
-  { key: "source", header: "출처", cell: (row) => sourceLabel(row.source) },
+  { key: "timing", header: "체결 시점", className: "min-w-[6.5rem] break-keep", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
+  { key: "source", header: "출처", className: "whitespace-nowrap", cell: (row) => sourceLabel(row.source) },
   {
     key: "status",
     header: "상태",
@@ -221,7 +223,7 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
       </span>
     ),
   },
-  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
   { key: "qty", header: "수량", align: "right", cell: (row) => formatNumber(row.qty, 0) },
   { key: "price", header: "체결가(달러)", align: "right", cell: (row) => formatSharePrice(row.price) },
   { key: "rawPrice", header: "관측가", align: "right", cell: (row) => formatSharePrice(row.rawPrice) },

@@ -70,7 +70,7 @@ function column(table: HTMLElement, header: string): HTMLElement[] {
 const classes = (element: HTMLElement) => element.className.split(/\s+/);
 
 describe("QA-737 — 모의 표의 짧은 한국어 칸은 글자 사이에서 끊기지 않는다", () => {
-  it.fails("보유·체결(미국): 방향·출처 칸은 줄바꿈 없음, 보유 기간 칸은 낱말 사이에서만 + 최소 폭", async () => {
+  it("보유·체결(미국): 방향·출처 칸은 줄바꿈 없음, 보유 기간 칸은 낱말 사이에서만 + 최소 폭", async () => {
     render(<HoldingsSection books={[BOOK] as never} onChanged={() => {}} />);
     await settled();
     const positions = screen.getByRole("table", { name: "보유" });
@@ -86,7 +86,7 @@ describe("QA-737 — 모의 표의 짧은 한국어 칸은 글자 사이에서 �
     for (const cell of column(fills, "방향").slice(1)) expect(classes(cell)).toContain("whitespace-nowrap");
   });
 
-  it.fails("개요 계좌 상세의 최근 체결: 방향 머리·칸은 줄바꿈 없음", async () => {
+  it("개요 계좌 상세의 최근 체결: 방향 머리·칸은 줄바꿈 없음", async () => {
     render(<AccountDetailPanel id="detail" book={BOOK as never} books={[BOOK] as never} onClose={() => {}} />);
     await settled();
     const table = within(screen.getByRole("region", { name: "최근 체결" })).getByRole("table");
