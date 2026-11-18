@@ -174,6 +174,25 @@ def test_장중_시장가의_기준_분은_생성을_분으로_내린_뒤_1분_�
     assert kr_paper_timed.market_target(datetime(2026, 11, 3, 1, 59, 30, tzinfo=timezone.utc)) == "11:00"   # UTC로 와도 KST
 
 
+# 생성 시각 → (창 키 T, R1 라벨 T+1 — 토스 라벨은 봉 끝이라 봉 구간 T~T+1분, 생성 뒤). 백엔드 KrTimedLadderTest.marketKeyMatchesTheCollectorTable이
+# 같은 표를 씁니다(ADR 0044).
+KR_MARKET_KEYS = [
+    ("2026-11-17T13:10:42+09:00", "13:11", "13:12"),          # 사용자 예(2026-11-17 NAVER 감지 13:10:42)
+    ("2026-11-17T13:10:00+09:00", "13:11", "13:12"),          # 정각 생성도 다음 분
+    ("2026-11-17T13:10:59.999999+09:00", "13:11", "13:12"),   # 가장 좁은 여유 1µs
+    ("2026-11-03T01:59:30+00:00", "11:00", "11:01"),          # UTC로 와도 KST
+]
+
+
+@pytest.mark.parametrize("created, key, first", KR_MARKET_KEYS)
+def test_장중_시장가_기준_분과_R1_라벨은_백엔드와_같은_표(created, key, first):
+    assert kr_paper_timed.market_target(datetime.fromisoformat(created)) == key
+    bars = {label: {"time": label, "open": 1.0, "volume": 1} for label in (key, first)}
+    windows, first_after = kr_paper_timed.summarize_windows(bars, [key])
+    assert [bar["label"] for bar in windows[key]] == [first], "라벨 T 봉(봉 구간 T−1분~T — 생성 앞이 섞일 수 있음)은 창에 들지 않음"
+    assert first_after[key]["label"] == first
+
+
 def test_장중_시장가_대기_주문은_그_기준_분의_창을_더한다(store, toss, monkeypatch):
     created = datetime(2026, 11, 3, 10, 32, 20, tzinfo=KST)
     _orders(monkeypatch, [("005930", date(2026, 11, 2))], market=[("005930", date(2026, 11, 2), created)])

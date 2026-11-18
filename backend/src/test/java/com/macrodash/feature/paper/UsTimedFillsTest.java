@@ -1505,6 +1505,37 @@ class UsTimedFillsTest {
         }
 
         @Test
+        @DisplayName("가드 분리(ADR 0044) — 기준 시각이 생성 + 60초 안인 MARKET(T − 생성 = 60초·1µs)은 늦은 주문이 아니라 T 봉(R1)으로 체결, "
+                + "같은 생성 시각의 AT_MINUTE(T ≤ 생성 + 60초)은 여전히 LATE_FOR_TIMING으로 취소")
+        void marketWithinSixtySecondsIsNotLate() {
+            Instant exact = et(TUE, 10, 33);
+            long wide = market("AAPL", PaperBooks.BUY, 10, null, exact);                                     // T 10:34 = 생성 + 60초
+            long narrow = market("MSFT", PaperBooks.BUY, 10, null, et(TUE, 10, 34).minusNanos(1_000));     // T 10:34 = 생성 + 1µs
+            long minute = atMinute("GOOG", PaperBooks.BUY, 10, null, java.time.LocalTime.of(10, 34), MON, exact);
+            assertThat(ExecutionAudit.targetAt(order(wide), TUE, US)).isEqualTo(target);
+            assertThat(ExecutionAudit.targetAt(order(narrow), TUE, US)).isEqualTo(target);
+            Bars bars = new Bars(et(TUE, 11, 21)).market(java.time.LocalTime.of(10, 34));
+            for (String ticker : List.of("AAPL", "MSFT", "GOOG")) {
+                bars.bar(ticker, TUE, et(TUE, 10, 33), 90.0, 500.0).bar(ticker, TUE, target, 100.0, 500.0)
+                        .bar(ticker, TUE, et(TUE, 10, 35), 100.5, 500.0);
+            }
+            bars(bars);
+
+            Outcome outcome = observe(et(TUE, 11, 20), bar("AAPL", MON, 99.0, TUE, 103.0), bar("MSFT", MON, 99.0, TUE, 103.0),
+                    bar("GOOG", MON, 99.0, TUE, 103.0));
+
+            for (long id : List.of(wide, narrow)) {
+                assertThat(fillOf(id).rawPrice()).as("생성 분(10:33) 봉이 아니라 T 봉").isEqualTo(100.0);
+                assertThat(barOf(id).barAt()).isEqualTo(target);
+                assertThat(barOf(id).fillRung()).isEqualTo("Y1M_AT");
+            }
+            assertThat(order(minute).status()).isEqualTo("CANCELLED");
+            assertThat(order(minute).rejectReason()).contains("LATE_FOR_TIMING").contains("주문 생성 + 60초");
+            assertThat(fillOf(minute)).isNull();
+            assertThat(outcome.alerts()).singleElement().satisfies(alert -> assertThat(alert).contains("GOOG"));
+        }
+
+        @Test
         @DisplayName("검증기 — MARKET은 기준 시각(지금 뒤 처음 시작하는 분)이 마감 5분 전(보통 날 15:55·조기 폐장일 12:55 ET) 이후거나 정규장 밖이면 MALFORMED")
         void earlyCloseMarketAfter1255Rejected() {
             LocalDate early = ExecutionAuditFixtures.EARLY_CLOSE;

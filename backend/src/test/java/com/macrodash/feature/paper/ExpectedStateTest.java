@@ -69,4 +69,28 @@ class ExpectedStateTest {
         assertThat(s.assumed().get(1).qty()).as("50% × 10,000 ÷ 50").isEqualTo(100);
         assertThat(s.cash()).isEqualTo(5_000.0);
     }
+
+    @Test
+    @DisplayName("대기 MARKET은 새 기준 시각(생성 뒤 처음 시작하는 분 — ADR 0044)의 1분봉으로 값매김: 10:00:30 생성 → T 10:01 봉 시가(생성 분 10:00 봉·옛 T 10:02 봉이 아님)")
+    void pendingMarketPricedFromItsNewTarget() {
+        BookState state = new BookState(PaperBooks.CLAUDE2, 10_000, 10_000, 0, 0, null, null, D, null);
+        Order market = new Order(21, PaperBooks.CLAUDE2, 2L, "AAA", PaperBooks.BUY, 10, null, null, PaperBooks.MARKET, "CLAUDE",
+                PaperBooks.ORDER_PENDING, null, null, D, Instant.parse("2026-11-02T15:00:30Z"), E, null);
+        ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(Instant.parse("2026-11-02T15:02:40Z"))
+                .market(java.time.LocalTime.of(10, 1))
+                .bar("AAA", E, Instant.parse("2026-11-02T15:00:00Z"), 90.0, 500.0)
+                .bar("AAA", E, Instant.parse("2026-11-02T15:01:00Z"), 100.0, 500.0)
+                .bar("AAA", E, Instant.parse("2026-11-02T15:02:00Z"), 110.0, 500.0);
+
+        ExpectedState.State s = ExpectedState.of(state, List.of(), List.of(market), E, NOW, bars.payload(), null,
+                quotes(Instant.parse("2026-11-02T14:00:00Z"), bar("AAA", E, 95.0)), CALENDAR);
+
+        assertThat(s.assumed()).singleElement().satisfies(a -> {
+            assertThat(a.orderId()).isEqualTo(21L);
+            assertThat(a.target()).isEqualTo(Instant.parse("2026-11-02T15:01:00Z"));
+            assertThat(a.price()).as("T 10:01 봉 시가").isEqualTo(100.0);
+            assertThat(a.priceSource()).isEqualTo(ExpectedState.PRICE_BARS);
+        });
+        assertThat(s.cash()).isEqualTo(9_000.0);
+    }
 }

@@ -197,6 +197,34 @@ class FreeTimingTest {
     }
 
     @Test
+    @DisplayName("검증 순위(ADR 0044): 같은 응답에서 장중 시장가(순위 0)가 가장 이른 지정 시각(순위 1)보다 앞 — 첫 분 AT_MINUTE 매도는 시장가 매수의 현금을 "
+            + "만들지 않고(OVER_ALLOCATED), 시장가 매도는 첫 분 AT_MINUTE 매수의 현금을 만듦")
+    void marketRanksBeforeTheFirstMinute() {
+        Instant now = et(TUE, 10, 31).plusSeconds(20);
+        LocalTime first = CheckpointPacket.freeMinutes(TUE, US, now)[0].atZone(US.zone()).toLocalTime();
+        assertThat(first).as("지정 시각 첫 분 = 지금 + 60초 뒤").isEqualTo(LocalTime.of(10, 33));
+        assertThat(ExecutionAudit.marketTarget(now).atZone(US.zone()).toLocalTime()).as("장중 시장가 기준 분").isEqualTo(LocalTime.of(10, 32));
+        OrderValidator.Market market = FreeTiming.validation(base(FreeTiming.INTRADAY_TIMINGS, OrderValidator.Money.USD), List.of(first), TUE,
+                now, US, false, true);
+        assertThat(market.ranks().get(PaperBooks.MARKET)).isLessThan(market.ranks().get(FreeTiming.key(first)));
+        OrderValidator.Limits limits = new OrderValidator.Limits(10, 20, 20, 500, 20, 5);
+        OrderValidator.Context ctx = new OrderValidator.Context(100_000, 1_000, Map.of("AAA", 99.0), Map.of("AAA", 30),
+                java.util.Set.of("AAA", "BBB"), java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), java.util.Set.of(), 0, false);
+
+        List<OrderValidator.Verdict> minuteSale = OrderValidator.validate(List.of(
+                new OrderValidator.Proposed("AAA", PaperBooks.SELL, null, 0.5, FreeTiming.key(first)),
+                new OrderValidator.Proposed("BBB", PaperBooks.BUY, 5.0, null, PaperBooks.MARKET)), ctx, limits, market);
+        assertThat(minuteSale.get(0).accepted()).isTrue();
+        assertThat(minuteSale.get(1).rejectReason()).as("뒤 순위(첫 분) 매도는 앞 순위(시장가) 매수의 현금이 아님")
+                .isEqualTo(OrderValidator.OVER_ALLOCATED);
+
+        List<OrderValidator.Verdict> marketSale = OrderValidator.validate(List.of(
+                new OrderValidator.Proposed("AAA", PaperBooks.SELL, null, 0.5, PaperBooks.MARKET),
+                new OrderValidator.Proposed("BBB", PaperBooks.BUY, 5.0, null, FreeTiming.key(first))), ctx, limits, market);
+        assertThat(marketSale).allSatisfy(v -> assertThat(v.accepted()).as(v.order().ticker() + " " + v.detail()).isTrue());
+    }
+
+    @Test
     @DisplayName("장중 시장가의 개장 10분 하한(ADR 0031): 기준 분이 그 세션 첫 분(미국 09:40 ET·한국 09:10 KST, 수능일 10:10) 앞이면 MALFORMED, 첫 분부터 받음. "
             + "프로필 표가 이미 닫은 사유(정규장 밖)는 그대로")
     void intradayMarketHasTheOpenOffsetFloor() {

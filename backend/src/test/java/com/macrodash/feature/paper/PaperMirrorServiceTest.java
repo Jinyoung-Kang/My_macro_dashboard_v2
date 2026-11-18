@@ -189,6 +189,29 @@ class PaperMirrorServiceTest {
 
     // ------------------------------------------------------------------ 장중 주문
     @Test
+    @DisplayName("감시 시장가 STOP의 따라 할 시각(ADR 0044·ADR 0033 결정 2) = 감지 뒤 처음 시작하는 분 — 정각 감지(10:30:00)도 다음 분(10:31)이고, 그 기준 시각은 "
+            + "한국 장부 ⑤(KrFills.opensAfterOrder — T > 생성)를 통과해 실제 계좌가 파는 분과 모의 체결 분이 어긋나지 않음")
+    void marketStopMirrorAtIsTheFirstMinuteAfterCreation() {
+        ObjectNode watch = PaperFixtures.MAPPER.createObjectNode().put("trigger", "TRAILING_STOP").put("stopMode", PaperStopWatchJob.STOP_MODE);
+        Instant exact = kst("2026-11-06T10:30");
+        Instant narrow = kst("2026-11-06T10:41").minusNanos(1_000);
+        long onTheMinute = order(A, PaperBooks.SELL, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, P, exact, null, watch);
+        long lastMicro = order(B, PaperBooks.SELL, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, P, narrow, null, watch);
+        com.macrodash.analytics.TradingCalendar calendar = new KrxCalendar(
+                KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), java.util.List.of(), java.util.Map.of());
+
+        List<DueOrder> due = service().dueOrders(BOOK, S, kst("2026-11-06T10:45"));
+
+        DueOrder first = due.stream().filter(d -> d.orderId() == onTheMinute).findFirst().orElseThrow();
+        assertThat(first.stop()).isTrue();
+        assertThat(first.mirrorAt()).as("정각 감지 → 다음 분").isEqualTo(kst("2026-11-06T10:31")).isEqualTo(first.target());
+        assertThat(KrFills.opensAfterOrder(store.orders.get(onTheMinute), S, calendar)).as("장부 ⑤ — T > 생성").isTrue();
+        DueOrder second = due.stream().filter(d -> d.orderId() == lastMicro).findFirst().orElseThrow();
+        assertThat(second.mirrorAt()).as("10:40:59.999999 감지 → 10:41(1µs 뒤)").isEqualTo(kst("2026-11-06T10:41"));
+        assertThat(KrFills.opensAfterOrder(store.orders.get(lastMicro), S, calendar)).isTrue();
+    }
+
+    @Test
     @DisplayName("장중 주문 — 따라 할 시각이 지난 그 세션 시각 지정 주문만, 종가는 종가 단일가 시작부터, 모르는 시점은 건너뜀으로 늘 보이고 뿌리를 단다")
     void dueOrdersWindowAndRoots() {
         long hourly = order(B, PaperBooks.BUY, 5.0, null, PaperBooks.AT_1000, PacketBuilder.SOURCE_CLAUDE);

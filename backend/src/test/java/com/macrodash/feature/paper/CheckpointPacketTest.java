@@ -544,6 +544,35 @@ class CheckpointPacketTest {
     }
 
     @Test
+    @DisplayName("패킷 1_basis.atMinute의 첫 분은 검증(FreeTiming.validation)이 받고 그 1분 앞은 LATE_FOR_TIMING — 장중 시장가 기준 분이 1분 앞당겨져도(ADR 0044) "
+            + "지정 시각 첫 분은 늦은 주문 가드 60초를 따름(earliestTimed)")
+    void freeMinutesFirstIsAcceptedByTheValidator() {
+        var calendar = UsMarketCalendar.CALENDAR;
+        List<String> timings = FreeTiming.INTRADAY_TIMINGS;
+        Map<String, String> names = new java.util.LinkedHashMap<>();
+        Map<String, Integer> ranks = new java.util.LinkedHashMap<>();
+        timings.forEach(t -> {
+            names.put(t, t);
+            ranks.put(t, ranks.size());
+        });
+        com.macrodash.analytics.OrderValidator.Market base = new com.macrodash.analytics.OrderValidator.Market(timings, timings.get(0),
+                names, com.macrodash.analytics.OrderValidator.Money.USD, ranks);
+        for (String at : List.of("2026-11-02T15:33:10Z", "2026-11-02T16:00:00Z", "2026-11-02T16:59:59.999999Z",
+                "2026-11-02T19:20:00.000001Z", "2026-11-02T20:52:30Z")) {
+            Instant now = Instant.parse(at);
+            Instant[] minutes = CheckpointPacket.freeMinutes(E, calendar, now);
+            LocalTime first = minutes[0].atZone(calendar.zone()).toLocalTime();
+            LocalTime before = first.minusMinutes(1);
+            com.macrodash.analytics.OrderValidator.Market market = FreeTiming.validation(base, List.of(before, first), E, now, calendar,
+                    false, true);
+            assertThat(market.closed()).as(at + " 첫 분 " + first).doesNotContainKey(FreeTiming.key(first));
+            assertThat(market.closed().get(FreeTiming.key(before)).reason()).as(at + " 그 1분 앞")
+                    .isEqualTo(com.macrodash.analytics.OrderValidator.LATE_FOR_TIMING);
+            assertThat(ExecutionAudit.marketTarget(now)).as("장중 시장가 기준 분은 첫 분보다 1분 앞").isEqualTo(minutes[0].minusSeconds(60));
+        }
+    }
+
+    @Test
     @DisplayName("고정본(자유 시점 판 장중 판단 — 사건이 당긴 판단, ADR 0031): 1_basis.origin EVENT·남은 횟수(세션당 3 − 순번 1 = 2), 3_request.trigger"
             + "(원래 시각 originalAtEt·사건 목록 그대로·규칙 한 줄)와 사건 설명 줄, nextCheckpoint.replaces(다음 순번의 남은 예약 — 시각·출처). 보장 판단은 "
             + "그 설명 줄, 운영자 판단은 예전 설명 줄 그대로")

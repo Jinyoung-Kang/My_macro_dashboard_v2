@@ -449,6 +449,59 @@ class ExecutionAuditTest {
     }
 
     @Test
+    @DisplayName("MARKET 기준 시각의 성질(ADR 0044) — 무작위 생성 시각(µs 포함, 분 경계 ±1µs 포함)에서 생성 < T ≤ 생성 + 60초, T는 분 경계, "
+            + "T = 60초 앞 생성의 '지정 시각 첫 분'(earliestTimed) — 늘 가장 이른 AT_MINUTE보다 1분 앞")
+    void marketTargetIsTheFirstMinuteAfterCreation() {
+        java.util.Random random = new java.util.Random(20261118L);
+        Instant base = Instant.parse("2026-11-17T00:00:00Z");
+        List<Instant> samples = new ArrayList<>();
+        for (int i = 0; i < 2_000; i++) {
+            Instant minute = base.plusSeconds(60L * random.nextInt(60 * 24 * 7));
+            samples.add(minute);
+            samples.add(minute.plusNanos(1_000));
+            samples.add(minute.minusNanos(1_000));
+            samples.add(minute.plusNanos(1_000L * random.nextInt(60_000_000)));
+        }
+        for (Instant created : samples) {
+            Instant target = ExecutionAudit.marketTarget(created);
+            assertThat(target).as("생성 " + created).isAfter(created).isBeforeOrEqualTo(created.plusSeconds(60));
+            assertThat(target.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)).as("분 경계").isEqualTo(target);
+            assertThat(target).isEqualTo(ExecutionAudit.earliestTimed(created.minusSeconds(60)));
+            assertThat(ExecutionAudit.earliestTimed(created)).as("같은 순간의 가장 이른 지정 시각은 1분 뒤")
+                    .isEqualTo(target.plusSeconds(60)).isAfter(created.plus(ExecutionAudit.AFTER_CREATED));
+        }
+    }
+
+    @Test
+    @DisplayName("늦은 주문 가드 여유(⑤) — 장중 시장가만 0(MARKET_AFTER_CREATED), 분 단위 지정 시각·메뉴·종가는 60초 그대로(AFTER_CREATED), 글은 그 여유대로")
+    void afterCreatedIsZeroOnlyForMarket() {
+        assertThat(ExecutionAudit.MARKET_AFTER_CREATED).isZero();
+        assertThat(ExecutionAudit.AFTER_CREATED).isEqualTo(java.time.Duration.ofSeconds(60));
+        assertThat(ExecutionAudit.afterCreated(PaperBooks.MARKET)).isZero();
+        for (String timing : List.of(PaperBooks.AT_MINUTE, PaperBooks.AT_1000, PaperBooks.NEXT_OPEN, PaperBooks.NEXT_CLOSE)) {
+            assertThat(ExecutionAudit.afterCreated(timing)).as(timing).isEqualTo(java.time.Duration.ofSeconds(60));
+            assertThat(ExecutionAudit.afterCreatedText(timing)).as(timing).isEqualTo("주문 생성 + 60초");
+        }
+        assertThat(ExecutionAudit.afterCreatedText(PaperBooks.MARKET)).isEqualTo("주문 생성");
+        assertThat(FreeTiming.AFTER_CREATED).isEqualTo(ExecutionAudit.AFTER_CREATED);
+        assertThat(KrTimedLadder.LATE_MARGIN).isEqualTo(ExecutionAudit.AFTER_CREATED);
+    }
+
+    private static final Path COLLECTOR_KR_TIMED = Path.of("../collector/app/tasks/kr_paper_timed.py");
+
+    @Test
+    @DisplayName("장중 시장가 여유 상수 대조 — 수집기 paper_bars.MARKET_AFTER_CREATED·kr_paper_timed.KR_MARKET_DELAY와 Java MARKET_AFTER_CREATED가 모두 0")
+    void marketAfterCreatedMatchesTheCollector() throws IOException {
+        assumeTrue(Files.exists(COLLECTOR_BARS) && Files.exists(COLLECTOR_KR_TIMED), "수집기 원본을 찾을 수 없습니다");
+        Matcher us = Pattern.compile("(?m)^MARKET_AFTER_CREATED = timedelta\\((.*)\\)$").matcher(Files.readString(COLLECTOR_BARS));
+        Matcher kr = Pattern.compile("(?m)^KR_MARKET_DELAY = timedelta\\((.*)\\)$").matcher(Files.readString(COLLECTOR_KR_TIMED));
+        assertThat(us.find()).as("paper_bars.MARKET_AFTER_CREATED").isTrue();
+        assertThat(kr.find()).as("kr_paper_timed.KR_MARKET_DELAY").isTrue();
+        assertThat(List.of(us.group(1), kr.group(1))).as("두 수집기 상수 모두 0").containsOnly("0");
+        assertThat(ExecutionAudit.MARKET_AFTER_CREATED).isZero();
+    }
+
+    @Test
     @DisplayName("MARKET 주문의 기준 시각·반사실·늦게 풂: targetAt(주문) = 생성 뒤 처음 시작하는 분, fromBars(MARKET)는 그 T 창의 R1, 메뉴 반사실(AT_1000)은 생성 전 시각이라 null, 반사실 표에는 MARKET 칸이 없음, 늦게 풂은 그 T 기준")
     void marketOrderUsesItsOwnTarget() {
         Instant created = et(TUE, 10, 33).plusSeconds(10);

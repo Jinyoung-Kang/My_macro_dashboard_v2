@@ -716,6 +716,17 @@ class RealTradePlannerTest {
         assertThat(RealTradePlanner.stopWindow(day, null, false)).isNull();
     }
 
+    @Test
+    @DisplayName("스탑 매도 창의 마감 쪽(ADR 0044 — 감지 15:18:xx의 모의 기준 시각이 15:19 장중 시장가가 됨) — T 15:19면 [15:19, 15:19:30](종가 단일가 30초 전까지)")
+    void stopWindowNearTheCloseIsThirtySeconds() {
+        Day day = RealTradePlanner.windows(DAY, normalSession());
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T15:19"), false))
+                .isEqualTo(new Window("MIRROR", kst("2026-11-06T15:19"), kst("2026-11-06T15:19:30")));
+        assertThat(RealTradePlanner.stopWindow(day, kst("2026-11-06T15:17"), false))
+                .as("T 15:17 — 3분 창이 장중 창 끝(15:19:30)에서 잘림").isEqualTo(new Window("MIRROR", kst("2026-11-06T15:17"),
+                        kst("2026-11-06T15:19:30")));
+    }
+
     // ------------------------------------------------------------------ 쉬는 날
     private static CollectorTradeClient.Calendar calendar(CollectorTradeClient.Session session, Double skew) {
         return new CollectorTradeClient.Calendar(DAY, skew, session, DAY.minusDays(1), DAY.plusDays(3));
