@@ -210,9 +210,11 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   },
   { key: "timing", header: "체결 시점", className: "min-w-[6.5rem] break-keep", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
   { key: "source", header: "출처", className: "whitespace-nowrap", cell: (row) => sourceLabel(row.source) },
+  // 거절·취소 사유는 낱말 사이에서만 꺾습니다('계/획'·'남/는'이 되지 않게 — QA-821, 결정 로그·한국 주문 표의 상태 칸과 같음). 최소 폭은 두지 않습니다(QA-810의 열 폭).
   {
     key: "status",
     header: "상태",
+    className: "break-keep",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <PaperBadges bare badges={[orderStatusBadge(row.status)]} />

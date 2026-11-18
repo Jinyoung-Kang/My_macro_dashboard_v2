@@ -132,7 +132,7 @@ describe("QA-810 — 미국 주문 표의 근거 칸은 최소 폭을 지키고 
 // 음절 중간에서 꺾임(개편 전부터 — 자기 빌드 1440 상태 칸 90px '재선정일 계/획이', 390~1280 78px '남/는'). 결정 로그 주문 표·한국 주문 표의 상태 칸은 이미
 // break-keep입니다. 칸 폭은 넓히지 않습니다(최소 폭 없음 — QA-810의 열 폭 결과를 지킴).
 describe("QA-821 — 미국 주문 표의 상태 칸은 낱말 사이에서만 꺾는다", () => {
-  it.fails("주문 표: '상태' 머리·칸에 break-keep, 최소 폭은 두지 않음", async () => {
+  it("주문 표: '상태' 머리·칸에 break-keep, 최소 폭은 두지 않음", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.includes("/positions")) return Promise.resolve({ available: true, book: BOOK, cash: 500, lockouts: [], positions: [POSITION] });
       if (path.includes("/orders")) {
