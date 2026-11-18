@@ -193,11 +193,15 @@ function holdingColumns(
       header: "평가액",
       align: "right",
       // 총액만 원화로 적으면, 종목 하나가 얼마짜리인지는 여전히 머리로 곱해야 합니다. 같은 환율로 여기도 함께 적습니다.
+      // 평가액을 모르면 null — 공용 표가 모르는 칸의 '—'(보조 글자색·낭독 '값 없음')를 그립니다. 요소로 감싸 '—'를 그리면 그 처리를 거치지 않고 본문 잉크의
+      // 기호만 남았습니다(교집합·스타일 표의 금액 칸과 같은 꼴).
       cell: ({ holding }) => {
+        const usd = formatCurrency(holding.value);
+        if (usd === EMPTY) return null;
         const krw = toKrw(holding.value);
         return (
           <span className="flex flex-col items-end">
-            <span>{formatCurrency(holding.value)}</span>
+            <span>{usd}</span>
             {krw && <span className="text-xs text-text-3">{krw}</span>}
           </span>
         );

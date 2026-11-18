@@ -380,6 +380,24 @@ describe("보유 표 '직전 분기 대비' 배지 — 행 바탕에 묻히지 �
   });
 });
 
+describe("보유 표 '평가액' — 모르면 공용 '—'", () => {
+  it("평가액이 null이면 칸은 공용 표의 '—'(보조 글자색·낭독 '값 없음') — 0으로 채우지 않음", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
+      if (path.startsWith("/api/sec13f/portfolio")) {
+        const body = changePortfolio();
+        return Promise.resolve({ ...body, holdings: body.holdings.map((holding, index) => (index === 1 ? { ...holding, value: null } : holding)) });
+      }
+      return new Promise(() => {});
+    });
+    render(<InstitutionsPage />);
+    await screen.findByText("SYNTHETIC FALL CO");
+    const cell = holdingCell("SYNTHETIC FALL CO", "평가액");
+    expect(cell.textContent).toBe("—값 없음");
+    expect(cell.querySelector(".text-text-3")).not.toBeNull();
+  });
+});
+
 // ------------------------------------------------------------------ 보유 표 검사 칸
 
 /** 넓은 화면(lg 이상 — 셸의 왼쪽 메뉴가 보이는 폭)으로 흉내 냅니다. 틀 폭은 jsdom에서 0이라 크기 질의 배치(옆 칸)에 맡깁니다. */
