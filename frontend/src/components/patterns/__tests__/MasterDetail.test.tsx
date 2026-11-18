@@ -536,3 +536,212 @@ describe("QA-661 줄이 없으면 한 칸 — 빈 안내 글이 좁은 왼쪽 �
     expect(grid.className.split(/\s+/)).toContain("@lg:grid-cols-[minmax(0,1fr)_15rem]");
   });
 });
+
+// 작업대 P6 선택 prop — 넓은 검사 칸(inspectorWidth)·날짜 묶음(groupOf)·대화상자 제목 포커스(dialogFocus)·부르는 쪽 고름 보이기(revealSelectedInDialog).
+// 기본값이면 위 사례(P4·P5 화면 시험 포함)가 그대로 통과합니다.
+describe("MasterDetail — 기본값 고정(P6 선택 prop을 더하기 전과 같은 DOM·클래스)", () => {
+  it("넓은 화면 — 격자·검사 칸 클래스 글이 그대로이고, 목록은 ul > li > button 한 겹(묶음 머리 없음)", () => {
+    stubWide();
+    renderList();
+    const grid = list().parentElement as HTMLElement;
+    expect(grid.getAttribute("class")).toBe("grid min-w-0 gap-3 @lg:grid-cols-[minmax(0,1fr)_15rem]");
+    expect(screen.getByRole("region").getAttribute("class")).toBe(
+      "min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-[calc(var(--section-strip-h,0px)+1rem)]",
+    );
+    expect(list().querySelectorAll("h3, h4, ul").length).toBe(0);
+    expect([...list().children].every((child) => child.tagName === "LI" && child.firstElementChild?.tagName === "BUTTON")).toBe(true);
+  });
+});
+
+type Entry = { id: string; day: string | null; name: string };
+
+const ENTRIES: Entry[] = [
+  { id: "d8", day: "2026-11-16", name: "결정 #8" },
+  { id: "i3", day: "2026-11-16", name: "장중 판단 #3" },
+  { id: "d7", day: "2026-11-13", name: "결정 #7" },
+  { id: "x1", day: null, name: "묶음 없는 기록" },
+];
+
+function renderGrouped(props: Partial<Parameters<typeof MasterDetail<Entry>>[0]> = {}) {
+  return render(
+    <MasterDetail<Entry>
+      label="결정 기록"
+      items={ENTRIES}
+      itemKey={(entry) => entry.id}
+      itemLabel={(entry) => entry.name}
+      renderItem={(entry) => <span>{entry.name}</span>}
+      renderDetail={(entry) => <PropertyList items={[{ label: "기록", value: entry.name }]} />}
+      groupOf={(entry) => (entry.day ? { key: entry.day, label: entry.day, dateTime: entry.day } : null)}
+      {...props}
+    />,
+  );
+}
+
+const outer = () => screen.getByRole("list", { name: "결정 기록" });
+const entryButton = (name: string) => within(outer()).getByRole("button", { name });
+
+describe("MasterDetail — 날짜 묶음(groupOf)", () => {
+  it("이어진 같은 key를 묶음 머리(h4 — <time>) 아래 이름 있는 ul로 묶고, 묶음이 null인 줄은 바깥 목록에 바로 둔다 — 목록 표지는 바깥 하나", () => {
+    renderGrouped();
+    const children = [...outer().children];
+    expect(children).toHaveLength(3);
+    const [first, second, plain] = children;
+    const heading = first.querySelector("h4") as HTMLElement;
+    expect(heading.textContent).toBe("2026-11-16");
+    expect(heading.querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+    expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "text-text-2", "tabular-nums"]));
+    const firstGroup = screen.getByRole("list", { name: "2026-11-16" });
+    expect(firstGroup.parentElement).toBe(first);
+    expect(within(firstGroup).getAllByRole("button").map((button) => button.textContent)).toEqual(["결정 #8", "장중 판단 #3"]);
+    expect(within(screen.getByRole("list", { name: "2026-11-13" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["결정 #7"]);
+    expect(second.querySelector("h4")?.textContent).toBe("2026-11-13");
+    expect(plain.tagName).toBe("LI");
+    expect(plain.firstElementChild?.textContent).toBe("묶음 없는 기록");
+    expect(outer().hasAttribute("data-shell-list")).toBe(true);
+    expect(firstGroup.hasAttribute("data-shell-list")).toBe(false);
+  });
+
+  it("groupHeadingLevel={3}이면 묶음 머리가 h3", () => {
+    renderGrouped({ groupHeadingLevel: 3 });
+    expect(outer().querySelectorAll("h3")).toHaveLength(2);
+    expect(outer().querySelectorAll("h4")).toHaveLength(0);
+  });
+
+  it("j/k·Home·End가 묶음을 건너 이어진다 — 넓은 화면에서 고름이 따라가고 Tab 정지점은 하나", () => {
+    stubWide();
+    renderGrouped();
+    const buttons = within(outer()).getAllByRole("button");
+    buttons[1].focus();
+    fireEvent.keyDown(buttons[1], { key: "j" });
+    expect(document.activeElement).toBe(entryButton("결정 #7"));
+    expect(entryButton("결정 #7").getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(entryButton("결정 #7"), { key: "End" });
+    expect(document.activeElement).toBe(entryButton("묶음 없는 기록"));
+    fireEvent.keyDown(entryButton("묶음 없는 기록"), { key: "Home" });
+    expect(document.activeElement).toBe(entryButton("결정 #8"));
+    fireEvent.keyDown(entryButton("결정 #8"), { key: "k" });
+    expect(document.activeElement).toBe(entryButton("결정 #8"));
+    expect(within(outer()).getAllByRole("button").filter((button) => button.tabIndex === 0)).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "결정 기록 — 결정 #8" })).toBeTruthy();
+  });
+
+  it("좁은 화면 — 묶음 안 줄을 누르면 그 줄의 대화상자", () => {
+    renderGrouped();
+    fireEvent.click(entryButton("결정 #7"));
+    expect(screen.getByRole("dialog", { name: "결정 #7" })).toBeTruthy();
+  });
+});
+
+describe("MasterDetail — 넓은 검사 칸(inspectorWidth=\"wide\")·제목 포커스·부르는 쪽 고름 보이기", () => {
+  /** 틀(@container) 폭을 흉내 냅니다 — width를 바꾸고 resize()를 부르면 ResizeObserver 콜백이 돕니다. */
+  function stubFrame(initial: number) {
+    const frame = { width: initial };
+    const callbacks = new Set<() => void>();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+        }
+        observe() {
+          callbacks.add(this.callback);
+        }
+        unobserve() {}
+        disconnect() {
+          callbacks.delete(this.callback);
+        }
+      },
+    );
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("@container") ? ({ width: frame.width, height: 0, top: 0, left: 0, right: frame.width, bottom: 0, x: 0, y: 0 } as DOMRect) : original.call(this);
+    });
+    return {
+      resize: (width: number) =>
+        act(() => {
+          frame.width = width;
+          for (const callback of [...callbacks]) callback();
+        }),
+    };
+  }
+
+  it("틀 48rem(768px)부터 왼쪽 목록(16~22rem) + 오른쪽 넓은 검사 칸 — 크기 질의 클래스·sticky(목차 줄 아래 16px), 그 아래는 넓은 대화상자", () => {
+    stubWide();
+    const frame = stubFrame(800);
+    renderGrouped({ inspectorWidth: "wide" });
+    fireEvent.click(entryButton("결정 #7"));
+    const region = screen.getByRole("region", { name: "결정 기록 — 결정 #7" });
+    expect((region.parentElement as HTMLElement).className.split(/\s+/)).toContain("@min-[48rem]:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]");
+    expect(region.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["@min-[48rem]:sticky", "@min-[48rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]),
+    );
+    expect(region.className).not.toContain("@lg:");
+    frame.resize(700);
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(entryButton("결정 #8").getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(entryButton("결정 #8"));
+    expect(screen.getByRole("dialog", { name: "결정 #8" }).className.split(/\s+/)).toContain("max-w-2xl");
+  });
+
+  it("dialogFocus='title'이면 대화상자를 열 때 제목에 포커스 — 닫으면 그 줄로", async () => {
+    renderGrouped({ dialogFocus: "title" });
+    fireEvent.click(entryButton("결정 #7"));
+    const heading = await screen.findByRole("heading", { name: "결정 #7" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    fireEvent.keyDown(heading, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(entryButton("결정 #7")));
+  });
+
+  it("revealSelectedInDialog — 좁은 화면에서 부르는 쪽이 selectedKey를 바꾸면 그 줄의 대화상자를 연다(같은 키로는 한 번), 줄이 늦게 오면 그때", async () => {
+    const { rerender } = renderGrouped({ revealSelectedInDialog: true, selectedKey: null, items: [] });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const view = (selectedKey: string | null, items: Entry[] = ENTRIES) => (
+      <MasterDetail<Entry>
+        label="결정 기록"
+        items={items}
+        itemKey={(entry) => entry.id}
+        itemLabel={(entry) => entry.name}
+        renderItem={(entry) => <span>{entry.name}</span>}
+        renderDetail={(entry) => <PropertyList items={[{ label: "기록", value: entry.name }]} />}
+        selectedKey={selectedKey}
+        revealSelectedInDialog
+      />
+    );
+    // 줄이 아직 없을 때 고름이 오면 기다렸다가 줄이 오면 엽니다.
+    rerender(view("d7", []));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(view("d7"));
+    expect(await screen.findByRole("dialog", { name: "결정 #7" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // 같은 키로 다시 그려도 다시 열지 않습니다.
+    rerender(view("d7"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(view("i3"));
+    expect(await screen.findByRole("dialog", { name: "장중 판단 #3" })).toBeTruthy();
+  });
+
+  it("revealSelectedInDialog를 주지 않으면 selectedKey를 바꿔도 대화상자를 열지 않는다(기본)", () => {
+    const { rerender } = renderGrouped({ selectedKey: null });
+    rerender(
+      <MasterDetail<Entry>
+        label="결정 기록"
+        items={ENTRIES}
+        itemKey={(entry) => entry.id}
+        itemLabel={(entry) => entry.name}
+        renderItem={(entry) => <span>{entry.name}</span>}
+        renderDetail={() => null}
+        selectedKey="d7"
+      />,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("revealSelectedInDialog — 옆 검사 칸 배치에서는 대화상자를 열지 않고 고른 줄을 검사 칸에 보인다", () => {
+    stubWide();
+    renderGrouped({ revealSelectedInDialog: true, selectedKey: "d7" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("region", { name: "결정 기록 — 결정 #7" })).toBeTruthy();
+  });
+});

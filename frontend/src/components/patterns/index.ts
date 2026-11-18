@@ -17,7 +17,7 @@ export { type HeatmapColumn, type HeatmapRow, HeatmapTable } from "./HeatmapTabl
 export { Hero } from "./Hero";
 export { type InspectorContext, InspectorFrame, type InspectorLayout, InspectorTrigger, type InspectorTriggerProps } from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
-export { MasterDetail } from "./MasterDetail";
+export { MasterDetail, type MasterDetailGroup } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
 export { ReadingGuide } from "./ReadingGuide";
