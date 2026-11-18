@@ -47,7 +47,7 @@ afterEach(() => cleanup());
 const SIDE_INSPECTOR_REM = 28;
 
 describe("QA-816 — 계좌 상세 '지금 설정'은 옆 검사 칸 안에서 한 칸, 이름은 낱말 사이에서만 꺾임", () => {
-  it.fails("두 칸 격자 문턱이 옆 칸 폭보다 넓고, 이름(dt)에 break-keep", async () => {
+  it("두 칸 격자 문턱이 옆 칸 폭보다 넓고, 이름(dt)에 break-keep", async () => {
     render(<AccountDetailPanel id="detail" book={BOOK as never} books={[BOOK] as never} onClose={() => {}} market="KR" />);
     await act(async () => {});
     const heading = await screen.findByText("지금 설정");

@@ -169,10 +169,13 @@ export function AccountDetailPanel({
           {settingRows.length > 0 && (
             <div className="mt-2 border-t border-border pt-2">
               <InspectorSubheading fallback="h5" depth={2} className="text-xs font-semibold text-text">지금 설정</InspectorSubheading>
-              <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs @min-[24rem]:grid-cols-2">
+              {/* 두 칸 격자는 컨테이너가 32rem(512px)부터 — 개요의 옆 검사 칸(28rem, 안쪽 약 422px)에서는 한 칸이고 대화상자(1024 — 약 638px)부터 두 칸.
+                  24rem이면 옆 칸 안에서도 두 칸이 되어 이름 칸이 98px로 줄며 '모델(두 시장 공' / '용)'처럼 음절 중간에서 꺾였습니다(QA-816). 이름은 낱말
+                  사이에서만 꺾습니다. */}
+              <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs @min-[32rem]:grid-cols-2">
                 {settingRows.map((row) => (
                   <div key={row.key} className="flex min-w-0 items-baseline justify-between gap-2">
-                    <dt className="text-text-3" title={row.key}>{row.label}</dt>
+                    <dt className="break-keep text-text-3" title={row.key}>{row.label}</dt>
                     <dd className="text-right tabular-nums text-text-2">{row.value}</dd>
                   </div>
                 ))}
