@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
-import { KpiStrip } from "@/components/patterns";
+import { FilterList, KpiStrip, Skeleton, SplitPane } from "@/components/patterns";
 import { weightHistoryRows } from "@/lib/chartData";
 import {
   Callout,
-  Card,
   EmptyState,
   ErrorState,
   FOCUS_RING,
@@ -66,6 +65,15 @@ export default function InstitutionsPage() {
   const usdKrw = useUsdKrw();
 
   const items = institutionItems(institutions.data?.institutions);
+  // 기관 목록을 아직 못 받았거나(처음 읽는 중) 읽지 못했으면 목록 대신 — 다시 시도는 누를 때만 읽습니다.
+  const institutionsPlaceholder =
+    institutions.data === null ? (
+      institutions.error ? (
+        <ErrorState message={institutions.error} onRetry={institutions.reload} />
+      ) : institutions.loading ? (
+        <Skeleton lines={6} label="기관 목록을 불러오는 중" />
+      ) : undefined
+    ) : undefined;
   const selected = items.find((item) => item.key === cik);
   // 고른 기관 패널 — 제목(목록 이름, 없으면 포트폴리오 응답의 이름·'CIK …')과 요약 KPI(예전 지표 칸 셋과 같은 값·글).
   const title = institutionTitle(items, cik, data);
@@ -78,109 +86,126 @@ export default function InstitutionsPage() {
   const chartSeries = weightLines(history?.series, SERIES_COLORS);
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="기관 13F 포트폴리오 분석"
         description="SEC EDGAR 공식 공시 · 분기 공시, 공시 마감 45일 지연"
         actions={<Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} refreshError={refreshError} />}
       />
 
-      <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <Select
-            label="분석할 기관"
-            value={cik}
-            onChange={setCik}
-            options={items.map((item) => ({ value: item.key, label: item.label }))}
-          />
-          <Select
-            label="조회 분기 수"
-            value={quarters}
-            onChange={setQuarters}
-            options={["1", "2", "4", "8"].map((value) => ({
-              value,
-              label: `최근 ${value}개 분기`,
-            }))}
-          />
-          <Select
-            label="표시 종목 수"
-            value={topN}
-            onChange={setTopN}
-            options={["10", "20", "30", "50"].map((value) => ({
-              value,
-              label: `상위 ${value}개`,
-            }))}
-          />
-        </div>
-      </Card>
-
-      {/*
-        고른 기관 패널 — 제목 = 기관 이름, 부제 = 기관 목록의 설명(예전 고르기 카드 아래 글과 같은 출처), 머리 동작 = 기관 상세 링크(요청 없음).
-        본문은 포트폴리오 읽기 상태 — 읽는 중·오류(다시 시도)·저장본 없음 안내, 값이 오면 요약 KPI 띠.
-      */}
-      <Panel
-        title={title}
-        subtitle={selected?.desc || undefined}
-        actions={
-          // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 포커스 링 — 기관 상세 '13F 포트폴리오에서 자세히'와 같은 꼴(중립 잉크·밑줄).
-          <Link href={institutionHref(cik)} className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
-            기관 상세 열기
-          </Link>
+      <SplitPane
+        left={
+          <>
+            {/*
+              기관 목록 — 고르면 그 기관의 포트폴리오를 읽습니다(예전 '분석할 기관' 고르기 상자와 같은 상태·요청). 넓은 화면은 세로 목록(줄 32px),
+              좁은 화면은 44px 태그가 줄을 바꾸며 늘어섭니다(접지 않음 — 조작이 첫 화면에 바로 보이게).
+            */}
+            <Panel title="기관" count={items.length > 0 ? `${items.length.toLocaleString("ko-KR")}곳` : undefined}>
+              <FilterList
+                label="분석할 기관"
+                items={items.map((item) => ({ key: item.key, label: item.label }))}
+                selected={[cik]}
+                onToggle={setCik}
+                selection="single"
+                narrow="wrap"
+                placeholder={institutionsPlaceholder}
+              />
+            </Panel>
+            <Panel title="조회 조건">
+              <div className="flex flex-wrap items-end gap-3">
+                <Select
+                  label="조회 분기 수"
+                  value={quarters}
+                  onChange={setQuarters}
+                  options={["1", "2", "4", "8"].map((value) => ({
+                    value,
+                    label: `최근 ${value}개 분기`,
+                  }))}
+                />
+                <Select
+                  label="표시 종목 수"
+                  value={topN}
+                  onChange={setTopN}
+                  options={["10", "20", "30", "50"].map((value) => ({
+                    value,
+                    label: `상위 ${value}개`,
+                  }))}
+                />
+              </div>
+            </Panel>
+          </>
         }
       >
-        {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
-        {error && <ErrorState message={error} onRetry={reload} />}
-        {data && !data.available && (
-          <Callout tone="warn">{data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}</Callout>
+        {/*
+          고른 기관 패널 — 제목 = 기관 이름, 부제 = 기관 목록의 설명, 머리 동작 = 기관 상세 링크(요청 없음).
+          본문은 포트폴리오 읽기 상태 — 읽는 중·오류(다시 시도)·저장본 없음 안내, 값이 오면 요약 KPI 띠.
+        */}
+        <Panel
+          title={title}
+          subtitle={selected?.desc || undefined}
+          actions={
+            // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 포커스 링 — 기관 상세 '13F 포트폴리오에서 자세히'와 같은 꼴(중립 잉크·밑줄).
+            <Link href={institutionHref(cik)} className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
+              기관 상세 열기
+            </Link>
+          }
+        >
+          {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
+          {error && <ErrorState message={error} onRetry={reload} />}
+          {data && !data.available && (
+            <Callout tone="warn">{data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}</Callout>
+          )}
+          {kpis.length > 0 && <KpiStrip label="포트폴리오 요약" items={kpis} keepDates />}
+        </Panel>
+
+        {data?.available && (
+          <>
+            <Panel
+              title="상위 종목 분기별 비중 히트맵" source={SOURCES.sec13f}
+              // 히트맵 범례(순차 팔레트 — 어두운 단계 = 0에 가까움, 밝은 단계일수록 큼)와 같은 말로 적습니다(예전 계열 파랑 농도 때의 '진할수록'은 반대로 읽힘).
+              subtitle="칸이 밝을수록 비중이 큽니다. 어느 칸이 밝아지는지만 보면 흐름이 읽힙니다."
+            >
+              {/*
+                선 차트로 15개 종목을 겹쳐 그리면 색이 모자라고 선이 엉켜서, 정작
+                "무엇이 늘고 무엇이 줄었나"가 보이지 않았습니다. 히트맵은 같은 값을
+                칸 바탕의 순차 단계로 칠하고 숫자도 함께 적습니다(색만으로 값을 나르지 않습니다).
+              */}
+              {Object.keys(data.weightHistory?.series ?? {}).length === 0 ? (
+                <EmptyState message="비중 이력을 그릴 분기 데이터가 부족합니다." />
+              ) : (
+                <WeightHeatmap
+                  dates={data.weightHistory?.dates ?? []}
+                  series={data.weightHistory?.series ?? {}}
+                />
+              )}
+            </Panel>
+
+            <Panel
+              title="상위 종목 분기별 비중 추이 (선)" source={SOURCES.sec13f}
+              subtitle="같은 값을 선으로 본 것입니다. 특정 종목의 방향을 좇을 때 씁니다."
+            >
+              {chartSeries.length === 0 ? (
+                <EmptyState message="비중 추이를 그릴 분기 데이터가 부족합니다." />
+              ) : (
+                <MultiLineSeries
+                  data={chartData}
+                  series={chartSeries}
+                  unit="%"
+                  height={320}
+                  // 큰 분석 차트라 가로 격자(명세 W6), 이름은 무엇을 그린 차트인지(낭독기 — 차트 래퍼의 기본 이름은 계열 이름 나열).
+                  grid
+                  ariaLabel={`${title} 상위 종목 분기별 비중 추이`}
+                  // 툴팁은 그 분기의 비중 순위 차례로, 글자는 선 색으로(2026-11-17 사용자 요구 — 기본은 이름 차례·본문색).
+                  tooltipOrder="value"
+                  tooltipSeriesColors
+                />
+              )}
+            </Panel>
+
+            <HoldingsPanel data={data} krw={usdKrw} />
+          </>
         )}
-        {kpis.length > 0 && <KpiStrip label="포트폴리오 요약" items={kpis} keepDates />}
-      </Panel>
-
-      {data?.available && (
-        <>
-
-          <Card
-            title="상위 종목 분기별 비중 히트맵" source={SOURCES.sec13f}
-            // 히트맵 범례(순차 팔레트 — 어두운 단계 = 0에 가까움, 밝은 단계일수록 큼)와 같은 말로 적습니다(예전 계열 파랑 농도 때의 '진할수록'은 반대로 읽힘).
-            subtitle="칸이 밝을수록 비중이 큽니다. 어느 칸이 밝아지는지만 보면 흐름이 읽힙니다."
-          >
-            {/*
-              선 차트로 15개 종목을 겹쳐 그리면 색이 모자라고 선이 엉켜서, 정작
-              "무엇이 늘고 무엇이 줄었나"가 보이지 않았습니다. 히트맵은 같은 값을
-              칸 바탕의 순차 단계로 칠하고 숫자도 함께 적습니다(색만으로 값을 나르지 않습니다).
-            */}
-            {Object.keys(data.weightHistory?.series ?? {}).length === 0 ? (
-              <EmptyState message="비중 이력을 그릴 분기 데이터가 부족합니다." />
-            ) : (
-              <WeightHeatmap
-                dates={data.weightHistory?.dates ?? []}
-                series={data.weightHistory?.series ?? {}}
-              />
-            )}
-          </Card>
-
-          <Card
-            title="상위 종목 분기별 비중 추이 (선)" source={SOURCES.sec13f}
-            subtitle="같은 값을 선으로 본 것입니다. 특정 종목의 방향을 좇을 때 씁니다."
-          >
-            {chartSeries.length === 0 ? (
-              <EmptyState message="비중 추이를 그릴 분기 데이터가 부족합니다." />
-            ) : (
-              <MultiLineSeries
-                data={chartData}
-                series={chartSeries}
-                unit="%"
-                height={320}
-                // 툴팁은 그 분기의 비중 순위 차례로, 글자는 선 색으로(2026-11-17 사용자 요구 — 기본은 이름 차례·본문색).
-                tooltipOrder="value"
-                tooltipSeriesColors
-              />
-            )}
-          </Card>
-
-          <HoldingsPanel data={data} krw={usdKrw} />
-        </>
-      )}
+      </SplitPane>
     </div>
   );
 }

@@ -19,7 +19,8 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 차트를 재지 못해 그림은 빼고 이름만 둡니다(비중 글은 표·목록에 있음).
 vi.mock("@/components/charts", () => ({
   LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
-  MultiLineSeries: () => null,
+  // 비중 추이 차트는 이름과 격자 여부만 둡니다(그림은 jsdom에서 재지 못함).
+  MultiLineSeries: ({ ariaLabel, grid }: { ariaLabel?: string; grid?: boolean }) => <div role="img" aria-label={ariaLabel} data-grid={String(Boolean(grid))} />,
   WeightHeatmap: () => null,
   HorizontalBars: () => null,
 }));
@@ -445,5 +446,96 @@ describe("비중 히트맵 패널 부제 — 순차 범례와 같은 말", () =>
     const panel = heading.closest("section") as HTMLElement;
     expect(within(panel).getByText("칸이 밝을수록 비중이 큽니다. 어느 칸이 밝아지는지만 보면 흐름이 읽힙니다.")).toBeTruthy();
     expect(panel.textContent).not.toContain("진할수록");
+  });
+});
+
+// ------------------------------------------------------------------ 왼쪽 칸 — 기관 목록·조회 조건
+
+const NPS = "0001608046";
+
+function twoInstitutions() {
+  return {
+    institutions: [
+      { key: "brk", name: "\u{1F1FA}\u{1F1F8} 가상 버크셔 (Fictional Berkshire)", cik: BERKSHIRE, desc: "합성 기관 설명 — 가치 투자" },
+      { key: "nps", name: "\u{1F1F0}\u{1F1F7} 가상 연기금 (Fictional Pension)", cik: NPS, desc: "합성 기관 설명 — 연기금" },
+    ],
+  };
+}
+
+describe("왼쪽 칸 — 기관 목록(하나 고름)과 조회 조건", () => {
+  beforeEach(() => {
+    served = {};
+    serve();
+  });
+
+  it("기관 목록은 이름 있는 묶음 '분석할 기관'의 aria-pressed 단추(이름 = 국기 뗀 기관 이름) — 기본은 버크셔, 고르면 그 기관의 패널·포트폴리오", async () => {
+    served[INSTITUTIONS] = twoInstitutions();
+    served[PORTFOLIO] = summaryPortfolio();
+    served[endpoints.institution.portfolio(NPS, "8", "30")] = summaryPortfolio({ cik: NPS, institution: { name: "가상 연기금 (응답 이름)" } });
+    render(<InstitutionsPage />);
+
+    const group = await screen.findByRole("group", { name: "분석할 기관" });
+    const berkshire = within(group).getByRole("button", { name: "가상 버크셔 (Fictional Berkshire)" });
+    const pension = within(group).getByRole("button", { name: "가상 연기금 (Fictional Pension)" });
+    expect(berkshire.getAttribute("aria-pressed")).toBe("true");
+    expect(pension.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("heading", { level: 2, name: "기관" }).parentElement?.textContent).toContain("2곳");
+
+    fireEvent.click(pension);
+    expect(pension.getAttribute("aria-pressed")).toBe("true");
+    expect(berkshire.getAttribute("aria-pressed")).toBe("false");
+    const heading = await screen.findByRole("heading", { level: 2, name: "가상 연기금 (Fictional Pension)" });
+    const panel = heading.closest("section") as HTMLElement;
+    expect(within(panel).getByText("합성 기관 설명 — 연기금")).toBeTruthy();
+    expect(within(panel).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe(`/institutions/${NPS}`);
+    await within(panel).findByRole("region", { name: "포트폴리오 요약" });
+
+    // 고른 줄을 다시 눌러도 고름이 풀리거나 다시 읽지 않습니다(하나 고름).
+    const before = api.apiGetShared.mock.calls.length;
+    fireEvent.click(pension);
+    await act(async () => {});
+    expect(pension.getAttribute("aria-pressed")).toBe("true");
+    expect(api.apiGetShared.mock.calls.length).toBe(before);
+  });
+
+  it("조회 조건은 왼쪽 칸의 고르기 둘(이름·선택지·기본 그대로) — '분석할 기관' 고르기 상자는 없음", async () => {
+    served[INSTITUTIONS] = twoInstitutions();
+    render(<InstitutionsPage />);
+    const conditions = (await screen.findByRole("heading", { level: 2, name: "조회 조건" })).closest("section") as HTMLElement;
+    const quarters = within(conditions).getByLabelText("조회 분기 수") as HTMLSelectElement;
+    const topN = within(conditions).getByLabelText("표시 종목 수") as HTMLSelectElement;
+    expect(quarters.value).toBe("8");
+    expect([...quarters.options].map((option) => option.textContent)).toEqual(["최근 1개 분기", "최근 2개 분기", "최근 4개 분기", "최근 8개 분기"]);
+    expect(topN.value).toBe("30");
+    expect([...topN.options].map((option) => option.textContent)).toEqual(["상위 10개", "상위 20개", "상위 30개", "상위 50개"]);
+    expect(screen.queryByRole("combobox", { name: "분석할 기관" })).toBeNull();
+  });
+
+  it("기관 목록을 읽는 동안은 자리표시, 읽지 못하면 그 문구와 다시 시도 — 누를 때만 목록을 한 번 더 읽음", async () => {
+    let fail = true;
+    served[INSTITUTIONS] = () => (fail ? Promise.reject(new Error("기관 목록 연결 실패(합성)")) : Promise.resolve(twoInstitutions()));
+    render(<InstitutionsPage />);
+    const group = screen.getByRole("group", { name: "분석할 기관" });
+    expect(within(group).getByRole("status", { name: "기관 목록을 불러오는 중" })).toBeTruthy();
+
+    expect(await within(group).findByText("기관 목록 연결 실패(합성)")).toBeTruthy();
+    const listCalls = () => api.apiGetShared.mock.calls.filter(([path]) => path === INSTITUTIONS).length;
+    expect(listCalls()).toBe(1);
+    fail = false;
+    fireEvent.click(within(group).getByRole("button", { name: "다시 시도" }));
+    expect(await within(group).findByRole("button", { name: "가상 버크셔 (Fictional Berkshire)" })).toBeTruthy();
+    expect(listCalls()).toBe(2);
+  });
+});
+
+describe("비중 추이 차트 — 격자·구체 이름", () => {
+  it("기관 이름을 담은 차트 이름 '{기관} 상위 종목 분기별 비중 추이'", async () => {
+    served = {};
+    serve();
+    served[INSTITUTIONS] = berkshireList();
+    served[PORTFOLIO] = summaryPortfolio({ weightHistory: { dates: ["2026-06-30"], series: { "SYNTHETIC ALPHA CO": [60] } } });
+    render(<InstitutionsPage />);
+    const chart = await screen.findByRole("img", { name: "가상 버크셔 (Fictional Berkshire) 상위 종목 분기별 비중 추이" });
+    expect(chart.dataset.grid).toBe("true");
   });
 });

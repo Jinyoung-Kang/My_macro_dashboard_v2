@@ -11,7 +11,7 @@ import {
   PropertyList,
 } from "@/components/patterns";
 import { HoldingQuickLink } from "@/components/screens/detail/HoldingQuickLink";
-import { Card, LINK_CLASSES, Tag } from "@/components/ui";
+import { LINK_CLASSES, Panel, Tag } from "@/components/ui";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -64,7 +64,7 @@ export function HoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: Krw
       ? `${formatNumber(heldTotal, 0)}종목 가운데 비중 상위 ${formatNumber(shown, 0)}종목`
       : `${formatNumber(shown, 0)}종목`;
   return (
-    <Card
+    <Panel
       title={`보유 종목 상세 (기준일 ${data.latest?.reportDate ?? EMPTY})`} source={`${SOURCES.sec13f} · 원화 환산은 원/달러 최신값(Yahoo Finance)`}
       subtitle={`직전 분기 대비 액션은 비중 변화 ±0.05%p를 기준으로 분류합니다. ${krw.note}`}
     >
@@ -102,7 +102,7 @@ export function HoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: Krw
           />
         )}
       </InspectorFrame>
-    </Card>
+    </Panel>
   );
 }
 

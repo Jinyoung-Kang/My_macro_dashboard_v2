@@ -3,7 +3,8 @@
  *
  * - 열 때 기관 목록·포트폴리오(기본 버크셔 0001067983 · 8분기 · 상위 30)·원/달러를 한 번씩, 응답을 기다리지 않고 함께 부름.
  * - 자동 갱신은 원/달러 하나(120초 — 공용 환율 훅 useUsdKrw). 걸린 타이머를 하나씩 불러 어느 경로를 다시 읽는지 봅니다.
- * - 기관·조회 분기 수·표시 종목 수를 바꾸면 바뀐 조건의 포트폴리오만 한 번 더(기관 목록·환율은 다시 읽지 않음).
+ * - 기관(왼쪽 기관 목록 — 개편 전에는 '분석할 기관' 고르기 상자)·조회 분기 수·표시 종목 수를 바꾸면 바뀐 조건의 포트폴리오만 한 번 더
+ *   (기관 목록·환율은 다시 읽지 않음).
  *
  * 개편 전 코드에서 통과시켜 두고, 개편 커밋들이 그대로 통과해야 합니다(계획 §4-2 '요청 지킴 시험'). 검사 칸처럼 개편이 새로 만드는 조작의 '+0' 사례는
  * 그 조작을 만드는 커밋에서 더합니다.
@@ -129,7 +130,7 @@ describe("13F 포트폴리오 화면의 요청", () => {
     render(<InstitutionsPage />);
     await screen.findByText("SYNTHETIC ALPHA CO");
 
-    fireEvent.change(screen.getByLabelText("분석할 기관"), { target: { value: NPS } });
+    fireEvent.click(screen.getByRole("button", { name: "가상 연기금" }));
 
     const next = endpoints.institution.portfolio(NPS, "8", "30");
     await waitFor(() => expect(counts()[next]).toBe(1));
