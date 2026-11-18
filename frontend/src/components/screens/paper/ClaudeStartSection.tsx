@@ -19,6 +19,7 @@ import {
 } from "@/lib/paper";
 import type { PaperClaudePreviewResult, PaperFrameworkResponse, PaperInitialDecisionResult, PaperOverviewResponse } from "@/lib/types";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
+import { DetailFold } from "./DetailFold";
 
 /** 확인 단계 — 어느 버튼의 확인을 열었는지. */
 type Confirming = "preview" | "start" | null;
@@ -126,10 +127,10 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
           <Callout tone={previewView.tone}>{previewView.text}</Callout>
           {previewBody && <ClaudeDecisionBody view={previewBody} />}
           {previewPacket && (
-            <details className="rounded-control border border-border px-3 py-2 text-xs">
-              <summary className="cursor-pointer text-text-3">입력 패킷(JSON)</summary>
+            // 결정 상세와 같은 접기(머리 좁은 화면 44px — QA-773, QA-748과 같은 꼴).
+            <DetailFold summary="입력 패킷(JSON)">
               <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{previewPacket}</pre>
-            </details>
+            </DetailFold>
           )}
         </section>
       )}

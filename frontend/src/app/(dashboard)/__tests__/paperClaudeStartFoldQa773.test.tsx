@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-773 — Claude 시작 카드의 '입력 패킷(JSON)' 접기 머리는 좁은 화면 44px", () => {
-  it.fails("미리보기 결과의 접기 머리가 lg 미만 44px 누름 자리", async () => {
+  it("미리보기 결과의 접기 머리가 lg 미만 44px 누름 자리", async () => {
     api.apiPost.mockResolvedValue({
       ok: true, preview: true, model: "claude-sonnet-5-5", packet: { "1_asOf": "2026-10-23" },
       response: { schemaVersion: 2, orders: [] }, validation: null, usage: null,
