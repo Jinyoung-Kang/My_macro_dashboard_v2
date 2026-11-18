@@ -2838,4 +2838,5 @@ P6 검토의 지적 34건(높음 2·중간 6·낮음 26 — 같은 것을 합치
 확인(이 PC, 작업 폴더 `.claude/worktrees/wb-p6`): 커밋마다 `npx vitest run` 전체·`npm run typecheck`·`npx eslint src`(오류 0 — 경고 1은 전부터 있던 `lib/infoSearch.ts`)·`npm run check`. 흔들림(코드 변경 없이 다시 돌려 통과):
 `NavChartHoldQa601`의 처리되지 않은 오류가 `1313d107` 전 한 번·`972ed950` 전 세 번(부하 평균 약 20 — 이 PC의 다른 세션 시험), `SearchWatchEdit` 포커스가 `01127136`·`494f7819` 전 한 번씩.
 시험 수: 통합 끝 380 파일 4,546 사례 → 391 파일 4,572 사례(새 시험 파일 열하나 — QA-765~768·770~775의 재현 열과 `paperInspectorHeadings`, 기존 파일에 QA-769·776·777 재현과 새 선택 prop 사례).
-끝에 작업 폴더에서 `NEXT_TELEMETRY_DISABLED=1 npx next build --webpack`(아래 결과는 이 기록 커밋의 본문).
+코드가 끝난 `f248fdbd` 다음 문서 커밋 `a4581b94`에서 작업 폴더 `NEXT_TELEMETRY_DISABLED=1 npx next build --webpack` 통과(정적 페이지 55개 생성, `.next`는 지움). README·CLAUDE.md는 고치지 않아
+문서를 읽는 수집기 시험은 돌리지 않았습니다. QA 스택 확인(D5 전)은 하지 않았습니다 — 위 잰 값은 자기 빌드 + QA API GET입니다.
