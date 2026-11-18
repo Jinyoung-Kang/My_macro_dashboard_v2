@@ -18,17 +18,13 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 차트를 재지 못해 그림은 빼고 이름만 둡니다(비중 글은 표·목록에 있음). 표 히트맵(HeatmapTable — 그림이 아니라 표, Recharts 없음)은
-// 실제 부품을 씁니다(스타일 화면 유사도 행렬의 칸·단계를 봄 — QA-707).
-vi.mock("@/components/charts", async () => {
-  const heatmap = await vi.importActual<typeof import("@/components/charts/HeatmapTable")>("@/components/charts/HeatmapTable");
-  return {
-    LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
-    MultiLineSeries: () => null,
-    WeightHeatmap: () => null,
-    HorizontalBars: () => null,
-    HeatmapTable: heatmap.HeatmapTable,
-  };
-});
+// 패턴 배럴의 부품이라 이 모의에 걸리지 않고 실제로 그려집니다(스타일 화면 유사도 행렬의 칸·단계를 봄 — QA-707).
+vi.mock("@/components/charts", () => ({
+  LineChart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+  MultiLineSeries: () => null,
+  WeightHeatmap: () => null,
+  HorizontalBars: () => null,
+}));
 
 import { kstToday, rangeStart } from "@/lib/infoSearch";
 import type { GuruHoldersResponse } from "@/lib/types";

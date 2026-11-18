@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { HeatmapTable, HorizontalBars } from "@/components/charts";
-import { DataTable, Empty, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList } from "@/components/patterns";
+import { HorizontalBars } from "@/components/charts";
+import { DataTable, Empty, HeatmapTable, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList } from "@/components/patterns";
 import {
   Button,
   buttonClasses,
@@ -366,7 +366,7 @@ function SimilarityCard() {
 
       {matrix && names.length > 0 && (
         <div className="mt-5">
-          {/* 표 히트맵(차트 모듈 HeatmapTable — 순차 팔레트 다섯 단계, 칸마다 숫자): 예전에는 칸을 계열 파랑(#3987e5)의 rgba 농도로, 대각선을 토큰 밖
+          {/* 표 히트맵(패턴 HeatmapTable — 순차 팔레트 다섯 단계, 칸마다 숫자): 예전에는 칸을 계열 파랑(#3987e5)의 rgba 농도로, 대각선을 토큰 밖
               회색 rgba로 칠했고 0도 옅게 칠했습니다(QA-707). 대각선은 자기 자신이라 늘 최대 — 칠하면 그 줄만 눈에 띄어 정작 읽어야 할 곳에서 시선을
               뺏으므로 중립 면(selfIndex), 0(겹치는 종목 없음)은 칠하지 않습니다. 행·열은 짧은 이름, 마우스 설명은 국기를 뗀 전체 이름(QA-153). */}
           <HeatmapTable

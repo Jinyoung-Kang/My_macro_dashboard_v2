@@ -20,10 +20,9 @@ vi.mock("@/lib/api", () => api);
 // 매번 같은 객체를 돌려줘야 합니다 — 새 함수면 그것을 의존성으로 쓰는 effect가 끝없이 다시 돕니다.
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
-// jsdom에서는 차트를 재지 못해 그림은 뺍니다(요청은 차트 밖).
+// jsdom에서는 차트를 재지 못해 그림은 뺍니다(요청은 차트 밖). 표 히트맵은 패턴 배럴의 표라 그대로 그립니다(요청 없음).
 vi.mock("@/components/charts", () => ({
   HorizontalBars: () => null,
-  HeatmapTable: () => null,
 }));
 
 import { endpoints } from "@/lib/endpoints";

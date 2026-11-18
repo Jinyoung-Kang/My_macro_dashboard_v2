@@ -56,14 +56,16 @@ const DATA_FILES = [
   // 칸 틀(SplitPane, P4)은 넣지 않습니다 — 색 클래스 없이 칸 자리만 정하는 틀이고, 칸 안의 데이터는 위 패턴들이 그립니다.
   // 긴 화면 목차(SectionIndex, P5a)도 넣지 않습니다 — 같은 화면 절로 가는 내비(누를 수 있는 것)라 지금 칸 막대·가로 줄 밑줄이 강조 파랑이고(셸의 현재 메뉴와
   // 같은 규칙 — 원칙 A1), 데이터 칸이 없습니다(개수는 보조 글색).
-  // 거르기 목록(FilterList, P5b)도 넣지 않습니다 — 값을 그리는 패턴이 아니라 고르는 조작(aria-pressed 단추 목록)입니다. 데이터 영역 안의 고름이라 고른 표시는
+  // 거르기 목록(FilterList, P5b)도 넣지 않습니다 — 값을 그리는 패턴이 아니라 고르는 조작(aria-pressed 단추·라디오 목록)입니다. 데이터 영역 안의 고름이라 고른 표시는
   // 잉크(체크 상자·SELECTED_BAR)와 중립 바탕이고 강조 파랑을 쓰지 않습니다(그 패턴 시험 FilterList.test가 클래스에 accent가 없음을 봄).
   // 차트(래퍼·선 차트·차트 틀 — 축·기준선·격자·툴팁·계열 색).
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",
   "components/charts/frame.tsx",
-  // 표 히트맵(칸 바탕·칸 글·범례 — 차트 모듈 안의 표, P5b에 index.tsx에서 옮김)과 그 순차 팔레트(칸 바탕 hex — 강조 파랑 hex가 섞이지 않게).
-  "components/charts/HeatmapTable.tsx",
+  // 표 히트맵(칸 바탕·칸 글·범례 — 데이터 패턴, P5b에 차트 모듈 index.tsx에서 떼어 냈다가 검토 반영에서 패턴으로 옮김)과 그 감싸개 비중 히트맵(차트 모듈), 순차
+  // 팔레트(칸 바탕 hex — 강조 파랑 hex가 섞이지 않게).
+  "components/patterns/HeatmapTable.tsx",
+  "components/charts/WeightHeatmap.tsx",
   "lib/heatmap.ts",
 ] as const;
 

@@ -11,7 +11,8 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HeatmapTable, type HeatmapRow, WeightHeatmap } from "@/components/charts";
+import { WeightHeatmap } from "@/components/charts";
+import { HeatmapTable, type HeatmapRow } from "@/components/patterns";
 import { SEQUENTIAL_STEPS, SEQUENTIAL_TEXT } from "@/lib/heatmap";
 
 afterEach(cleanup);
