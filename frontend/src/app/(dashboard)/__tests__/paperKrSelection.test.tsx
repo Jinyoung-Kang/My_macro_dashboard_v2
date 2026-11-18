@@ -330,3 +330,27 @@ describe("QA-817 — 한국 종목 선정 표의 이름·사유는 낱말 사이
     for (const cell of columnCells(members, "사유")) expect(cell.className.split(/\s+/), cell.textContent ?? "").toContain("break-keep");
   });
 });
+
+// QA-819 — QA-817 고침(802a0701)의 회귀: CodeName 바깥 span에 break-keep을 달았는데 코드 span과 이름 span 사이에 공백이 없어, keep-all이 '012450한화에어로스페이스'를
+// 한 낱말로 봐 줄을 바꿀 곳이 없었음(숫자와 한글 사이의 줄바꿈 기회도 keep-all이 막음). 자기 빌드 360~430: '매수 목표' 표 379px가 상자(302~372px)를 넘어 '목표 비중'
+// 칸이 잘림 — KrSelectionSection 주석의 약속(열 넷, 390에서도 한 화면)이 깨짐. jsdom은 배치를 계산하지 않아 클래스만으로는 못 잡으므로, 코드와 이름 사이에
+// 줄바꿈 기회(공백 글 마디나 <wbr>)가 DOM에 있는지 봅니다(브라우저 잰 값은 커밋 본문).
+describe("QA-819 — 매수 목표 표의 코드와 이름 사이에는 줄바꿈 기회가 있다", () => {
+  it.fails("코드 span과 이름 span 사이에 공백 글 마디나 <wbr>", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
+      available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
+    });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    reads["/api/paper/decisions/45"] = () => Promise.resolve(LATEST_DETAIL);
+    renderSelection();
+    const targets = await screen.findByRole("region", { name: "매수 목표" });
+    const name = within(targets).getByText("삼성전자");
+    const between = name.previousSibling;
+    const opportunity = between !== null && (
+      (between.nodeType === Node.TEXT_NODE && /\s/.test(between.textContent ?? "")) || (between.nodeType === Node.ELEMENT_NODE && (between as Element).tagName === "WBR")
+    );
+    expect(opportunity, name.parentElement?.innerHTML ?? "").toBe(true);
+    // 이름은 여전히 낱말 사이에서만 꺾입니다(QA-817).
+    expect(name.closest(".break-keep")).not.toBeNull();
+  });
+});
