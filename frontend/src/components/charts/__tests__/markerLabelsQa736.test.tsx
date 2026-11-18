@@ -60,7 +60,7 @@ function labelExtents(container: HTMLElement): { text: string; left: number; rig
 }
 
 describe("QA-736 — 판 경계 이름표가 좁은 그림에서 겹치지 않는다", () => {
-  it.fails("390 그림(334px): 그린 이름표끼리 x 범위가 겹치지 않고, 세로선은 셋 모두 남는다", () => {
+  it("390 그림(334px): 그린 이름표끼리 x 범위가 겹치지 않고, 세로선은 셋 모두 남는다", () => {
     observeAs(334, 300);
     const { container } = render(
       <MultiLineSeries data={ROWS} series={[{ key: "a", name: "규칙 계좌", color: SERIES_COLORS.blue }]} markers={MARKERS} />,
