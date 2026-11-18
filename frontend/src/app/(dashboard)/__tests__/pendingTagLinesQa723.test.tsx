@@ -57,7 +57,7 @@ function violations(rows: readonly { width: number; lines: number }[]) {
 
 describe("기관 목록 자리의 좁은 화면 태그는 390 칸 폭 안의 폭과 실제 줄 수로 적는다(QA-723)", () => {
   // 수정 전 실패(plain it): ['4번째 줄 폭 336px > 칸 332px'] — APG 태그를 잘리기 전 한 줄 폭으로 적고 줄 수(tagLines)를 적지 않음.
-  it.fails("13F 포트폴리오 — 자리 줄 12개, 칸보다 넓은 폭이 없고 잘린 폭인 줄은 두 줄 이상", async () => {
+  it("13F 포트폴리오 — 자리 줄 12개, 칸보다 넓은 폭이 없고 잘린 폭인 줄은 두 줄 이상", async () => {
     render(<InstitutionsPage />);
     const rows = await pendingTags("기관 목록을 불러오는 중");
     expect(rows).toHaveLength(12);
