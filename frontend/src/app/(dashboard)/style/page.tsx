@@ -22,7 +22,6 @@ import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
-import { heatmapStepRange } from "@/lib/heatmap";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
@@ -32,7 +31,7 @@ import type {
 } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
-import { topPairs } from "@/lib/transforms";
+import { similarityHeatmap, similarityMax, similarityPairs, similarityStepLabel, similarityText } from "@/lib/styleScreen";
 
 /**
  * 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석, 주소 /guru → /style).
@@ -173,24 +172,11 @@ function SimilarityCard() {
 
   const matrix = mode === "overlap" ? data?.overlap : data?.cosine;
   const names = useMemo(() => data?.institutions ?? [], [data]);
-  const max = mode === "overlap" ? 100 : 1;
+  const max = similarityMax(mode);
 
-  // 짝 순위는 행렬에서 직접 만듭니다. 서버의 topPairs는 겹침 비중 순이라, 코사인을
-  // 고르면 목록과 기준이 어긋납니다. 기관 12곳이면 66쌍이라 브라우저에서 충분합니다.
+  // 짝 순위는 행렬에서 직접 만듭니다(lib/styleScreen similarityPairs — 서버의 topPairs는 겹침 순이라 코사인을 고르면 목록과 기준이 어긋남).
   // 표에는 짧은 이름, 마우스 설명에는 국기를 뗀 전체 이름(행렬 머리와 같은 규칙 — QA-153).
-  const pairs = useMemo(
-    () =>
-      (matrix ? topPairs(names, matrix, (name) => name, 8) : []).map((pair, index) => ({
-        key: `${pair.left}|${pair.right}`,
-        rank: index + 1,
-        left: shortName(pair.left),
-        leftTitle: filerName(pair.left) ?? pair.left,
-        right: shortName(pair.right),
-        rightTitle: filerName(pair.right) ?? pair.right,
-        value: pair.value,
-      })),
-    [matrix, names],
-  );
+  const pairs = useMemo(() => similarityPairs(names, matrix, 8), [matrix, names]);
   const pairsCaption = `가장 닮은 짝 — ${mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 ${pairs.length}`;
 
   return (
@@ -250,7 +236,7 @@ function SimilarityCard() {
                     <span aria-hidden="true" className="h-2 w-16 shrink-0 rounded-sm bg-surface-2 forced-color-adjust-none">
                       <span className="block h-2 rounded-sm bg-text-3" style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }} />
                     </span>
-                    <span className="min-w-12 text-text-2">{formatNumber(pair.value, mode === "overlap" ? 1 : 2)}</span>
+                    <span className="min-w-12 text-text-2">{similarityText(mode, pair.value)}</span>
                   </span>
                 ),
               },
@@ -267,22 +253,12 @@ function SimilarityCard() {
           <HeatmapTable
             caption="기관 간 유사도 행렬"
             rowHeader="기관"
-            columns={names.map((entry) => ({ key: entry.cik, label: shortName(entry.name), title: filerName(entry.name) ?? entry.name }))}
-            rows={names.map((entry, row) => ({
-              key: entry.cik,
-              label: shortName(entry.name),
-              title: filerName(entry.name) ?? entry.name,
-              values: names.map((_, col) => matrix[row]?.[col]),
-              selfIndex: row,
-            }))}
+            {...similarityHeatmap(names, matrix)}
             max={max}
-            format={(value) => formatNumber(value, mode === "overlap" ? 1 : 2)}
+            format={(value) => similarityText(mode, value)}
             minWidth={720}
             legend={{
-              stepLabel: (step) => {
-                const [low, high] = heatmapStepRange(step);
-                return mode === "overlap" ? `${Math.round(low * 100)}~${Math.round(high * 100)}%` : `${formatNumber(low, 1)}~${formatNumber(high, 1)}`;
-              },
+              stepLabel: (step) => similarityStepLabel(mode, step),
               note: "대각선(자기 자신과 견준 칸)과 0(겹치는 종목 없음)은 칠하지 않습니다.",
             }}
           />
@@ -607,12 +583,4 @@ function HoldersCard() {
       )}
     </Card>
   );
-}
-
-/**
- * 표 머리글에 들어갈 짧은 이름 — 국기를 뗀 이름(lib/holdings.filerName)에서 끝의 괄호 설명(영문 이름)을 뗍니다.
- * 예전에는 그림 문자 정규식만 써서 국기를 이루는 지역 표시 문자가 남았습니다(QA-153).
- */
-function shortName(name: string): string {
-  return (filerName(name) ?? name).replace(/\s*\(.*\)\s*$/, "").trim();
 }
