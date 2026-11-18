@@ -39,6 +39,13 @@ function sideBySide(inspector: InspectorContext): boolean {
 }
 
 /**
+ * 옆 칸 배치의 표 칸 좌우 여백 — 공용 표 칸(th·td)의 12px(px-3)을 8px로. 자손 선택자(클래스 + 요소)라 공용 표의 클래스 차례와 상관없이 이깁니다.
+ * 표의 최소 폭(칸마다 줄바꿈 없는 가장 긴 조각 + 여백)이 여백 12px로 약 622px(자기 빌드 1440 — 동작 태그 '비중 축소 (Reduced)' 141px·평가액·비중 변화
+ * 칩은 줄바꿈 없음)라, 검사 칸 옆 표 598px(1440·메뉴 220)를 넘어 오른쪽이 잘렸습니다. Tailwind가 글로 찾으므로 통째로 적습니다.
+ */
+const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
+
+/**
  * 13F 포트폴리오 화면의 '보유 종목 상세' 패널 — 최신 분기 보유 줄(응답 holdings — 백엔드가 비중 상위 topN줄로 자름)의 표와 고른 줄의 검사 칸
  * (작업대 실행 명세 §7 4행 '보유 표, 검사 칸'). 원화 병기는 화면이 받은 공용 환율(useUsdKrw)의 환산·문구를 그대로 씁니다.
  *
@@ -90,17 +97,23 @@ export function HoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: Krw
         }}
         defaultKey={holdingRows[0]?.key ?? null}
       >
-        {(inspector) => (
-          <DataTable
-            columns={holdingColumns(inspector, labels, krw.toKrw)}
-            rows={holdingRows}
-            rowKey={(row) => row.key}
-            caption="보유 종목 상세"
-            count={countText}
-            scrollHint={sideBySide(inspector) ? false : "overflow"}
-            selectedKey={inspector.shownKey}
-          />
-        )}
+        {(inspector) => {
+          const side = sideBySide(inspector);
+          return (
+            // 옆 칸 배치에서는 칸 좌우 여백을 12 → 8px로 줄입니다(SIDE_COMPACT) — 표가 검사 칸 옆 약 532~598px(메뉴 220에서 창 1374~1440)에 들어가게.
+            <div className={side ? SIDE_COMPACT : undefined}>
+              <DataTable
+                columns={holdingColumns(inspector, labels, krw.toKrw, side)}
+                rows={holdingRows}
+                rowKey={(row) => row.key}
+                caption="보유 종목 상세"
+                count={countText}
+                scrollHint={side ? false : "overflow"}
+                selectedKey={inspector.shownKey}
+              />
+            </div>
+          );
+        }}
       </InspectorFrame>
     </Panel>
   );
@@ -137,6 +150,7 @@ function holdingColumns(
   inspector: InspectorContext,
   labels: ReadonlyMap<string, string>,
   toKrw: (usd: number | null | undefined) => string | null,
+  side: boolean,
 ): Column<HoldingRow>[] {
   return [
     {
@@ -154,8 +168,10 @@ function holdingColumns(
       key: "name",
       header: "종목",
       rowHeader: true,
+      // 옆 칸 배치에서는 공백 없는 긴 낱말(회사 이름)도 비상으로 꺾습니다(wrap-anywhere) — 문턱 가까운 폭(표 532px 안팎)에서 표가 넘치지 않게.
+      // 1440(표 598px)에서는 이름 칸이 가장 긴 낱말보다 넓어 꺾이지 않습니다.
       cell: ({ holding }) => (
-        <span className="flex flex-col items-start">
+        <span className={`flex flex-col items-start${side ? " wrap-anywhere" : ""}`}>
           {/* 이름을 누르면 그 종목의 주가·정보 팝업 창(사용자 요청 2026-11-18 — 티커 없는 줄은 공시 이름으로 찾은 후보를 고름) */}
           <HoldingQuickLink holding={holding} />
           <span className="text-xs text-text-3">

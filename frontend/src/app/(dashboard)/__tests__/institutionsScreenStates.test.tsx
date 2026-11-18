@@ -431,6 +431,29 @@ describe("보유 표 검사 칸 — 맨 앞 아이콘 줄 단추", () => {
     expect(beta.getAttribute("aria-current")).toBe("true");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("옆 칸 배치의 표는 칸 좌우 여백을 줄이고(8px) 이름 칸은 긴 낱말도 비상으로 꺾음 — 최소 폭·넘김 안내 없음, 대화상자 배치는 공용 표 그대로", async () => {
+    stubWide();
+    render(<InstitutionsPage />);
+    await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC ALPHA CO" });
+    const region = screen.getByRole("region", { name: "보유 종목 상세 (좌우 스크롤)" });
+    const table = region.querySelector("table") as HTMLElement;
+    expect(table.className).not.toContain("min-w-[640px]");
+    expect(screen.queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
+    // 감싼 상자(공용 표의 개수 줄·스크롤 상자를 담음)의 자손 선택자 클래스.
+    expect(region.parentElement?.className).toBe("[&_td]:px-2 [&_th]:px-2");
+    const name = screen.getByText("SYNTHETIC ALPHA CO", { selector: "button" });
+    expect(name.closest(".wrap-anywhere")).not.toBeNull();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    render(<InstitutionsPage />);
+    await screen.findByRole("button", { name: "SYNTHETIC ALPHA CO 13F 줄 자세히" });
+    const narrowRegion = screen.getByRole("region", { name: "보유 종목 상세 (좌우 스크롤)" });
+    expect(narrowRegion.querySelector("table")?.className).toContain("min-w-[640px]");
+    expect(narrowRegion.parentElement?.className ?? "").not.toContain("[&_td]:px-2");
+    expect(screen.getByText("SYNTHETIC ALPHA CO", { selector: "button" }).closest(".wrap-anywhere")).toBeNull();
+  });
 });
 
 // ------------------------------------------------------------------ 비중 히트맵 패널 부제
