@@ -469,7 +469,8 @@ describe("일부 실패", () => {
     expect(screen.queryByText(/정기 작업이 꺼져 있습니다/)).toBeNull();
     // 꺼짐·켜짐을 모르는 채 배너만 사라지면 켜져 있는 것으로 읽힌다 — 모른다고 적는다(홈과 같은 문구).
     expect(await screen.findByText("정기 작업 상태를 확인하지 못했습니다 — 상태를 읽지 못했습니다.")).toBeTruthy();
-    expect(screen.queryByText(/설정 v\d/)).toBeNull();
+    // 부제 끝의 보이지 않는 같은 꼴 자리(aria-hidden — QA-820)는 보이지도 읽히지도 않으므로 빼고 봅니다.
+    expect(screen.queryByText(/설정 v\d/, { ignore: '[aria-hidden="true"], script, style' })).toBeNull();
   });
 
   it("상태 응답이 오면 꺼짐 배너와 계좌 부제의 설정 버전", async () => {
@@ -826,7 +827,7 @@ describe("QA-820 — 계좌 패널 부제의 설정 판 자리는 실패·번호
     return { subtitle, before, after: shape() };
   }
 
-  it.fails("상태 응답이 실패해도 같은 꼴의 보이지 않는 자리가 남는다", async () => {
+  it("상태 응답이 실패해도 같은 꼴의 보이지 않는 자리가 남는다", async () => {
     const { subtitle, before, after } = await shapes((_resolve, reject) => reject(new Error("상태를 읽지 못했습니다.")));
     expect(await screen.findByText("정기 작업 상태를 확인하지 못했습니다 — 상태를 읽지 못했습니다.")).toBeTruthy();
     expect(after).toBe(before);
@@ -834,12 +835,12 @@ describe("QA-820 — 계좌 패널 부제의 설정 판 자리는 실패·번호
     expect(hidden).toMatch(/설정 v/);
   });
 
-  it.fails("판 번호가 없어도(null) 같은 꼴", async () => {
+  it("판 번호가 없어도(null) 같은 꼴", async () => {
     const { before, after } = await shapes((resolve) => resolve({ ...STATUS, settingsVersion: null }));
     expect(after).toBe(before);
   });
 
-  it.fails("세 자리 판 번호(v100)도 읽는 동안과 같은 꼴", async () => {
+  it("세 자리 판 번호(v100)도 읽는 동안과 같은 꼴", async () => {
     const { subtitle, before, after } = await shapes((resolve) => resolve({ ...STATUS, settingsVersion: 100 }));
     expect(subtitle.textContent).toMatch(/ · 설정 v100/);
     expect(after).toBe(before);

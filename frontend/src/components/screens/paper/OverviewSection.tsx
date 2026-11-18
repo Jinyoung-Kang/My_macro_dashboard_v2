@@ -408,8 +408,8 @@ export function OverviewSection({
             {`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 계좌 이름을 누르면 그 계좌의 곡선·상세${
               hero ? "(위 요약·아래 장중 시세도 그 계좌로)" : ""
             }`}
-            <SettingsVersionTail version={status.data?.settingsVersion ?? null} pending={status.loading && status.data === null} />
             {korea && overview.initialized !== false ? ` · ${KR_RISK_RUN_NOTE}` : ""}
+            <SettingsVersionTail version={status.data?.settingsVersion ?? null} />
           </>
         }
         source={ledgerSource}
@@ -937,16 +937,21 @@ function accountColumns(
   ];
 }
 
-/** 설정 판 번호 자리(두 자리 — 운영 판 번호의 자릿수). 글자는 보이지 않고 읽히지 않습니다(aria-hidden). */
-const SETTINGS_VERSION_DIGITS = 2;
+/**
+ * 설정 판 번호 자리(세 자리 — 운영 판 번호는 v29이고 하루 약 한 판이라 세 자리까지 잡아 둡니다, 두 자리였을 때 v100에서 부제가 한 글자 넓어져 1328~1334 CLS
+ * 0.226 — QA-820). 채운 글자는 보이지 않고 읽히지 않습니다(aria-hidden).
+ */
+const SETTINGS_VERSION_DIGITS = 3;
 
 /**
- * 계좌 패널 부제 끝의 ' · 설정 v{n}'. 상태 응답은 개요보다 늦게 올 수 있어, 읽는 동안에는 같은 꼴의 보이지 않는 자리(' · 설정 v00')를 두고 온 뒤에는
- * 판 번호가 두 자리보다 짧으면 모자란 자리를 보이지 않는 '0'으로 채웁니다 — 부제 폭이 상태 응답 전후로 같아야 패널 머리(공용 Panel — flex-wrap
- * justify-between)가 '리스크 지금 실행'을 다음 줄로 보냈다 되돌리며 계좌 표를 밀지 않습니다(QA-811 — 1280 첫 적재 CLS 0.215). 판 번호 글은 부제
- * 글과 같은 글 마디(span 없이)라 낭독·글자 찾기는 예전 그대로이고, 읽기에 실패하거나 판 번호가 없으면 아무것도 그리지 않습니다(예전과 같음).
+ * 계좌 패널 부제 맨 끝의 ' · 설정 v{n}'. 상태 응답은 개요보다 늦게 올 수 있어, 판 번호가 없을 때(읽는 동안·읽기 실패·번호 없음)는 같은 꼴의 보이지 않는
+ * 자리(' · 설정 v000')를 두고, 온 뒤에는 판 번호가 세 자리보다 짧으면 모자란 자리를 보이지 않는 '0'으로 채웁니다 — 부제 폭이 상태 응답 전후로 같아야 패널
+ * 머리(공용 Panel — flex-wrap justify-between)가 '리스크 지금 실행'을 다음 줄로 보냈다 되돌리며 계좌 표를 밀지 않습니다(QA-811 — 1280 첫 적재 CLS 0.215).
+ * 읽기에 실패하거나 판 번호가 없을 때도 자리를 남깁니다 — 예전처럼 지우면 부제가 짧아지며 동작이 제목 줄로 돌아와 계좌 표를 끌어올렸습니다(QA-820 — 실패
+ * 0.39·번호 없음 0.21). 부제 맨 끝이라(한국은 리스크 실행 안내 뒤) 자리가 문장 가운데 빈틈으로 남지 않고 판 번호가 와도 뒤 글이 다시 흐르지 않습니다.
+ * 판 번호 글은 부제 글과 같은 글 마디(span 없이)라 낭독·글자 찾기는 예전 그대로입니다.
  */
-function SettingsVersionTail({ version, pending }: { version: number | null; pending: boolean }) {
+function SettingsVersionTail({ version }: { version: number | null }) {
   if (version) {
     const pad = Math.max(0, SETTINGS_VERSION_DIGITS - String(version).length);
     return (
@@ -956,5 +961,5 @@ function SettingsVersionTail({ version, pending }: { version: number | null; pen
       </>
     );
   }
-  return pending ? <span aria-hidden="true" className="invisible">{` · 설정 v${"0".repeat(SETTINGS_VERSION_DIGITS)}`}</span> : null;
+  return <span aria-hidden="true" className="invisible">{` · 설정 v${"0".repeat(SETTINGS_VERSION_DIGITS)}`}</span>;
 }
