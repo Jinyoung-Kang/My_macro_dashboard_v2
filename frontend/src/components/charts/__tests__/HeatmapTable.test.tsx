@@ -246,10 +246,10 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
       "      thead",
       "        tr class=\"text-xs text-text-3\"",
       "          th class=\"sticky left-0 break-keep bg-surface px-3 py-2 text-left font-medium\" scope=\"col\" \"종목\"",
-      "          th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2025-12-31\" \"25-12-31\"",
-      "          th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-03-31\" \"26-03-31\"",
-      "          th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-06-30\" \"26-06-30\"",
-      "          th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-09-30\" \"26-09-30\"",
+      "          th class=\"whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2025-12-31\" \"25-12-31\"",
+      "          th class=\"whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-03-31\" \"26-03-31\"",
+      "          th class=\"whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-06-30\" \"26-06-30\"",
+      "          th class=\"whitespace-nowrap px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-09-30\" \"26-09-30\"",
       "      tbody",
       "        tr",
       "          th class=\"sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC ALPHA CO\"",
@@ -282,5 +282,27 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
       "      b \"보유하지 않았다\"",
       "      b \"값을 모른다\"",
     ]);
+  });
+});
+
+describe("열 머리 nowrap", () => {
+  it("nowrap 열의 머리는 줄바꿈하지 않고(whitespace-nowrap), 나머지 열은 낱말 사이에서만 꺾는다 — 비중 히트맵 날짜 머리는 nowrap", () => {
+    render(
+      <HeatmapTable
+        caption="합성 행렬"
+        rowHeader="기관"
+        columns={[{ key: "d", label: "26-06-30", nowrap: true }, { key: "n", label: "가상 기관 이름" }]}
+        rows={[{ key: "r", label: "가상 행", values: [1, 2] }]}
+        max={2}
+        format={String}
+        legend={{ stepLabel: String }}
+      />,
+    );
+    const [date, name] = [screen.getByRole("columnheader", { name: "26-06-30" }), screen.getByRole("columnheader", { name: "가상 기관 이름" })];
+    expect([tokens(date).includes("whitespace-nowrap"), tokens(date).includes("break-keep")]).toEqual([true, false]);
+    expect([tokens(name).includes("whitespace-nowrap"), tokens(name).includes("break-keep")]).toEqual([false, true]);
+    cleanup();
+    render(<WeightHeatmap dates={DATES} series={SERIES} />);
+    expect(screen.getAllByRole("columnheader").slice(1).every((head) => tokens(head).includes("whitespace-nowrap"))).toBe(true);
   });
 });

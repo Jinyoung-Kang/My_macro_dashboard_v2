@@ -12,8 +12,11 @@ import { heatmapStep, heatmapStepRange, SEQUENTIAL_STEPS, SEQUENTIAL_TEXT } from
  * 13F 포트폴리오 화면을 그리는 셋 포함), 자리를 옮기면 그 시험들에서 실제 표가 그려져 같은 이름을 찾는 단언이 여럿을 찾게 됩니다.
  */
 
-/** 히트맵 열 하나 — `label`은 머리 글, `title`은 전체 이름(머리 칸과 그 열 칸의 마우스 설명 — 없으면 `label`). */
-export type HeatmapColumn = { key: string; label: string; title?: string };
+/**
+ * 히트맵 열 하나 — `label`은 머리 글, `title`은 전체 이름(머리 칸과 그 열 칸의 마우스 설명 — 없으면 `label`), `nowrap`은 머리 글을 줄바꿈하지 않음(날짜 —
+ * 하이픈 뒤에서 '24-09-' / '30'처럼 꺾이지 않게. 주지 않으면 한글 낱말 사이에서만 꺾음).
+ */
+export type HeatmapColumn = { key: string; label: string; title?: string; nowrap?: boolean };
 
 /**
  * 히트맵 행 하나 — `label`은 첫 열(행 머리) 글, `title`은 전체 이름(없으면 `label`), `values`는 열 차례의 값(모름은 null·undefined, 열보다 짧으면 모자란 칸도 모름),
@@ -112,7 +115,12 @@ export function HeatmapTable({
                 {rowHeader}
               </th>
               {columns.map((column) => (
-                <th key={column.key} scope="col" title={column.title} className="break-keep px-2 py-2 text-right font-medium tabular-nums">
+                <th
+                  key={column.key}
+                  scope="col"
+                  title={column.title}
+                  className={`${column.nowrap ? "whitespace-nowrap" : "break-keep"} px-2 py-2 text-right font-medium tabular-nums`}
+                >
                   {column.label}
                 </th>
               ))}
@@ -211,7 +219,8 @@ export function WeightHeatmap({
     <HeatmapTable
       caption="비중 히트맵"
       rowHeader="종목"
-      columns={dates.map((date) => ({ key: date, label: date.slice(2), title: date }))}
+      // 날짜 머리는 줄바꿈하지 않습니다 — 표 최소 폭에 눌린 열(1024 가운데 칸 등)에서 하이픈 뒤로 '24-09-' / '30'처럼 꺾였습니다.
+      columns={dates.map((date) => ({ key: date, label: date.slice(2), title: date, nowrap: true }))}
       rows={names.map((name) => ({
         key: name,
         label: name,
