@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { HorizontalBars } from "@/components/charts";
+import { DataTable } from "@/components/patterns";
 import {
   Banner,
   Button,
@@ -175,7 +176,21 @@ function SimilarityCard() {
 
   // 짝 순위는 행렬에서 직접 만듭니다. 서버의 topPairs는 겹침 비중 순이라, 코사인을
   // 고르면 목록과 기준이 어긋납니다. 기관 12곳이면 66쌍이라 브라우저에서 충분합니다.
-  const pairs = useMemo(() => (matrix ? topPairs(names, matrix, shortName, 8) : []), [matrix, names]);
+  // 표에는 짧은 이름, 마우스 설명에는 국기를 뗀 전체 이름(행렬 머리와 같은 규칙 — QA-153).
+  const pairs = useMemo(
+    () =>
+      (matrix ? topPairs(names, matrix, (name) => name, 8) : []).map((pair, index) => ({
+        key: `${pair.left}|${pair.right}`,
+        rank: index + 1,
+        left: shortName(pair.left),
+        leftTitle: filerName(pair.left) ?? pair.left,
+        right: shortName(pair.right),
+        rightTitle: filerName(pair.right) ?? pair.right,
+        value: pair.value,
+      })),
+    [matrix, names],
+  );
+  const pairsCaption = `가장 닮은 짝 — ${mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 ${pairs.length}`;
 
   return (
     <Card
@@ -199,46 +214,45 @@ function SimilarityCard() {
 
       {pairs.length > 0 && (
         <>
-          <h3 className="mb-2 text-xs font-semibold text-text-2">
-            가장 닮은 짝 — {mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 {pairs.length}
-          </h3>
-          {/* 막대 차트 축 라벨은 폭이 좁아 두 기관 이름이 "블랙… ↔ 뱅가…"로 잘렸습니다.
-              짝 비교는 이름을 읽는 것이 먼저라 전체 이름이 보이는 표로 바꿉니다.
-              막대는 크기 감만 주는 보조이고, 색은 중립색(빨강 = 매수·상승 약속과 섞이지 않게). */}
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="text-xs text-text-3">
-                <th className="w-8 px-2 py-1.5 text-right font-medium">#</th>
-                <th className="px-2 py-1.5 text-left font-medium">기관 A</th>
-                <th className="px-2 py-1.5 text-left font-medium">기관 B</th>
-                <th className="w-[40%] px-2 py-1.5 text-left font-medium">
-                  {mode === "overlap" ? "겹침 비중 (%)" : "코사인 유사도"}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {pairs.map((pair, index) => (
-                <tr key={`${pair.left}-${pair.right}`} className="border-t border-border">
-                  <td className="px-2 py-1.5 text-right tabular-nums text-text-3">{index + 1}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-text-2">{pair.left}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-text-2">{pair.right}</td>
-                  <td className="px-2 py-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 rounded-sm bg-surface-2">
-                        <div
-                          className="h-2 rounded-sm bg-text-3"
-                          style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-12 text-right tabular-nums text-text-2">
-                        {formatNumber(pair.value, mode === "overlap" ? 1 : 2)}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h3 className="mb-2 text-xs font-semibold text-text-2">{pairsCaption}</h3>
+          {/* 막대 차트 축 라벨은 폭이 좁아 두 기관 이름이 "블랙… ↔ 뱅가…"로 잘렸습니다. 짝 비교는 이름을 읽는 것이 먼저라 이름이 보이는 표입니다.
+              공용 표(가로 스크롤 상자 안)의 세 칸 — 순위 · 짝(두 기관을 위아래 두 줄, 낱말 사이에서 줄바꿈) · 값(숫자 + 크기 감만 주는 막대). 예전 네 칸 표는
+              두 이름 칸이 줄을 바꾸지 않고 스크롤 상자도 없어 390에서 패널 밖으로 넘쳐 값 끝이 잘리고 막대가 0폭이 됐습니다(QA-706). 막대는 고정 폭
+              (64px)이라 줄지 않고, 색은 중립색입니다(빨강 = 매수·상승 약속과 섞이지 않게). */}
+          <DataTable
+            dense
+            caption={pairsCaption}
+            rows={pairs}
+            rowKey={(pair) => pair.key}
+            columns={[
+              { key: "rank", header: "#", align: "right", className: "w-8 text-text-3", cell: (pair) => pair.rank },
+              {
+                key: "pair",
+                header: "짝",
+                rowHeader: true,
+                className: "break-keep",
+                cell: (pair) => (
+                  <span className="flex min-w-0 flex-col text-text-2">
+                    <span title={pair.leftTitle}>{pair.left}</span>
+                    <span title={pair.rightTitle}>{pair.right}</span>
+                  </span>
+                ),
+              },
+              {
+                key: "value",
+                header: mode === "overlap" ? "겹침 비중 (%)" : "코사인 유사도",
+                align: "right",
+                cell: (pair) => (
+                  <span className="inline-flex items-center justify-end gap-2">
+                    <span aria-hidden="true" className="h-2 w-16 shrink-0 rounded-sm bg-surface-2">
+                      <span className="block h-2 rounded-sm bg-text-3" style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }} />
+                    </span>
+                    <span className="min-w-12 text-text-2">{formatNumber(pair.value, mode === "overlap" ? 1 : 2)}</span>
+                  </span>
+                ),
+              },
+            ]}
+          />
         </>
       )}
 

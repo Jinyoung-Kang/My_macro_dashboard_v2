@@ -347,7 +347,7 @@ async function pairsTable(): Promise<HTMLTableElement> {
 describe("스타일 — '가장 닮은 짝' 표가 좁은 화면에서 패널 밖으로 넘친다(QA-706)", () => {
   // 수정 전 실패(D1 QA — 390에서 값 끝이 잘리고 막대가 0폭, 가로 스크롤 없음)의 구조: 표가 가로 스크롤 상자 밖, 열 넷(#·기관 A·기관 B·값),
   // 두 이름 칸이 줄바꿈 금지(whitespace-nowrap)라 표가 패널 폭보다 넓어짐.
-  it.fails("짝 표는 가로 스크롤 상자 안의 세 칸 표(#·짝·값)이고 이름 칸은 줄을 바꿀 수 있다", async () => {
+  it("짝 표는 가로 스크롤 상자 안의 세 칸 표(#·짝·값)이고 이름 칸은 줄을 바꿀 수 있다", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY_BODY) : new Promise(() => {}));
     render(<GuruPage />);
