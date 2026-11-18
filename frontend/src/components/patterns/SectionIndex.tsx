@@ -43,6 +43,14 @@ const STRIP: Record<ColumnFrom, string> = {
   "2xl": "relative flex overflow-x-auto border-b border-border 2xl:hidden",
 };
 
+/**
+ * 세로 목록이 화면보다 길 때 그 안에서 스크롤(선택 `columnScroll` — 작업대 P6 모의 설정: 묶음 25칸 안팎이라 1440×900에서 세로 목록 966px가 본문 스크롤 상자
+ * (창 − 상단바 48px)를 넘어 아래 칸이 붙은 채 화면 밖에 남았음). 높이 한도 = 창 높이 − 상단바 48px − 붙는 자리 16px − 아래 여백 16px(5rem). 스크롤 상자는
+ * 가로로도 자르므로 칸의 포커스 링(바깥 2px + 간격 2px)이 잘리지 않게 안쪽 여백 4px을 두고 같은 크기의 음수 바깥 여백으로 칸 자리는 그대로 둡니다.
+ * 세로 목록은 columnFrom 미만에서 display:none이라 폭 변형 없이 적습니다.
+ */
+const COLUMN_SCROLL = "-m-1 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain p-1";
+
 /** 세로 목록(columnFrom 이상) — 하위 칸은 들여 씁니다. */
 const COLUMN: Record<ColumnFrom, string> = {
   lg: "hidden flex-col gap-px lg:flex",
@@ -186,6 +194,8 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  *   본문이 움직이지 않았습니다(QA-659). 목차 칸 해시에서 해시 없는 기록(처음 연 주소)으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이 있던 마지막
  *   자리로(모르면 맨 위) 되돌립니다 — 크롬은 이때도 본문 스크롤 상자를 되돌리지 않아 넓은 화면은 주소만 바뀌고 본문이 옮긴 절에 남았습니다(QA-659 후속,
  *   좁은 화면은 창이 스크롤 상자라 브라우저가 되돌림 — 그대로 둠). 목차 밖 해시(#main 등)는 보지 않습니다.
+ * - 세로 목록이 화면보다 긴 화면은 선택 `columnScroll`(작업대 P6 — 기본 꺼짐, 매크로 그대로): 세로 목록에 높이 한도(창 − 5rem)를 두고 그 안에서 스크롤하며,
+ *   지금 칸이 목록의 보이는 자리 밖이면 목록만(본문은 그대로) 움직여 보입니다.
  * - 새로 고침·바로 연 주소의 해시 맞춤은 선택 `alignHashOnLoad`(작업대 P6 — 기본 꺼짐, 매크로는 그대로): 켜면 처음 그린 뒤 주소의 해시가 목차 칸(하위 칸 포함)이면
  *   그 닻으로 옮기고, 닻이 늦게 생기거나 위쪽 절이 자료를 받아 자라는 동안 사용자 입력이나 10초까지 다시 맞춥니다(`hooks/useHashAlign`). 셸이 그린 뒤에 닻이
  *   생기고 자료가 위 절을 키워 브라우저의 해시 이동이 빗나가던 것(진행 기록 P5a '남긴 것')을 프레임·설정(P6)·저장소 상태(P7)에서 맞춥니다.
@@ -203,6 +213,7 @@ export function SectionIndex({
   columnFrom = "lg",
   activeId,
   alignHashOnLoad = false,
+  columnScroll = false,
   children,
 }: {
   /** 내비 이름 — 예 '매크로 지표 목차'. */
@@ -214,6 +225,8 @@ export function SectionIndex({
   activeId?: string | null;
   /** 새로 고침·바로 연 주소의 #절로 맞춥니다(기본 꺼짐 — 위 설명). */
   alignHashOnLoad?: boolean;
+  /** 세로 목록이 화면보다 길면 그 안에서 스크롤합니다(기본 꺼짐 — 위 설명). */
+  columnScroll?: boolean;
   children: ReactNode;
 }): JSX.Element {
   const order = sectionOrder(items);
@@ -223,7 +236,19 @@ export function SectionIndex({
   // 가로 줄의 지금 칸 — 첫 단계 칸(하위 칸이 지금이면 그 부모).
   const activeTop = openParent ?? (items.some((item) => item.id === active) ? active : null);
   const stripRef = useRef<HTMLUListElement>(null);
+  const columnRef = useRef<HTMLUListElement>(null);
   useScrollStripActive(stripRef, activeTop);
+  // 스크롤하는 세로 목록(columnScroll)의 지금 칸이 목록의 보이는 자리 밖이면 목록의 scrollTop만 옮깁니다(scrollIntoView는 본문 스크롤 상자까지 움직여 쓰지 않음).
+  useEffect(() => {
+    const list = columnRef.current;
+    if (!columnScroll || list === null || active === null || list.clientHeight === 0) return;
+    const link = list.querySelector<HTMLElement>('[aria-current="location"]');
+    if (link === null) return;
+    const box = list.getBoundingClientRect();
+    const row = link.getBoundingClientRect();
+    if (row.top < box.top) list.scrollTop -= box.top - row.top + 4;
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom + 4;
+  }, [columnScroll, active]);
   // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백·옆 검사 칸의 sticky 위치가 읽음 — QA-656·657).
   useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
   // 뒤로·앞으로 가기(hashchange)로 해시가 목차 칸이 되면 그 닻으로, 목차 칸 해시에서 해시 없는 기록으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이
@@ -298,7 +323,7 @@ export function SectionIndex({
             );
           })}
         </ul>
-        <ul className={COLUMN[columnFrom]}>
+        <ul ref={columnRef} className={columnScroll ? `${COLUMN[columnFrom]} ${COLUMN_SCROLL}` : COLUMN[columnFrom]}>
           {items.map((item) => (
             <li key={item.id} className="min-w-0">
               <ColumnLink leaf={item} child={false} state={item.id === active ? "current" : item.id === openParent ? "open" : "rest"} />
