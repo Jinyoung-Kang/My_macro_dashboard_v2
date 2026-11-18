@@ -3,9 +3,9 @@
 import type { ReactNode } from "react";
 import { DataTable, InspectorSubheading } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";
-import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, type ConditionRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
+import { type ClaudeDecisionView, type ClaudeOrderRow, type ConditionRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
 import type { KrDecisionExtras } from "@/lib/paperKr";
-import { PaperBadge } from "./PaperBadge";
+import { PaperBadges } from "./PaperBadge";
 import { TickerName } from "./TickerName";
 import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
 
@@ -42,7 +42,7 @@ export function ClaudeDecisionBody({
             <MetaRow label="요청">{view.checkpoint.request}</MetaRow>
             {view.checkpoint.trigger && <MetaRow label="호출 이유">{view.checkpoint.trigger}</MetaRow>}
             <MetaRow label="응답">
-              {view.checkpoint.action ? <Badges badges={[view.checkpoint.action]} /> : <span className="text-text-3">{EMPTY}</span>}
+              {view.checkpoint.action ? <PaperBadges badges={[view.checkpoint.action]} /> : <span className="text-text-3">{EMPTY}</span>}
             </MetaRow>
             <MetaRow label="적용">{view.checkpoint.applied}</MetaRow>
             <MetaRow label="대신한 대기 주문">{view.checkpoint.superseded}</MetaRow>
@@ -75,13 +75,13 @@ export function ClaudeDecisionBody({
             {!view.checkpoint && <dl className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
               <div>
                 <dt className="text-text-3">자세</dt>
-                <dd>{view.stance ? <Badges badges={[view.stance]} /> : <span className="text-text-3">{EMPTY}</span>}</dd>
+                <dd>{view.stance ? <PaperBadges badges={[view.stance]} /> : <span className="text-text-3">{EMPTY}</span>}</dd>
               </div>
               <div>
                 <dt className="text-text-3">목표 주식 노출</dt>
                 <dd className="flex items-center gap-1 tabular-nums font-semibold text-text">
                   {view.targetExposure}
-                  {view.mismatch && <Badges badges={[view.mismatch]} />}
+                  {view.mismatch && <PaperBadges badges={[view.mismatch]} />}
                 </dd>
               </div>
               <div>
@@ -133,7 +133,7 @@ export function ClaudeDecisionBody({
                 key: "labels",
                 header: "라벨",
                 className: "break-keep",
-                cell: (row) => (row.labels.length > 0 ? <Badges badges={row.labels} /> : <span className="text-text-3">{EMPTY}</span>),
+                cell: (row) => (row.labels.length > 0 ? <PaperBadges badges={row.labels} /> : <span className="text-text-3">{EMPTY}</span>),
               },
               { key: "invalidation", header: "무효화 조건", className: "break-keep", cell: (row) => <span className="text-xs text-text-2">{row.invalidation}</span> },
             ]}
@@ -161,7 +161,7 @@ export function ClaudeDecisionBody({
               { key: "ticker", header: "종목", className: "break-keep", cell: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
               { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", cell: (row) => <span className="whitespace-nowrap">{row.size}</span> },
-              { key: "result", header: "결과", className: "break-keep", cell: (row) => <Badges badges={[row.result]} /> },
+              { key: "result", header: "결과", className: "break-keep", cell: (row) => <PaperBadges badges={[row.result]} /> },
               {
                 key: "reason",
                 header: "거절 사유",
@@ -258,11 +258,3 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
-      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
-    </span>
-  );
-}

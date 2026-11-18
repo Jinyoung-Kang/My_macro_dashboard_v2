@@ -13,7 +13,6 @@ import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import {
-  type Badge,
   bookOptions,
   candidatesNote,
   claude2CheckpointLine,
@@ -85,7 +84,7 @@ import { Claude2CheckpointLine, Claude2WindowList } from "./Claude2StartSection"
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
-import { PaperBadge } from "./PaperBadge";
+import { PaperBadge, PaperBadges } from "./PaperBadge";
 import { PaperTabAccount, PaperTabActions } from "./PaperTabHeader";
 import { ReviewsSection } from "./ReviewsSection";
 
@@ -600,7 +599,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                   key: "group",
                   header: "그룹",
                   className: "break-keep",
-                  cell: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
+                  cell: (row) => (row.group ? <PaperBadges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                 },
                 { key: "rankA", header: "그룹 A 순위", align: "right", cell: (row) => row.rankA },
                 { key: "rankB", header: "그룹 B 순위", align: "right", cell: (row) => row.rankB },
@@ -692,7 +691,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                     key: "group",
                     header: "그룹",
                     className: "break-keep",
-                    cell: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
+                    cell: (row) => (row.group ? <PaperBadges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                   },
                   { key: "filerWeight", header: "기관 가중", align: "right", cell: (row) => row.filerWeight },
                   { key: "conviction", header: "확신도", align: "right", cell: (row) => row.conviction },
@@ -750,7 +749,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
               className: "break-keep",
               cell: (row) => (
                 <span className="flex flex-wrap items-center gap-1">
-                  <Badges badges={[orderStatusBadge(row.status)]} />
+                  <PaperBadges badges={[orderStatusBadge(row.status)]} />
                   {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
                 </span>
               ),
@@ -828,7 +827,7 @@ function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
           className: "break-keep",
           cell: (row) => {
             const badge = selectedBadge(row);
-            return badge ? <Badges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
+            return badge ? <PaperBadges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
           },
         },
         { key: "cagr", header: "CAGR", align: "right", cell: (row) => row.cagr },
@@ -851,11 +850,3 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
-      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
-    </span>
-  );
-}

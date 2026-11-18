@@ -19,3 +19,13 @@ export function PaperBadge({ badge }: { badge: Pick<Badge, "label" | "className"
     </span>
   );
 }
+
+/**
+ * lib 배지 목록 → 공용 태그 여럿(PaperBadge) — 배지 글은 줄을 바꾸지 않고 배지 사이에서만 꺾습니다(감싸개 flex-wrap·간격 4px). `bare`면 감싸개 없이 태그만
+ * (부르는 쪽 줄이 이미 flex 줄 — 보유·주문·체결 표의 종목 칸). 결정 상세·선정·보유 표가 함께 씁니다(작업대 P6 검토 — 화면마다 따로 있던 같은 도우미 다섯).
+ */
+export function PaperBadges({ badges, bare = false }: { badges: readonly Badge[]; bare?: boolean }): JSX.Element {
+  const tags = badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />);
+  return bare ? <>{tags}</> : <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">{tags}</span>;
+}
+

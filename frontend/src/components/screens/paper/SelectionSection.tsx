@@ -11,7 +11,6 @@ import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import {
-  type Badge,
   collectionView,
   criteriaText,
   eligibilityBadge,
@@ -37,7 +36,7 @@ import {
   windowLabel,
 } from "@/lib/paper";
 import { type CandidateFilter, candidateFilterOptions, filterCandidates } from "@/lib/paperSelectionView";
-import { PaperBadge } from "./PaperBadge";
+import { PaperBadges } from "./PaperBadge";
 import { RowFilter } from "./RowFilter";
 import type {
   PaperRerankResult,
@@ -269,7 +268,7 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
               ),
             },
             // 그룹을 모르면 글 "—" — 표가 Empty("값 없음"을 읽어 줌)로 그립니다.
-            { key: "group", header: "그룹", cell: (row) => (row.group ? <Badges badges={[row.group]} /> : EMPTY) },
+            { key: "group", header: "그룹", cell: (row) => (row.group ? <PaperBadges badges={[row.group]} /> : EMPTY) },
             { key: "rankA", header: "그룹 A 순위", align: "right", cell: (row) => row.rankA },
             { key: "rankB", header: "그룹 B 순위", align: "right", cell: (row) => row.rankB },
             { key: "weight", header: "기관 가중", align: "right", cell: (row) => row.weight },
@@ -394,7 +393,7 @@ function CandidateTable({
             header: "자격",
             cell: (row) => (
               <div className="flex min-w-[9rem] flex-col items-start gap-1">
-                <Badges badges={[eligibilityBadge(row, group)]} />
+                <PaperBadges badges={[eligibilityBadge(row, group)]} />
                 {!row.eligible && row.ineligibleReason && <span className="text-xs leading-snug text-warn">{row.ineligibleReason}</span>}
               </div>
             ),
@@ -404,7 +403,7 @@ function CandidateTable({
             header: "선정",
             cell: (row) => {
               const badge = selectedBadge(row);
-              return badge ? <Badges badges={[badge]} /> : EMPTY;
+              return badge ? <PaperBadges badges={[badge]} /> : EMPTY;
             },
           },
           group === "A"
@@ -519,17 +518,6 @@ function PeriodTable({ name, span, periods }: { name: string; span: string; peri
         ]}
       />
     </section>
-  );
-}
-
-/** 배지 묶음 — 공용 태그(PaperBadge — 20px, 정상·주의·중립 톤, 마우스 설명 그대로). */
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      {badges.map((badge) => (
-        <PaperBadge key={badge.key} badge={badge} />
-      ))}
-    </span>
   );
 }
 

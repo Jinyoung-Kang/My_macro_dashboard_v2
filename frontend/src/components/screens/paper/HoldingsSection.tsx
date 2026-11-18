@@ -17,7 +17,6 @@ import { endpoints } from "@/lib/endpoints";
 import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatSignedMinus, formatWithUnit } from "@/lib/format";
 import { liveKey, livePriceTitle, liveSecondsText, liveShown, returnVsCost, tradedAtText } from "@/lib/livePrices";
 import {
-  type Badge,
   bookCard,
   bookOptions,
   executionAdvantageText,
@@ -92,7 +91,7 @@ import type {
   LivePrice,
 } from "@/lib/types";
 import { HoldingInspector } from "./HoldingInspector";
-import { PaperBadge } from "./PaperBadge";
+import { PaperBadge, PaperBadges } from "./PaperBadge";
 import { RowFilter } from "./RowFilter";
 import { PaperTabAccount, PaperTabActions } from "./PaperTabHeader";
 import { TickerQuickView } from "./TickerQuickView";
@@ -114,7 +113,7 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span className="font-semibold text-text"><TickerQuickView market="US" code={row.ticker}>{row.ticker}</TickerQuickView></span>
-        <Badges badges={positionBadges(row)} />
+        <PaperBadges bare badges={positionBadges(row)} />
       </span>
     ),
   },
@@ -202,7 +201,7 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     header: "상태",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <Badges badges={[orderStatusBadge(row.status)]} />
+        <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
         {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
       </span>
     ),
@@ -234,7 +233,7 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span>{row.ticker}</span>
-        <Badges badges={fillBadges(row)} />
+        <PaperBadges bare badges={fillBadges(row)} />
       </span>
     ),
   },
@@ -335,7 +334,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       cell: (row) => (
         <span className="flex flex-col gap-0.5">
           <span className="flex flex-wrap items-center gap-1">
-            <Badges badges={[orderStatusBadge(row.status)]} />
+            <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
             {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
           </span>
           <span className="whitespace-nowrap text-xs text-text-3">
@@ -381,7 +380,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       cell: (row) => (
         <span className="flex flex-wrap items-center gap-1">
           <span>{row.ticker}</span>
-          <Badges badges={fillBadges(row)} />
+          <PaperBadges bare badges={fillBadges(row)} />
         </span>
       ),
     },
@@ -456,7 +455,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span className="font-semibold text-text"><TickerQuickView market="KR" code={row.ticker} /></span>
-        <Badges badges={krPositionBadges(row)} />
+        <PaperBadges bare badges={krPositionBadges(row)} />
       </span>
     ),
   },
@@ -558,7 +557,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
       const reject = krOrderRejectText(row.rejectReason);
       return (
         <span className="flex flex-wrap items-center gap-1">
-          <Badges badges={[orderStatusBadge(row.status)]} />
+          <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
           {reject.label && <span className="text-xs font-semibold text-warn">{reject.label}</span>}
           {reject.detail && <span className="text-xs text-warn">{reject.detail}</span>}
         </span>
@@ -598,7 +597,7 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span><TickerName code={row.ticker} /></span>
-        <Badges badges={krFillBadges(row)} />
+        <PaperBadges bare badges={krFillBadges(row)} />
       </span>
     ),
   },
@@ -1144,17 +1143,6 @@ function withConfirmed(provisional: string, confirmed: string): ReactNode {
  */
 function KrEmpty({ children }: { children: ReactNode }) {
   return <p className="py-2 text-sm leading-relaxed text-text-3">{children}</p>;
-}
-
-/** 배지 묶음 — 공용 태그(PaperBadge — 20px, 정상·주의·중립 톤, 마우스 설명 그대로 — 작업대 P6). */
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <>
-      {badges.map((badge) => (
-        <PaperBadge key={badge.key} badge={badge} />
-      ))}
-    </>
-  );
 }
 
 /**

@@ -4,7 +4,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { DataTable, InspectorSubheading } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";
-import type { Badge } from "@/lib/paper";
 import {
   type KrCell,
   type KrDecisionExtras,
@@ -14,7 +13,7 @@ import {
   type KrRuleDecisionView,
 } from "@/lib/paperKr";
 import { paperTabPath } from "@/lib/paperRoutes";
-import { PaperBadge } from "./PaperBadge";
+import { PaperBadges } from "./PaperBadge";
 import { DetailFold } from "./DetailFold";
 import { TickerName } from "./TickerName";
 
@@ -182,7 +181,7 @@ export function KrGateTable({ rows, label }: { rows: KrGateRow[]; label: string 
       rowKey={(row) => row.key}
       columns={[
         { key: "gate", header: "게이트", className: "whitespace-nowrap", cell: (row) => <span className="font-semibold text-text">{row.gate}</span> },
-        { key: "status", header: "판정", className: "whitespace-nowrap", cell: (row) => <Badges badges={[row.badge]} /> },
+        { key: "status", header: "판정", className: "whitespace-nowrap", cell: (row) => <PaperBadges badges={[row.badge]} /> },
         {
           key: "note",
           header: "판정 문장",
@@ -276,11 +275,3 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-/** lib 배지 목록 → 공용 태그(PaperBadge — 20px, 주의는 아이콘 + 낭독 '주의: '). 배지 글은 줄을 바꾸지 않고 배지 사이만 꺾습니다. */
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <span className="flex flex-wrap items-center gap-1 whitespace-nowrap">
-      {badges.map((badge) => <PaperBadge key={badge.key} badge={badge} />)}
-    </span>
-  );
-}
