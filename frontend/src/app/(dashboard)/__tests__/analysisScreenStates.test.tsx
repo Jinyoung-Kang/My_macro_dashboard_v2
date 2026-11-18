@@ -371,7 +371,7 @@ describe("스타일 — '가장 닮은 짝' 표가 좁은 화면에서 패널 �
 describe("스타일 — '가장 닮은 짝' 막대가 고대비에서 사라진다(QA-708)", () => {
   // 수정 전 실패: 막대(바탕 surface-2 + 채움 text-3)가 바탕색만으로 그린 모양이라 고대비(forced-colors)에서 바탕색이 지워지면 통째로 사라짐 —
   // 막대 상자에 forced-color-adjust-none이 없음(D1 '바탕색만으로 그린 모양'의 /style 몫).
-  it.fails("짝 막대(장식)는 고대비에서도 색을 지키고(forced-color-adjust-none), 숫자는 막대 밖 글로 남는다", async () => {
+  it("짝 막대(장식)는 고대비에서도 색을 지키고(forced-color-adjust-none), 숫자는 막대 밖 글로 남는다", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/guru/similarity") ? Promise.resolve(SIMILARITY_BODY) : new Promise(() => {}));
     render(<GuruPage />);

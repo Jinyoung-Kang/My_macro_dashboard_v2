@@ -244,7 +244,9 @@ function SimilarityCard() {
                 align: "right",
                 cell: (pair) => (
                   <span className="inline-flex items-center justify-end gap-2">
-                    <span aria-hidden="true" className="h-2 w-16 shrink-0 rounded-sm bg-surface-2">
+                    {/* 막대는 바탕색으로만 그린 모양이라 고대비(forced-colors)에서 바탕이 지워지면 사라졌습니다 — 색을 지킵니다(forced-color-adjust는
+                        상속되어 채움도 같음, QA-708 — 국면 띠 QA-635와 같은 규칙). 값은 옆 숫자 글이 나릅니다. */}
+                    <span aria-hidden="true" className="h-2 w-16 shrink-0 rounded-sm bg-surface-2 forced-color-adjust-none">
                       <span className="block h-2 rounded-sm bg-text-3" style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }} />
                     </span>
                     <span className="min-w-12 text-text-2">{formatNumber(pair.value, mode === "overlap" ? 1 : 2)}</span>
