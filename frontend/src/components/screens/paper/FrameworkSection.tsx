@@ -1,13 +1,23 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Table } from "@/components/ui";
+import {
+  MasterDetail,
+  PropertyList,
+  type PropertyItem,
+  SectionAnchor,
+  SectionIndex,
+  type SectionIndexItem,
+  Timeline,
+  type TimelineEntry,
+} from "@/components/patterns";
+import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Table, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { formatNumber } from "@/lib/format";
+import { EMPTY, formatNumber } from "@/lib/format";
 import {
   APPROVE_COST_NOTE,
   approveResultView,
@@ -29,9 +39,7 @@ import {
   frameworkSavePayload,
   frameworkSaveResultView,
   frameworkSourceCardView,
-  type FrameworkVersionRow,
   frameworkVersionLabel,
-  frameworkVersionRows,
   insightNotePayload,
   mergedInsightNoteOptions,
   noteCreateResultView,
@@ -41,12 +49,19 @@ import {
   type ProposalOperationRow,
   proposalBaseToFetch,
   proposalFocusView,
+  proposalStatusBadge,
   proposalView,
   proposeResultView,
   rejectResultView,
   renderedCompare,
   textLength,
 } from "@/lib/paper";
+import {
+  frameworkOutline,
+  frameworkOutlineTocLevel,
+  type FrameworkVersionEntry,
+  frameworkVersionEntries,
+} from "@/lib/paperFrameworkOutline";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperFrameworkMaxIds,
@@ -64,21 +79,29 @@ import type {
   PaperSettingsResponse,
 } from "@/lib/types";
 
+import { FrameworkOutline } from "./FrameworkOutline";
+
 const INPUT = `w-full ${inputClasses()}`;
 
 /**
  * 프레임 탭(명세 F1~F5·F7·D15) — Claude 책의 판단 프레임(투자 OS) 판.
  *
- * 위에서부터: 지금 판(상태 배지 — 임시면 "임시 v0", 렌더링 미리보기는 접어 둠, 토큰 어림 vs 예산·초과 경고, 바꾼 내용), 제안 요청
- * 카드(임시 판이면 "OS 원문으로 새 판 만들기", 사용자 판이면 "방법론 글로 갱신 제안 받기" — 글 → 방법론 메모 저장 또는 있는 메모 고르기 →
- * Claude 제안 → 승인), 제안 목록(평가·변경·전후 비교, 승인·거절), 판 목록과 두 판 나란히 비교, 직접 고치기(원칙·엔진·규칙 폼 — 저장하면
- * 사용자 판).
+ * 위에서부터: 지금 판(상태 배지 — 임시면 "임시 v0", 속성 — 판·만든 시각·구성·토큰 어림 vs 예산·바꾼 내용, 예산 초과 경고, 렌더링 글을 펼친 본문),
+ * 제안 요청 카드(임시 판이면 "OS 원문으로 새 판 만들기", 사용자 판이면 "방법론 글로 갱신 제안 받기" — 글 → 방법론 메모 저장 또는 있는 메모 고르기 →
+ * Claude 제안 → 승인), 제안 목록(목록-검사 — 고른 제안의 평가·변경·전후 비교, 승인·거절), 판 이력(시각순 목록), 두 판 나란히 비교, 직접 고치기
+ * (원칙·엔진·규칙 폼 — 저장하면 사용자 판).
+ *
+ * <p><b>배치</b>(작업대 P6 — 명세 §7-1 '프레임'): 긴 화면 목차(SectionIndex — 2xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위 가로 줄 — 매크로와 같은
+ * 까닭으로 1280~1535는 가로 줄)의 칸은 지금 판(하위 칸 = 렌더링 글의 머리 절 — lib/paperFrameworkOutline)·제안 요청·제안(개수)·판 이력(개수)·두 판 비교·
+ * 직접 고치기이고, 새로 고친·바로 연 주소의 #절로 맞춥니다(alignHashOnLoad). 렌더링 글은 접지 않고 긴 글(running 15/24, 72ch)로 펼칩니다 — 글은 서버
+ * 글 그대로(U10). 제안은 기본 접힘 — 목록 줄('#번호 상태 요약 첫 줄')을 고르면 틀 48rem부터는 오른쪽 넓은 검사 칸, 그 아래는 위쪽 대화상자(제목에
+ * 포커스)에 그 제안을 그립니다. 판 이력은 판을 고르면 검사 칸에 판의 속성(새 요청 없음).
  *
  * 렌더링·토큰 어림·예산 초과는 서버가 정합니다(화면은 다시 세지 않음). 제안 요청만 Claude를 부르고(비용·하루 상한 공유 — 확인 단계),
  * 승인·거절·수동 편집은 부르지 않습니다. 어느 쪽이든 판이 바뀌면 지금 판과 제안 목록을 다시 읽습니다. 규칙 책은 프레임을 쓰지 않습니다.
  *
- * 결정 로그 탭의 주간 복기에서 제안 링크를 누르고 오면({@code focusProposalId}) 제안 목록의 그 제안으로 스크롤하고 테두리로 강조합니다
- * (2단계 D — 복기가 낸 제안도 같은 목록·같은 승인 흐름).
+ * 결정 로그 탭의 주간 복기에서 제안 링크를 누르고 오면({@code focusProposalId}) 제안 목록에서 그 제안을 고르고(넓은 틀은 검사 칸, 좁은 틀은 대화상자를
+ * 엶) 제안 절로 스크롤합니다 — 검사 칸 안의 '주간 복기에서 연 제안' 글과 aria-current(2단계 D — 복기가 낸 제안도 같은 목록·같은 승인 흐름).
  *
  * <p><b>한국 화면</b>(`market` "KR" — 사용자 결정 2026-10-29: 프레임은 두 시장 공용 화면): 같은 판·같은 쓰기 경로(편집·제안·승인)이고, 맨 위에
  * 공용 판이라는 것과 한국 프롬프트에서 무엇이 본문보다 앞서는지를 적습니다(어느 상태에서든 — 읽는 중·오류에도). 방법론 메모 고르기는 두 시장
@@ -114,14 +137,17 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
   const proposalList = proposals.data?.available ? proposals.data.proposals ?? [] : [];
   const focus = proposalFocusView(proposalList, focusProposalId);
   const frameworkReady = Boolean(framework.data?.available);
-  // 목록이 그려진 뒤에 옮깁니다(판 응답이 늦으면 목록이 아직 없음). jsdom에는 scrollIntoView가 없어 있을 때만 부릅니다.
+  // 제안 목록에서 고른 제안(검사 칸·대화상자) — 주간 복기에서 연 제안이면 처음부터 그 제안입니다(좁은 틀은 대화상자를 엶 — revealSelectedInDialog).
+  const [pickedProposal, setPickedProposal] = useState<string | null>(focusProposalId === null ? null : String(focusProposalId));
+  useEffect(() => {
+    if (focusProposalId !== null) setPickedProposal(String(focusProposalId));
+  }, [focusProposalId]);
+  // 목록이 그려진 뒤에 제안 절로 옮깁니다(판 응답이 늦으면 목록이 아직 없음). jsdom에는 scrollIntoView가 없어 있을 때만 부릅니다.
   // 움직임 줄이기(prefers-reduced-motion)를 켠 사람에게는 부드러운 스크롤 대신 바로 옮깁니다(개요 탭의 계좌 상세와 같음).
   useEffect(() => {
     if (!focus.found || focusProposalId === null || !frameworkReady) return;
     const reduceMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document
-      .getElementById(`paper-proposal-${focusProposalId}`)
-      ?.scrollIntoView?.({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+    document.getElementById(FRAME_IDS.proposals)?.scrollIntoView?.({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
   }, [focus.found, focusProposalId, frameworkReady]);
 
   if (framework.loading && !framework.data) return <Loading label="프레임을 읽는 중…" />;
@@ -132,55 +158,124 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
   const current = framework.data.current ?? null;
   const view = frameworkCurrentView(current, frameworkBudgetFrom(framework.data, settings.data?.available ? settings.data.body : null));
   const sourceCard = frameworkSourceCardView(current?.status);
+  const outline = frameworkOutline(view?.rendered, OUTLINE_PREFIX);
+  const tocLevel = frameworkOutlineTocLevel(outline);
+  const versions = frameworkVersionEntries(framework.data.versions, current?.version ?? null);
+  const proposalsReady = Boolean(proposals.data?.available);
   const reloadAll = () => {
     void framework.reload();
     void proposals.reload();
   };
 
+  const items: SectionIndexItem[] = [
+    {
+      id: FRAME_IDS.current,
+      label: "지금 판",
+      children: outline
+        .filter((section) => section.level !== 0 && section.level === tocLevel && section.title !== null)
+        .map((section) => ({ id: section.id, label: section.title ?? "" })),
+    },
+    { id: FRAME_IDS.request, label: "제안 요청" },
+    { id: FRAME_IDS.proposals, label: "제안", count: proposalsReady ? proposalList.length : null, pendingCount: proposals.loading && !proposals.data },
+    { id: FRAME_IDS.versions, label: "판 이력", count: versions.length },
+    { id: FRAME_IDS.compare, label: "두 판 비교" },
+    { id: FRAME_IDS.edit, label: "직접 고치기" },
+  ];
+
   return (
-    <>
-      <CurrentCard view={view} />
+    <SectionIndex label="프레임 목차" items={items} columnFrom="2xl" alignHashOnLoad>
+      <SectionAnchor id={FRAME_IDS.current} columnFrom="2xl">
+        <CurrentCard view={view} outline={outline} tocLevel={tocLevel} />
+      </SectionAnchor>
 
-      <OsSourceCard current={current} proposals={proposalList} onChanged={reloadAll} market={market} />
+      <SectionAnchor id={FRAME_IDS.request} columnFrom="2xl">
+        <OsSourceCard current={current} proposals={proposalList} onChanged={reloadAll} market={market} />
+      </SectionAnchor>
 
-      <Panel
-        title="제안"
-        subtitle="Claude가 OS 절차 B로 낸 변경 제안(최근 순) — 자동 반영은 없고, 승인해야 새 판이 됩니다."
-        source={PAPER_SOURCES.proposals}
-      >
-        {proposals.loading && !proposals.data && <Loading label="제안을 읽는 중…" />}
-        {proposals.error && <ErrorState message={proposals.error} onRetry={proposals.reload} />}
-        {proposals.data && !proposals.data.available && (
-          <Callout tone="warn">{proposals.data.message ?? "제안을 읽을 수 없습니다."}</Callout>
-        )}
-        {proposals.data?.available && focus.note && <div className="mb-3"><Callout tone="neutral">{focus.note}</Callout></div>}
-        {proposals.data?.available && (proposalList.length === 0 ? (
-          <p className="text-sm text-text-3">{`아직 제안이 없습니다 — 위 '${sourceCard.title}'에서 요청하면 생깁니다.`}</p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {proposalList.map((proposal) => (
-              <ProposalItem
-                key={proposal.id}
-                proposal={proposal}
-                current={current}
-                onChanged={reloadAll}
-                anchor
-                highlighted={proposal.id === focusProposalId}
-              />
-            ))}
-          </div>
-        ))}
-      </Panel>
+      <SectionAnchor id={FRAME_IDS.proposals} columnFrom="2xl">
+        <Panel
+          title="제안"
+          subtitle="Claude가 OS 절차 B로 낸 변경 제안(최근 순) — 자동 반영은 없고, 승인해야 새 판이 됩니다. 줄을 고르면 평가·변경·전후 비교와 승인·거절이 열립니다."
+          source={PAPER_SOURCES.proposals}
+        >
+          {proposals.loading && !proposals.data && <Loading label="제안을 읽는 중…" />}
+          {proposals.error && <ErrorState message={proposals.error} onRetry={proposals.reload} />}
+          {proposals.data && !proposals.data.available && (
+            <Callout tone="warn">{proposals.data.message ?? "제안을 읽을 수 없습니다."}</Callout>
+          )}
+          {proposals.data?.available && focus.note && <div className="mb-3"><Callout tone="neutral">{focus.note}</Callout></div>}
+          {proposals.data?.available && (proposalList.length === 0 ? (
+            <p className="text-sm text-text-3">{`아직 제안이 없습니다 — 위 '${sourceCard.title}'에서 요청하면 생깁니다.`}</p>
+          ) : (
+            // 기본 접힘(명세 §7-1) — 고르기 전에는 제안 상세(평가·변경·전후 비교)를 그리지 않고, 고른 제안만 검사 칸(틀 48rem부터 오른쪽 넓은 칸)이나 위쪽
+            // 대화상자에 그립니다. 그래서 결정된 제안의 기준 판 읽기(proposalBaseToFetch)도 그 제안을 고를 때 한 번입니다(예전에는 목록을 그릴 때 제안마다).
+            <MasterDetail<PaperFrameworkProposal>
+              label="제안 목록"
+              items={proposalList}
+              itemKey={(proposal) => String(proposal.id)}
+              itemLabel={(proposal) => `제안 #${proposal.id}`}
+              renderItem={(proposal) => <ProposalRow proposal={proposal} />}
+              renderDetail={(proposal) => (
+                <ProposalItem
+                  proposal={proposal}
+                  current={current}
+                  onChanged={reloadAll}
+                  anchor
+                  framed={false}
+                  highlighted={proposal.id === focusProposalId}
+                />
+              )}
+              selectedKey={pickedProposal}
+              onSelectedKeyChange={setPickedProposal}
+              inspectorWidth="wide"
+              dialogFocus="title"
+              revealSelectedInDialog
+              count
+              inspectorHint="제안을 고르면 이 칸에 평가·변경·전후 비교와 승인·거절이 나옵니다(j/k·↑↓로 옮김)."
+            />
+          ))}
+        </Panel>
+      </SectionAnchor>
 
-      <VersionsCard response={framework.data} />
+      <SectionAnchor id={FRAME_IDS.versions} columnFrom="2xl">
+        <VersionHistoryCard entries={versions} />
+      </SectionAnchor>
 
-      <EditCard current={current} maxIds={framework.data.maxIdNumbers ?? null} onChanged={reloadAll} />
-    </>
+      <SectionAnchor id={FRAME_IDS.compare} columnFrom="2xl">
+        <CompareCard response={framework.data} />
+      </SectionAnchor>
+
+      <SectionAnchor id={FRAME_IDS.edit} columnFrom="2xl">
+        <EditCard current={current} maxIds={framework.data.maxIdNumbers ?? null} onChanged={reloadAll} />
+      </SectionAnchor>
+    </SectionIndex>
   );
 }
 
-/** 지금 판 카드. 판이 없으면(서버가 아직 시드하지 않음) 그렇다고 적습니다. */
-function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
+/** 목차 칸·닻 id(렌더링 절 닻은 OUTLINE_PREFIX-{차례}). */
+const FRAME_IDS = {
+  current: "paper-frame-current",
+  request: "paper-frame-request",
+  proposals: "paper-frame-proposals",
+  versions: "paper-frame-versions",
+  compare: "paper-frame-compare",
+  edit: "paper-frame-edit",
+} as const;
+const OUTLINE_PREFIX = "paper-frame-section";
+
+/**
+ * 지금 판 카드 — 머리(상태 배지), 임시 판 안내, 속성(판·만든 시각·구성·렌더링 크기·바꾼 내용), 예산 초과 경고, 토큰 안내, 그리고 렌더링 글을 펼친 본문
+ * (FrameworkOutline — 머리 절마다 목차 닻). 판이 없으면(서버가 아직 시드하지 않음) 그렇다고 적습니다.
+ */
+function CurrentCard({
+  view,
+  outline,
+  tocLevel,
+}: {
+  view: FrameworkCurrentView | null;
+  outline: ReturnType<typeof frameworkOutline>;
+  tocLevel: ReturnType<typeof frameworkOutlineTocLevel>;
+}) {
   if (!view) {
     return (
       <Panel title="지금 프레임" source={PAPER_SOURCES.framework}>
@@ -188,33 +283,46 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
       </Panel>
     );
   }
+  const properties: PropertyItem[] = [
+    { label: "판", value: view.badge.label },
+    { label: "만든 시각", value: view.createdAt },
+    { label: "구성", value: view.counts, emptyReason: "본문 없음" },
+    { label: "렌더링 크기", value: view.tokens },
+    { label: "바꾼 내용", value: view.changelog, block: true },
+  ];
   return (
     <Panel title="지금 프레임" subtitle={view.title} source={PAPER_SOURCES.framework} actions={<BadgeChip badge={view.badge} />}>
-      {view.interimNote && <Callout tone="warn">{view.interimNote}</Callout>}
-      <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-        <Meta label="판" value={view.badge.label} />
-        <Meta label="만든 시각" value={view.createdAt} />
-        {view.counts && <Meta label="구성" value={view.counts} />}
-        <Meta label="렌더링 크기" value={view.tokens} />
-      </dl>
-      {view.overBudget && <div className="mt-3"><Callout tone="warn">{view.overBudget}</Callout></div>}
-      <p className="mt-3 text-xs text-text-2">
-        <span className="text-text-3">바꾼 내용 </span>
-        {view.changelog}
-      </p>
-      <p className="mt-2 text-xs leading-relaxed text-text-3">
-        토큰은 서버의 문자 수 어림입니다(한글 1자 ≈ 1토큰, 영문 4자 ≈ 1토큰). 아래 렌더링은 이 판을 만들 때의 글이고, 결정의 시스템
-        프롬프트는 결정 시점의 설정(하드 규칙 수치)으로 다시 렌더링합니다 — 결정 기록마다 프레임 판과 설정 버전이 남습니다.
-      </p>
-      <details className="mt-3 rounded-control border border-border px-3 py-2 text-xs">
-        <summary className="cursor-pointer text-text-3">렌더링 미리보기(시스템 프롬프트)</summary>
-        {view.rendered ? (
-          <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-text-2">{view.rendered}</pre>
+      <div className="flex min-w-0 flex-col gap-3">
+        {view.interimNote && <Callout tone="warn">{view.interimNote}</Callout>}
+        <div className="max-w-[40rem]">
+          <PropertyList items={properties} dense />
+        </div>
+        {view.overBudget && <Callout tone="warn">{view.overBudget}</Callout>}
+        <p className="max-w-[72ch] text-xs leading-relaxed text-text-3">
+          토큰은 서버의 문자 수 어림입니다(한글 1자 ≈ 1토큰, 영문 4자 ≈ 1토큰). 아래 렌더링은 이 판을 만들 때의 글이고, 결정의 시스템
+          프롬프트는 결정 시점의 설정(하드 규칙 수치)으로 다시 렌더링합니다 — 결정 기록마다 프레임 판과 설정 버전이 남습니다.
+        </p>
+        {outline.length > 0 ? (
+          <FrameworkOutline sections={outline} tocLevel={tocLevel} label={`${view.badge.label} 렌더링(시스템 프롬프트)`} />
         ) : (
-          <p className="mt-2 text-text-3">서버가 렌더링을 보내지 않았습니다.</p>
+          <p className="text-sm text-text-3">서버가 렌더링을 보내지 않았습니다.</p>
         )}
-      </details>
+      </div>
     </Panel>
+  );
+}
+
+/** 제안 목록 줄 — '#번호 상태 요약 첫 줄'(줄 단추 안 — 링크·단추 없음). 요약이 없으면 '—'. */
+function ProposalRow({ proposal }: { proposal: PaperFrameworkProposal }) {
+  const firstLine = (proposal.summary ?? "").split("\n").map((line) => line.trim()).find((line) => line !== "") ?? null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+      <span className="shrink-0 font-semibold tabular-nums text-text">{`#${proposal.id}`}</span>{" "}
+      <span className="shrink-0">
+        <BadgeChip badge={proposalStatusBadge(proposal.status)} />
+      </span>{" "}
+      <span className="min-w-0 basis-full break-keep wrap-anywhere text-text-2 @sm:flex-1 @sm:basis-auto">{firstLine ?? EMPTY}</span>
+    </span>
   );
 }
 
@@ -387,7 +495,8 @@ type Deciding = "approve" | "reject" | null;
 /**
  * 제안 한 건 — 머리(상태·요청 시각·모델·근거 메모·기준 판), 요약, 평가 표, 변경 표(대기 중이면 지금 글, 결정된 제안이면 기준 판 글 → 바꿀
  * 글), 전후 비교, 오류. 대기 중이면 승인·거절(둘 다 확인 단계 — 승인은 새 판을 만들어 다음 결정부터 바뀜). 기준 판이 지금 판과 다르거나 변경이
- * 0건이면 승인 버튼을 막습니다(서버도 400). 결정된 제안의 기준 판이 지금 판이 아니면 그 판을 따로 읽어 대조합니다(proposalBaseToFetch).
+ * 0건이면 승인 버튼을 막습니다(서버도 400). 결정된 제안의 기준 판이 지금 판이 아니면 그 판을 따로 읽어 대조합니다(proposalBaseToFetch) — 이 부품이
+ * 그려질 때 한 번이라, 제안 목록에서는 그 제안을 고를 때(검사 칸·대화상자 — 작업대 P6 기본 접힘), 요청 카드에서는 받은 제안(대기 — 읽지 않음)입니다.
  */
 function ProposalItem({
   proposal,
@@ -395,14 +504,20 @@ function ProposalItem({
   onChanged,
   anchor = false,
   highlighted = false,
+  framed = true,
 }: {
   proposal: PaperFrameworkProposal;
   current: PaperFrameworkVersion | null;
   onChanged: () => void;
   /** 제안 목록의 항목이면 id를 붙입니다(주간 복기에서 찾아옴) — 요청 카드에 같은 제안이 한 번 더 보여도 id가 겹치지 않게. */
   anchor?: boolean;
-  /** 주간 복기에서 이 제안을 눌러 왔음 — 테두리로 강조. */
+  /** 주간 복기에서 이 제안을 눌러 왔음 — '주간 복기에서 연 제안' 글과 aria-current(테두리 강조는 검사 칸 틀이 맡음 — 작업대 P6). */
   highlighted?: boolean;
+  /**
+   * 제 테두리 상자와 제목을 그리는가 — 요청 카드 안(기본)은 상자와 제목 '제안 #n', 제안 목록의 검사 칸·대화상자는 틀이 상자이고 제목(h3·대화상자 이름)이
+   * 같은 '제안 #n'이라 둘 다 그리지 않습니다(영역 이름 aria-label은 그대로).
+   */
+  framed?: boolean;
 }) {
   const baseToFetch = proposalBaseToFetch(proposal, current);
   const baseFrame = useApi<PaperFrameworkVersionResponse>(baseToFetch === null ? null : endpoints.paper.frameworkVersion(baseToFetch));
@@ -432,13 +547,10 @@ function ProposalItem({
       id={anchor ? `paper-proposal-${proposal.id}` : undefined}
       aria-label={view.title}
       aria-current={highlighted ? "true" : undefined}
-      className={`flex scroll-mt-4 flex-col gap-3 rounded-control border bg-surface px-4 py-3 ${
-        // 주간 복기에서 연 제안은 잉크 2px 테두리(강조 파랑은 누를 수 있는 것에만 — 명세 A1). 뜻은 옆의 글과 aria-current가 나릅니다.
-        highlighted ? "border-text ring-1 ring-text" : "border-border"
-      }`}
+      className={`flex min-w-0 scroll-mt-4 flex-col gap-3 ${framed ? "rounded-control border border-border bg-surface px-4 py-3" : ""}`.trim()}
     >
       <header className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-text">{view.title}</h3>
+        {framed && <h3 className="text-sm font-semibold text-text">{view.title}</h3>}
         <BadgeChip badge={view.status} />
         {highlighted && <span className="text-xs font-semibold text-text">주간 복기에서 연 제안</span>}
       </header>
@@ -531,13 +643,64 @@ function ProposalItem({
 }
 
 /**
- * 판 목록과 두 판 나란히 비교 — 두 판의 렌더링은 서버가 준 글 그대로(GET …/versions/{v}), 다른 쪽에 없는 줄만 표시합니다. 기본은 지금 판과
- * 그 바로 앞 판입니다.
+ * 판 이력 — 판 목록(서버 순서 — 최근 순)을 시각순 목록(Timeline — 만든 날·종류 태그(처음·제안 승인·수동 편집)·'판 제목' 요약, 지금 판 표지)으로.
+ * 판 하나를 고르면 검사 칸(틀 32rem부터 옆 칸, 그 아래 위쪽 대화상자 — 열면 제목에 포커스)에 판·제목·바꾼 내용·출처·만든 시각·토큰 어림을 보입니다
+ * (모두 판 목록 응답의 값 — 새 요청 없음, 토큰은 계약 밖 tokensEst를 보낼 때만). 지난 판의 렌더링 글은 아래 '두 판 비교'에서 읽습니다.
  */
-function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
+function VersionHistoryCard({ entries }: { entries: readonly FrameworkVersionEntry[] }) {
+  const byKey = new Map(entries.map((entry) => [entry.key, entry] as const));
+  const timeline: TimelineEntry[] = entries.map((entry) => ({
+    key: entry.key,
+    at: entry.createdDate ?? EMPTY,
+    dateTime: entry.createdDate ?? undefined,
+    kind: { label: entry.kind },
+    summary: (
+      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-semibold tabular-nums text-text">{entry.label}</span>
+        {entry.current ? (
+          <span className="whitespace-nowrap">
+            <Tag>지금 판</Tag>
+          </span>
+        ) : null}{" "}
+        <span className="min-w-0 text-text-2">{entry.title}</span>
+      </span>
+    ),
+    title: `${entry.label} — ${entry.title}`,
+  }));
+  return (
+    <Panel title="판 이력" subtitle="판마다 바꾼 내용과 출처(제안 승인·수동 편집) — 판을 고르면 자세한 값이 나옵니다." source={PAPER_SOURCES.framework}>
+      <Timeline
+        label="판 이력"
+        entries={timeline}
+        emptyText="판 목록이 없습니다."
+        count={(count) => `${count.toLocaleString("ko-KR")}판`}
+        dialogFocus="title"
+        inspectorHint="판을 고르면 이 칸에 바꾼 내용·출처·만든 시각이 나옵니다(j/k·↑↓로 옮김)."
+        renderDetail={(item) => {
+          const entry = byKey.get(item.key);
+          if (!entry) return null;
+          const properties: PropertyItem[] = [
+            { label: "판", value: entry.current ? <span className="inline-flex flex-wrap items-baseline justify-end gap-1">{entry.label} <Tag>지금 판</Tag></span> : entry.label },
+            { label: "제목", value: entry.title },
+            { label: "바꾼 내용", value: entry.changelog, block: true },
+            { label: "출처", value: entry.source },
+            { label: "만든 시각", value: entry.createdAt },
+            { label: "렌더링 크기", value: entry.tokens, emptyReason: "서버가 보내지 않음" },
+          ];
+          return <PropertyList items={properties} dense />;
+        }}
+      />
+    </Panel>
+  );
+}
+
+/**
+ * 두 판 나란히 비교 — 두 판의 렌더링은 서버가 준 글 그대로(GET …/versions/{v}), 다른 쪽에 없는 줄만 표시합니다. 기본은 지금 판과 그 바로 앞 판입니다
+ * (판이 하나여도 오른쪽 기본 — 지금 판 — 을 읽는 것은 예전 그대로). 판이 하나뿐이면 비교 대신 안내입니다.
+ */
+function CompareCard({ response }: { response: PaperFrameworkResponse }) {
   const versions = response.versions ?? [];
   const currentVersion = response.current?.version ?? null;
-  const rows = frameworkVersionRows(versions, currentVersion);
   const options = frameworkCompareOptions(versions);
   const [picked, setPicked] = useState<{ left: number | null; right: number | null } | null>(null);
   const selection = picked ?? frameworkCompareDefaults(versions, currentVersion);
@@ -550,34 +713,11 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
     setPicked({ ...selection, [side]: value === "" ? null : Number(value) });
 
   return (
-    <Panel title="판 목록·비교" subtitle="판마다 바꾼 내용과 출처(제안 승인·수동 편집), 두 판의 렌더링을 나란히." source={PAPER_SOURCES.framework}>
-      <Table<FrameworkVersionRow>
-        label="판 목록"
-        rows={rows}
-        rowKey={(row) => row.key}
-        emptyMessage="판 목록이 없습니다."
-        columns={[
-          {
-            key: "version",
-            header: "판",
-            render: (row) => (
-              <span className="whitespace-nowrap font-semibold text-text">
-                {row.version}
-                {row.current && <span className="ml-1 text-xs font-normal text-text-2">지금</span>}
-              </span>
-            ),
-          },
-          { key: "title", header: "제목", render: (row) => <span className="text-xs text-text-2">{row.title}</span> },
-          { key: "changelog", header: "바꾼 내용", render: (row) => <span className="text-xs text-text-2">{row.changelog}</span> },
-          { key: "source", header: "출처", render: (row) => <span className="whitespace-nowrap text-xs">{row.source}</span> },
-          { key: "createdAt", header: "만든 시각", render: (row) => <span className="whitespace-nowrap">{row.createdAt}</span> },
-        ]}
-      />
-
+    <Panel title="두 판 비교" subtitle="두 판의 렌더링을 나란히 — 기본은 지금 판과 그 바로 앞 판." source={PAPER_SOURCES.framework}>
       {options.length < 2 ? (
-        <p className="mt-3 text-xs text-text-3">판이 하나뿐입니다 — 새 판이 생기면 두 판의 렌더링을 나란히 비교할 수 있습니다.</p>
+        <p className="text-xs text-text-3">판이 하나뿐입니다 — 새 판이 생기면 두 판의 렌더링을 나란히 비교할 수 있습니다.</p>
       ) : (
-        <section aria-label="두 판 비교" className="mt-4 flex flex-col gap-3">
+        <section aria-label="두 판 비교" className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-3">
             <Select
               label="왼쪽 판"
