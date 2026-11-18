@@ -10,6 +10,10 @@
  * 보강(검토 지적): 위 `resize`는 폭을 한 번에 바꾸고 부품 자신이 scrollLeft를 쓴 뒤의 scroll 이벤트를 보내지 않습니다. 브라우저는 그 이벤트를 다음 프레임에
  * 보내므로, 메뉴 접기·펴기(기본 움직임 — 폭 전환 150ms)나 창 끌기처럼 폭이 프레임마다 바뀌면 이벤트가 올 때의 끝은 이미 더 멀어져 있습니다. 아래 `frames`가
  * 그 차례(폭이 바뀜 → 앞 프레임에 바뀐 자리의 scroll 이벤트 → 관찰 콜백)를 흉내 냅니다 — 펴기 걸음은 QA 스택 1024 레일 펴기에서 프레임마다 잰 상자 폭.
+ *
+ * QA-730(같은 흉내 — 맨 아래 묶음): 사용자가 왼쪽으로 옮긴 자리가 표가 상자에 들어가는 폭을 지난 뒤 자리에 따라 다르게 끝났습니다. 키보드로 0에 둔 경우는
+ * 메뉴를 레일로 접어 표가 들어가도 자리가 그대로라 scroll 이벤트가 없어 붙음이 풀린 채 남아 다시 펴면 0, 휠로 40에 둔 경우는 접을 때 브라우저가 0으로 줄인
+ * 자리의 이벤트로 다시 붙어 펴면 끝(P5b QA 재확인 qa@01693937, 메뉴 206 — 0 / 144와 144 / 144). 2026-11-18 결정(사용자 위임 — 권장안): 둘 다 끝.
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -245,6 +249,56 @@ describe("폭이 프레임마다 바뀌어도(메뉴 폭 전환·창 끌기) 끝
     box.frames([470, 450, 430, 418, 414].map(fit));
     expect(observed().scrollLeft).toBe(40);
     box.frames(COLLAPSE.slice(0, 3));
+    expect(observed().scrollLeft).toBe(40);
+  });
+});
+
+describe("사용자가 왼쪽으로 옮긴 자리도 표가 상자에 들어가는 폭을 지나면 다시 끝에 붙는다(QA-730)", () => {
+  // 수정 전 실패(plain it): 접은 뒤 { hint: "phone-only", scrollLeft: 0 }(같음), 편 뒤 { hint: "shown", scrollLeft: 0 }(기대 158) — 0에 있던 자리는 표가 들어가도
+  // 줄일 것이 없어 scroll 이벤트가 오지 않아 붙음이 풀린 채 남음.
+  it.fails("키보드로 0에 둔 뒤 메뉴를 레일로 접어(482 → 654px — 표가 들어감, scroll 이벤트 없음) 다시 펴면 오른쪽 끝(158)으로 간다", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.resize(fit(654));
+    expect(observed()).toEqual({ hint: "phone-only", scrollLeft: 0 });
+    box.resize(fit(482));
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  // 수정 전 실패(plain it): { hint: "shown", scrollLeft: 0 }(기대 158) — 위와 같은 까닭, 폭 전환(프레임 아홉씩)에서도 같음.
+  it.fails("키보드로 0에 둔 뒤 기본 움직임으로 접었다 펴도(482 → 654 → 482px) 오른쪽 끝(158)으로 간다", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.frames(COLLAPSE);
+    box.frames(EXPAND);
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  it("휠로 40에 둔 뒤 접었다 펴도(한 번에·기본 움직임) 오른쪽 끝(158)으로 간다 — 지금도 같음(브라우저가 줄인 자리의 이벤트로 붙음)", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(40);
+    box.resize(fit(654));
+    box.resize(fit(482));
+    expect(observed().scrollLeft).toBe(158);
+    userScroll(40);
+    box.frames(COLLAPSE);
+    box.frames(EXPAND);
+    expect(observed()).toEqual({ hint: "shown", scrollLeft: 158 });
+  });
+
+  it("표가 들어가는 폭에 닿지 않으면(넘치는 폭 안에서만 바뀜) 사용자가 둔 0·40은 그대로", () => {
+    const box = stubBox(fit(482));
+    render(table());
+    userScroll(0);
+    box.frames(COLLAPSE.slice(0, 5));
+    box.frames([...COLLAPSE.slice(0, 4)].reverse());
+    expect(observed().scrollLeft).toBe(0);
+    userScroll(40);
+    box.frames(COLLAPSE.slice(0, 3));
+    box.frames(EXPAND.slice(5));
     expect(observed().scrollLeft).toBe(40);
   });
 });
