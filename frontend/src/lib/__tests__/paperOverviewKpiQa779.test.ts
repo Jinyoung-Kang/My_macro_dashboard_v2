@@ -33,7 +33,7 @@ const overview = (books: PaperOverviewBook[]) =>
 const WINDOW = { dates: ["2026-10-29", "2026-10-30"], books: { rules: [100000, 101200] } };
 
 describe("QA-779 — 변화 타일의 추정 배지는 보이는 변화 값의 출처대로", () => {
-  it.fails("실시간 순자산에 변화가 없어 서버의 확정 변화를 보이면 변화 타일에 추정 배지가 없다(순자산·수익률은 실시간이라 추정)", () => {
+  it("실시간 순자산에 변화가 없어 서버의 확정 변화를 보이면 변화 타일에 추정 배지가 없다(순자산·수익률은 실시간이라 추정)", () => {
     const realtime = { code: "rules", nav: 101500, returnPct: 1.5, dayChangePct: null, at: null, priced: 2, total: 2 };
     const model = overviewHeroModel(overview([book({ current: current() })]), "rules", WINDOW, "US", realtime);
     if (!model) throw new Error("모델 없음");

@@ -305,6 +305,8 @@ export interface OverviewHeroModel {
   returnPct: number | null;
   /** 변화 한 줄(서버 값 — 모르면 null). */
   day: DayChange | null;
+  /** 보이는 변화 값이 추정인가 — 실시간 변화를 얹었으면 참, 서버 변화 그대로면 서버 지금 값의 추정(QA-779). */
+  dayIsEstimated: boolean;
   /** 단계 표기(옛 응답이면 '마지막 관측 …'). */
   stageLabel: string | null;
   isEstimated: boolean;
@@ -357,6 +359,8 @@ export function overviewHeroModel(
   const live = heroRealtime(realtime, code, view.atKst);
   const valueText = formatNumber(live ? live.nav : view.nav, digits);
   const day = view.day?.text ? view.day : null;
+  // 실시간 변화가 있을 때만 실시간 값으로 바꿈 — 없으면 서버 변화 그대로라 추정 여부도 서버 지금 값의 것(QA-779).
+  const liveDay = live !== null && day !== null && live.dayChangePct !== null;
   return {
     code,
     name: book.label,
@@ -364,7 +368,8 @@ export function overviewHeroModel(
     valueText: valueText === EMPTY ? null : valueText,
     unit: marketMeta(market).unitLabel,
     returnPct: live ? live.returnPct : view.returnPct,
-    day: live && day && live.dayChangePct !== null ? { ...day, pct: live.dayChangePct } : day,
+    day: liveDay && day && live ? { ...day, pct: live.dayChangePct } : day,
+    dayIsEstimated: liveDay || view.isEstimated,
     stageLabel: live ? `실시간 추정 ${tradedAtText(live.at)} · 실시간 가격 ${live.priced}/${live.total}종목` : view.stageLabel,
     isEstimated: live ? true : view.isEstimated,
     note: view.note ?? (view.notes.length > 0 ? view.notes.join(" · ") : null),
@@ -781,7 +786,8 @@ function signedPercent(value: number): string {
  * - 순자산: 값 글·단위, 보조 글 = 단계 표기 · 서버 글 전문(섞임·가격 없음·체결 대기), 추정·이전 값 배지, 출처 줄, 경고(사후 체결 대기)는 주의 상태 글.
  * - 수익률(출발 이후)·변화: 부호 글(양수 '+', 음수 '−') — 띠 값은 본문 잉크(등락색은 표의 변화 칩이 나름 — 색만으로 전하지 않음). 변화의 이름은 서버 기준
  *   ('오늘 변화'·'10-30 변화'), 보조 글은 그 기준('10-29 잠정 대비'). 모르면 '—'(0을 짓지 않음). 순자산과 같은 값(지금 값·실시간 순자산)에서 나오므로 같은
- *   추정·이전 값 배지를 답니다(이전 값 사유 글은 순자산 타일에만 — 예전 히어로의 배지 하나가 셋을 덮던 것을 타일마다, QA-770).
+ *   추정·이전 값 배지를 답니다(이전 값 사유 글은 순자산 타일에만 — 예전 히어로의 배지 하나가 셋을 덮던 것을 타일마다, QA-770). 다만 변화는 실시간 값에
+ *   변화가 없으면 서버 변화 그대로라 그 값의 추정(`dayIsEstimated`)을 따릅니다(QA-779).
  * - 주식 노출: 소수 한 자리 %, 보조 글 '현금성(SHY) 포함'(평가액 ÷ 순자산이라 현금성 ETF도 듦). 추정 배지는 그 값의 출처(`exposure.isEstimated` — 서버 지금 값의
  *   추정)로 답니다 — 실시간 순자산은 노출을 다시 세지 않으므로 히어로 모델의 추정을 따르지 않습니다(QA-770).
  */
@@ -818,7 +824,7 @@ export function overviewKpiItems(
       value: day?.pct ?? null,
       format: signedPercent,
       note: day?.base ?? null,
-      isEstimated: model.isEstimated && day !== null && day.pct !== null,
+      isEstimated: model.dayIsEstimated && day !== null && day.pct !== null,
       isStale: model.isStale,
     },
     {
