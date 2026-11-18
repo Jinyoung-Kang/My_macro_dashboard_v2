@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { EMPTY, formatNumber, formatWithUnit, withMinusSign } from "@/lib/format";
+import { metricBars, metricScoreEmptyReason, metricValueText, universeOptions } from "@/lib/scorecardScreen";
 import type { ScorecardResponse, StockUniverseResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -77,10 +78,7 @@ export default function ScorecardPage() {
             label="종목"
             value={symbol}
             onChange={setSymbol}
-            options={(universe.data?.rows ?? []).map((row) => ({
-              value: row.ticker,
-              label: `${row.ticker} · ${row.name}`,
-            }))}
+            options={universeOptions(universe.data?.rows)}
           />
           <Select
             label="베타 기준"
@@ -142,9 +140,7 @@ export default function ScorecardPage() {
               subtitle="막대 = 백분위(0~100). 원자료를 함께 적어 점수를 검증할 수 있게 합니다."
             >
               <HorizontalBars
-                data={data.metrics!
-                  .filter((metric) => metric.score !== null)
-                  .map((metric) => ({ name: metric.label, value: metric.score as number }))}
+                data={metricBars(data.metrics)}
                 unit="점"
                 digits={0}
                 valueName="백분위"
@@ -173,7 +169,7 @@ export default function ScorecardPage() {
                       align: "right",
                       // 변동성·최대낙폭·추세 위치는 크기·위치라 오르내린 값이 아닙니다 — 모든 행을 본문 잉크로, 음수는 −(U+2212)(QA-705).
                       // 좋고 나쁨은 '방향' 칸과 백분위가 나릅니다.
-                      render: (row) => (row.value === null ? EMPTY : withMinusSign(`${formatNumber(row.value, 1)}${row.unit}`)),
+                      render: (row) => metricValueText(row) ?? EMPTY,
                     },
                     {
                       key: "score",
@@ -184,11 +180,7 @@ export default function ScorecardPage() {
                           <span
                             className="text-text-3"
                             // 값 자체가 없으면(표본 부족) 원인은 비교 대상 수가 아닙니다 — 두 경우를 나눠 적습니다(QA-088).
-                            title={
-                              row.value === null
-                                ? "표본이 부족해 값을 잴 수 없어 백분위도 없습니다"
-                                : "비교 대상이 10개 미만이라 백분위를 내지 않습니다"
-                            }
+                            title={metricScoreEmptyReason(row) ?? undefined}
                           >
                             {EMPTY}
                           </span>
