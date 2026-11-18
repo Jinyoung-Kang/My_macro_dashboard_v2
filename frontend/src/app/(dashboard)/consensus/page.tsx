@@ -244,10 +244,13 @@ function NewBuysTable({ rows, krw }: { rows: NewBuyRow[]; krw: UsdKrw }) {
       }}
     >
       {(inspector) => (
+        // 네 칸이지만 390에서 표 자연 폭(416px)이 패널 안쪽(332px)보다 넓어 오른쪽 칸이 안내 없이 가려졌습니다(브라우저 확인) — 넘침 안내를 둡니다
+        // (공용 표의 안내는 640px 최소 폭과 함께라 1024의 가운데 칸 482px에서도 좌우로 넘김).
         <DataTable
           caption="이번 분기 공통 신규 매수"
           rows={rows}
           rowKey={(row) => row.key}
+          scrollHint="overflow"
           columns={[
             { key: "name", header: "종목", rowHeader: true, className: "break-keep", cell: (row) => <SecurityName row={row} inspector={inspector} /> },
             { key: "buyerCount", header: "새로 담은 기관", align: "right", cell: (row) => <span className="font-semibold">{formatNumber(row.buyerCount, 0)}곳</span> },

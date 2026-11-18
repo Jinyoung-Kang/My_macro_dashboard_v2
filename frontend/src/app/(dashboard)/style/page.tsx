@@ -388,40 +388,51 @@ function RiskCard() {
       </div>
 
       {loading && !data && <Loading label="포트폴리오 위험을 계산하는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
+      {error && (
+        <div className="mt-3">
+          <ErrorState message={error} onRetry={reload} />
+        </div>
+      )}
+      {data && !data.available && (
+        <div className="mt-3">
+          <Callout tone="warn">{data.message}</Callout>
+        </div>
+      )}
 
       {/*
         커버리지를 결과보다 **먼저** 보여 줍니다. 13F에는 티커가 없어 이름으로
         가격을 찾는데, 매핑표에 없는 종목은 빠집니다. 덮인 것만으로 계산한 값을
         전체인 것처럼 보여 주면 안 됩니다.
       */}
+      {/* 조건 줄과 붙지 않게 12px 띄웁니다(예전 카드 안에서는 바로 붙어 있었음). */}
       {coverage && (
-        <Callout tone={coverage.weight >= 70 ? "neutral" : "warn"}>
-          <div>
-            커버리지 <b>{formatWithUnit(coverage.weight, 1, "%")}</b> — 보유 {coverage.totalHoldings}종목
-            중 <b>{coverage.holdings}종목</b>의 가격을 찾았습니다. 아래 값은 이 비중만으로 낸
-            것이며, 나머지 {formatWithUnit(coverage.totalWeight - coverage.weight, 1, "%")}의 위험은
-            반영되지 않았습니다.
-          </div>
-          {coverage.uncovered.length > 0 && (
-            <details className="mt-2">
-              <summary className="min-h-11 cursor-pointer py-3.5 text-xs lg:min-h-0 lg:py-0">
-                미커버 {coverage.uncoveredCount}종목 보기
-              </summary>
-              <ul className="mt-1 space-y-0.5 text-xs">
-                {/* 같은 회사의 보통주·우선주·사채가 같은 공시 이름으로 여러 줄 옵니다. 응답에 증권을 가르는 필드가 없고
-                    목록은 응답마다 통째로 바뀌므로 순서를 키에 넣습니다(QA-135). */}
-                {coverage.uncovered.map((row, index) => (
-                  <li key={`${index}:${row.name}`}>
-                    {row.name} — {formatWeightPercent(row.weight)}
-                    {row.reason && <span className="text-text-3"> · {row.reason}</span>}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </Callout>
+        <div className="mt-3">
+          <Callout tone={coverage.weight >= 70 ? "neutral" : "warn"}>
+            <div>
+              커버리지 <b>{formatWithUnit(coverage.weight, 1, "%")}</b> — 보유 {coverage.totalHoldings}종목
+              중 <b>{coverage.holdings}종목</b>의 가격을 찾았습니다. 아래 값은 이 비중만으로 낸
+              것이며, 나머지 {formatWithUnit(coverage.totalWeight - coverage.weight, 1, "%")}의 위험은
+              반영되지 않았습니다.
+            </div>
+            {coverage.uncovered.length > 0 && (
+              <details className="mt-2">
+                <summary className="min-h-11 cursor-pointer py-3.5 text-xs lg:min-h-0 lg:py-0">
+                  미커버 {coverage.uncoveredCount}종목 보기
+                </summary>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {/* 같은 회사의 보통주·우선주·사채가 같은 공시 이름으로 여러 줄 옵니다. 응답에 증권을 가르는 필드가 없고
+                      목록은 응답마다 통째로 바뀌므로 순서를 키에 넣습니다(QA-135). */}
+                  {coverage.uncovered.map((row, index) => (
+                    <li key={`${index}:${row.name}`}>
+                      {row.name} — {formatWeightPercent(row.weight)}
+                      {row.reason && <span className="text-text-3"> · {row.reason}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </Callout>
+        </div>
       )}
 
       {/* 위험 지표 KPI 띠(lib/styleScreen riskKpis) — 값은 위험의 크기라 등락색 없이 본문 잉크, 음수(VaR·ES는 손실이라 음수)는 −(U+2212)(QA-709),

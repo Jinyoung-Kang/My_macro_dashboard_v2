@@ -27,7 +27,8 @@ export function priceScoreNote(scoredCount: number | null | undefined): string {
 
 /**
  * '스코어 요약' KPI 띠 — 종목(값 = 티커, 보조 '이름 · 섹터', 타일 전체가 그 종목 상세 링크 /s/us/{티커} — 요청 없음)·가격 지표 평균(n점)·
- * 베타(vs 기준)·비교 대상(n종목, 보조 = 집단 이름과 백분위의 뜻). 출처 줄은 첫 타일에만(띠 전체가 같은 일별 종가).
+ * 베타(vs 기준)·비교 대상(n종목, 보조 = 집단 이름과 백분위의 뜻). 출처 줄은 한 타일에만(띠 전체가 같은 일별 종가) — 첫 숫자 타일 '가격 지표 평균'에
+ * 둡니다. 종목 타일에 두면 타일 안 차례(이름 → 값 → 출처 → 보조 글)상 '이름 · 섹터'가 출처 줄 아래 각주처럼 떨어졌습니다(브라우저 확인).
  */
 export function scorecardKpis(
   data: Pick<ScorecardResponse, "symbol" | "name" | "sector" | "benchmark" | "priceScore" | "scoredCount" | "raw" | "universeSize" | "universeLabel">,
@@ -43,10 +44,17 @@ export function scorecardKpis(
       value: symbol,
       valueKind: "label",
       note: about || null,
-      source,
       ...(symbol ? { href: stockHref("us", symbol) } : {}),
     },
-    { key: "priceScore", label: "가격 지표 평균", value: finite(data.priceScore) ? data.priceScore : null, format: COUNT, unit: "점", note: priceScoreNote(data.scoredCount) },
+    {
+      key: "priceScore",
+      label: "가격 지표 평균",
+      value: finite(data.priceScore) ? data.priceScore : null,
+      format: COUNT,
+      unit: "점",
+      note: priceScoreNote(data.scoredCount),
+      source,
+    },
     {
       key: "beta",
       label: `베타 (vs ${data.benchmark})`,

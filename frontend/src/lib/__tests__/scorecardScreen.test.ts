@@ -26,7 +26,7 @@ const rows = (tiles: ReturnType<typeof scorecardKpis>) =>
   ]);
 
 describe("스코어카드 — 스코어 요약 KPI 띠", () => {
-  it("종목(링크 타일 — 종목 상세)·가격 지표 평균·베타(음수 −)·비교 대상, 출처 줄은 첫 타일만", () => {
+  it("종목(링크 타일 — 종목 상세)·가격 지표 평균·베타(음수 −)·비교 대상, 출처 줄은 가격 지표 평균 타일 하나", () => {
     const tiles = scorecardKpis(DATA, "Yahoo 종가");
     expect(rows(tiles)).toEqual([
       ["종목", "AAPL", null, "Apple Inc. · Technology"],
@@ -34,8 +34,9 @@ describe("스코어카드 — 스코어 요약 KPI 띠", () => {
       ["베타 (vs SPY)", "−0.05", null, "1.0이면 기준과 같은 폭으로 움직였다는 뜻"],
       ["비교 대상", "136", "종목", "S&P 500 대형주 — 백분위는 이 집단 안에서의 위치입니다."],
     ]);
-    expect(tiles[0]).toMatchObject({ href: "/s/us/AAPL", valueKind: "label", source: "Yahoo 종가" });
-    expect(tiles.slice(1).some((tile) => tile.source || tile.href)).toBe(false);
+    expect(tiles[0]).toMatchObject({ href: "/s/us/AAPL", valueKind: "label" });
+    expect(tiles.map((tile) => tile.source ?? null)).toEqual([null, "Yahoo 종가", null, null]);
+    expect(tiles.slice(1).some((tile) => tile.href)).toBe(false);
   });
 
   it("모르는 값은 null('—') — 예전처럼 0점·0종목·0개 지표로 채우지 않음", () => {
