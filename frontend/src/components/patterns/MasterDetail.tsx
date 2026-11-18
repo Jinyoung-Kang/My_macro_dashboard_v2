@@ -76,6 +76,9 @@ const GROUP_HEADING = "px-3 pb-1 text-xs font-semibold tabular-nums text-text-2"
  * - `revealSelectedInDialog`: 대화상자 배치에서 부르는 쪽이 `selectedKey`를 (사용자 누름이 아닌 길로) 바꾸면 그 줄의 대화상자를 엽니다 — 다른 화면에서 넘어온
  *   고름(모의매매 주간 복기 → 프레임 제안)이 좁은 화면에서도 보이게. 같은 키로는 한 번만 열고(닫은 뒤 다시 열지 않음), 그 키의 줄이 아직 없으면 줄이 생길 때 엽니다.
  *   옆 검사 칸 배치에서는 고른 줄이 검사 칸에 보이므로 열지 않습니다.
+ * - `dialogDismissible={false}`(작업대 P6 검토 — QA-766): 대화상자를 Esc·바깥 누르기·닫기 단추로 닫지 못하게 합니다(ui/Dialog `dismissible`). 검사 칸 안에서
+ *   서버에 쓰는 동안(모의 프레임 제안 승인·거절) 부르는 쪽이 `!busy`로 넘겨, 결과·오류가 나온 뒤에 닫게 합니다(공용 확인 창의 '확인은 결과가 나온 뒤 닫는다'와 같음).
+ *   옆 검사 칸 배치로 바뀌어 대화상자가 닫히는 것(사용자가 닫는 것이 아님)은 그대로입니다.
  */
 export function MasterDetail<T>({
   label,
@@ -97,6 +100,7 @@ export function MasterDetail<T>({
   groupHeadingLevel = 4,
   dialogFocus = "content",
   revealSelectedInDialog = false,
+  dialogDismissible = true,
 }: {
   /** 목록 이름(ul aria-label) — 예 '상위 보유 종목'. */
   label: string;
@@ -129,6 +133,8 @@ export function MasterDetail<T>({
   dialogFocus?: "content" | "title";
   /** 대화상자 배치에서 부르는 쪽이 selectedKey를 바꾸면 그 줄의 대화상자를 엽니다. */
   revealSelectedInDialog?: boolean;
+  /** 대화상자를 사용자가 닫을 수 있는가(기본 참) — 검사 칸 안에서 서버에 쓰는 동안 거짓으로. */
+  dialogDismissible?: boolean;
 }): JSX.Element {
   const wide = useWideShell();
   const Heading = headingLevel === 2 ? "h2" : headingLevel === 4 ? "h4" : "h3";
@@ -348,6 +354,7 @@ export function MasterDetail<T>({
         size="lg"
         placement="top"
         initialFocus={dialogFocus}
+        dismissible={dialogDismissible}
       >
         {dialogItem !== null && dialogItem !== undefined ? <div className="mt-3 min-w-0">{renderDetail(dialogItem)}</div> : null}
       </Dialog>

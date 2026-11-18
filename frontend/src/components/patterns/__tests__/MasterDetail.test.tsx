@@ -106,6 +106,27 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     expect(target.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("dialogDismissible={false}면 Esc·닫기 단추로 닫히지 않고, 참으로 돌아오면 다시 닫힌다(작업대 P6 검토 — 쓰는 동안 잠금)", () => {
+    const { rerender } = renderList({ dialogDismissible: false });
+    fireEvent.click(row("American Express"));
+    const dialog = screen.getByRole("dialog", { name: "American Express" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "American Express" })).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "닫기" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(
+      <MasterDetail<Holding>
+        label="상위 보유 종목"
+        items={HOLDINGS}
+        itemKey={(item) => item.cusip}
+        itemLabel={(item) => item.name}
+        renderItem={(item) => <span>{item.name}</span>}
+        renderDetail={(item) => <PropertyList items={[{ label: "CUSIP", value: item.cusip, mono: true }]} />}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("Esc로 닫으면 대화상자가 사라지고 그 줄로 포커스가 돌아간다", async () => {
     renderList();
     const target = row("American Express");

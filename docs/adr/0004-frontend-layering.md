@@ -127,8 +127,9 @@
   처음 쓰는 곳은 상세 화면의 보유 탭(P4), 모의매매 목록 + 검사 칸(P6)도 이것을 씁니다(모의매매 전용으로 만들지 않음 — 명세 §6). P6(패턴 단계)에서 선택 prop을 더했습니다
   (모두 기본값이면 DOM·클래스 그대로 — 고정 사례): `inspectorWidth="wide"`(틀 48rem부터 왼쪽 목록 16~22rem + 오른쪽 넓은 검사 칸, 그 아래 대화상자),
   `groupOf`·`groupHeadingLevel`(이어진 같은 key의 줄을 묶음 머리 h4/h3 + 이름 있는 하위 목록으로 — 키 이동은 묶음을 건너 이어짐, 묶음 형 `MasterDetailGroup`),
-  `dialogFocus`(대화상자 첫 포커스를 제목에 — ui/Dialog `initialFocus`), `revealSelectedInDialog`(대화상자 배치에서 부르는 쪽이 바꾼 고름을 대화상자로 엶). P6 화면에서 쓰는 곳은
-  모의 메모(기본 narrow)·프레임 제안(wide·`revealSelectedInDialog`)이고, 결정 기록·주간 복기·프레임 판 이력은 이 위의 시각순 목록입니다. 지키는 시험은
+  `dialogFocus`(대화상자 첫 포커스를 제목에 — ui/Dialog `initialFocus`), `revealSelectedInDialog`(대화상자 배치에서 부르는 쪽이 바꾼 고름을 대화상자로 엶), P6 검토에서
+  `dialogDismissible`(기본 참 — 거짓이면 사용자가 대화상자를 닫지 못함, ui/Dialog `dismissible` — 검사 칸 안에서 서버에 쓰는 동안 `!busy`로, QA-766). P6 화면에서 쓰는 곳은
+  모의 메모(기본 narrow)·프레임 제안(wide·`revealSelectedInDialog`·`dialogDismissible`)이고, 결정 기록·주간 복기·프레임 판 이력은 이 위의 시각순 목록입니다. 지키는 시험은
   `components/patterns/__tests__/MasterDetail.test.tsx`·`lib/__tests__/shortcuts.test.ts`·`components/shell/__tests__/ShortcutHelp.test.tsx`.
 - 목차 `components/patterns/SectionIndex.tsx` — 화면 패턴(긴 화면 목차 `SectionIndex`와 절 닻 `SectionAnchor` — `columnFrom`(lg·xl·2xl — 폭마다 정적 클래스 한 벌) 이상은 왼쪽 13rem 세로 목록(하위 칸
   들여씀, 스크롤 영역 위쪽에 붙음), 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만, 밑줄 탭 모양 — 좁은 화면 44px), 이름 있는 내비 하나·칸은 같은 화면 절 링크·
