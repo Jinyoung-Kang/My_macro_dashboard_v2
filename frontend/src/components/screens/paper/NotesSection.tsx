@@ -56,6 +56,8 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
   const [draft, setDraft] = useState<NoteDraft>(EMPTY_NOTE_DRAFT);
   const [confirmingArchive, setConfirmingArchive] = useState<number | null>(null);
+  // 마지막으로 보관을 보낸 메모 — 그 결과·오류는 그 메모 칸(검사 칸·대화상자) 안의 알림 영역에만 그립니다(QA-812).
+  const [archivedFor, setArchivedFor] = useState<number | null>(null);
   const create = useAsyncAction(
     (payload: Record<string, unknown>) => apiPost<PaperNoteCreateResult>(endpoints.paper.createNote, payload),
     "메모를 저장하지 못했습니다.",
@@ -82,6 +84,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
     }
   };
   const runArchive = async (id: number) => {
+    setArchivedFor(id);
     const ok = await archive.run(id);
     focusAfter.current = { id, archived: ok };
     setConfirmingArchive(null);
@@ -166,7 +169,8 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
         {notes.data && !notes.data.available && <Callout tone="warn">{notes.data.message ?? "메모를 읽을 수 없습니다."}</Callout>}
         {notes.data?.available && (
           // 목록-검사(작업대 P6 — 명세 §7-1 '메모: 목록-검사'): 줄 = 번호·종류·상태·제목(과 기준일·만료일), 고르면 검사 칸(틀 32rem부터 옆 15rem, 좁은 화면은
-          // 위쪽 대화상자 — 첫 포커스 제목)에 속성·본문·보관 단추와 그 화면 안 확인 상자. 결과·오류 알림은 목록 아래 그대로입니다.
+          // 위쪽 대화상자 — 첫 포커스 제목)에 속성·본문·보관 단추와 그 화면 안 확인 상자, 보관 결과·오류 알림(QA-812 — 목록 아래에 두면 좁은 배치에서
+          // 대화상자 밖 덮개 뒤라 보이지도 들리지도 않았음). 보관을 보내는 동안은 대화상자를 닫지 못합니다(결과를 볼 칸이 사라지지 않게 — QA-766과 같은 규칙).
           <MasterDetail<NoteRow>
             label="메모"
             items={rows}
@@ -181,6 +185,14 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 confirming={confirmingArchive}
                 onArchive={() => setConfirmingArchive(row.id)}
                 onCancel={() => setConfirmingArchive(null)}
+                status={archivedFor === row.id ? (
+                  <>
+                    {archive.error && <Callout tone="warn">{archive.error}</Callout>}
+                    {archive.result && archive.result.ok === false && (
+                      <Callout tone="warn">{archive.result.message ?? "메모를 보관하지 못했습니다."}</Callout>
+                    )}
+                  </>
+                ) : null}
                 confirmBox={confirmingRow && confirmingRow.id === row.id ? (
                   <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
                     <p id={`${archiveTextId}-${confirmingRow.id}`} className="text-sm leading-relaxed text-warn">{noteArchiveConfirm(confirmingRow)}</p>
@@ -204,14 +216,11 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
               />
             )}
             dialogFocus="title"
+            dialogDismissible={!archive.busy}
             count={(count) => `${count.toLocaleString("ko-KR")}건`}
             emptyText={includeExpired ? "메모가 없습니다." : "유효한 메모가 없습니다 — 만료한 메모는 위 '만료한 메모도 보기'로 봅니다."}
             inspectorHint="메모를 고르면 이 칸에 본문과 보관 단추를 보입니다(j/k·↑↓로 옮김)."
           />
-        )}
-        {archive.error && <div className="mt-3"><Callout tone="warn">{archive.error}</Callout></div>}
-        {archive.result && archive.result.ok === false && (
-          <div className="mt-3"><Callout tone="warn">{archive.result.message ?? "메모를 보관하지 못했습니다."}</Callout></div>
         )}
       </Panel>
 
@@ -342,6 +351,7 @@ function NoteDetail({
   onArchive,
   onCancel,
   confirmBox,
+  status,
 }: {
   row: NoteRow;
   archiving: boolean;
@@ -349,6 +359,8 @@ function NoteDetail({
   onArchive: () => void;
   onCancel: () => void;
   confirmBox: ReactNode;
+  /** 이 메모로 보낸 보관의 결과·오류(부르는 쪽이 그림) — 늘 그려 둔 알림 영역 안에 둡니다. */
+  status: ReactNode;
 }) {
   const mine = confirming === row.id;
   // 칸이 사라질 때 읽을 마지막 값 — 그리기 중에는 ref를 쓰지 않고 그린 뒤에 옮겨 둡니다.
@@ -386,6 +398,8 @@ function NoteDetail({
           </button>
         )}
         {confirmBox}
+        {/* 보관 결과·오류의 알림 영역(role=status) — 늘 그려 두어야 새 글을 읽습니다. 비어 있으면 높이·간격이 없습니다(QA-812). */}
+        <div role="status" className="mt-3 flex flex-col gap-2 empty:mt-0">{status}</div>
       </div>
     </div>
   );

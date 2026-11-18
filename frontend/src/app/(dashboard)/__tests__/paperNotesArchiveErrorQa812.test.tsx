@@ -44,7 +44,7 @@ async function openArchiveConfirm() {
 }
 
 describe("QA-812 — 메모 보관 실패 알림은 그 메모 칸 안의 알림 영역에", () => {
-  it.fails("좁은 배치: 보관이 실패하면 오류 글이 대화상자 안 role=status에", async () => {
+  it("좁은 배치: 보관이 실패하면 오류 글이 대화상자 안 role=status에", async () => {
     api.apiDelete.mockRejectedValue(new Error("합성 오류 — 메모를 보관하지 못했습니다"));
     const dialog = await openArchiveConfirm();
     await act(async () => {
@@ -56,7 +56,7 @@ describe("QA-812 — 메모 보관 실패 알림은 그 메모 칸 안의 알림
     expect(message.closest('[role="status"]')).not.toBeNull();
   });
 
-  it.fails("좁은 배치: 보관을 보내는 동안 Esc로 대화상자를 닫지 못함", async () => {
+  it("좁은 배치: 보관을 보내는 동안 Esc로 대화상자를 닫지 못함", async () => {
     let finish: (value: unknown) => void = () => {};
     api.apiDelete.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const dialog = await openArchiveConfirm();
