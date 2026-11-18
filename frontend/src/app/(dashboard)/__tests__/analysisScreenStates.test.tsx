@@ -232,6 +232,15 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
   });
 });
 
+describe("교집합 — 왼쪽 칸 차례(2026-11-18 결정(사용자 위임 — 권장안 가) lg-conditions-below-list)", () => {
+  it("왼쪽 칸의 패널 제목 차례는 '조건' → '분석 대상'이다(목록 아래면 넓은 화면에서 조건이 첫 화면 밖)", () => {
+    render(<ConsensusPage />);
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    expect(titles.indexOf("조건")).toBeGreaterThanOrEqual(0);
+    expect(titles.indexOf("조건")).toBeLessThan(titles.indexOf("분석 대상"));
+  });
+});
+
 describe("교집합 — 분석 대상 거르기 목록(옛 기관 칩)", () => {
   const INSTITUTIONS = {
     institutions: [

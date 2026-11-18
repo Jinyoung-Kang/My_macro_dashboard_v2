@@ -55,8 +55,8 @@ import { endpoints } from "@/lib/endpoints";
  * 종목을 집계합니다. 기관마다 공시 분기가 다를 수 있으므로 기준 분기를
  * 고르면 그 분기를 공시한 기관만 참여합니다.
  *
- * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → 두 칸 틀(SplitPane — 오른쪽 칸 없음). 왼쪽(넓은 화면 13rem)은 '분석 대상' 거르기 목록
- * (옛 파란 기관 칩 12개 — 넓은 화면 세로 목록·좁은 화면 태그 줄바꿈)과 '조건'(기준 분기·최소 공통 보유 기관 수), 가운데는 교집합 요약 KPI 띠(처음
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → 두 칸 틀(SplitPane — 오른쪽 칸 없음). 왼쪽(넓은 화면 13rem)은 '조건'(기준 분기·최소 공통
+ * 보유 기관 수)과 그 아래 '분석 대상' 거르기 목록(옛 파란 기관 칩 12개 — 넓은 화면 세로 목록·좁은 화면 태그 줄바꿈), 가운데는 교집합 요약 KPI 띠(처음
  * 읽는 동안은 같은 꼴의 자리표시) → '공통 보유 상위 종목' 막대 → '교집합 상세' 표 → 참여 기관 줄 → '이번 분기 공통 신규 매수'. 좁은 화면(lg 미만)은
  * 한 칸으로 왼쪽 칸이 위입니다(접지 않음).
  */
@@ -104,11 +104,34 @@ export default function ConsensusPage() {
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader title="기관 13F Money 교집합" description="여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도" />
 
-      {/* 왼쪽 칸 — 분석 대상 기관(거르기 목록)과 조건. 좁은 화면은 한 칸으로 위에 둡니다(접지 않음 — 조작이 지금처럼 바로 보임). */}
+      {/* 왼쪽 칸 — 조건과 분석 대상 기관(거르기 목록). 좁은 화면은 한 칸으로 위에 둡니다(접지 않음 — 조작이 지금처럼 바로 보임). */}
       <SplitPane
         columns={2}
         left={
           <>
+            {/* 조건을 거르기 목록 위에 둡니다 — 목록 아래면 넓은 화면에서 첫 화면 밖이었습니다(2026-11-18 결정(사용자 위임 — 권장안 가), lg-conditions-below-list). */}
+            <Panel title="조건">
+              <div className="flex flex-wrap items-end gap-3 lg:flex-col lg:items-stretch">
+                <Select
+                  label="기준 분기"
+                  value={reportDate}
+                  onChange={setReportDate}
+                  options={[
+                    { value: "", label: "각 기관의 최신 분기" },
+                    ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
+                  ]}
+                />
+                <Select
+                  label="최소 공통 보유 기관 수"
+                  value={minHolders}
+                  onChange={setMinHolders}
+                  options={["2", "3", "4", "5"].map((value) => ({
+                    value,
+                    label: `${value}곳 이상`,
+                  }))}
+                />
+              </div>
+            </Panel>
             <Panel
               title="분석 대상" count={countText ?? undefined}
               subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체)."
@@ -131,32 +154,10 @@ export default function ConsensusPage() {
                     <Skeleton lines={2} label="기관 목록 불러오는 중" />
                   ) : null
                 }
-                // 처음 읽는 동안은 값이 온 뒤의 목록 꼴 자리(아래 PENDING_CONSENSUS) — 글 줄 자리표시였을 때는 목록이 오면 아래 '조건'이 밀렸습니다(QA-714).
+                // 처음 읽는 동안은 값이 온 뒤의 목록 꼴 자리(아래 PENDING_CONSENSUS) — 글 줄 자리표시였을 때는 목록이 오면 그때 목록 아래에 있던 '조건'과 가운데 칸이 밀렸습니다(QA-714).
                 pending={firstLoadPending(institutions) ? { label: "기관 목록 불러오는 중", rows: PENDING_CONSENSUS } : null}
                 emptyText="고를 기관이 없습니다."
               />
-            </Panel>
-            <Panel title="조건">
-              <div className="flex flex-wrap items-end gap-3 lg:flex-col lg:items-stretch">
-                <Select
-                  label="기준 분기"
-                  value={reportDate}
-                  onChange={setReportDate}
-                  options={[
-                    { value: "", label: "각 기관의 최신 분기" },
-                    ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
-                  ]}
-                />
-                <Select
-                  label="최소 공통 보유 기관 수"
-                  value={minHolders}
-                  onChange={setMinHolders}
-                  options={["2", "3", "4", "5"].map((value) => ({
-                    value,
-                    label: `${value}곳 이상`,
-                  }))}
-                />
-              </div>
             </Panel>
           </>
         }

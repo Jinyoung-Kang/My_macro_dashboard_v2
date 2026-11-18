@@ -187,6 +187,15 @@ function tile(name: string): HTMLElement {
   return within(strip).getByRole("group", { name });
 }
 
+describe("왼쪽 칸 차례 — 조회 조건이 기관 목록 위(2026-11-18 결정(사용자 위임 — 권장안 가) lg-conditions-below-list)", () => {
+  it("왼쪽 칸의 패널 제목 차례는 '조회 조건' → '기관'이다(DOM 차례 = 키보드 차례)", () => {
+    render(<InstitutionsPage />);
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    expect(titles.indexOf("조회 조건")).toBeGreaterThanOrEqual(0);
+    expect(titles.indexOf("조회 조건")).toBeLessThan(titles.indexOf("기관"));
+  });
+});
+
 describe("고른 기관 패널 — 제목·설명·기관 상세 링크와 요약 KPI 띠", () => {
   beforeEach(() => {
     served = {};

@@ -106,21 +106,9 @@ export default function InstitutionsPage() {
         left={
           <>
             {/*
-              기관 목록 — 고르면 그 기관의 포트폴리오를 읽습니다(예전 '분석할 기관' 고르기 상자와 같은 상태·요청). 넓은 화면은 세로 목록(줄 32px),
-              좁은 화면은 44px 태그가 줄을 바꾸며 늘어섭니다(접지 않음 — 조작이 첫 화면에 바로 보이게).
+              조회 조건을 기관 목록 위에 둡니다 — 목록(넓은 화면 약 664px) 아래에 두면 화면을 열었을 때 첫 화면 밖이었습니다(2026-11-18 결정(사용자 위임 — 권장안 가),
+              진행 기록 결정 거리 lg-conditions-below-list). 조건은 두 칸뿐이라 목록을 거의 밀지 않습니다.
             */}
-            <Panel title="기관" count={items.length > 0 ? `${items.length.toLocaleString("ko-KR")}곳` : undefined}>
-              <FilterList
-                label="분석할 기관"
-                items={items.map((item) => ({ key: item.key, label: item.label }))}
-                selected={[cik]}
-                onToggle={setCik}
-                selection="single"
-                narrow="wrap"
-                placeholder={institutionsPlaceholder}
-                pending={firstLoadPending(institutions) ? { label: "기관 목록을 불러오는 중", rows: PENDING_INSTITUTIONS } : null}
-              />
-            </Panel>
             <Panel title="조회 조건">
               <div className="flex flex-wrap items-end gap-3">
                 <Select
@@ -142,6 +130,22 @@ export default function InstitutionsPage() {
                   }))}
                 />
               </div>
+            </Panel>
+            {/*
+              기관 목록 — 고르면 그 기관의 포트폴리오를 읽습니다(예전 '분석할 기관' 고르기 상자와 같은 상태·요청). 넓은 화면은 세로 목록(줄 32px),
+              좁은 화면은 44px 태그가 줄을 바꾸며 늘어섭니다(접지 않음 — 조작이 첫 화면에 바로 보이게).
+            */}
+            <Panel title="기관" count={items.length > 0 ? `${items.length.toLocaleString("ko-KR")}곳` : undefined}>
+              <FilterList
+                label="분석할 기관"
+                items={items.map((item) => ({ key: item.key, label: item.label }))}
+                selected={[cik]}
+                onToggle={setCik}
+                selection="single"
+                narrow="wrap"
+                placeholder={institutionsPlaceholder}
+                pending={firstLoadPending(institutions) ? { label: "기관 목록을 불러오는 중", rows: PENDING_INSTITUTIONS } : null}
+              />
             </Panel>
           </>
         }
@@ -229,7 +233,7 @@ export default function InstitutionsPage() {
 /**
  * 기관 목록을 처음 읽는 동안의 자리 줄(공용 거르기 목록의 `pending` — 값이 온 뒤의 목록 꼴: 좁은 화면 44px 태그 줄바꿈, 넓은 화면 세로 목록 줄). 예전에는 글 줄
  * 자리표시(Skeleton 6줄 약 140px)라, 목록(390 약 630px·lg 약 664px)이 오면 좁은 화면에서는 아래 조회 조건·고른 기관 패널 전체가, 넓은 화면에서는 왼쪽 조회 조건이
- * 밀렸습니다(자기 빌드 CLS 390 0.436 — `25b75a15`). 좁은 화면 태그 폭(px)과 넓은 화면(왼쪽 13rem 칸) 이름 줄 수는 QA 스택 자료 12곳(목록 차례)을 자기 빌드로 잰
+ * 밀렸습니다(자기 빌드 CLS 390 0.436 — `25b75a15`, 그때는 조회 조건이 목록 아래). 좁은 화면 태그 폭(px)과 넓은 화면(왼쪽 13rem 칸) 이름 줄 수는 QA 스택 자료 12곳(목록 차례)을 자기 빌드로 잰
  * 값입니다(390 태그 폭 147~336px, lg 줄 1~3줄 — 합 664px). 목록이 바뀌면 조금 어긋날 수 있습니다 — 자리일 뿐 보이는 수·이름이 아닙니다.
  */
 const PENDING_INSTITUTIONS: readonly FilterListPendingRow[] = [

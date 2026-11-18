@@ -2428,3 +2428,6 @@ QA 스택 확인(D4 전)은 하지 않았습니다 — 위 측정은 자기 빌�
   - QA-720(`7edfb022`·`cd2dfe93`): 표 히트맵이 빈 상태로 먼저 그려진 뒤 행이 오면 넘침 재기·처음 스크롤 자리가 다시 돌지 않던 것 — 두 효과의 의존에 `hasTable`.
   - QA-721(`e2739b6f`·`b3628700`): 스코어카드가 처음 읽는 동안 빠진 것 목록을 응답과 같은 글(`MISSING_FALLBACK`)로 둠 — 위 표의 /scorecard 390 0.1905 가운데 안내 상자 몫(181 → 213px).
     남은 몫은 머리 신선도 줄(`page-header-freshness-late-row` — P8)입니다. 390 CLS는 QA 스택 확인에서 다시 잽니다.
+- 결정 거리 1 `lg-conditions-below-list` — **2026-11-18 결정(사용자 위임 — 권장안 가)**: /institutions·/consensus 왼쪽 칸을 조건 → 거르기 목록 차례로(DOM·Tab 차례도). 시험 둘
+  (패널 제목 차례 — 옛 차례에서 실패 확인)이 지킵니다. 첫 화면 위치는 QA 스택 확인에서 잽니다. 결정 거리 2(`lg-sort-header-summary-text-height`에 더한 다섯 자리)는 공용 `TEXT_TARGET`·
+  `LINK_CLASSES` 한 곳을 바꾸는 일이라 기록된 결정 거리와 함께 P8에서 정합니다.
