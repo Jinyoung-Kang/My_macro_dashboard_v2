@@ -306,3 +306,15 @@ describe("열 머리 nowrap", () => {
     expect(screen.getAllByRole("columnheader").slice(1).every((head) => tokens(head).includes("whitespace-nowrap"))).toBe(true);
   });
 });
+
+describe("0인 칸의 기호는 낭독기에 뜻을 읽힌다(QA-717)", () => {
+  // 수정 전 실패(plain it): { text: "·", hiddenSymbol: false } — 비중 히트맵의 0(미보유) 칸은 기호 '·'만 그려, 낭독기는 읽지 않거나 '가운뎃점'으로 읽음(모름 칸은
+  // 공용 Empty가 '값 없음'을 읽어 줌). 뜻은 표 아래 설명 글에만 있었음.
+  it.fails("비중 히트맵 0 칸: 보이는 기호 '·'는 읽기에서 빼고(aria-hidden) '보유하지 않음'을 읽는다 — 모름 칸 '값 없음'과 갈림", () => {
+    render(<WeightHeatmap dates={["2026-03-31", "2026-06-30"]} series={{ "SYNTHETIC ALPHA CO": [0, 5], "SYNTHETIC BETA CO": [null, 2] }} />);
+    const zero = screen.getByTitle("SYNTHETIC ALPHA CO · 2026-03-31");
+    const symbol = within(zero).queryByText("·");
+    expect({ text: zero.textContent, hiddenSymbol: symbol?.getAttribute("aria-hidden") === "true" }).toEqual({ text: "·보유하지 않음", hiddenSymbol: true });
+    expect(screen.getByTitle("SYNTHETIC BETA CO · 2026-03-31").textContent).toBe("—값 없음");
+  });
+});
