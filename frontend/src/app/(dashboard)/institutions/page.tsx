@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
-import { FilterList, KpiStrip, Skeleton, SplitPane } from "@/components/patterns";
+import { FilterList, type FilterListPendingRow, KpiStrip, Skeleton, SplitPane } from "@/components/patterns";
 import { weightHistoryRows } from "@/lib/chartData";
 import {
   Callout,
@@ -15,7 +15,6 @@ import {
   PageHeader,
   Panel,
   Select,
-  SKELETON_BAR,
   TEXT_TARGET,
 } from "@/components/ui";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
@@ -68,17 +67,14 @@ export default function InstitutionsPage() {
   const usdKrw = useUsdKrw();
 
   const items = institutionItems(institutions.data?.institutions);
-  // 기관 목록을 아직 못 받았거나(처음 읽는 중) 읽지 못했으면 목록 대신 — 다시 시도는 누를 때만 읽습니다.
+  // 기관 목록을 아직 못 받았거나 읽지 못했으면 목록 대신 — 실패면 오류(다시 시도는 누를 때만 읽음), 실패 뒤 다시 읽는 중이면 짧은 자리표시.
+  // 처음 읽는 동안은 거르기 목록의 목록 꼴 자리(pending — 아래 PENDING_INSTITUTIONS)입니다.
   const institutionsPlaceholder =
     institutions.data === null ? (
       institutions.error ? (
         <ErrorState message={institutions.error} onRetry={institutions.reload} />
-      ) : institutions.loading ? (
-        firstLoadPending(institutions) ? (
-          <InstitutionListPending />
-        ) : (
-          <Skeleton lines={2} label="기관 목록을 불러오는 중" />
-        )
+      ) : institutions.loading && !firstLoadPending(institutions) ? (
+        <Skeleton lines={2} label="기관 목록을 불러오는 중" />
       ) : undefined
     ) : undefined;
   // 고른 기관 패널 — 제목(목록 이름, 없으면 포트폴리오 응답의 이름·'CIK …')과 요약 KPI(예전 지표 칸 셋과 같은 값·글).
@@ -121,6 +117,7 @@ export default function InstitutionsPage() {
                 selection="single"
                 narrow="wrap"
                 placeholder={institutionsPlaceholder}
+                pending={firstLoadPending(institutions) ? { label: "기관 목록을 불러오는 중", rows: PENDING_INSTITUTIONS } : null}
               />
             </Panel>
             <Panel title="조회 조건">
@@ -229,49 +226,12 @@ export default function InstitutionsPage() {
 }
 
 /**
- * 기관 목록을 처음 읽는 동안의 자리 — 값이 온 뒤의 목록 꼴(좁은 화면 44px 태그 줄바꿈, 넓은 화면 세로 목록 줄)로 줄 열두 개를 그립니다. 예전에는 글 줄
- * 자리표시(Skeleton 6줄 약 140px)라, 목록(390 약 630px·lg 약 664px)이 오면 좁은 화면에서는 아래 조회 조건·고른 기관 패널 전체가, 넓은 화면에서는 왼쪽
- * 조회 조건이 밀렸습니다(자기 빌드 CLS 390 0.436). 태그 폭·줄 높이는 QA 자료 12곳을 잰 값(PENDING_INSTITUTIONS)이라 목록이 바뀌면 조금 어긋날 수
- * 있습니다 — 자리일 뿐 보이는 수·이름이 아닙니다. 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
+ * 기관 목록을 처음 읽는 동안의 자리 줄(공용 거르기 목록의 `pending` — 값이 온 뒤의 목록 꼴: 좁은 화면 44px 태그 줄바꿈, 넓은 화면 세로 목록 줄). 예전에는 글 줄
+ * 자리표시(Skeleton 6줄 약 140px)라, 목록(390 약 630px·lg 약 664px)이 오면 좁은 화면에서는 아래 조회 조건·고른 기관 패널 전체가, 넓은 화면에서는 왼쪽 조회 조건이
+ * 밀렸습니다(자기 빌드 CLS 390 0.436 — `25b75a15`). 좁은 화면 태그 폭(px)과 넓은 화면(왼쪽 13rem 칸) 이름 줄 수는 QA 스택 자료 12곳(목록 차례)을 자기 빌드로 잰
+ * 값입니다(390 태그 폭 147~336px, lg 줄 1~3줄 — 합 664px). 목록이 바뀌면 조금 어긋날 수 있습니다 — 자리일 뿐 보이는 수·이름이 아닙니다.
  */
-function InstitutionListPending() {
-  return (
-    <div role="status" aria-busy="true" aria-label="기관 목록을 불러오는 중" className="min-w-0">
-      <span className="sr-only">기관 목록을 불러오는 중</span>
-      {/* 좁은 화면 — 거르기 목록 태그(44px·4px 모서리·1px 경계)와 같은 꼴, 폭은 기관 이름 태그의 잰 폭. */}
-      <ul aria-hidden="true" className="flex min-w-0 flex-wrap gap-2 lg:hidden">
-        {PENDING_INSTITUTIONS.map(({ tag }, index) => (
-          <li key={index} className="max-w-full" style={{ width: tag }}>
-            <span className="flex h-11 items-center rounded-control border border-border px-3">
-              <span className={`block h-3.5 w-full ${SKELETON_BAR}`} />
-            </span>
-          </li>
-        ))}
-      </ul>
-      {/* 넓은 화면 — 세로 목록 줄(이름 줄 20px × 줄 수 + 위 6px·아래 5px + 구분선 1px, 마지막 줄은 위아래 6px — 거르기 목록 줄과 같은 셈). */}
-      <ul aria-hidden="true" className="hidden min-w-0 flex-col lg:flex">
-        {PENDING_INSTITUTIONS.map(({ lines }, index) => (
-          <li
-            key={index}
-            className={`flex flex-col px-3 ${index < PENDING_INSTITUTIONS.length - 1 ? "border-b border-border-subtle pt-1.5 pb-[5px]" : "py-1.5"}`}
-          >
-            {Array.from({ length: lines }, (_, line) => (
-              <span key={line} className="flex h-5 items-center">
-                <span className={`block h-3.5 ${line === lines - 1 && lines > 1 ? "w-3/5" : "w-full"} ${SKELETON_BAR}`} />
-              </span>
-            ))}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * 기관 목록 자리의 줄 — 좁은 화면 태그 폭(px)과 넓은 화면(왼쪽 13rem 칸) 이름 줄 수. QA 스택 자료 12곳(목록 차례)을 자기 빌드로 잰 값입니다
- * (390 태그 폭 147~336px, lg 줄 1~3줄 — 합 664px).
- */
-const PENDING_INSTITUTIONS: readonly { tag: number; lines: number }[] = [
+const PENDING_INSTITUTIONS: readonly FilterListPendingRow[] = [
   { tag: 252, lines: 2 },
   { tag: 287, lines: 2 },
   { tag: 225, lines: 2 },

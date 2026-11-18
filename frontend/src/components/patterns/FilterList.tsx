@@ -2,11 +2,18 @@
 
 import { useId, useRef, type JSX, type KeyboardEvent, type ReactNode } from "react";
 
-import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
+import { FOCUS_RING, SELECTED_BAR, SKELETON_BAR } from "@/components/ui/classes";
 import { CheckIcon } from "@/components/ui/icons";
 
 /** 거르기 목록 줄 하나 — `label`은 단추 이름 그대로, `note`는 보조 글(단추 설명 — 이름에 섞지 않음), `title`은 마우스 설명. */
 export type FilterListItem = { key: string; label: string; note?: string | null; title?: string };
+
+/**
+ * 처음 읽는 동안의 자리 줄 하나(`pending.rows`) — 값이 온 뒤의 목록 꼴을 미리 그리는 데 씁니다. `tag`는 좁은 화면 태그 폭(px — 칸 폭에서 잘림), `tagLines`는 그 태그의
+ * 글 줄 수(기본 1 — 44px, 2면 58px), `lines`는 넓은 화면 세로 목록 줄의 이름 줄 수(줄 높이 20px × 줄 수 + 12px). 부르는 쪽이 자기 화면의 목록을 잰 값입니다 — 자리일 뿐
+ * 보이는 수·이름이 아니라, 실제 목록이 다르면 레이아웃 이동만 조금 남습니다.
+ */
+export type FilterListPendingRow = { tag: number; tagLines?: number; lines: number };
 
 /*
  * 클래스는 통째로 적습니다(Tailwind는 소스의 글자 그대로를 훑음). 넓은 화면(lg 이상)은 늘 세로 목록, 좁은 화면은 `narrow`대로 태그 줄바꿈(wrap) 또는 세로 목록(list).
@@ -55,6 +62,9 @@ const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-borde
  * - 넓은 화면(lg 이상)은 늘 세로 목록(줄 32px, 마우스를 올리면 surface-2). 좁은 화면은 `narrow`: "wrap"(기본)은 44px 태그가 줄을 바꾸며 늘어섭니다(켠 태그 진한
  *   경계 + surface-2 + 굵은 글 — 여럿이면 체크 상자도, 끈 태그 옅은 경계 + 보조 글자색), "list"는 넓은 화면과 같은 세로 목록(줄 44px)입니다.
  * - `count`: 목록 위 개수 줄(true면 여럿은 'n개 고름 · 전체 m개', 하나는 '전체 m개' — 함수면 그 글). `placeholder`를 주면 목록 대신(읽는 중·오류), 줄이 없으면 `emptyText`.
+ * - `pending`(선택): 처음 읽는 동안 목록 대신 값이 온 뒤의 꼴로 그린 자리(이름 있는 읽는 중 상태 하나 — 좁은 화면 `narrow="wrap"`이면 태그 줄바꿈, 넓은 화면은 세로 목록 줄,
+ *   글·숫자 없이 막대만, 막대는 읽기에서 뺌). 글 줄 자리표시를 두면 목록(390 약 630~670px·lg 약 660~820px)이 올 때 아래 패널이 크게 밀렸습니다(13F `25b75a15`,
+ *   교집합 QA-714). `placeholder`가 있으면 그쪽이 먼저입니다(오류·실패 뒤 다시 읽기).
  * - 글은 말줄임 없이 낱말 사이에서 꺾습니다(공백 없는 긴 이름은 비상으로 꺾음). 데이터를 그리는 패턴이 아니라 고르는 조작이라 데이터 칸 강조색 금지 목록에는 넣지
  *   않지만, 위처럼 강조 파랑을 쓰지 않습니다.
  */
@@ -67,6 +77,7 @@ export function FilterList({
   narrow = "wrap",
   count,
   placeholder,
+  pending,
   emptyText = "고를 항목이 없습니다.",
 }: {
   /** 묶음 이름(여럿은 role="group", 하나는 role="radiogroup" — 줄이 없는 동안은 group, 예 '분석 대상 기관'). */
@@ -82,6 +93,8 @@ export function FilterList({
   count?: boolean | ((selected: number, total: number) => string);
   /** 읽는 중·오류 — 목록 대신. */
   placeholder?: ReactNode;
+  /** 처음 읽는 동안 목록 꼴 자리(위 설명) — 이름(읽는 중 상태)과 줄. null이면 없음. */
+  pending?: { label: string; rows: readonly FilterListPendingRow[] } | null;
   emptyText?: ReactNode;
 }): JSX.Element {
   const baseId = useId();
@@ -117,9 +130,13 @@ export function FilterList({
     if (!chosen.has(key)) onToggle(key);
   };
 
+  const isPending = !hasPlaceholder && pending !== undefined && pending !== null;
+
   let body: ReactNode;
   if (hasPlaceholder) {
     body = <div className="min-w-0">{placeholder}</div>;
+  } else if (isPending) {
+    body = <PendingRows label={pending.label} rows={pending.rows} wrap={wrap} />;
   } else if (items.length === 0) {
     body = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
   } else {
@@ -175,9 +192,59 @@ export function FilterList({
 
   return (
     // 하나 고름이라도 줄이 없는 동안(읽는 중·오류·빈 목록)은 라디오가 없는 묶음이라 보통 묶음(group)으로 둡니다.
-    <div role={multiple || hasPlaceholder || items.length === 0 ? "group" : "radiogroup"} aria-label={label} className="min-w-0">
-      {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
+    <div role={multiple || hasPlaceholder || isPending || items.length === 0 ? "group" : "radiogroup"} aria-label={label} className="min-w-0">
+      {countText !== null && !hasPlaceholder && !isPending ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
       {body}
+    </div>
+  );
+}
+
+/**
+ * 처음 읽는 동안의 목록 꼴 자리(`pending`) — 좁은 화면(wrap)은 거르기 태그(44px·4px 모서리·1px 경계, 두 줄 태그 58px)와 같은 꼴·잰 폭, 넓은 화면(또는 list)은
+ * 세로 목록 줄(이름 줄 20px × 줄 수 + 위 6px·아래 5px + 구분선 1px, 마지막 줄은 위아래 6px — 목록 줄과 같은 셈 — list의 좁은 화면은 목록 줄처럼 44px 이상, 줄 수는 넓은
+ * 화면 값). 글·숫자는 없고 막대는 읽기에서 뺍니다.
+ */
+function PendingRows({ label, rows, wrap }: { label: string; rows: readonly FilterListPendingRow[]; wrap: boolean }) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className="min-w-0">
+      <span className="sr-only">{label}</span>
+      {wrap ? (
+        <ul aria-hidden="true" className="flex min-w-0 flex-wrap gap-2 lg:hidden">
+          {rows.map(({ tag, tagLines = 1 }, index) => (
+            <li key={index} className="max-w-full" style={{ width: tag }}>
+              <span className="flex min-h-11 flex-col justify-center rounded-control border border-border px-3 py-2">
+                {Array.from({ length: Math.max(1, tagLines) }, (_, line) => (
+                  <span key={line} className="flex h-5 items-center">
+                    <span className={`block h-3.5 w-full ${SKELETON_BAR}`} />
+                  </span>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <ul aria-hidden="true" className={wrap ? "hidden min-w-0 flex-col lg:flex" : "flex min-w-0 flex-col"}>
+        {rows.map(({ lines }, index) => (
+          <li
+            key={index}
+            className={`flex flex-col px-3 ${
+              wrap
+                ? index < rows.length - 1
+                  ? "border-b border-border-subtle pt-1.5 pb-[5px]"
+                  : "py-1.5"
+                : index < rows.length - 1
+                  ? "min-h-11 justify-center border-b border-border-subtle py-2 lg:min-h-0 lg:pt-1.5 lg:pb-[5px]"
+                  : "min-h-11 justify-center py-2 lg:min-h-0 lg:py-1.5"
+            }`}
+          >
+            {Array.from({ length: Math.max(1, lines) }, (_, line) => (
+              <span key={line} className="flex h-5 items-center">
+                <span className={`block h-3.5 ${line === lines - 1 && lines > 1 ? "w-3/5" : "w-full"} ${SKELETON_BAR}`} />
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

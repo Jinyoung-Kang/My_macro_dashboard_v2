@@ -300,3 +300,63 @@ describe("FilterList — 좁은 화면 하나 고름 태그의 고대비 표지(
     }).toEqual({ on: 1, off: [0, 0] });
   });
 });
+
+describe("FilterList — 처음 읽는 동안의 목록 꼴 자리(pending)", () => {
+  const ROWS = [
+    { tag: 252, lines: 2 },
+    { tag: 332, tagLines: 2, lines: 3 },
+    { tag: 147, lines: 1 },
+  ];
+
+  it("이름 있는 읽는 중 상태 하나 — wrap이면 좁은 화면 태그(잰 폭·44/58px)와 넓은 화면 세로 목록 줄(줄 수 × 20px), 글·개수 줄·단추 없음", () => {
+    render(<FilterList label="분석 대상 기관" items={[]} selected={[]} onToggle={() => {}} count pending={{ label: "기관 목록 불러오는 중", rows: ROWS }} />);
+    const group = screen.getByRole("group", { name: "분석 대상 기관" });
+    const status = within(group).getByRole("status", { name: "기관 목록 불러오는 중" });
+    expect(status.getAttribute("aria-busy")).toBe("true");
+    expect(within(group).queryByRole("button")).toBeNull();
+    expect(within(group).queryByText(/개 고름/)).toBeNull();
+    expect(within(group).queryByText("고를 항목이 없습니다.")).toBeNull();
+    const [tags, lines] = [...status.querySelectorAll("ul")] as HTMLElement[];
+    expect(tags.getAttribute("aria-hidden")).toBe("true");
+    expect(tokens(tags)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "gap-2", "lg:hidden"]));
+    expect([...tags.children].map((tag) => [(tag as HTMLElement).style.width, tag.querySelectorAll("span.h-5").length])).toEqual([
+      ["252px", 1],
+      ["332px", 2],
+      ["147px", 1],
+    ]);
+    // 태그 상자는 거르기 태그와 같은 꼴(44px 이상·4px 모서리·1px 경계·위아래 8px)
+    expect(tokens(tags.children[0].firstElementChild as HTMLElement)).toEqual(expect.arrayContaining(["min-h-11", "rounded-control", "border", "border-border", "py-2"]));
+    expect(tokens(lines)).toEqual(expect.arrayContaining(["hidden", "lg:flex", "flex-col"]));
+    expect([...lines.children].map((row) => row.querySelectorAll("span.h-5").length)).toEqual([2, 3, 1]);
+    expect(tokens(lines.children[0] as HTMLElement)).toEqual(expect.arrayContaining(["border-b", "pt-1.5", "pb-[5px]"]));
+    expect(tokens(lines.children[2] as HTMLElement)).toEqual(expect.arrayContaining(["py-1.5"]));
+    expect(status.textContent).toBe("기관 목록 불러오는 중");
+  });
+
+  it("하나 고름이어도 읽는 중은 보통 묶음(group), placeholder가 있으면 그쪽이 먼저, list면 태그 없이 세로 줄만(좁은 화면 44px)", () => {
+    const { unmount } = render(
+      <FilterList label="분석할 기관" items={[]} selected={[]} onToggle={() => {}} selection="single" pending={{ label: "기관 목록을 불러오는 중", rows: ROWS }} />,
+    );
+    expect(screen.getByRole("group", { name: "분석할 기관" })).toBeTruthy();
+    unmount();
+    const second = render(
+      <FilterList
+        label="기관"
+        items={[]}
+        selected={[]}
+        onToggle={() => {}}
+        placeholder={<ErrorState message="기관 목록을 불러오지 못했습니다." />}
+        pending={{ label: "기관 목록 불러오는 중", rows: ROWS }}
+      />,
+    );
+    expect(screen.getByText("기관 목록을 불러오지 못했습니다.")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    second.unmount();
+    render(<FilterList label="기관" items={[]} selected={[]} onToggle={() => {}} narrow="list" pending={{ label: "기관 목록 불러오는 중", rows: ROWS }} />);
+    const status = screen.getByRole("status", { name: "기관 목록 불러오는 중" });
+    const lists = [...status.querySelectorAll("ul")];
+    expect(lists).toHaveLength(1);
+    expect(tokens(lists[0])).not.toContain("hidden");
+    expect(tokens(lists[0].children[0] as HTMLElement)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0"]));
+  });
+});
