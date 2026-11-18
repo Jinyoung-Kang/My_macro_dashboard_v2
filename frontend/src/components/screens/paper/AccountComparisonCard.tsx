@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Card } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { EMPTY } from "@/lib/format";
 import { PAPER_SOURCES } from "@/lib/paper";
 import { comparisonBasis, currentSource } from "@/lib/paperCurrent";
@@ -57,7 +57,7 @@ export function AccountComparisonCard({
   ];
 
   return (
-    <Card title="계좌 비교" subtitle={subtitle} source={live ? currentSource(true, market) : ledgerSource}>
+    <Panel title="계좌 비교" subtitle={subtitle} source={live ? currentSource(true, market) : ledgerSource}>
       {basis.reason && <p className="mb-3 text-xs text-text-2">{basis.reason}</p>}
       <DataTable<ComparisonRow>
         columns={comparisonColumns}
@@ -74,7 +74,7 @@ export function AccountComparisonCard({
           </li>
         ))}
       </ul>
-    </Card>
+    </Panel>
   );
 }
 

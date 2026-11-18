@@ -2,7 +2,7 @@
 
 import { Fragment, type ReactNode, useState } from "react";
 import { DataTable } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -88,7 +88,7 @@ export function SelectionSection() {
   if (loading && !data) return <Loading label="트랙레코드를 읽는 중…" />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
-  if (!data.available) return <Banner tone="warn">{data.message ?? "트랙레코드를 읽을 수 없습니다."}</Banner>;
+  if (!data.available) return <Callout tone="warn">{data.message ?? "트랙레코드를 읽을 수 없습니다."}</Callout>;
 
   const progress = collectionView(data.collection);
   const rerankButton = (
@@ -99,7 +99,7 @@ export function SelectionSection() {
   // 결과·오류가 없으면 null — 빈 조각을 넘기면 카드에 빈 여백 칸이 생깁니다.
   const rerankFeedback = rerank.error || rerank.result ? (
     <>
-      {rerank.error && <Banner tone="warn">{rerank.error}</Banner>}
+      {rerank.error && <Callout tone="warn">{rerank.error}</Callout>}
       {rerank.result && <RerankResult result={rerank.result} />}
     </>
   ) : null;
@@ -107,12 +107,12 @@ export function SelectionSection() {
   if (data.computed === false) {
     return (
       <>
-        <Banner tone="info">
+        <Callout tone="neutral">
           트랙레코드를 아직 계산하지 않았습니다. 후보 기관의 13F 분기 공시를 모으는 중이며, 다 모이면 초기 선정 때 계산합니다.
           <p className="mt-1 text-xs">
             지금 계산해 보려면 &quot;지금 재계산&quot;을 누르세요 — 수집이 덜 끝난 기관은 &quot;수집 중&quot;으로 자격에서 빠지고, 선정은 바꾸지 않습니다.
           </p>
-        </Banner>
+        </Callout>
         <CollectionCard collection={data.collection} line={progress.line} actions={rerankButton} refreshError={refreshError}>
           {rerankFeedback}
         </CollectionCard>
@@ -129,7 +129,7 @@ export function SelectionSection() {
 
   return (
     <>
-      <Card
+      <Panel
         title={`그룹 A — 후보 기관 트랙레코드 (${windowLabel(data.windowYears)})`}
         subtitle={[
           `${data.asOfDate ?? EMPTY} 기준`,
@@ -158,7 +158,7 @@ export function SelectionSection() {
           open={open}
           onToggle={toggle}
         />
-      </Card>
+      </Panel>
 
       {groupB && (
         <GroupBCard
@@ -179,16 +179,16 @@ export function SelectionSection() {
       )}
 
       {limits.length > 0 && (
-        <Card title="트랙레코드의 한계" source={PAPER_SOURCES.trackRecord}>
+        <Panel title="트랙레코드의 한계" source={PAPER_SOURCES.trackRecord}>
           <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-text-2">
             {limits.map((limit) => (
               <li key={limit}>{limit}</li>
             ))}
           </ol>
-        </Card>
+        </Panel>
       )}
 
-      <Card
+      <Panel
         title="선정 이력"
         subtitle="선정은 재선정일(분기 13F 공시 기한 다음 거래일)과 초기 선정 때 한 번씩 남깁니다. 수동 재계산은 선정을 바꾸지 않습니다."
         source={PAPER_SOURCES.selection}
@@ -204,7 +204,7 @@ export function SelectionSection() {
             { key: "names", header: "선정 기관", cell: (row) => <span className="text-xs text-text-2">{row.names}</span> },
           ]}
         />
-      </Card>
+      </Panel>
 
       <CollectionCard collection={data.collection} line={progress.line} />
     </>
@@ -230,7 +230,7 @@ function GroupBCard({
 }) {
   const span = windowLabel(groupB.windowYears);
   return (
-    <Card
+    <Panel
       title={`그룹 B — 기존 13F 메뉴 기관 트랙레코드 (${span})`}
       subtitle={[
         `${asOfDate ?? EMPTY} 기준`,
@@ -255,14 +255,14 @@ function GroupBCard({
         open={open}
         onToggle={onToggle}
       />
-    </Card>
+    </Panel>
   );
 }
 
 /** 신호 풀 카드 — 선정 기준일의 그룹 A ∪ B와 기관 가중(선정 때 값). 화면은 가중을 다시 계산하지 않습니다. */
 function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate: string | null; groupWeightA: number | null }) {
   return (
-    <Card
+    <Panel
       title="신호 풀"
       subtitle={asOfDate
         ? `${asOfDate} 선정 — 규칙 계좌가 이 기관들의 13F 변화를 신호로 씁니다(다음 재선정일까지)`
@@ -296,7 +296,7 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
           ]}
         />
       </section>
-    </Card>
+    </Panel>
   );
 }
 
@@ -315,7 +315,7 @@ function CollectionCard({
   children?: ReactNode;
 }) {
   return (
-    <Card
+    <Panel
       title="수집 진행률"
       subtitle="후보 기관마다 13F 분기 공시를 7년 창 + 공시 지연 여유만큼 받습니다. 수집기가 실행마다 정해진 공시 수만큼 받아 이어 채웁니다."
       source={PAPER_SOURCES.collection}
@@ -328,13 +328,13 @@ function CollectionCard({
     >
       <p className={`text-sm ${collection ? "text-text-2" : "text-text-3"}`}>{line}</p>
       {children && <div className="mt-3 flex flex-col gap-2">{children}</div>}
-    </Card>
+    </Panel>
   );
 }
 
 function RerankResult({ result }: { result: PaperRerankResult }) {
   const view = rerankResultView(result);
-  return <Banner tone={view.tone}>{view.text}</Banner>;
+  return <Callout tone={view.tone}>{view.text}</Callout>;
 }
 
 /**

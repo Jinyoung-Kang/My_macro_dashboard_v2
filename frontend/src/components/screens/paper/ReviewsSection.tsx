@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, Panel, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -114,12 +114,12 @@ export function ReviewsSection({
   if (list.loading && !list.data) return <Loading label="주간 복기를 읽는 중…" />;
   if (list.error) return <ErrorState message={list.error} onRetry={list.reload} />;
   if (list.data && !list.data.available) {
-    return <Banner tone="warn">{list.data.message ?? "주간 복기를 읽을 수 없습니다."}</Banner>;
+    return <Callout tone="warn">{list.data.message ?? "주간 복기를 읽을 수 없습니다."}</Callout>;
   }
 
   return (
     <>
-      <Card title="주간 복기" source={source} actions={<Freshness refreshError={list.refreshError} />}>
+      <Panel title="주간 복기" source={source} actions={<Freshness refreshError={list.refreshError} />}>
         <p className="text-xs leading-relaxed text-text-3">{korea ? KR_REVIEW_SCHEDULE_NOTE : REVIEW_SCHEDULE_NOTE}</p>
         {note && <p className="mt-2 text-xs text-text-2">{note}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -140,11 +140,11 @@ export function ReviewsSection({
           </div>
         )}
         {/* 서버의 400·429 문구(계좌 상태·확정 종가·하루 상한·진행 중)를 그대로. */}
-        {run.error && <div className="mt-3"><Banner tone="warn">{storedText(run.error)}</Banner></div>}
-        {runView && <div className="mt-3"><Banner tone={runView.tone}>{runView.text}</Banner></div>}
-      </Card>
+        {run.error && <div className="mt-3"><Callout tone="warn">{storedText(run.error)}</Callout></div>}
+        {runView && <div className="mt-3"><Callout tone={runView.tone}>{runView.text}</Callout></div>}
+      </Panel>
 
-      <Card
+      <Panel
         title="복기 기록 (최근 52주)"
         subtitle="주마다 한 건(같은 주에 다시 돌아도 새로 만들지 않음). '보기'로 그 주의 판정 표·반복 오류·제안을 펼칩니다."
         source={source}
@@ -196,19 +196,19 @@ export function ReviewsSection({
             ]}
           />
         )}
-      </Card>
+      </Panel>
 
       {week && (
-        <Card title={`${week} 주 복기`} source={source}>
+        <Panel title={`${week} 주 복기`} source={source}>
           {detail.loading && !detail.data && <Loading label="복기를 읽는 중…" />}
           {detail.error && <ErrorState message={detail.error} onRetry={detail.reload} />}
           {detail.data && !detail.data.available && (
-            <Banner tone="warn">{detail.data.message ?? "복기를 읽을 수 없습니다."}</Banner>
+            <Callout tone="warn">{detail.data.message ?? "복기를 읽을 수 없습니다."}</Callout>
           )}
           {detail.data?.available && detail.data.review && (
             <ReviewBody review={detail.data.review} onOpenProposal={onOpenProposal} korea={korea} books={books} />
           )}
-        </Card>
+        </Panel>
       )}
     </>
   );
@@ -239,7 +239,7 @@ function ReviewBody({
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
       </dl>
-      {view.notices.map((text) => <Banner key={text} tone="warn">{text}</Banner>)}
+      {view.notices.map((text) => <Callout key={text} tone="warn">{text}</Callout>)}
 
       {view.verdicts.length > 0 && (
         <Part title="논거 판정" note="결정마다 Claude가 그 뒤 사실(서버가 계산한 수익률·낙폭·스탑·무효화 평가, 결정 뒤 지수·계좌 수익률과 관심 종목의 그 뒤 가격)로 내린 판정입니다.">

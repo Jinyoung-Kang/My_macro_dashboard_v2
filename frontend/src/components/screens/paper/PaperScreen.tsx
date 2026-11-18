@@ -8,7 +8,7 @@ import { IsaSection } from "@/components/screens/isa/IsaSection";
 import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, PageHeader, underlineTabClasses } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, PageHeader, Panel, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
@@ -164,12 +164,12 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       {loading && !data && <Loading label="장부를 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
-      {data && !data.available && <Banner tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Callout>}
       {/* 한국 정기 작업(리스크 점검·결정·복기)이 쉬는 사유 — 서버 문구 그대로(출발일 없음·한국 초기화 전). 쉬어도 조회는 저장본으로 답합니다. */}
       {korea && data?.available && data.dormantReason && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           <strong>한국 계좌가 쉬고 있습니다</strong> — {data.dormantReason}
-        </Banner>
+        </Callout>
       )}
       {/* 개요가 아직 없거나 실패·읽을 수 없음이면 탭 줄이 없습니다 — 그래도 실제 매매 끄기 단추(실제 계좌 탭)로 가는 길을 둡니다(SEC-6, ADR 0028).
           개요가 오면 탭 줄이 그 길이라 이 단추는 빠집니다. 실제 매매는 한국만이라 한국 화면에만 둡니다. */}
@@ -188,7 +188,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       {(data?.available || current.key === "real" || current.key === "isa") && (
         <>
           {data?.available && (data.limits ?? []).length > 0 && (
-            <Card
+            <Panel
               title="이 장부의 한계"
               source={korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}
               actions={
@@ -215,7 +215,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
               )}
               </div>
               )}
-            </Card>
+            </Panel>
           )}
 
           {/* 밑줄 탭 — 위 하위 메뉴 줄(시장)보다 한 단계 작게(sm) 둬 두 줄의 위계를 가릅니다. 좁으면 줄을 바꾸지 않고 가로로 스크롤합니다. */}
@@ -285,10 +285,10 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
             {/* ISA 계좌(ADR 0029, 한국만) — 모의 장부와 별개. 이 탭일 때만 붙어 그때만 읽습니다(개요 응답·장부 값을 넘기지 않음). */}
             {current.key === "isa" && <IsaSection />}
             {current.opensIn && (
-              <Banner tone="info">
+              <Callout tone="neutral">
                 <strong>{current.label}</strong> 탭은 다음 단계에서 엽니다 — {current.opensIn}.
                 <p className="mt-1 text-xs">이 탭에 올 것: {current.upcoming}</p>
-              </Banner>
+              </Callout>
             )}
           </div>
         </>

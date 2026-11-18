@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -91,7 +91,7 @@ export function FrameworkSection({
   focusProposalId?: number | null;
   market?: PaperMarketCode;
 }) {
-  const banner = market === "KR" ? <Banner tone="info">{KR_FRAMEWORK_NOTE}</Banner> : null;
+  const banner = market === "KR" ? <Callout tone="neutral">{KR_FRAMEWORK_NOTE}</Callout> : null;
   return (
     <>
       {banner}
@@ -127,7 +127,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
   if (framework.loading && !framework.data) return <Loading label="프레임을 읽는 중…" />;
   if (framework.error) return <ErrorState message={framework.error} onRetry={framework.reload} />;
   if (!framework.data) return null;
-  if (!framework.data.available) return <Banner tone="warn">{framework.data.message ?? "프레임을 읽을 수 없습니다."}</Banner>;
+  if (!framework.data.available) return <Callout tone="warn">{framework.data.message ?? "프레임을 읽을 수 없습니다."}</Callout>;
 
   const current = framework.data.current ?? null;
   const view = frameworkCurrentView(current, frameworkBudgetFrom(framework.data, settings.data?.available ? settings.data.body : null));
@@ -143,7 +143,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
 
       <OsSourceCard current={current} proposals={proposalList} onChanged={reloadAll} market={market} />
 
-      <Card
+      <Panel
         title="제안"
         subtitle="Claude가 OS 절차 B로 낸 변경 제안(최근 순) — 자동 반영은 없고, 승인해야 새 판이 됩니다."
         source={PAPER_SOURCES.proposals}
@@ -151,9 +151,9 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
         {proposals.loading && !proposals.data && <Loading label="제안을 읽는 중…" />}
         {proposals.error && <ErrorState message={proposals.error} onRetry={proposals.reload} />}
         {proposals.data && !proposals.data.available && (
-          <Banner tone="warn">{proposals.data.message ?? "제안을 읽을 수 없습니다."}</Banner>
+          <Callout tone="warn">{proposals.data.message ?? "제안을 읽을 수 없습니다."}</Callout>
         )}
-        {proposals.data?.available && focus.note && <div className="mb-3"><Banner tone="info">{focus.note}</Banner></div>}
+        {proposals.data?.available && focus.note && <div className="mb-3"><Callout tone="neutral">{focus.note}</Callout></div>}
         {proposals.data?.available && (proposalList.length === 0 ? (
           <p className="text-sm text-text-3">{`아직 제안이 없습니다 — 위 '${sourceCard.title}'에서 요청하면 생깁니다.`}</p>
         ) : (
@@ -170,7 +170,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
             ))}
           </div>
         ))}
-      </Card>
+      </Panel>
 
       <VersionsCard response={framework.data} />
 
@@ -183,21 +183,21 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
 function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
   if (!view) {
     return (
-      <Card title="지금 프레임" source={PAPER_SOURCES.framework}>
+      <Panel title="지금 프레임" source={PAPER_SOURCES.framework}>
         <p className="text-sm text-text-3">아직 판이 없습니다 — 서버가 프레임 표를 처음 읽을 때 임시 v0을 만듭니다. 잠시 뒤 다시 읽어 보세요.</p>
-      </Card>
+      </Panel>
     );
   }
   return (
-    <Card title="지금 프레임" subtitle={view.title} source={PAPER_SOURCES.framework} actions={<BadgeChip badge={view.badge} />}>
-      {view.interimNote && <Banner tone="warn">{view.interimNote}</Banner>}
+    <Panel title="지금 프레임" subtitle={view.title} source={PAPER_SOURCES.framework} actions={<BadgeChip badge={view.badge} />}>
+      {view.interimNote && <Callout tone="warn">{view.interimNote}</Callout>}
       <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs">
         <Meta label="판" value={view.badge.label} />
         <Meta label="만든 시각" value={view.createdAt} />
         {view.counts && <Meta label="구성" value={view.counts} />}
         <Meta label="렌더링 크기" value={view.tokens} />
       </dl>
-      {view.overBudget && <div className="mt-3"><Banner tone="warn">{view.overBudget}</Banner></div>}
+      {view.overBudget && <div className="mt-3"><Callout tone="warn">{view.overBudget}</Callout></div>}
       <p className="mt-3 text-xs text-text-2">
         <span className="text-text-3">바꾼 내용 </span>
         {view.changelog}
@@ -214,7 +214,7 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
           <p className="mt-2 text-text-3">서버가 렌더링을 보내지 않았습니다.</p>
         )}
       </details>
-    </Card>
+    </Panel>
   );
 }
 
@@ -301,7 +301,7 @@ function OsSourceCard({
   };
 
   return (
-    <Card title={card.title} subtitle={card.subtitle} source={PAPER_SOURCES.proposals}>
+    <Panel title={card.title} subtitle={card.subtitle} source={PAPER_SOURCES.proposals}>
       <p className="text-xs leading-relaxed text-text-3">{card.intro}</p>
 
       <div className="mt-3 flex flex-col gap-2">
@@ -347,8 +347,8 @@ function OsSourceCard({
           </Button>
           {locked && <Button variant="ghost" onClick={restart} disabled={propose.busy}>다른 글로 다시 쓰기</Button>}
         </div>
-        {saveNote.error && <Banner tone="warn">{saveNote.error}</Banner>}
-        {noteView && <Banner tone={noteView.tone}>{noteView.text}</Banner>}
+        {saveNote.error && <Callout tone="warn">{saveNote.error}</Callout>}
+        {noteView && <Callout tone={noteView.tone}>{noteView.text}</Callout>}
       </div>
 
       <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
@@ -373,11 +373,11 @@ function OsSourceCard({
           </div>
         )}
         {/* 서버 문구(호출 상한·키 없음·다른 요청 진행 중·보관한 메모 등)를 그대로 — 무엇을 해야 하는지 서버가 적어 보냅니다. */}
-        {propose.error && <Banner tone="warn">{propose.error}</Banner>}
-        {proposeView && <Banner tone={proposeView.tone}>{proposeView.text}</Banner>}
+        {propose.error && <Callout tone="warn">{propose.error}</Callout>}
+        {proposeView && <Callout tone={proposeView.tone}>{proposeView.text}</Callout>}
         {created && <ProposalItem proposal={created} current={current} onChanged={onChanged} />}
       </div>
-    </Card>
+    </Panel>
   );
 }
 
@@ -445,7 +445,7 @@ function ProposalItem({
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
       </dl>
-      {view.error && <Banner tone="warn">오류 — {view.error}</Banner>}
+      {view.error && <Callout tone="warn">오류 — {view.error}</Callout>}
       {view.summary && <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-2">{view.summary}</p>}
 
       {view.assessment.length > 0 && (
@@ -496,7 +496,7 @@ function ProposalItem({
         </Part>
       )}
 
-      {view.staleBase && <Banner tone="warn">{view.staleBase}</Banner>}
+      {view.staleBase && <Callout tone="warn">{view.staleBase}</Callout>}
 
       {view.pending && (deciding ? (
         <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
@@ -521,11 +521,11 @@ function ProposalItem({
       ))}
 
       {/* 서버의 400 문구(다른 판이 먼저 승인됨·대상 없음 등)를 그대로. */}
-      {approve.error && <Banner tone="warn">{approve.error}</Banner>}
-      {reject.error && <Banner tone="warn">{reject.error}</Banner>}
-      {approved && <Banner tone={approved.tone}>{approved.text}</Banner>}
-      {approved?.warning && <Banner tone="warn">{approved.warning}</Banner>}
-      {rejected && <Banner tone={rejected.tone}>{rejected.text}</Banner>}
+      {approve.error && <Callout tone="warn">{approve.error}</Callout>}
+      {reject.error && <Callout tone="warn">{reject.error}</Callout>}
+      {approved && <Callout tone={approved.tone}>{approved.text}</Callout>}
+      {approved?.warning && <Callout tone="warn">{approved.warning}</Callout>}
+      {rejected && <Callout tone={rejected.tone}>{rejected.text}</Callout>}
     </article>
   );
 }
@@ -550,7 +550,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
     setPicked({ ...selection, [side]: value === "" ? null : Number(value) });
 
   return (
-    <Card title="판 목록·비교" subtitle="판마다 바꾼 내용과 출처(제안 승인·수동 편집), 두 판의 렌더링을 나란히." source={PAPER_SOURCES.framework}>
+    <Panel title="판 목록·비교" subtitle="판마다 바꾼 내용과 출처(제안 승인·수동 편집), 두 판의 렌더링을 나란히." source={PAPER_SOURCES.framework}>
       <Table<FrameworkVersionRow>
         label="판 목록"
         rows={rows}
@@ -616,7 +616,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
           </div>
         </section>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -701,12 +701,12 @@ function EditCard({
 
   if (!draft) {
     return (
-      <Card title="직접 고치기" subtitle="지금 판을 복사해 원칙·엔진·규칙을 고치고 새 판으로 저장합니다(사용자 판). Claude를 부르지 않습니다." source={PAPER_SOURCES.framework}>
+      <Panel title="직접 고치기" subtitle="지금 판을 복사해 원칙·엔진·규칙을 고치고 새 판으로 저장합니다(사용자 판). Claude를 부르지 않습니다." source={PAPER_SOURCES.framework}>
         <Button onClick={start} disabled={!startable}>지금 판으로 편집 시작</Button>
         {!startable && <p className="mt-2 text-xs text-text-3">지금 판의 본문을 읽지 못해 편집할 수 없습니다.</p>}
-        {result && <div className="mt-3"><Banner tone={result.tone}>{result.text}</Banner></div>}
-        {result?.warning && <div className="mt-3"><Banner tone="warn">{result.warning}</Banner></div>}
-      </Card>
+        {result && <div className="mt-3"><Callout tone={result.tone}>{result.text}</Callout></div>}
+        {result?.warning && <div className="mt-3"><Callout tone="warn">{result.warning}</Callout></div>}
+      </Panel>
     );
   }
 
@@ -723,7 +723,7 @@ function EditCard({
   };
 
   return (
-    <Card
+    <Panel
       title="직접 고치기"
       subtitle={`기준 판 ${frameworkVersionLabel(draft.baseVersion, draft.baseStatus)} — 저장하면 새 판(사용자 판)이 되고 다음 Claude 결정부터 씁니다. Claude를 부르지 않습니다(비용 없음).`}
       source={PAPER_SOURCES.framework}
@@ -811,10 +811,10 @@ function EditCard({
         </label>
 
         {moved && (
-          <Banner tone="warn">
+          <Callout tone="warn">
             편집을 시작한 뒤 판이 바뀌었습니다(기준 {frameworkVersionLabel(draft.baseVersion, draft.baseStatus)} → 지금{" "}
             {frameworkVersionLabel(current?.version, current?.status)}) — 그대로 저장하면 새 판의 변경이 사라집니다. 편집을 다시 시작하세요.
-          </Banner>
+          </Callout>
         )}
         {check.errors.length > 0 && (
           <ul aria-label="저장 전 확인" className="list-disc pl-5 text-xs text-warn">
@@ -842,9 +842,9 @@ function EditCard({
           </div>
         )}
         {/* 서버의 400 문구(엔진 수·id·4,000자 등)를 그대로 — 무엇이 틀렸는지 서버가 적어 보냅니다. */}
-        {save.error && <Banner tone="warn">{save.error}</Banner>}
+        {save.error && <Callout tone="warn">{save.error}</Callout>}
       </form>
-    </Card>
+    </Panel>
   );
 }
 

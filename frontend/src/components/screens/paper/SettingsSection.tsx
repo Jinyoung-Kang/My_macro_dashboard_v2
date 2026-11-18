@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, NativeSelect, Select, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel, Select, Table } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -49,7 +49,7 @@ const INPUT = `w-full ${inputClasses()}`;
 export function SettingsSection({ market = "US" }: { market?: PaperMarketCode }) {
   const korea = market === "KR";
   const [scope, setScope] = useState<SettingsScope>("market");
-  const banner = korea ? <Banner tone="info">{KR_SETTINGS_NOTE}</Banner> : null;
+  const banner = korea ? <Callout tone="neutral">{KR_SETTINGS_NOTE}</Callout> : null;
   const settings = useApi<PaperSettingsResponse>(endpoints.paper.settings);
   const history = useApi<PaperSettingsHistoryResponse>(endpoints.paper.settingsHistory);
   // 손댄 키만 담습니다(키 → 입력 글자). 손대지 않은 키는 지금 값을 그대로 보입니다.
@@ -70,7 +70,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
   if (settings.error) return <>{banner}<ErrorState message={settings.error} onRetry={settings.reload} /></>;
   if (!settings.data) return banner;
   if (!settings.data.available) {
-    return <>{banner}<Banner tone="warn">{settings.data.message ?? "설정을 읽을 수 없습니다."}</Banner></>;
+    return <>{banner}<Callout tone="warn">{settings.data.message ?? "설정을 읽을 수 없습니다."}</Callout></>;
   }
 
   const data = settings.data;
@@ -109,7 +109,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
   return (
     <>
       {banner}
-      <Card
+      <Panel
         title="설정"
         subtitle={typeof data.version === "number"
           ? `지금 설정 v${data.version} — 바꾸면 버전이 하나 오르고, 재기동 없이 다음 작업부터 씁니다.`
@@ -175,22 +175,22 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
           />
 
           {/* 서버의 400 문구(모르는 키·형·범위 밖)를 그대로 — 어느 키가 왜 틀렸는지 서버가 적어 보냅니다. */}
-          {save.error && <Banner tone="warn">{save.error}</Banner>}
+          {save.error && <Callout tone="warn">{save.error}</Callout>}
           {/* 저장 결과 — 성공하면 초점이 여기로 옵니다(tabIndex -1: 스크립트로만 닿고 Tab 순서에는 넣지 않음). */}
           {result && (
             <div ref={resultRef} tabIndex={-1} className="flex flex-col gap-2 rounded-control focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-              <Banner tone={result.tone}>{result.text}</Banner>
-              {result.warning && <Banner tone="warn">{result.warning}</Banner>}
+              <Callout tone={result.tone}>{result.text}</Callout>
+              {result.warning && <Callout tone="warn">{result.warning}</Callout>}
             </div>
           )}
         </section>
-      </Card>
+      </Panel>
 
       {groups.length === 0 ? (
-        <Banner tone="info">서버가 바꿀 수 있는 설정 키를 보내지 않았습니다.</Banner>
+        <Callout tone="neutral">서버가 바꿀 수 있는 설정 키를 보내지 않았습니다.</Callout>
       ) : (
         groups.map((group) => (
-          <Card key={group.key || "general"} title={group.title}>
+          <Panel key={group.key || "general"} title={group.title}>
             <div role="group" aria-label={group.title} className="flex flex-col">
               {group.rows.map((row) => (
                 <SettingField
@@ -205,15 +205,15 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                 />
               ))}
             </div>
-          </Card>
+          </Panel>
         ))
       )}
 
-      <Card title="바꾼 기록" subtitle="버전마다 바뀐 키와 그 버전의 값(최근 순)." source={PAPER_SOURCES.settings}>
+      <Panel title="바꾼 기록" subtitle="버전마다 바뀐 키와 그 버전의 값(최근 순)." source={PAPER_SOURCES.settings}>
         {history.loading && !history.data && <Loading label="설정 이력을 읽는 중…" />}
         {history.error && <ErrorState message={history.error} onRetry={history.reload} />}
         {history.data && !history.data.available && (
-          <Banner tone="warn">{history.data.message ?? "설정 이력을 읽을 수 없습니다."}</Banner>
+          <Callout tone="warn">{history.data.message ?? "설정 이력을 읽을 수 없습니다."}</Callout>
         )}
         {history.data?.available && (
           <Table<SettingsHistoryRow>
@@ -235,7 +235,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
             ]}
           />
         )}
-      </Card>
+      </Panel>
     </>
   );
 }

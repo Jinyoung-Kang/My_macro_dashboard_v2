@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { PAPER_SOURCES } from "@/lib/paper";
@@ -46,7 +46,7 @@ export function KrSelectionSection() {
   if (list.loading && !list.data) return <Loading label="한국 규칙 계좌 결정 기록을 읽는 중…" />;
   if (list.error) return <ErrorState message={list.error} onRetry={list.reload} />;
   if (!list.data) return null;
-  if (!list.data.available) return <Banner tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Banner>;
+  if (!list.data.available) return <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>;
 
   const reference = latest.data?.available ? krSelectionReference(latest.data.decision) : null;
   const referenceLine = latestId === null ? null : latest.error ? (
@@ -57,23 +57,23 @@ export function KrSelectionSection() {
 
   if (selectionId === null) {
     return (
-      <Card title="종목 선정(한국 규칙 계좌)" source={PAPER_SOURCES.krSelection} actions={<Freshness refreshError={list.refreshError} />}>
+      <Panel title="종목 선정(한국 규칙 계좌)" source={PAPER_SOURCES.krSelection} actions={<Freshness refreshError={list.refreshError} />}>
         <p className="text-sm leading-relaxed text-text-3">{NO_SELECTION_YET}</p>
         {referenceLine && <div className="mt-3">{referenceLine}</div>}
-      </Card>
+      </Panel>
     );
   }
 
   if (selected.loading && !selected.data) return <Loading label="선정 기록을 읽는 중…" />;
   if (selected.error) return <ErrorState message={`선정 기록(#${selectionId})을 읽지 못했습니다 — ${selected.error}`} onRetry={selected.reload} />;
   if (!selected.data) return null;
-  if (!selected.data.available) return <Banner tone="warn">{selected.data.message ?? "선정 기록을 읽을 수 없습니다."}</Banner>;
+  if (!selected.data.available) return <Callout tone="warn">{selected.data.message ?? "선정 기록을 읽을 수 없습니다."}</Callout>;
 
   const view = krSelectionView(selected.data.decision);
 
   return (
     <>
-      <Card
+      <Panel
         title="종목 선정(한국 규칙 계좌)"
         subtitle="코스피 시총 상위 100 보통주(U) 가운데 외국인·기관의 20거래일 누적 순매수가 둘 다 0보다 큰 종목을 점수(두 순매수 합 ÷ 상장주식수) 순으로 — 재선정일·출발 때만 삽니다. 결정 때 읽은 입력 그대로입니다."
         source={PAPER_SOURCES.krSelection}
@@ -83,14 +83,14 @@ export function KrSelectionSection() {
           <Cells cells={view.head} />
           {view.summary && <p className="text-xs text-text-2">{view.summary}</p>}
           {!view.recognized && (
-            <Banner tone="warn">이 결정 기록에는 입력 구성원(input.members)이 없어 선정 표를 그릴 수 없습니다 — 결정 로그 탭에서 원래 기록을 보세요.</Banner>
+            <Callout tone="warn">이 결정 기록에는 입력 구성원(input.members)이 없어 선정 표를 그릴 수 없습니다 — 결정 로그 탭에서 원래 기록을 보세요.</Callout>
           )}
           {view.financialChecks.length > 0 && (
-            <Banner tone="warn">
+            <Callout tone="warn">
               <strong>{KR_FINANCIAL_TABLE_CHECK}</strong> — 금융업 코드 표 밖이라 부채비율 상한으로 빠졌는데 DART에 &apos;유동자산&apos; 계정이 없는
               회사입니다(금융업식 재무상태표 — 표에 빠진 금융사일 수 있음). 코드 표를 고칠지 확인하세요.
               <NoteList label="금융업 코드 표 확인 필요" notes={view.financialChecks} />
-            </Banner>
+            </Callout>
           )}
           {view.cells.length > 0 && (
             <Part title="선정 요약" note={view.cellsNote ?? undefined}>
@@ -121,10 +121,10 @@ export function KrSelectionSection() {
           )}
           {referenceLine}
         </div>
-      </Card>
+      </Panel>
 
       {view.recognized && (
-        <Card title="제외" subtitle="후보에서 빠진 사유별 종목 수(남기는 순서 — 거래정지 → 재진입 금지 → 자료 부족 → 수급 미달 → 연속 순매수 미달 → 자료 없음 → 재무 미달)">
+        <Panel title="제외" subtitle="후보에서 빠진 사유별 종목 수(남기는 순서 — 거래정지 → 재진입 금지 → 자료 부족 → 수급 미달 → 연속 순매수 미달 → 자료 없음 → 재무 미달)">
           <div className="flex flex-col gap-4">
             <DataTable<KrSelectionView["exclusions"][number]>
               caption="제외"
@@ -147,11 +147,11 @@ export function KrSelectionSection() {
               )}
             </Part>
           </div>
-        </Card>
+        </Panel>
       )}
 
       {view.recognized && (
-        <Card
+        <Panel
           title={`유니버스 구성원(U ${view.members.length}종목)`}
           subtitle="U 순위 순 — 머리를 누르면 정렬합니다. 수급은 주(토스증권, 결정 때 읽은 20거래일 창), 재무는 DART 접수일이 기준 세션 이하인 것만."
           source={PAPER_SOURCES.krSelection}
@@ -165,18 +165,18 @@ export function KrSelectionSection() {
             maxHeight={560}
             scrollHint="overflow"
           />
-        </Card>
+        </Panel>
       )}
 
       {view.input.length > 0 && (
-        <Card title="입력" subtitle="결정이 읽은 자료 — 금융위원회(공공데이터포털) 유니버스·토스증권 수급·금융감독원 DART 재무.">
+        <Panel title="입력" subtitle="결정이 읽은 자료 — 금융위원회(공공데이터포털) 유니버스·토스증권 수급·금융감독원 DART 재무.">
           <Cells cells={view.input} />
           {view.notes.length > 0 && (
             <ul aria-label="처리 메모" className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-text-2">
               {view.notes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}
             </ul>
           )}
-        </Card>
+        </Panel>
       )}
     </>
   );

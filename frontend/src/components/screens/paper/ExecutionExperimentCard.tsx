@@ -2,7 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { type Column, DataTable, Empty } from "@/components/patterns";
-import { Banner, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
+import { Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
@@ -178,7 +178,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
   const checkpointRows = executionCheckpointRows(execution.data);
 
   return (
-    <Card
+    <Panel
       title="체결 시점 실험"
       subtitle={text.subtitle}
       source={market === "KR" ? PAPER_SOURCES.krExecution : PAPER_SOURCES.execution}
@@ -204,7 +204,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
       )}
       {execution.loading && !execution.data && <Loading label="실행 감사를 읽는 중…" />}
       {execution.error && <ErrorState message={execution.error} onRetry={execution.reload} />}
-      {execution.data && !execution.data.available && <Banner tone="warn">{execution.data.message ?? "실행 감사를 읽을 수 없습니다."}</Banner>}
+      {execution.data && !execution.data.available && <Callout tone="warn">{execution.data.message ?? "실행 감사를 읽을 수 없습니다."}</Callout>}
       {view && (
         <>
           <p className="mb-2 text-xs text-text-3">{view.head}</p>
@@ -266,6 +266,6 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
           </ul>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, NativeSelect, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiDelete, apiPost } from "@/lib/api";
@@ -84,7 +84,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
 
   return (
     <>
-      <Card
+      <Panel
         title={korea ? "메모(한국)" : "메모"}
         subtitle={korea
           ? "한국 Claude 계좌의 자료 — 시황 메모는 한국 결정 패킷에, 방법론 메모는 프레임 제안에"
@@ -103,10 +103,10 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
         </p>
         {referenceReason && (
           <div className="mb-3">
-            <Banner tone="warn">
+            <Callout tone="warn">
               <strong>기준 거래일을 셀 수 없습니다</strong> — {referenceReason}. 그동안 목록은 만료를 가를 수 없어 보관하지 않은 메모 전부이고(시황 메모의
               유효 여부는 &apos;모름&apos;), 새 메모는 서버가 거절합니다(400).
-            </Banner>
+            </Callout>
           </div>
         )}
         {/* 쉬는 사유는 화면 맨 위 배너가 적습니다(PaperScreen) — 여기서는 메모를 써도 되는지만. */}
@@ -117,7 +117,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
         )}
         {notes.loading && !notes.data && <Loading label="메모를 읽는 중…" />}
         {notes.error && <ErrorState message={notes.error} onRetry={notes.reload} />}
-        {notes.data && !notes.data.available && <Banner tone="warn">{notes.data.message ?? "메모를 읽을 수 없습니다."}</Banner>}
+        {notes.data && !notes.data.available && <Callout tone="warn">{notes.data.message ?? "메모를 읽을 수 없습니다."}</Callout>}
         {notes.data?.available && (
           <Table<NoteRow>
             label="메모"
@@ -180,13 +180,13 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
             </div>
           </div>
         )}
-        {archive.error && <div className="mt-3"><Banner tone="warn">{archive.error}</Banner></div>}
+        {archive.error && <div className="mt-3"><Callout tone="warn">{archive.error}</Callout></div>}
         {archive.result && archive.result.ok === false && (
-          <div className="mt-3"><Banner tone="warn">{archive.result.message ?? "메모를 보관하지 못했습니다."}</Banner></div>
+          <div className="mt-3"><Callout tone="warn">{archive.result.message ?? "메모를 보관하지 못했습니다."}</Callout></div>
         )}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title={korea ? "한국 메모 쓰기" : "메모 쓰기"}
         subtitle={korea
           ? "한국 시황 메모는 기준일·만료일 사이에만 한국 결정 패킷에 실립니다. 날짜를 비우면 서버가 KRX 달력으로 기본값을 채웁니다(저장 결과에 적힘)."
@@ -273,10 +273,10 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
             </Button>
           </div>
           {/* 서버 400 문구(길이·날짜 형식 등)를 그대로 — 무엇이 틀렸는지 서버가 적어 보냅니다. */}
-          {create.error && <Banner tone="warn">{create.error}</Banner>}
-          {created && <Banner tone={created.tone}>{created.text}</Banner>}
+          {create.error && <Callout tone="warn">{create.error}</Callout>}
+          {created && <Callout tone={created.tone}>{created.text}</Callout>}
         </form>
-      </Card>
+      </Panel>
     </>
   );
 }

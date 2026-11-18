@@ -2,7 +2,7 @@
 
 import { DonutChart, SERIES_COLORS } from "@/components/charts";
 import { EstimateBadge } from "@/components/patterns";
-import { Banner, Button, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, SourceLine, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useTickerNames } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
@@ -225,7 +225,7 @@ export function AccountDetailPanel({
         </div>
         {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
-        {positions.data && !positions.data.available && <Banner tone="warn">{positions.data.message}</Banner>}
+        {positions.data && !positions.data.available && <Callout tone="warn">{positions.data.message}</Callout>}
         {composition && <CompositionView label={book.label} composition={composition} />}
       </section>
 
@@ -233,7 +233,7 @@ export function AccountDetailPanel({
         <h4 className="text-xs font-semibold text-text">최근 체결 ({RECENT_FILLS}건)</h4>
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
-        {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
+        {fills.data && !fills.data.available && <Callout tone="warn">{fills.data.message}</Callout>}
         {fills.data?.available && (
           <Table<PaperFill>
             label="최근 체결"

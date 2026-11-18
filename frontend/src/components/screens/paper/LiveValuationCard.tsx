@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Button, Card } from "@/components/ui";
+import { Button, Callout, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
@@ -152,9 +152,9 @@ export function LiveValuationCard({
 
   if (live.error && !data) {
     return (
-      <Card title="장중 시세 (추정)">
-        <Banner tone="warn">장중 시세를 읽지 못했습니다 — {live.error}</Banner>
-      </Card>
+      <Panel title="장중 시세 (추정)">
+        <Callout tone="warn">장중 시세를 읽지 못했습니다 — {live.error}</Callout>
+      </Panel>
     );
   }
   if (!data?.available) return null;
@@ -190,7 +190,7 @@ export function LiveValuationCard({
   ];
 
   return (
-    <Card
+    <Panel
       title="장중 시세 (추정)"
       subtitle={`${session.label} — ${session.detail}`}
       // 계좌의 지금 값(개요 히어로·계좌 행의 장중 추정)은 서버가 이 카드가 받은 장중 저장본으로 평가한 값입니다(개요는 수집을 요청하지 않음).
@@ -219,7 +219,7 @@ export function LiveValuationCard({
         {(session.live || extended) && realtime.error && <span className="ml-1 text-warn">· {realtime.error}</span>}
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>
-      {warning && <div className="mb-3"><Banner tone="warn">{warning}</Banner></div>}
+      {warning && <div className="mb-3"><Callout tone="warn">{warning}</Callout></div>}
       {holdings ? (
         <>
           <p className="mb-2 text-xs text-text-2">
@@ -237,7 +237,7 @@ export function LiveValuationCard({
       ) : (
         <p className="text-sm text-text-3">계좌가 없습니다.</p>
       )}
-    </Card>
+    </Panel>
   );
 }
 

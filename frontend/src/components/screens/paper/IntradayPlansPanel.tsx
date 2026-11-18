@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button } from "@/components/ui";
+import { Button, Callout } from "@/components/ui";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -92,8 +92,8 @@ export function IntradayPlansPanel({
           </div>
         </div>
       )}
-      {error && <div className="mt-3"><Banner tone="warn">{error}</Banner></div>}
-      {result && <div className="mt-3"><Banner tone="info">{result}</Banner></div>}
+      {error && <div className="mt-3"><Callout tone="warn">{error}</Callout></div>}
+      {result && <div className="mt-3"><Callout tone="neutral">{result}</Callout></div>}
     </section>
   );
 }

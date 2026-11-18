@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTickerName } from "@/hooks/useTickerNames";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
 import { AssetRow, RangeTabs } from "@/components/patterns";
-import { Banner, Button, Card, Freshness, Table } from "@/components/ui";
+import { Button, Callout, Freshness, Panel, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -248,11 +248,11 @@ export function OverviewSection({
   // 미국 전용 — 출발일 종가 사후 체결 초기화(한국은 출발 상태 카드가 맡음).
   const prompt = korea ? null : initPrompt(overview);
   const initResult = init.result && (
-    <Banner tone={init.result.skipped?.length ? "warn" : "info"}>초기화 — {initResultText(init.result)}</Banner>
+    <Callout tone={init.result.skipped?.length ? "warn" : "info"}>초기화 — {initResultText(init.result)}</Callout>
   );
   const startPrompt = korea ? null : rulesStartPrompt(overview);
   const startView = start.result ? initialDecisionResultView(start.result) : null;
-  const startResult = startView && <Banner tone={startView.tone}>{startView.text}</Banner>;
+  const startResult = startView && <Callout tone={startView.tone}>{startView.text}</Callout>;
   const selection = selectedFilersView(overview.selection);
   const hasClaude = books.some((book) => book.kind === "CLAUDE");
   // 미국 Claude 계좌2(체결 시점 실험) — 출발했으면 노출 추이에 계좌2 실제 노출 선(그 순자산 기록)을, 'S = 100 같은 구간'은 출발일을 기준으로.
@@ -297,16 +297,16 @@ export function OverviewSection({
   return (
     <>
       {status.data?.available && status.data.enabled === false && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           정기 작업이 꺼져 있습니다(<code>PAPER_ENABLED=false</code>) —{" "}
           {korea && overview.initialized === false
             // 한국 계좌가 없으면 '리스크 지금 실행' 단추도 없습니다(화면 확인 — 없는 단추를 가리키지 않게).
             ? "한국 리스크 점검·결정·출발도 정기적으로 돌지 않습니다."
             : <>리스크 작업(체결·스탑·평가)은 아래 &quot;리스크 지금 실행&quot;을 누를 때만 돕니다.</>}
-        </Banner>
+        </Callout>
       )}
       {/* 상태를 읽지 못하면 꺼짐·켜짐을 모릅니다 — 배너가 조용히 사라지면 켜져 있는 것으로 읽히므로 그렇다고 적습니다(홈과 같은 문구). */}
-      {status.error && <Banner tone="warn">정기 작업 상태를 확인하지 못했습니다 — {status.error}</Banner>}
+      {status.error && <Callout tone="warn">정기 작업 상태를 확인하지 못했습니다 — {status.error}</Callout>}
 
       {/* 히어로 — 고른 계좌의 지금 값·곡선(기간 알약은 아래 '순자산 곡선' 카드와 같은 상태). 제목 줄 오른쪽 고르기 상자로 계좌를 바꿉니다 —
           다시 마운트하지 않고(상자가 초점을 잃지 않음) 문지르기 상태는 히어로가 계좌 코드로 지웁니다. */}
@@ -322,23 +322,23 @@ export function OverviewSection({
       )}
 
       {prompt && (
-        <Card title={prompt.title} source={PAPER_SOURCES.ledger}>
+        <Panel title={prompt.title} source={PAPER_SOURCES.ledger}>
           <p className="text-sm leading-relaxed text-text-2">{prompt.body}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <Button variant="primary" onClick={() => void runInit()} disabled={init.busy}>
               {init.busy ? `초기화 중… ${initElapsed}초` : "초기화"}
             </Button>
           </div>
-          {init.error && <div className="mt-3"><Banner tone="warn">{init.error}</Banner></div>}
+          {init.error && <div className="mt-3"><Callout tone="warn">{init.error}</Callout></div>}
           {/* 종가가 없어 건너뛴 벤치마크의 서버 사유는 다시 누를 버튼 바로 아래에 둡니다. */}
           {initResult && <div className="mt-3">{initResult}</div>}
-        </Card>
+        </Panel>
       )}
       {/* 카드가 사라진 뒤(모두 시작함)에도 초기화 결과는 남겨 둡니다 — 무엇을 만들고 체결했는지 읽을 수 있게. */}
       {!prompt && initResult}
 
       {startPrompt && (
-        <Card title={startPrompt.title} subtitle="초기 결정 — 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
+        <Panel title={startPrompt.title} subtitle="초기 결정 — 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
           <p className="text-sm leading-relaxed text-text-2">{startPrompt.body}</p>
           {confirmingStart ? (
             <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-3 py-3">
@@ -356,9 +356,9 @@ export function OverviewSection({
             </div>
           )}
           {/* 서버의 400 문구(트랙레코드 수집 중·이미 시작함 등)를 그대로 — 무엇을 기다려야 하는지 서버가 적어 보냅니다. */}
-          {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
+          {start.error && <div className="mt-3"><Callout tone="warn">{start.error}</Callout></div>}
           {startResult && <div className="mt-3">{startResult}</div>}
-        </Card>
+        </Panel>
       )}
       {/* 시작한 뒤(개요를 다시 읽어 카드가 사라짐)에도 결과는 남깁니다 — 주문·사후 체결 수를 읽을 수 있게. */}
       {!startPrompt && startResult}
@@ -377,7 +377,7 @@ export function OverviewSection({
       )}
       {korea && <KrStartSection overview={overview} status={status.data ?? null} onChanged={onChanged} />}
 
-      <Card
+      <Panel
         title="계좌"
         subtitle={`순자산·수익률(출발 이후)은 ${accountsBasis ?? `장부의 마지막 관측치 기준${observedAt ? `(${observedAt} KST)` : ""}`} · 행을 누르면 그 계좌의 상세${
           hero ? "(위 히어로·아래 장중 시세도 그 계좌로)" : ""
@@ -393,7 +393,7 @@ export function OverviewSection({
           )
         }
       >
-        {risk.error && <div className="mb-3"><Banner tone="warn">{risk.error}</Banner></div>}
+        {risk.error && <div className="mb-3"><Callout tone="warn">{risk.error}</Callout></div>}
         {risk.result && (
           <div className="mb-3"><RiskResult view={korea ? krRiskResultView(risk.result) : riskResultView(risk.result)} /></div>
         )}
@@ -441,7 +441,7 @@ export function OverviewSection({
             )}
           </>
         )}
-      </Card>
+      </Panel>
 
       {/* 장중 시세(표시 전용 추정) — 장 상태·간격·출처와 히어로 계좌의 종목 장중가(계좌 고르기는 계좌 행 한 곳). 새 장중 값을 받으면 개요를
           한 번 다시 읽습니다(onChanged — 히어로·계좌 행의 지금 값은 서버가 같은 장중 저장본을 합친 값). */}
@@ -449,7 +449,7 @@ export function OverviewSection({
         <LiveValuationCard market={market} bookCode={heroCode} onUpdated={onChanged} onRealtime={setRealtimeNav} />
       )}
 
-      <Card
+      <Panel
         title="순자산 곡선"
         subtitle={`${korea ? "KR 거래일" : "거래일"}별 순자산(${marketMeta(market).unitLabel}). 그날 기록이 없는 계좌는 선을 끊어 그립니다 — 시작 전인 계좌는 선이 없습니다.${
           hero && navRanges.length > 1 ? ` 기간은 위 히어로에서 고릅니다(지금 ${rangeLabel}).` : ""
@@ -489,14 +489,14 @@ export function OverviewSection({
             {referenceNotes.map((note) => <li key={note}>{note}</li>)}
           </ul>
         )}
-      </Card>
+      </Panel>
 
       {books.length > 0 && <AccountComparisonCard books={books} market={market} session={session} />}
 
       {!korea && book2 && <SameWindowCard overview={overview} books={books} />}
 
       {hasClaude && (
-        <Card
+        <Panel
           title="Claude 노출 추이"
           subtitle={`목표 = Claude가 결정마다 정한 주식 노출(기록·표시용 — 집행은 주문 기준) · 실제 = 그 거래일 장부의 주식 노출${
             exposure.series.some((line) => line.key === CLAUDE2_EXPOSURE_KEY)
@@ -525,13 +525,13 @@ export function OverviewSection({
               {exposure.latest && <p className="mt-2 text-xs text-text-3">마지막 {exposure.latest}</p>}
             </>
           )}
-        </Card>
+        </Panel>
       )}
 
       {hasClaude && <ExecutionExperimentCard books={books} market={market} />}
 
       {hasClaude && usage && (
-        <Card
+        <Panel
           title="Claude 호출 사용량"
           subtitle={korea
             ? "결정·출발·재시도·프레임 제안·복기의 호출 수·토큰·추정 비용(KST 날짜 기준) — 하루 상한은 미국·한국 계좌가 함께 쓰고, 수동 호출은 정기 작업 몫을 남긴 문턱까지입니다"
@@ -553,13 +553,13 @@ export function OverviewSection({
           )}
           <p className="mt-2 text-xs text-text-3">{usage.costNote}</p>
           {usage.note && <p className="mt-1 text-xs text-text-3">{usage.note}</p>}
-        </Card>
+        </Panel>
       )}
 
       {/* 한 칸일 때도 grid-cols-1(minmax(0, 1fr)) — 칸 수를 주지 않으면 auto 칸이 안쪽 표(최소 640px)만큼 늘어나 390px에서 두 카드가 화면 밖으로 잘렸습니다. */}
       {!korea && (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card
+        <Panel
           title="신호 기관"
           subtitle={selection
             ? `${selection.asOfDate} 선정 — 규칙 계좌가 두 그룹을 합친 신호 풀의 13F 변화를 신호로 씁니다(다음 재선정일까지)`
@@ -606,18 +606,18 @@ export function OverviewSection({
               )}
             </div>
           )}
-        </Card>
+        </Panel>
 
-        <Card title="OS 게이트 지표" subtitle="참고 — 구속하지 않음 · 과거 OS가 쓴 매크로 트리거 수준" source={PAPER_SOURCES.gate}>
+        <Panel title="OS 게이트 지표" subtitle="참고 — 구속하지 않음 · 과거 OS가 쓴 매크로 트리거 수준" source={PAPER_SOURCES.gate}>
           <GateIndicatorBody gate={overview.gate} />
-        </Card>
+        </Panel>
       </div>
       )}
 
       {korea ? (
         <KrCollectionCard status={status} quotes={quotes} />
       ) : (
-        <Card
+        <Panel
           title="장부 관측치"
           subtitle="체결·스탑·평가에 쓰는 저장본입니다. 장중이면 마지막 봉이 지연 시세입니다."
           source={observationSource}
@@ -637,10 +637,10 @@ export function OverviewSection({
           {calendar && <p className="mt-1 text-xs text-text-3">{calendar}</p>}
           {news && <p className="mt-1 text-xs text-text-3">{news}</p>}
           {earnings && <p className="mt-1 text-xs text-text-3">{earnings}</p>}
-        </Card>
+        </Panel>
       )}
 
-      <Card title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
+      <Panel title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
         {watchLine && <p aria-label="장중 스탑 감시" className="mb-2 text-xs text-text-3">{watchLine}</p>}
         <Table<PaperJobRun>
           label="작업 기록"
@@ -668,7 +668,7 @@ export function OverviewSection({
             },
           ]}
         />
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -684,7 +684,7 @@ function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; 
     color: bookColor(line.key, index),
   }));
   return (
-    <Card
+    <Panel
       title="S = 100 같은 구간"
       subtitle={view
         ? `기준일 S = ${view.baseDate}(Claude 계좌2 출발일)의 순자산을 100으로 — 계좌1·계좌2·SPY 계좌가 같은 구간을 겪은 결과(서술용, 판정에 쓰지 않음). S 이전 계좌2 값은 없습니다(—).`
@@ -702,7 +702,7 @@ function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; 
           )}
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -712,7 +712,7 @@ function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; 
  */
 function RiskResult({ view }: { view: RiskResultView }) {
   return (
-    <Banner tone={view.tone}>
+    <Callout tone={view.tone}>
       {view.warning && <p className="font-semibold">{view.warning}</p>}
       <p className="text-xs">리스크 작업 — {view.summary}</p>
       {view.errors.length > 0 && (
@@ -731,7 +731,7 @@ function RiskResult({ view }: { view: RiskResultView }) {
           </ul>
         </div>
       )}
-    </Banner>
+    </Callout>
   );
 }
 

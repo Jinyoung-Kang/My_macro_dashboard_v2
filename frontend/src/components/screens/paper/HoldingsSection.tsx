@@ -3,7 +3,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Select } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, Panel, Select } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -733,11 +733,11 @@ export function HoldingsSection({
 
   if (!code) {
     return (
-      <Banner tone="info">
+      <Callout tone="neutral">
         {korea
           ? "아직 한국 계좌가 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 네 계좌가 생깁니다(쉬는 사유는 위 경고)."
           : "아직 계좌가 없습니다 — 개요 탭에서 초기화하면 생깁니다."}
-      </Banner>
+      </Callout>
     );
   }
 
@@ -772,7 +772,7 @@ export function HoldingsSection({
 
   return (
     <>
-      <Card
+      <Panel
         title="계좌"
         source={ledgerSource}
         actions={<Freshness refreshError={positions.refreshError ?? orders.refreshError ?? fills.refreshError} />}
@@ -814,8 +814,8 @@ export function HoldingsSection({
             ) : (
               <p className="text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
             )}
-            {toggle.error && <Banner tone="warn">{toggle.error}</Banner>}
-            {toggleResult && <Banner tone="info">{statusResultText(toggleResult)}</Banner>}
+            {toggle.error && <Callout tone="warn">{toggle.error}</Callout>}
+            {toggleResult && <Callout tone="neutral">{statusResultText(toggleResult)}</Callout>}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -864,14 +864,14 @@ export function HoldingsSection({
             {/* 결과·오류는 늘 그려 둔 알림 영역(role=status) 안에 — 확인 창이 닫히면 초점이 '계좌 초기화' 단추로 돌아가므로, 이 영역이
                 없으면 낭독기 사용자는 성공·실패를 듣지 못합니다(영역이 먼저 있어야 새 내용을 읽음). 비어 있으면 높이·간격이 없습니다. */}
             <div role="status" className="flex flex-col gap-2 empty:-mt-2">
-              {reset.error && <Banner tone="warn">{reset.error}</Banner>}
-              {resetResult && <Banner tone={resetResult.tone}>{resetResult.text}</Banner>}
+              {reset.error && <Callout tone="warn">{reset.error}</Callout>}
+              {resetResult && <Callout tone={resetResult.tone}>{resetResult.text}</Callout>}
             </div>
           </div>
         </div>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="보유"
         subtitle={korea
           ? "가격·평가액·비중·스탑은 장부가 계산한 값입니다(평가 가격은 토스증권 잠정 — 금융위 확정 종가가 들어온 날은 순자산 기록에서 확정). "
@@ -882,7 +882,7 @@ export function HoldingsSection({
       >
         {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
-        {positions.data && !positions.data.available && <Banner tone="warn">{positions.data.message}</Banner>}
+        {positions.data && !positions.data.available && <Callout tone="warn">{positions.data.message}</Callout>}
         {positions.data?.available && (
           <>
             {korea && (positions.data.positions ?? []).length === 0 ? (
@@ -909,10 +909,10 @@ export function HoldingsSection({
             </p>
           </>
         )}
-      </Card>
+      </Panel>
 
       {positions.data?.available && (
-        <Card
+        <Panel
           title="재진입 금지"
           subtitle={korea
             ? "트레일링 스탑으로 판 종목은 체결한 날부터 정해진 KR 거래일 동안 다시 사지 않습니다."
@@ -927,10 +927,10 @@ export function HoldingsSection({
             scrollHint="overflow"
             emptyText="재진입 금지 종목이 없습니다."
           />
-        </Card>
+        </Panel>
       )}
 
-      <Card
+      <Panel
         title={`주문 (최근 ${RECENT_LIMIT}건)`}
         subtitle={korea
           ? "한국 주문은 '체결 시점' 칸의 시점에 체결합니다 — 시가는 다음 KR 거래일 시가(KRX 시가 단일가), 지정 시각·매시는 그 시각에 시작한 "
@@ -948,7 +948,7 @@ export function HoldingsSection({
       >
         {orders.loading && !orders.data && <Loading label="주문을 읽는 중…" />}
         {orders.error && <ErrorState message={orders.error} onRetry={orders.reload} />}
-        {orders.data && !orders.data.available && <Banner tone="warn">{orders.data.message}</Banner>}
+        {orders.data && !orders.data.available && <Callout tone="warn">{orders.data.message}</Callout>}
         {orders.data?.available && (
           korea && (orders.data.orders ?? []).length === 0 ? (
             <KrEmpty>주문이 없습니다.</KrEmpty>
@@ -963,9 +963,9 @@ export function HoldingsSection({
             />
           )
         )}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title={`체결 (최근 ${RECENT_LIMIT}건)`}
         subtitle={korea
           ? "잠정 체결가는 토스증권(KRX 시가 단일가 — 1분봉 개장 봉, 없으면 일봉 시가)이고, 금융위원회(공공데이터포털) 확정가가 들어오면 "
@@ -980,19 +980,19 @@ export function HoldingsSection({
       >
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
-        {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
+        {fills.data && !fills.data.available && <Callout tone="warn">{fills.data.message}</Callout>}
         {fills.data?.available && (
           <>
             {totalText && <p className="mb-2 text-xs font-semibold tabular-nums text-text">{totalText}</p>}
             {cautions.length > 0 && (
               <div className="mb-2">
-                <Banner tone="warn">
+                <Callout tone="warn">
                   <strong>확정 조정 주의</strong> — 잠정 체결의 비용 칸이 그 판의 요율로 다시 센 값과 다릅니다(체결 처리 중에 설정이
                   저장됨 등). 현금은 확정 기준으로 맞췄습니다.
                   <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
                     {cautions.map((note) => <li key={note}>{note}</li>)}
                   </ul>
-                </Banner>
+                </Callout>
               </div>
             )}
             {korea && (fills.data.fills ?? []).length === 0 ? (
@@ -1009,10 +1009,10 @@ export function HoldingsSection({
             )}
           </>
         )}
-      </Card>
+      </Panel>
 
       {korea && (
-        <Card
+        <Panel
           title={`순자산 기록 (최근 ${NAV_ROWS}거래일)`}
           subtitle={"거래일마다 한 줄 — 잠정 줄은 토스 잠정 평가이고, 그날까지 체결이 모두 확정되고 보유가 모두 금융위 그날 종가로 평가되고 "
             + "그날 이하 봉으로 체결될 수 있는 대기 주문이 없으면 확정(금융위 종가)으로 다시 씁니다. 잠정 사유는 리스크 점검 작업 기록(최근 30건)의 "
@@ -1021,7 +1021,7 @@ export function HoldingsSection({
         >
           {nav.loading && !nav.data && <Loading label="순자산 기록을 읽는 중…" />}
           {nav.error && <ErrorState message={nav.error} onRetry={nav.reload} />}
-          {nav.data && !nav.data.available && <Banner tone="warn">{nav.data.message}</Banner>}
+          {nav.data && !nav.data.available && <Callout tone="warn">{nav.data.message}</Callout>}
           {status.error && <p className="mb-2 text-xs text-warn">작업 기록을 읽지 못해 잠정 사유를 고르지 못했습니다 — {status.error}</p>}
           {nav.data?.available && ((nav.data.series ?? []).length === 0 ? (
             <KrEmpty>순자산 기록이 없습니다 — 출발일 줄(현금만, 확정)은 출발 결정 때 생깁니다.</KrEmpty>
@@ -1035,7 +1035,7 @@ export function HoldingsSection({
               emptyText="순자산 기록이 없습니다."
             />
           ))}
-        </Card>
+        </Panel>
       )}
     </>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { type Column, DataTable } from "@/components/patterns";
-import { Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { krClaude2CheckpointLine, PAPER_SOURCES, quotesLine } from "@/lib/paper";
 import { type KrCollectionRow, type KrCollectionState, krCollectionRows } from "@/lib/paperKr";
 
@@ -64,7 +64,7 @@ export function KrCollectionCard({
   const collection = status.data?.available ? status.data.collection ?? null : null;
   const rows = krCollectionRows(collection, quotes);
   return (
-    <Card
+    <Panel
       title="한국 수집 상태"
       subtitle="한국 계좌가 읽는 수집기 저장본 — 관측치·수급은 KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음). 늦음: 관측치·수급은 다음 수집 예정 + 2시간 5분, DART·일정 7일, 뉴스 24시간 · 유니버스·금융위는 기준일 비교(뒤처짐)"
       source={PAPER_SOURCES.krCollection}
@@ -84,6 +84,6 @@ export function KrCollectionCard({
       {!status.error && (
         <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} className="mt-3" />
       )}
-    </Card>
+    </Panel>
   );
 }

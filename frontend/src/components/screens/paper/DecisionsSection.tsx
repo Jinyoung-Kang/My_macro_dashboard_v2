@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useState } from "react";
-import { Banner, Button, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
+import { Button, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -152,11 +152,11 @@ export function DecisionsSection({
 
   if (!code) {
     return (
-      <Banner tone="info">
+      <Callout tone="neutral">
         {korea
           ? "결정을 내는 한국 계좌가 아직 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 규칙·Claude 계좌가 생깁니다(쉬는 사유는 위 경고)."
           : "결정을 내는 계좌가 아직 없습니다 — 개요 탭에서 초기화하면 규칙 계좌·Claude 계좌가 생깁니다."}
-      </Banner>
+      </Callout>
     );
   }
 
@@ -216,7 +216,7 @@ export function DecisionsSection({
   return (
     <>
       {views}
-      <Card
+      <Panel
         title="결정"
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
         actions={<Freshness refreshError={list.refreshError} />}
@@ -278,11 +278,11 @@ export function DecisionsSection({
             </div>
           </div>
         )}
-        {runError && <div className="mt-3"><Banner tone="warn">{runError}</Banner></div>}
-        {runView && <div className="mt-3"><Banner tone={runView.tone}>{runView.text}</Banner></div>}
-      </Card>
+        {runError && <div className="mt-3"><Callout tone="warn">{runError}</Callout></div>}
+        {runView && <div className="mt-3"><Callout tone={runView.tone}>{runView.text}</Callout></div>}
+      </Panel>
 
-      <Card
+      <Panel
         title={`결정 기록 (최근 ${RECENT_LIMIT}건)`}
         subtitle={korea
           ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 행의 '상세 펼치기'로 자료 게이트·기한 지남·선정·주문을 봅니다."
@@ -291,11 +291,11 @@ export function DecisionsSection({
       >
         {list.loading && !list.data && <Loading label="결정 기록을 읽는 중…" />}
         {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
-        {list.data && !list.data.available && <Banner tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Banner>}
+        {list.data && !list.data.available && <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>}
         {list.data?.available && (
           <DecisionTable rows={list.data.decisions ?? []} open={open} onToggle={toggle} showExposure={claude} market={market} />
         )}
-      </Card>
+      </Panel>
 
       {korea && (
         <KrStartRecordsCard
@@ -328,7 +328,7 @@ function KrStartRecordsCard({
   const records = krStartRecords(jobs);
   const judged = krLatestJudgedGates(jobs);
   return (
-    <Card
+    <Panel
       title="출발·게이트 기록"
       subtitle="작업 기록(최근 30건)의 출발 기록 — 출발이 자료를 기다리거나 미뤄진 세션·사유·과금 호출(결정 행 없이 과금된 호출 — 사용량에 셈)과, 그 세션 마지막 자료 게이트 판정입니다."
       source={`${PAPER_SOURCES.krDecisions} · ${PAPER_SOURCES.jobs}`}
@@ -359,7 +359,7 @@ function KrStartRecordsCard({
           ))}
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -498,9 +498,9 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
   if (loading && !data) return <Loading label="결정 상세를 읽는 중…" />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
-  if (!data.available) return <Banner tone="warn">{data.message ?? "결정 기록을 읽을 수 없습니다."}</Banner>;
+  if (!data.available) return <Callout tone="warn">{data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>;
   const decision = data.decision ?? null;
-  if (!decision) return <Banner tone="warn">결정 기록을 찾지 못했습니다.</Banner>;
+  if (!decision) return <Callout tone="warn">결정 기록을 찾지 못했습니다.</Callout>;
 
   const claude = claudeDecisionView({
     book: decision.book,
@@ -537,7 +537,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           </div>
         ))}
       </dl>
-      {decision.error && <Banner tone="warn">오류 — {storedText(decision.error)}</Banner>}
+      {decision.error && <Callout tone="warn">오류 — {storedText(decision.error)}</Callout>}
 
       {claude.recognized && (
         <ClaudeDecisionBody
