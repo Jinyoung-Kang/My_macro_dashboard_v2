@@ -259,10 +259,14 @@ describe("교집합 — 분석 대상 거르기 목록(옛 기관 칩)", () => {
     expect(pressed()).toEqual([["가상 자산운용 (Synthetic AM)", "true"], ["가상 연기금", "false"], ["가상 국부펀드", "true"]]);
     expect(within(panel).getByText("2곳 / 3곳")).toBeTruthy();
 
+    // 낭독기 알림 — 고름이 바뀌면 개수, 마지막 하나를 빼 전체로 돌아가면 그 사실(누른 단추가 '눌림'으로 남아 거꾸로 동작한 것처럼 들리지 않게).
+    expect(within(group).getByRole("status").textContent).toBe("분석 대상 2곳 / 3곳");
     fireEvent.click(within(group).getByRole("button", { name: "가상 자산운용 (Synthetic AM)" }));
+    expect(within(group).getByRole("status").textContent).toBe("분석 대상 1곳 / 3곳");
     fireEvent.click(within(group).getByRole("button", { name: "가상 국부펀드" }));
     expect(pressed().every(([, state]) => state === "true")).toBe(true);
     expect(within(panel).getByText("3곳 / 3곳")).toBeTruthy();
+    expect(within(group).getByRole("status").textContent).toBe("마지막 기관을 빼서 전체로 돌아갔습니다 — 분석 대상 3곳 / 3곳");
   });
 
   it("기관 목록을 읽는 동안은 자리표시, 읽지 못하면 오류와 '다시 시도'(누르면 목록만 한 번 더)", async () => {

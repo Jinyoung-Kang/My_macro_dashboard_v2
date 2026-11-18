@@ -360,3 +360,19 @@ describe("FilterList — 처음 읽는 동안의 목록 꼴 자리(pending)", ()
     expect(tokens(lists[0].children[0] as HTMLElement)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0"]));
   });
 });
+
+describe("FilterList — 고름 알림(status)", () => {
+  it("status를 주면 묶음 안 눈에 보이지 않는 알림 영역(role=status)에 그 글 — 글이 바뀌면 같은 영역의 글이 바뀜, 줄이 없는 동안은 없음", () => {
+    const { rerender } = render(<FilterList label="기관" items={ITEMS} selected={["a"]} onToggle={() => {}} status="1곳 / 3곳" />);
+    const group = screen.getByRole("group", { name: "기관" });
+    const region = within(group).getByRole("status");
+    expect([region.textContent, tokens(region)]).toEqual(["1곳 / 3곳", ["sr-only"]]);
+    rerender(<FilterList label="기관" items={ITEMS} selected={["a", "b"]} onToggle={() => {}} status="2곳 / 3곳" />);
+    expect(within(group).getByRole("status")).toBe(region);
+    expect(region.textContent).toBe("2곳 / 3곳");
+    rerender(<FilterList label="기관" items={[]} selected={[]} onToggle={() => {}} status="0곳" />);
+    expect(within(group).queryByRole("status")).toBeNull();
+    rerender(<FilterList label="기관" items={ITEMS} selected={["a"]} onToggle={() => {}} />);
+    expect(within(group).queryByRole("status")).toBeNull();
+  });
+});

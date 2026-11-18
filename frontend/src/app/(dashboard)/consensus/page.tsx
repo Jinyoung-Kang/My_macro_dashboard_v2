@@ -75,11 +75,16 @@ export default function ConsensusPage() {
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
   const usdKrw = useUsdKrw();
 
+  // 마지막 하나를 빼서 전체로 돌아갔는가 — 낭독기 알림 글이 그 되돌림을 말합니다(누른 단추가 '눌림'으로 남아 거꾸로 동작한 것처럼 들리지 않게).
+  const [returnedToAll, setReturnedToAll] = useState(false);
   const toggle = (cik: string) => {
+    const current = effectiveSelection(allCiks, selected);
+    setReturnedToAll(current.length === 1 && current[0] === cik);
     setSelected((previous) => toggleSelection(allCiks, previous, cik));
   };
   // 보이는 고름(빈 목록 = 전체를 풀어 쓴 것) — 거르기 목록의 켬과 개수가 요청 ciks와 같은 규칙입니다(QA-003).
   const effective = effectiveSelection(allCiks, selected);
+  const countText = selectionCountText(effective.length, allCiks.length);
 
   // 기준 분기 선택지는 응답에 딸려 옵니다. 고른 분기의 응답을 기다리는 동안 선택지가 '최신 분기' 하나로 줄면
   // 화면은 최신을 보이는데 요청은 고른 분기로 나갔습니다 — 마지막 목록을 씁니다(QA-047).
@@ -104,7 +109,7 @@ export default function ConsensusPage() {
         left={
           <>
             <Panel
-              title="분석 대상" count={selectionCountText(effective.length, allCiks.length) ?? undefined}
+              title="분석 대상" count={countText ?? undefined}
               subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체)."
             >
               <FilterList
@@ -114,6 +119,8 @@ export default function ConsensusPage() {
                 onToggle={toggle}
                 selection="multiple"
                 narrow="wrap"
+                // 고름이 바뀌면 낭독기에 개수를 알립니다(패널 머리의 개수는 보통 글이라 읽히지 않음) — 마지막 하나를 빼 전체로 돌아가면 그 사실도.
+                status={countText === null ? null : returnedToAll ? `마지막 기관을 빼서 전체로 돌아갔습니다 — 분석 대상 ${countText}` : `분석 대상 ${countText}`}
                 // 목록을 아직 못 받았으면 목록 대신 — 실패면 오류(다시 시도), 처음 읽는 중이면 자리표시, 실패 뒤 다시 읽는 중이면 짧은 자리표시(같은 이름).
                 // 마지막 경우에 null을 주면 거르기 목록이 빈 목록 글('고를 기관이 없습니다.')을 그려 모르는 상태를 '없다'로 적었습니다(QA-710).
                 placeholder={

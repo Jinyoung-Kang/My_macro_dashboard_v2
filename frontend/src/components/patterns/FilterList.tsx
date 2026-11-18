@@ -62,6 +62,9 @@ const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-borde
  * - 넓은 화면(lg 이상)은 늘 세로 목록(줄 32px, 마우스를 올리면 surface-2). 좁은 화면은 `narrow`: "wrap"(기본)은 44px 태그가 줄을 바꾸며 늘어섭니다(켠 태그 진한
  *   경계 + surface-2 + 굵은 글 — 여럿이면 체크 상자도, 끈 태그 옅은 경계 + 보조 글자색), "list"는 넓은 화면과 같은 세로 목록(줄 44px)입니다.
  * - `count`: 목록 위 개수 줄(true면 여럿은 'n개 고름 · 전체 m개', 하나는 '전체 m개' — 함수면 그 글). `placeholder`를 주면 목록 대신(읽는 중·오류), 줄이 없으면 `emptyText`.
+ * - `status`(선택): 고름이 바뀔 때 낭독기에 알릴 글 — 묶음 안 눈에 보이지 않는 알림 영역(role="status", aria-live polite)에 둡니다. 보이는 개수(패널 머리 등)는
+ *   보통 글이라 바뀌어도 읽히지 않고, '빈 고름 = 전체' 같은 되돌림은 누른 단추의 상태만으로는 거꾸로 동작한 것처럼 들립니다(교집합 — P5b 검토 지적).
+ *   줄이 없는 동안(읽는 중·오류·빈 목록)에는 두지 않습니다.
  * - `pending`(선택): 처음 읽는 동안 목록 대신 값이 온 뒤의 꼴로 그린 자리(이름 있는 읽는 중 상태 하나 — 좁은 화면 `narrow="wrap"`이면 태그 줄바꿈, 넓은 화면은 세로 목록 줄,
  *   글·숫자 없이 막대만, 막대는 읽기에서 뺌). 글 줄 자리표시를 두면 목록(390 약 630~670px·lg 약 660~820px)이 올 때 아래 패널이 크게 밀렸습니다(13F `25b75a15`,
  *   교집합 QA-714). `placeholder`가 있으면 그쪽이 먼저입니다(오류·실패 뒤 다시 읽기).
@@ -78,6 +81,7 @@ export function FilterList({
   count,
   placeholder,
   pending,
+  status,
   emptyText = "고를 항목이 없습니다.",
 }: {
   /** 묶음 이름(여럿은 role="group", 하나는 role="radiogroup" — 줄이 없는 동안은 group, 예 '분석 대상 기관'). */
@@ -95,6 +99,8 @@ export function FilterList({
   placeholder?: ReactNode;
   /** 처음 읽는 동안 목록 꼴 자리(위 설명) — 이름(읽는 중 상태)과 줄. null이면 없음. */
   pending?: { label: string; rows: readonly FilterListPendingRow[] } | null;
+  /** 고름이 바뀔 때 낭독기에 알릴 글(위 설명). 주지 않으면 알림 영역 없음. */
+  status?: string | null;
   emptyText?: ReactNode;
 }): JSX.Element {
   const baseId = useId();
@@ -194,6 +200,12 @@ export function FilterList({
     // 하나 고름이라도 줄이 없는 동안(읽는 중·오류·빈 목록)은 라디오가 없는 묶음이라 보통 묶음(group)으로 둡니다.
     <div role={multiple || hasPlaceholder || isPending || items.length === 0 ? "group" : "radiogroup"} aria-label={label} className="min-w-0">
       {countText !== null && !hasPlaceholder && !isPending ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
+      {/* 알림 영역은 줄이 그려질 때 함께 둡니다 — 그 뒤 고름이 바뀌어 글이 바뀌면 읽힙니다(처음 글은 알림이 아니라 지금 상태). */}
+      {status !== undefined && status !== null && !hasPlaceholder && !isPending && items.length > 0 ? (
+        <p role="status" className="sr-only">
+          {status}
+        </p>
+      ) : null}
       {body}
     </div>
   );
