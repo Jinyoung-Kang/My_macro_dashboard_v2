@@ -15,14 +15,6 @@ export function filerName(name: string | null | undefined): string | null {
   return withoutLeadingIcon(name ?? "") || null;
 }
 
-/**
- * 좁은 칸(교집합의 보유 기관 목록 배지)에 쓰는 짧은 이름 — 국기를 뗀 이름의 첫 낱말('국민연금 (National …)' → '국민연금').
- * 예전에는 국기가 붙은 이름의 첫 낱말이라 국기만 남았습니다. 이름이 비면 받은 글 그대로.
- */
-export function filerShortName(name: string): string {
-  return (filerName(name) ?? name).split(" ")[0] ?? name;
-}
-
 /** new 신규 · closed 전량 매도 · added 확대 · reduced 축소 · unchanged 유지 · none 비교할 수 없음(직전 분기 없음 등). */
 export type HoldingActionKind = "new" | "closed" | "added" | "reduced" | "unchanged" | "none";
 

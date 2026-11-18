@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { filerName, filerShortName, holdingActionView, tickerNoteWarning, tickerProxyWarning } from "@/lib/holdings";
+import { filerName, holdingActionView, tickerNoteWarning, tickerProxyWarning } from "@/lib/holdings";
 
 describe("holdingActionView", () => {
   it("예전 문구(앞 그림 문자)와 새 문구(기호 없음)가 같은 글·종류", () => {
@@ -34,12 +34,6 @@ describe("기관 이름 — 서버가 붙인 국기는 화면에서 뗀다(서�
     expect(filerName("버크셔 해서웨이")).toBe("버크셔 해서웨이");
     expect(filerName("🇺🇸")).toBeNull();
     expect(filerName(null)).toBeNull();
-  });
-
-  it("좁은 칸의 짧은 이름은 국기를 뗀 이름의 첫 낱말 — 국기만 남지 않는다", () => {
-    expect(filerShortName("🇰🇷 국민연금 (National Pension Service)")).toBe("국민연금");
-    expect(filerShortName("🇳🇴 노르웨이 국부펀드 (Norges Bank / GPFG)")).toBe("노르웨이");
-    expect(filerShortName("국민연금")).toBe("국민연금");
   });
 });
 

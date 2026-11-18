@@ -10,10 +10,6 @@ export function effectiveSelection(all: string[], selected: string[]): string[] 
   return selected.length > 0 ? selected : all;
 }
 
-export function isSelected(all: string[], selected: string[], key: string): boolean {
-  return effectiveSelection(all, selected).includes(key);
-}
-
 /** 하나를 토글합니다. 결과가 전체와 같으면 빈 목록("전체")으로 돌아갑니다. 마지막 하나를 빼면 전체가 됩니다. */
 export function toggleSelection(all: string[], selected: string[], key: string): string[] {
   const current = effectiveSelection(all, selected);
