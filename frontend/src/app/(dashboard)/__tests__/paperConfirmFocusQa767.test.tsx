@@ -60,7 +60,7 @@ const describedText = (element: HTMLElement) =>
     .join(" ");
 
 describe("QA-767 — 화면 안 확인 상자의 첫 포커스는 취소 단추", () => {
-  it.fails("Claude 계좌 '지금 결정 실행' — 확인 상자를 열면 '취소'에 포커스하고, 그 단추가 비용 안내를 설명으로 읽는다", async () => {
+  it("Claude 계좌 '지금 결정 실행' — 확인 상자를 열면 '취소'에 포커스하고, 그 단추가 비용 안내를 설명으로 읽는다", async () => {
     render(<DecisionsSection books={[CLAUDE]} onChanged={() => {}} initialBook="claude" />);
     const run = await screen.findByRole("button", { name: "지금 결정 실행" });
     fireEvent.click(run);
@@ -71,7 +71,7 @@ describe("QA-767 — 화면 안 확인 상자의 첫 포커스는 취소 단추"
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it.fails("메모 보관 — 확인 상자를 열면 '취소'에 포커스하고, 그 단추가 보관 확인 글을 설명으로 읽는다", async () => {
+  it("메모 보관 — 확인 상자를 열면 '취소'에 포커스하고, 그 단추가 보관 확인 글을 설명으로 읽는다", async () => {
     render(<NotesSection startDate="2026-10-23" />);
     const list = await screen.findByRole("list", { name: "메모" });
     fireEvent.click(within(list).getAllByRole("button")[0]);

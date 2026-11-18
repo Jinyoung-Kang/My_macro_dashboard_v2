@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { MasterDetail, type PropertyItem, PropertyList } from "@/components/patterns";
 import { Button, buttonClasses, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -89,17 +89,19 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
 
   const rows = notes.data?.available ? noteRows(notes.data.notes) : [];
   const confirmingRow = rows.find((row) => row.id === confirmingArchive) ?? null;
-  // 화면 안 확인 상자를 열면 첫 단추('보관 확인')로 포커스합니다(검사 칸·대화상자 안).
-  const archiveConfirmRef = useRef<HTMLButtonElement>(null);
+  // 화면 안 확인 상자를 열면 '취소'로 포커스합니다(검사 칸·대화상자 안 — 공용 확인 창 규칙: 실수로 Enter를 눌러도 DELETE가 나가지 않게, 확인 글은 그 단추의
+  // 설명으로 읽힘 — QA-767).
+  const archiveCancelRef = useRef<HTMLButtonElement>(null);
+  const archiveTextId = `${useId()}-archive`;
   const openedFor = useRef<number | null>(null);
   useEffect(() => {
     if (confirmingArchive === null) {
       openedFor.current = null;
       return;
     }
-    if (openedFor.current === confirmingArchive || !archiveConfirmRef.current) return;
+    if (openedFor.current === confirmingArchive || !archiveCancelRef.current) return;
     openedFor.current = confirmingArchive;
-    archiveConfirmRef.current.focus();
+    archiveCancelRef.current.focus();
   });
 
   return (
@@ -158,18 +160,21 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 onCancel={() => setConfirmingArchive(null)}
                 confirmBox={confirmingRow && confirmingRow.id === row.id ? (
                   <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
-                    <p className="text-sm leading-relaxed text-warn">{noteArchiveConfirm(confirmingRow)}</p>
+                    <p id={`${archiveTextId}-${confirmingRow.id}`} className="text-sm leading-relaxed text-warn">{noteArchiveConfirm(confirmingRow)}</p>
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        ref={archiveConfirmRef}
-                        type="button"
-                        onClick={() => void runArchive(confirmingRow.id)}
-                        disabled={archive.busy}
-                        className={buttonClasses("primary")}
-                      >
+                      <Button variant="primary" onClick={() => void runArchive(confirmingRow.id)} disabled={archive.busy}>
                         {archive.busy ? "보관 중…" : "보관 확인"}
+                      </Button>
+                      <button
+                        ref={archiveCancelRef}
+                        type="button"
+                        onClick={() => setConfirmingArchive(null)}
+                        disabled={archive.busy}
+                        aria-describedby={`${archiveTextId}-${confirmingRow.id}`}
+                        className={buttonClasses()}
+                      >
+                        취소
                       </button>
-                      <Button onClick={() => setConfirmingArchive(null)} disabled={archive.busy}>취소</Button>
                     </div>
                   </div>
                 ) : null}

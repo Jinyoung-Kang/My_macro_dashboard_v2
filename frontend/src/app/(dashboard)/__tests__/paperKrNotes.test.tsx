@@ -179,7 +179,7 @@ describe("한국 메모 탭 — 목록-검사(작업대 P6)", () => {
     expect(within(archived).queryByRole("button", { name: /^보관 #/ })).toBeNull();
   });
 
-  it("보관 확인 상자를 열면 '보관 확인'으로 포커스, 확인 없이 대화상자를 닫으면 확인을 접는다(다른 메모의 보관 단추가 막히지 않음)", async () => {
+  it("보관 확인 상자를 열면 '취소'로 포커스(QA-767), 확인 없이 대화상자를 닫으면 확인을 접는다(다른 메모의 보관 단추가 막히지 않음)", async () => {
     const OTHER = { ...NOTE, id: 22, title: "환율", body: "원/달러 1,420" };
     reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: null, referenceDate: "2026-10-28", notes: [NOTE, OTHER] });
     renderNotes();
@@ -188,7 +188,7 @@ describe("한국 메모 탭 — 목록-검사(작업대 P6)", () => {
     const dialog = await screen.findByRole("dialog", { name: "#21 외국인 반도체 매수" });
     fireEvent.click(within(dialog).getByRole("button", { name: "보관 #21" }));
     expect(within(dialog).getByText(/이 메모\(#21 외국인 반도체 매수\)를 보관할까요\?/)).toBeTruthy();
-    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "보관 확인" })));
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "취소" })));
 
     fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

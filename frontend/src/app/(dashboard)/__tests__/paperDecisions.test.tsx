@@ -562,7 +562,7 @@ describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", (
     expect(within(panel).queryByRole("combobox")).toBeNull();
   });
 
-  it("Claude 계좌: 머리 동작이 화면 안 확인 상자를 여닫는다 — 열면 '결정 실행 확인'으로, 취소하면 머리 동작으로 포커스", async () => {
+  it("Claude 계좌: 머리 동작이 화면 안 확인 상자를 여닫는다 — 열면 '취소'로(QA-767), 취소하면 머리 동작으로 포커스", async () => {
     await openDecisionsTab();
     fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude" } });
     const run = await screen.findByRole("button", { name: "지금 결정 실행" });
@@ -574,7 +574,7 @@ describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", (
     expect(within(box).getByText(/Claude를 지금 부를까요\?/)).toBeTruthy();
     expect(run.getAttribute("aria-expanded")).toBe("true");
     expect((run as HTMLButtonElement).disabled).toBe(true);
-    await waitFor(() => expect(document.activeElement).toBe(within(box).getByRole("button", { name: "결정 실행 확인" })));
+    await waitFor(() => expect(document.activeElement).toBe(within(box).getByRole("button", { name: "취소" })));
     expect(api.apiPost).not.toHaveBeenCalled();
 
     fireEvent.click(within(box).getByRole("button", { name: "취소" }));

@@ -158,16 +158,18 @@ export function DecisionsSection({
   const now = useMinuteClock();
   const settings = useApi<PaperSettingsResponse>(korea && confirmingFor !== null && confirmingFor === code
     ? endpoints.paper.settings : null);
-  // 화면 안 확인 상자(Claude 계좌) — 머리 동작이 aria-controls로 가리키는 id, 열면 첫 단추('결정 실행 확인')로, 닫으면 머리 동작으로 포커스.
+  // 화면 안 확인 상자(Claude 계좌) — 머리 동작이 aria-controls로 가리키는 id. 열면 '취소'로(공용 확인 창 규칙 — 실수로 Enter를 눌러도 쓰기가 나가지 않게,
+  // 확인 글은 그 단추의 설명으로 읽힘 — QA-767), 닫으면 머리 동작으로 포커스.
   const confirmId = `${useId()}-decision-confirm`;
-  const confirmRunRef = useRef<HTMLButtonElement>(null);
+  const confirmTextId = `${confirmId}-text`;
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
   const focusAfter = useRef<"confirm" | "action" | null>(null);
   useEffect(() => {
     const target = focusAfter.current;
     if (target === "confirm") {
-      if (!confirmRunRef.current) return;
+      if (!confirmCancelRef.current) return;
       focusAfter.current = null;
-      confirmRunRef.current.focus();
+      confirmCancelRef.current.focus();
       return;
     }
     if (target !== "action") return;
@@ -300,23 +302,26 @@ export function DecisionsSection({
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
           <div id={confirmId} className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
-            <p className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
+            <p id={confirmTextId} className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
             {korea && (
-              <p className="text-xs leading-relaxed text-warn">
+              <p id={`${confirmTextId}-kr`} className="text-xs leading-relaxed text-warn">
                 {krManualDecisionNote(manualLimit, krDecisionWindowText(settings.data?.available ? settings.data.body : null))}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                ref={confirmRunRef}
-                type="button"
-                onClick={() => void runNow()}
-                disabled={run.busy}
-                className={buttonClasses("primary")}
-              >
+              <Button variant="primary" onClick={() => void runNow()} disabled={run.busy}>
                 {run.busy ? `결정 중… ${elapsed}초` : "결정 실행 확인"}
+              </Button>
+              <button
+                ref={confirmCancelRef}
+                type="button"
+                onClick={cancelConfirm}
+                disabled={run.busy}
+                aria-describedby={korea ? `${confirmTextId} ${confirmTextId}-kr` : confirmTextId}
+                className={buttonClasses()}
+              >
+                취소
               </button>
-              <Button onClick={cancelConfirm} disabled={run.busy}>취소</Button>
             </div>
           </div>
         )}
