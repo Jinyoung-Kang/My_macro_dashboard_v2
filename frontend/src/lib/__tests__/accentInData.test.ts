@@ -60,6 +60,8 @@ const DATA_FILES = [
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",
   "components/charts/frame.tsx",
+  // 표 히트맵(칸 바탕·칸 글·범례 — 차트 모듈 안의 표, P5b에 index.tsx에서 옮김).
+  "components/charts/HeatmapTable.tsx",
 ] as const;
 
 /**
