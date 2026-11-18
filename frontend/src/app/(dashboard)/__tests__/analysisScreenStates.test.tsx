@@ -186,3 +186,45 @@ describe("교집합 — 네 상태(읽는 중·오류·저장본 없음·모르�
     expect(within(strip).getByRole("group", { name: "참여 기관" }).textContent).toContain("1곳");
   });
 });
+
+describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
+  it("교집합 줄의 이름을 누르면 대화상자에 속성·보유 기관 배지, 닫으면 그 이름 단추로 포커스가 돌아온다", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/consensus")) {
+        return Promise.resolve({
+          available: true, participants: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"], participantCount: 2, availableDates: [], reportDate: null, minHolders: 2,
+          rows: [{ key: "issuer:000000", name: "SYNTHETIC HOLDER CO", cusip: "000000501", holders: ["🇺🇸 가상 자산운용 (Synthetic AM)", "가상 연기금"],
+            actions: [], holderCount: 2, totalValue: 2_000_000_000, avgWeight: 4.5, maxWeight: 6.25, buyCount: 1, sellCount: 1 }],
+        });
+      }
+      if (path.startsWith("/api/macro/usdkrw")) return Promise.resolve({ available: true, rate: 1400, lastTs: "2026-11-04 20:19 KST" });
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+    const trigger = await screen.findByRole("button", { name: "SYNTHETIC HOLDER CO" });
+    // 표에는 보유 기관 목록 열이 없습니다(검사 칸으로 옮김).
+    const table = trigger.closest("table") as HTMLElement;
+    expect(within(table).queryByText("보유 기관 목록")).toBeNull();
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC HOLDER CO" });
+    const value = (label: string) => within(dialog).getByText(label).nextElementSibling?.textContent;
+    expect(value("증권 구분")).toBe("발행사 000000 · 보통주 합산");
+    expect(value("보유 기관 수")).toBe("2곳");
+    expect(value("동시 매수")).toContain("1곳");
+    expect(value("동시 매도")).toContain("1곳");
+    expect(value("최대 비중")).toBe("6.25%");
+    expect(value("합산 평가액")).toBe("20.0억 달러");
+    expect(value("원화 환산")).toContain("원/달러 1,400.00 기준");
+    const holders = within(dialog).getByRole("region", { name: "보유 기관" });
+    expect(within(holders).getAllByRole("listitem").map((item) => [item.textContent, item.getAttribute("title")])).toEqual([
+      ["가상", "가상 자산운용 (Synthetic AM)"],
+      ["가상", "가상 연기금"],
+    ]);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+});

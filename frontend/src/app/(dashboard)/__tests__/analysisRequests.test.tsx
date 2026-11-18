@@ -155,6 +155,25 @@ describe("교집합 화면의 요청", () => {
   });
 });
 
+describe("교집합 화면의 요청 — 검사 칸(P5b)", () => {
+  it("종목 이름으로 검사 대화상자를 열어도(교집합·공통 신규 매수) 요청은 늘지 않는다 — 받은 값만 보임", async () => {
+    consensusReads();
+    render(<ConsensusPage />);
+    await screen.findAllByText("APPLE INC");
+    await screen.findAllByText("SYNTHETIC NEW CO");
+    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+
+    fireEvent.click(screen.getByRole("button", { name: "APPLE INC" }));
+    expect(await screen.findByRole("dialog", { name: "APPLE INC" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "SYNTHETIC NEW CO" }));
+    expect(await screen.findByRole("dialog", { name: "SYNTHETIC NEW CO" })).toBeTruthy();
+    await act(async () => {});
+
+    expect(counts()).toEqual({ [INSTITUTIONS]: 1, [CONSENSUS]: 1, [NEW_BUYS]: 1, [USDKRW]: 2 });
+  });
+});
+
 // ---------------------------------------------------------------- 스타일
 const PROFILES = endpoints.institution.guruProfiles;
 const SIMILARITY = endpoints.institution.guruSimilarity;
