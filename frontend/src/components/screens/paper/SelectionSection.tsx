@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, type ReactNode, useState } from "react";
-import { DataTable } from "@/components/patterns";
-import { Button, Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
+import { type ReactNode, useState } from "react";
+import { type Column, DataTable, FilterList, InspectorFrame } from "@/components/patterns";
+import { Button, Callout, ErrorState, Freshness, Loading, Panel, ROW_TRIGGER } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -36,6 +36,8 @@ import {
   trackSourceText,
   windowLabel,
 } from "@/lib/paper";
+import { type CandidateFilter, candidateFilterOptions, filterCandidates } from "@/lib/paperSelectionView";
+import { PaperBadge } from "./PaperBadge";
 import type {
   PaperRerankResult,
   PaperTrackRecordCandidate,
@@ -44,19 +46,6 @@ import type {
   PaperTrackRecordPeriod,
   PaperTrackRecordResponse,
 } from "@/lib/types";
-
-/**
- * 후보 표의 칸 하나. 행 아래에 구간 표를 펼쳐야 해서 표를 이 파일이 그립니다(DataTable은 행 아래 펼침을 두지 않음 — 1단계에는
- * 이 표만 옛 모양). 선정 이력·신호 풀·구간 표는 DataTable입니다.
- */
-interface Column {
-  key: string;
-  header: ReactNode;
-  align?: "left" | "right";
-  /** 마우스를 올리면 보이는 칸 설명. */
-  title?: string;
-  render: (row: PaperTrackRecordCandidate) => ReactNode;
-}
 
 /**
  * 기관 선정 탭 — 두 기관 그룹(D27)의 13F 트랙레코드(공시일 기준 복제 수익률)와 순위·자격·선정, 신호 풀(기관 가중), 선정 이력,
@@ -76,14 +65,10 @@ export function SelectionSection() {
     "트랙레코드를 다시 계산하지 못했습니다.",
   );
   const elapsed = useElapsedSeconds(rerank.busy);
-  const [open, setOpen] = useState<string[]>([]);
 
   const runRerank = async () => {
     if (await rerank.run()) void reload();
   };
-  // 펼친 행은 "그룹:CIK"로 기억합니다 — 두 그룹에 모두 든 기관(예: 듀케인)을 한쪽에서 펼치면 다른 쪽까지 펼쳐지지 않게.
-  const toggle = (key: string) =>
-    setOpen((current) => (current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]));
 
   if (loading && !data) return <Loading label="트랙레코드를 읽는 중…" />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -147,16 +132,14 @@ export function SelectionSection() {
         {rerankFeedback && <div className="mb-3 flex flex-col gap-2">{rerankFeedback}</div>}
         <p className="mb-3 text-xs leading-relaxed text-text-3">
           수익률은 공시를 본 다음 거래일 종가에 사서 다음 공시의 다음 거래일까지 든 <strong>복제 수익률</strong>이고, 티커가 붙은
-          보유(커버 보유분)만으로 냅니다 — 커버리지가 100% 미만이면 &quot;커버 보유분 기준&quot;입니다. 행의 &quot;구간 펼치기&quot;로 분기마다의
-          값을 봅니다.
+          보유(커버 보유분)만으로 냅니다 — 커버리지가 100% 미만이면 &quot;커버 보유분 기준&quot;입니다. 기관 칸의 &quot;구간 보기&quot;로 분기마다의
+          값을 봅니다(대화상자).
         </p>
         <CandidateTable
           group="A"
           rows={candidates}
           windowYears={data.windowYears ?? null}
           targetQuarters={progress.targetQuarters}
-          open={open}
-          onToggle={toggle}
         />
       </Panel>
 
@@ -165,8 +148,6 @@ export function SelectionSection() {
           groupB={groupB}
           asOfDate={data.asOfDate ?? null}
           criteria={criteriaText(groupBCriteria(groupB, data.criteria))}
-          open={open}
-          onToggle={toggle}
         />
       )}
 
@@ -197,6 +178,8 @@ export function SelectionSection() {
           rows={history}
           rowKey={(row) => row.asOfDate}
           caption="선정 이력"
+          dense
+          count={(count) => `${count}번`}
           scrollHint="overflow"
           emptyText="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
           columns={[
@@ -219,14 +202,10 @@ function GroupBCard({
   groupB,
   asOfDate,
   criteria,
-  open,
-  onToggle,
 }: {
   groupB: PaperTrackRecordGroupB;
   asOfDate: string | null;
   criteria: string | null;
-  open: readonly string[];
-  onToggle: (key: string) => void;
 }) {
   const span = windowLabel(groupB.windowYears);
   return (
@@ -252,8 +231,6 @@ function GroupBCard({
         rows={trackRecordRows(groupB.candidates)}
         windowYears={groupB.windowYears ?? null}
         targetQuarters={null}
-        open={open}
-        onToggle={onToggle}
       />
     </Panel>
   );
@@ -275,6 +252,8 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
           rows={rows}
           rowKey={(row) => row.key}
           caption="신호 풀"
+          dense
+          count={(count) => `${count}곳`}
           scrollHint="overflow"
           emptyText="신호 풀이 없습니다 — 이 기준일에 유효한 선정이 아직 없거나, 선정 때 자격 있는 기관이 없었습니다."
           columns={[
@@ -338,25 +317,26 @@ function RerankResult({ result }: { result: PaperRerankResult }) {
 }
 
 /**
- * 후보 표. 칸 순서: 순위 · 기관 · 자격 · 선정 · 수집(그룹 B는 출처) · 구간 · 커버리지(최소·평균) · 수익률·통계 —
- * 커버리지가 수익률보다 왼쪽입니다. 행의 "구간 펼치기"는 그 행 바로 아래에 구간 표를 엽니다.
- * 그룹 B 행은 기관 칸에 기존 13F 메뉴의 설명을 적습니다(없으면 분류).
+ * 후보 표(공용 DataTable). 칸 순서: 순위 · 기관 · 자격 · 선정 · 수집(그룹 B는 출처) · 구간 · 커버리지(최소·평균) · 수익률·통계 — 커버리지가 수익률보다
+ * 왼쪽입니다. 그룹 B 행은 기관 칸에 기존 13F 메뉴의 설명을 적습니다(없으면 분류).
+ *
+ * 분기마다의 구간 표는 기관 칸의 '구간 보기'(이름 '{기관} 구간 보기')가 검사 대화상자(InspectorFrame dialog — 위쪽 고정, 제목 포커스)로 엽니다. 예전에는
+ * 넓은 표(최소 1,100px)의 펼침 행 <td colSpan> 안에 그려 좁은 화면에서 설명 글과 구간 표가 표 폭만큼 넓어져 잘렸습니다(QA-735 — 390 자기 빌드에서 설명
+ * 글 한 줄 1,400px 중 1,080px가 가로 넘김 밖). 두 그룹에 모두 든 기관(예: 듀케인)도 그룹마다 따로 엽니다(표마다 틀이 하나).
  */
 function CandidateTable({
   group,
   rows,
   windowYears,
   targetQuarters,
-  open,
-  onToggle,
 }: {
   group: "A" | "B";
   rows: PaperTrackRecordCandidate[];
   windowYears: number | null;
   targetQuarters: number | null;
-  open: readonly string[];
-  onToggle: (key: string) => void;
 }) {
+  // 받은 후보 줄 안에서 거르기(전체·자격 있음·선정 — 새 요청 없음, U9 권장안). 표마다 따로.
+  const [filter, setFilter] = useState<CandidateFilter>("all");
   if (rows.length === 0) {
     return (
       <p className="text-sm text-text-3">
@@ -366,139 +346,146 @@ function CandidateTable({
       </p>
     );
   }
-  const openKey = (row: PaperTrackRecordCandidate) => `${group}:${row.cik}`;
   const span = windowLabel(windowYears);
-
-  const columns: Column[] = [
-    { key: "rank", header: "순위", align: "right", render: (row) => (row.rank === null ? EMPTY : formatNumber(row.rank, 0)) },
-    {
-      key: "name",
-      header: "기관",
-      render: (row) => {
-        const expanded = open.includes(openKey(row));
-        const about = group === "B" ? (row.desc ?? row.style) : row.style;
-        return (
-          <div className="flex min-w-[12rem] flex-col items-start gap-1">
-            <span className="font-semibold text-text">{nameOf(row)}</span>
-            <span className="text-xs text-text-3">{about ?? EMPTY} · CIK {row.cik}</span>
-            <Button variant="ghost" expanded={expanded} onClick={() => onToggle(openKey(row))}>
-              {expanded ? "구간 접기" : "구간 펼치기"}
-            </Button>
-          </div>
-        );
-      },
-    },
-    {
-      key: "eligible",
-      header: "자격",
-      render: (row) => (
-        <div className="flex min-w-[9rem] flex-col items-start gap-1">
-          <Badges badges={[eligibilityBadge(row, group)]} />
-          {!row.eligible && row.ineligibleReason && <span className="text-xs leading-snug text-warn">{row.ineligibleReason}</span>}
-        </div>
-      ),
-    },
-    {
-      key: "selected",
-      header: "선정",
-      render: (row) => {
-        const badge = selectedBadge(row);
-        return badge ? <Badges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
-      },
-    },
-    group === "A"
-      ? { key: "quarters", header: "수집", render: (row) => <span className="whitespace-nowrap">{quartersText(row, targetQuarters)}</span> }
-      : {
-        key: "source",
-        header: "출처",
-        title: "q30 = 후보 수집 저장본(CUSIP 매핑 티커), q8 = 기존 13F 메뉴 저장본(8분기, 이름 매핑 티커)",
-        render: (row) => {
-          const source = trackSourceText(row);
-          return <span className="whitespace-nowrap" title={source.title}>{source.label}</span>;
-        },
-      },
-    {
-      key: "periods",
-      header: "구간",
-      align: "right",
-      title: `수익률이 있는 구간 / ${span} 안의 구간`,
-      render: (row) => (
-        <div className="flex flex-col items-end">
-          <span>{periodsText(row)}</span>
-          <span className="whitespace-nowrap text-xs text-text-3">{filingSpanText(row)}</span>
-        </div>
-      ),
-    },
-    {
-      key: "coverageMin",
-      header: "커버리지 최소",
-      align: "right",
-      title: "창 안 구간 중 가장 낮은 커버리지(티커·가격이 있는 평가액 / 총평가액)",
-      render: (row) => formatCoverage(row.coverageMin),
-    },
-    { key: "coverageAvg", header: "커버리지 평균", align: "right", render: (row) => formatCoverage(row.coverageAvg) },
-    {
-      key: "cagr",
-      header: "CAGR",
-      align: "right",
-      render: (row) => <span className={deltaColor(row.cagrPct)}>{formatPercent(row.cagrPct)}</span>,
-    },
-    { key: "cum", header: "누적", align: "right", render: (row) => formatPercent(row.cumReturnPct) },
-    { key: "spyCum", header: "SPY 누적", align: "right", render: (row) => formatPercent(row.spyCumReturnPct) },
-    {
-      key: "excess",
-      header: "초과(SPY 대비)",
-      align: "right",
-      render: (row) => <span className={deltaColor(row.excessVsSpyPct)}>{formatExcessPoints(row.excessVsSpyPct)}</span>,
-    },
-    { key: "vol", header: "변동성(연율)", align: "right", render: (row) => formatWithUnit(row.volPct, 2, "%") },
-    { key: "mdd", header: "MDD", align: "right", render: (row) => formatPercent(row.mddPct) },
-    { key: "sharpe", header: "샤프", align: "right", render: (row) => formatNumber(row.sharpe, 2) },
-  ];
-  const align = (column: Column) => (column.align === "right" ? "text-right" : "text-left");
+  const label = (row: PaperTrackRecordCandidate) => `${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`;
+  const shown = filterCandidates(rows, filter);
+  const byCik = new Map(rows.map((row) => [row.cik, row]));
+  const headed = (header: string, title: string) => <span title={title}>{header}</span>;
 
   return (
-    <>
-      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div
-        className="overflow-x-auto"
-        tabIndex={0}
-        role="region"
-        aria-label={group === "A" ? "후보 기관 트랙레코드 표 (좌우 스크롤)" : "그룹 B 기관 트랙레코드 표 (좌우 스크롤)"}
-      >
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-xs uppercase tracking-wide text-text-3">
-              {columns.map((column) => (
-                <th key={column.key} title={column.title} className={`px-3 py-2 font-medium ${align(column)}`}>
-                  {column.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <Fragment key={row.cik}>
-                <tr className="border-b border-border/50 align-top hover:bg-surface-2/60" aria-label={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`}>
-                  {columns.map((column) => (
-                    <td key={column.key} className={`px-3 py-2 tabular-nums ${align(column)}`}>
-                      {column.render(row)}
-                    </td>
-                  ))}
-                </tr>
-                {open.includes(openKey(row)) && (
-                  <tr className="border-b border-border/50 bg-bg">
-                    <td colSpan={columns.length} className="px-3 py-3">
-                      <PeriodTable name={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`} span={span} periods={row.periods ?? []} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <InspectorFrame
+      label={group === "A" ? "후보 기관 구간" : "그룹 B 기관 구간"}
+      layout="dialog"
+      dialogFocus="title"
+      titleOf={(cik) => {
+        const row = byCik.get(cik);
+        return row ? `${label(row)} 구간` : null;
+      }}
+      renderDetail={(cik) => {
+        const row = byCik.get(cik);
+        return row ? <PeriodTable name={label(row)} span={span} periods={row.periods ?? []} /> : null;
+      }}
+    >
+      {(inspector) => {
+        const columns: Column<PaperTrackRecordCandidate>[] = [
+          { key: "rank", header: "순위", align: "right", cell: (row) => (row.rank === null ? EMPTY : formatNumber(row.rank, 0)) },
+          {
+            key: "name",
+            header: "기관",
+            rowHeader: true,
+            cell: (row) => {
+              const about = group === "B" ? (row.desc ?? row.style) : row.style;
+              return (
+                <div className="flex min-w-[12rem] flex-col items-start gap-1">
+                  <span className="font-semibold text-text">{nameOf(row)}</span>
+                  <span className="text-xs text-text-3">{about ?? EMPTY} · CIK {row.cik}</span>
+                  {/* 구간 표를 여는 줄 단추 — 보이는 글 '구간 보기', 이름은 기관 이름을 앞에(어느 기관의 구간인지 낭독기가 함께 읽음). */}
+                  <button type="button" {...inspector.triggerProps(row.cik)} className={`${ROW_TRIGGER} text-[13px] text-text-2`}>
+                    <span className="sr-only">{label(row)}</span>{" "}
+                    구간 보기
+                  </button>
+                </div>
+              );
+            },
+          },
+          {
+            key: "eligible",
+            header: "자격",
+            cell: (row) => (
+              <div className="flex min-w-[9rem] flex-col items-start gap-1">
+                <Badges badges={[eligibilityBadge(row, group)]} />
+                {!row.eligible && row.ineligibleReason && <span className="text-xs leading-snug text-warn">{row.ineligibleReason}</span>}
+              </div>
+            ),
+          },
+          {
+            key: "selected",
+            header: "선정",
+            cell: (row) => {
+              const badge = selectedBadge(row);
+              return badge ? <Badges badges={[badge]} /> : EMPTY;
+            },
+          },
+          group === "A"
+            ? { key: "quarters", header: "수집", cell: (row) => <span className="whitespace-nowrap">{quartersText(row, targetQuarters)}</span> }
+            : {
+              key: "source",
+              header: headed("출처", "q30 = 후보 수집 저장본(CUSIP 매핑 티커), q8 = 기존 13F 메뉴 저장본(8분기, 이름 매핑 티커)"),
+              cell: (row) => {
+                const source = trackSourceText(row);
+                return <span className="whitespace-nowrap" title={source.title}>{source.label}</span>;
+              },
+            },
+          {
+            key: "periods",
+            header: headed("구간", `수익률이 있는 구간 / ${span} 안의 구간`),
+            align: "right",
+            cell: (row) => (
+              <div className="flex flex-col items-end">
+                <span>{periodsText(row)}</span>
+                <span className="whitespace-nowrap text-xs text-text-3">{filingSpanText(row)}</span>
+              </div>
+            ),
+          },
+          {
+            key: "coverageMin",
+            header: headed("커버리지 최소", "창 안 구간 중 가장 낮은 커버리지(티커·가격이 있는 평가액 / 총평가액)"),
+            align: "right",
+            cell: (row) => formatCoverage(row.coverageMin),
+          },
+          { key: "coverageAvg", header: "커버리지 평균", align: "right", cell: (row) => formatCoverage(row.coverageAvg) },
+          {
+            key: "cagr",
+            header: "CAGR",
+            align: "right",
+            cell: (row) => {
+              const text = formatPercent(row.cagrPct);
+              return text === EMPTY ? text : <span className={deltaColor(row.cagrPct)}>{text}</span>;
+            },
+          },
+          { key: "cum", header: "누적", align: "right", cell: (row) => formatPercent(row.cumReturnPct) },
+          { key: "spyCum", header: "SPY 누적", align: "right", cell: (row) => formatPercent(row.spyCumReturnPct) },
+          {
+            key: "excess",
+            header: "초과(SPY 대비)",
+            align: "right",
+            cell: (row) => {
+              const text = formatExcessPoints(row.excessVsSpyPct);
+              return text === EMPTY ? text : <span className={deltaColor(row.excessVsSpyPct)}>{text}</span>;
+            },
+          },
+          { key: "vol", header: "변동성(연율)", align: "right", cell: (row) => formatWithUnit(row.volPct, 2, "%") },
+          { key: "mdd", header: "MDD", align: "right", cell: (row) => formatPercent(row.mddPct) },
+          { key: "sharpe", header: "샤프", align: "right", cell: (row) => formatNumber(row.sharpe, 2) },
+        ];
+        return (
+          <>
+            <div className="mb-2">
+              <FilterList
+                label={group === "A" ? "후보 거르기" : "그룹 B 후보 거르기"}
+                items={candidateFilterOptions(rows).map((option) => ({ key: option.key, label: option.label, note: `${option.count}` }))}
+                selected={[filter]}
+                onToggle={(key) => setFilter(key as CandidateFilter)}
+                selection="single"
+                narrow="wrap"
+                wide="wrap"
+              />
+            </div>
+            <DataTable<PaperTrackRecordCandidate>
+              columns={columns}
+              rows={shown}
+              rowKey={(row) => row.cik}
+              caption={group === "A" ? "후보 기관 트랙레코드 표" : "그룹 B 기관 트랙레코드 표"}
+              dense
+              count={(count) => `${count}곳`}
+              scrollHint="overflow"
+              selectedKey={inspector.shownKey}
+              emptyText="고른 칸의 후보가 없습니다."
+            />
+          </>
+        );
+      }}
+    </InspectorFrame>
   );
 }
 
@@ -539,17 +526,12 @@ function PeriodTable({ name, span, periods }: { name: string; span: string; peri
   );
 }
 
+/** 배지 묶음 — 공용 태그(PaperBadge — 20px, 정상·주의·중립 톤, 마우스 설명 그대로). */
 function Badges({ badges }: { badges: Badge[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
+        <PaperBadge key={badge.key} badge={badge} />
       ))}
     </span>
   );

@@ -6,8 +6,9 @@
  */
 import { parseKstStamp, type RealtimeNav } from "./paperLive";
 import { tradedAtText } from "./livePrices";
-import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "./format";
-import { accountProfile, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
+import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatSignedMinus, formatWithUnit } from "./format";
+import type { KpiItem } from "./kpi";
+import { accountProfile, type Badge, benchmarkLabel, bookCard, isTimedBook, type NavSeriesLine, primaryClaudeBook, statCells } from "./paper";
 import type { LineRow, LineSeriesSpec, ScrubEstimate } from "./lineChart";
 import {
   clockText,
@@ -764,4 +765,140 @@ export function sameWindowIndex(
       : null,
     missingBase,
   };
+}
+
+// ---------------------------------------------------------------- 개요 KPI 띠·계좌 표·계좌 검사 칸(작업대 P6 — 실행 명세 §7-1 '개요')
+
+/** 부호를 붙인 백분율 글 — 양수 '+', 음수 '−'(U+2212), 반올림 뒤 0이면 부호 없음(lib/format formatSignedMinus). 모르면 호출하지 않습니다(띠가 '—'). */
+function signedPercent(value: number): string {
+  return `${formatSignedMinus(value, 2).text}%`;
+}
+
+/**
+ * 개요 맨 위 KPI 띠(작업대 W7 — 44px 히어로를 대신함) — 고른 계좌 하나의 순자산·수익률(출발 이후)·변화·주식 노출. 값·단계 표기·추정·이전 값 배지·출처·경고는
+ * 히어로 모델(`overviewHeroModel` — 계좌 행과 같은 지금 값 규칙, 실시간 순자산 포함) 그대로이고, 주식 노출은 같은 지금 값(`currentView`)의 것입니다.
+ *
+ * - 순자산: 값 글·단위, 보조 글 = 단계 표기 · 서버 글 전문(섞임·가격 없음·체결 대기), 추정·이전 값 배지, 출처 줄, 경고(사후 체결 대기)는 주의 상태 글.
+ * - 수익률(출발 이후)·변화: 부호 글(양수 '+', 음수 '−') — 띠 값은 본문 잉크(등락색은 표의 변화 칩이 나름 — 색만으로 전하지 않음). 변화의 이름은 서버 기준
+ *   ('오늘 변화'·'10-30 변화'), 보조 글은 그 기준('10-29 잠정 대비'). 모르면 '—'(0을 짓지 않음).
+ * - 주식 노출: 소수 한 자리 %, 보조 글 '현금성(SHY) 포함'(평가액 ÷ 순자산이라 현금성 ETF도 듦), 순자산이 추정이면 추정 배지.
+ */
+export function overviewKpiItems(model: OverviewHeroModel, exposure: { pct: number | null; cashLike: string }): KpiItem[] {
+  const note = [model.stageLabel, model.note].filter((part): part is string => typeof part === "string" && part !== "").join(" · ");
+  const day = model.day;
+  return [
+    {
+      key: "nav",
+      label: "순자산",
+      value: model.valueText,
+      unit: model.unit,
+      note: note || null,
+      isEstimated: model.isEstimated,
+      isStale: model.isStale,
+      staleReason: model.staleReason,
+      source: model.source,
+      ...(model.warning ? { status: { tone: "warn" as const, text: model.warning } } : {}),
+    },
+    { key: "return", label: "수익률(출발 이후)", value: model.returnPct, format: signedPercent },
+    {
+      key: "day",
+      label: day ? (day.label === "오늘" ? "오늘 변화" : day.label) : "변화",
+      value: day?.pct ?? null,
+      format: signedPercent,
+      note: day?.base ?? null,
+    },
+    {
+      key: "exposure",
+      label: "주식 노출",
+      value: exposure.pct,
+      format: (value: number) => formatNumber(value, 1),
+      unit: "%",
+      note: `현금성(${exposure.cashLike}) 포함`,
+      isEstimated: model.isEstimated && exposure.pct !== null,
+    },
+  ];
+}
+
+/** 계좌 표의 한 줄(작업대 P6 — 예전 계좌 행 AssetRow의 칸을 표 칸으로). 글은 모두 표시 문자열이고, 모르면 '—'. */
+export interface AccountTableRow {
+  code: string;
+  label: string;
+  /** 종류 글('규칙'·'벤치마크') — 칸 둘째 줄(상태 배지 앞). */
+  kind: string;
+  /** 상태 배지(공용 배지로 그림). */
+  status: Badge;
+  /** 순자산 글(미국 소수 둘째·한국 원 정수 — 단위 없이, 모르면 '—'). */
+  navText: string;
+  unit: string;
+  returnPct: number | null;
+  /** 주식 노출 글('99.5%' — 모르면 '—'). */
+  exposureText: string;
+  /** 값의 기준 한 줄(단계 표기 · 덧붙임 · 변화 한 줄) — 지금 값이 있는 응답에서만, 출발 전·옛 응답은 null. */
+  caption: string | null;
+  isEstimated: boolean;
+  isStale: boolean;
+  staleReason: string | null;
+  /** 사후 체결 대기 등 경고(미국만). */
+  warning: string | null;
+}
+
+/**
+ * 계좌 표의 줄들 — 계좌 행(`bookAssetRow` — 지금 값·기준 한 줄·추정·이전 값 배지·경고, 홈과 같은 규칙)에 상태 배지·종류 글(`bookCard`)과 주식 노출
+ * (`currentView` — 지금 값이면 그 값)을 붙입니다. 한 줄 소개는 표에 두지 않고 검사 칸 속성으로(표가 좁은 칸에서 여러 줄로 접히지 않게).
+ */
+export function accountTableRows(books: readonly PaperOverviewBook[], context: BookRowContext = {}): AccountTableRow[] {
+  const market = context.market ?? "US";
+  return books.map((book) => {
+    const row = bookAssetRow(book, context);
+    const card = bookCard(book, [], market);
+    const view = currentView(book, { market, session: context.session });
+    const digits = market === "KR" ? 0 : 2;
+    return {
+      code: book.code,
+      label: book.label,
+      kind: card.kind,
+      status: card.status,
+      navText: formatNumber(view.nav, digits),
+      unit: row.unit,
+      returnPct: row.changePct,
+      exposureText: formatWithUnit(view.exposurePct, 1, "%"),
+      caption: row.caption ?? null,
+      isEstimated: row.isEstimated === true,
+      isStale: row.isStale,
+      staleReason: row.staleReason,
+      warning: row.warning,
+    };
+  });
+}
+
+/** 계좌 검사 칸의 속성 한 줄 — 이름·값 글(모르면 '—')과 긴 글 여부. 공용 속성 목록(PropertyList)이 그립니다. */
+export interface AccountSummaryProperty {
+  key: string;
+  label: string;
+  value: string;
+  /** 긴 글(한 줄 소개) — 이름 위·값 아래로. */
+  block?: boolean;
+}
+
+/**
+ * 계좌 검사 칸의 요약 속성 — 맨 위 KPI 띠(순자산·수익률·변화·노출)와 겹치지 않는 장부 값: 한 줄 소개 · 종류 · 처음 현금 · 현금 · 보유 · 출발일 · 장부
+ * 마지막 관측 · 비교 기준. 값은 개요 응답의 장부 값 그대로(`bookCard`)이고, 상태는 검사 칸이 배지로 따로 그립니다.
+ */
+export function accountSummaryProperties(
+  book: PaperBookSummary,
+  books: readonly PaperBookSummary[],
+  market: PaperMarketCode = "US",
+): AccountSummaryProperty[] {
+  const card = bookCard(book, books, market);
+  const summary = accountProfile(book.code)?.summary ?? null;
+  return [
+    ...(summary ? [{ key: "summary", label: "한 줄 소개", value: summary, block: true }] : []),
+    { key: "kind", label: "종류", value: card.kind },
+    { key: "initialCash", label: "처음 현금", value: card.initialCash },
+    { key: "cash", label: "현금(장부)", value: card.cash },
+    { key: "positions", label: "보유", value: card.positions },
+    { key: "startedOn", label: "출발일", value: card.startedOn },
+    { key: "lastObserved", label: "장부 마지막 관측", value: card.lastObserved },
+    { key: "benchmark", label: "비교 기준", value: benchmarkLabel(book, books) ?? EMPTY },
+  ];
 }

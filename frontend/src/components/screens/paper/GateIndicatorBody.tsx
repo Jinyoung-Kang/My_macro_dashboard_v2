@@ -1,8 +1,9 @@
 "use client";
 
-import { Table } from "@/components/ui";
+import { Table, Tag } from "@/components/ui";
 import { type GateConditionRow, type GateInputRow, gateView } from "@/lib/paper";
 import type { PaperGateIndicator } from "@/lib/types";
+import { PaperBadge } from "./PaperBadge";
 
 /**
  * OS 게이트 지표(참고)의 본문 — 단계 배지, 조건 표(참·거짓·연속 일수), 입력 표(값·시세 시각·지난 값).
@@ -23,8 +24,10 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded-control border px-2 py-0.5 text-xs font-semibold ${view.level.className}`}>{view.level.label}</span>
-        <span className="rounded-control border border-border bg-surface-2 px-2 py-0.5 text-xs text-text-3">참고 — 구속하지 않음</span>
+        {/* 단계 배지·참고 표지는 공용 태그(20px — 작업대 P6). 조건·입력 표는 옛 ui Table 그대로 — 결정 상세(로그 갈래)의 시험이 그 칸 글('—')을 봐
+            통합 단계에서 함께 옮깁니다. */}
+        <PaperBadge badge={view.level} />
+        <Tag>참고 — 구속하지 않음</Tag>
         <span className="text-xs text-text-3">거래일 {view.tradingDate}</span>
       </div>
       {view.levelNote && <p className="text-xs leading-relaxed text-text-2">{view.levelNote}</p>}

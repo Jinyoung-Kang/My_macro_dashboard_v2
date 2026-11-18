@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { StockQuickView } from "@/components/screens/detail/StockQuickView";
+import { ROW_TRIGGER } from "@/components/ui";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import { TickerName } from "./TickerName";
 
@@ -15,10 +16,8 @@ export function TickerQuickView({ market, code, children }: { market: PaperMarke
       market={market === "KR" ? "kr" : "us"}
       code={code}
       trigger={
-        <button
-          type="button"
-          className="rounded-sm text-left underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
-        >
+        // 표·목록 줄의 이름 단추와 같은 공용 조각(ROW_TRIGGER — 좁은 화면 누름 자리 높이·폭 44px, 넓은 화면 24px, 중립 잉크·밑줄·포커스 링 — QA-738).
+        <button type="button" className={ROW_TRIGGER}>
           {children ?? <TickerName code={code} />}
         </button>
       }

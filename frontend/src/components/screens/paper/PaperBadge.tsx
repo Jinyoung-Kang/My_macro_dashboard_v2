@@ -11,7 +11,8 @@ import { badgeTagTone } from "@/lib/paperBadgeTone";
  */
 export function PaperBadge({ badge }: { badge: Pick<Badge, "label" | "className" | "title"> }): JSX.Element {
   return (
-    <span title={badge.title}>
+    // 줄바꿈 없음 — 공용 Tag는 글 흐름의 inline-flex라 좁은 표 칸에서 '사후/체결'처럼 글자 사이로 접혔습니다(예전 화면 배지는 whitespace-nowrap).
+    <span title={badge.title} className="whitespace-nowrap">
       <Tag tone={badgeTagTone(badge)}>
         <span>{badge.label}</span>
       </Tag>

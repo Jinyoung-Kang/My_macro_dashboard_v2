@@ -102,6 +102,7 @@ export function KrSelectionSection() {
               {/* 열이 넷뿐이라 폭을 강제하지 않는 DataTable(390px에서도 한 화면) — ui Table은 최소 640px라 좁은 화면에서 비중이 가려짐. */}
               <DataTable<KrSelectionView["targets"][number]>
                 caption="매수 목표"
+                count={(count) => `${count}종목`}
                 rows={view.targets}
                 rowKey={(row) => row.key}
                 columns={[
@@ -128,6 +129,7 @@ export function KrSelectionSection() {
           <div className="flex flex-col gap-4">
             <DataTable<KrSelectionView["exclusions"][number]>
               caption="제외"
+              dense
               rows={view.exclusions}
               rowKey={(row) => row.key}
               emptyText="빠진 종목이 없습니다."
@@ -161,6 +163,7 @@ export function KrSelectionSection() {
             rows={view.members}
             rowKey={(row) => row.key}
             caption="유니버스 구성원"
+            dense
             emptyText="구성원이 없습니다."
             maxHeight={560}
             scrollHint="overflow"
