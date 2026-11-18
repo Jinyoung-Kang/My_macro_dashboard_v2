@@ -806,3 +806,42 @@ describe("QA-811 — 계좌 패널 부제는 상태 응답이 늦게 와도 꼴�
     expect(shape()).toBe(before);
   });
 });
+
+// QA-820 — QA-811 고침(f3942e18)의 가장자리: 상태 응답이 실패(500)하거나 settingsVersion이 null이면 읽는 동안 잡아 둔 보이지 않는 ' · 설정 v00' 자리를 지워
+// 부제가 짧아지며 '리스크 지금 실행'이 제목 줄로 돌아와 계좌 표를 끌어올림(자기 빌드 1270~1320 CLS 실패 0.382~0.395·null 0.209~0.225 — 기준 0.035·0.002). 또 자리가
+// 두 자리 고정이라 세 자리 판 번호(v100 — 운영 판 v29, 하루 약 한 판)면 부제가 한 글자 넓어져 1328~1334 0.226 재발. 실패·번호 없음·세 자리 모두 읽는 동안과
+// 같은 꼴이어야 합니다(숫자만 다름 — 보이지 않는 자리는 aria-hidden).
+describe("QA-820 — 계좌 패널 부제의 설정 판 자리는 실패·번호 없음·세 자리에서도 꼴이 같다", () => {
+  async function shapes(settle: (resolve: (value: unknown) => void, reject: (error: Error) => void) => void) {
+    const waiting: { resolve: (value: unknown) => void; reject: (error: Error) => void }[] = [];
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    reads["/api/paper/status"] = () => new Promise((resolve, reject) => { waiting.push({ resolve, reject }); });
+    render(<PaperPage />);
+    const subtitle = (await screen.findByText(/^순자산·수익률\(출발 이후\)은 .* · 계좌 이름을 누르면/)).closest("p") as HTMLElement;
+    const shape = () => (subtitle.textContent ?? "").replace(/\d/g, "0");
+    const before = shape();
+    await act(async () => {
+      for (const { resolve, reject } of waiting) settle(resolve, reject);
+    });
+    return { subtitle, before, after: shape() };
+  }
+
+  it.fails("상태 응답이 실패해도 같은 꼴의 보이지 않는 자리가 남는다", async () => {
+    const { subtitle, before, after } = await shapes((_resolve, reject) => reject(new Error("상태를 읽지 못했습니다.")));
+    expect(await screen.findByText("정기 작업 상태를 확인하지 못했습니다 — 상태를 읽지 못했습니다.")).toBeTruthy();
+    expect(after).toBe(before);
+    const hidden = [...subtitle.querySelectorAll('[aria-hidden="true"]')].map((element) => element.textContent).join("");
+    expect(hidden).toMatch(/설정 v/);
+  });
+
+  it.fails("판 번호가 없어도(null) 같은 꼴", async () => {
+    const { before, after } = await shapes((resolve) => resolve({ ...STATUS, settingsVersion: null }));
+    expect(after).toBe(before);
+  });
+
+  it.fails("세 자리 판 번호(v100)도 읽는 동안과 같은 꼴", async () => {
+    const { subtitle, before, after } = await shapes((resolve) => resolve({ ...STATUS, settingsVersion: 100 }));
+    expect(subtitle.textContent).toMatch(/ · 설정 v100/);
+    expect(after).toBe(before);
+  });
+});
