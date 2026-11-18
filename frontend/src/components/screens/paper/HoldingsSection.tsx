@@ -193,7 +193,18 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "createdAt", header: "낸 시각", cell: (row) => formatKst(row.createdAtKst) },
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
   { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-  { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
+  // 오른쪽 정렬 칸은 줄바꿈 없음이 기본 — 긴 크기('순자산의 16.91% 매수 (목표 66.88%)')는 낱말 사이에서 접습니다(계좌2 주문 표와 같음). 줄바꿈 없이 두면 1440에서
+  // 이 칸이 256px을 쥐고 남은 폭을 근거 칸이 내줘 근거가 141px로 좁아졌습니다(QA-810).
+  {
+    key: "size",
+    header: "크기",
+    align: "right",
+    className: "min-w-[5.5rem]",
+    cell: (row) => {
+      const text = orderSizeText(row);
+      return text === EMPTY ? text : <span className="whitespace-normal break-keep">{text}</span>;
+    },
+  },
   { key: "timing", header: "체결 시점", className: "min-w-[6.5rem] break-keep", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
   { key: "source", header: "출처", className: "whitespace-nowrap", cell: (row) => sourceLabel(row.source) },
   {
@@ -210,10 +221,12 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "expires", header: "만료", cell: (row) => row.expiresOn ?? EMPTY },
   { key: "filledAt", header: "체결 시각", cell: (row) => formatKst(row.filledAtKst) },
   // 규칙 책 근거는 `rule · signal · kind`가 앞이라 키 순서대로 80자에서 자르면 문장(text)이 안 보입니다 — 결정 로그
-  // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다.
+  // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다. 마지막 칸이라 최소 폭이 없으면 앞 칸들이 넓어질 때
+  // 폭을 모두 내줘 낱말 중간에서 꺾였습니다 — 한국 주문 표와 같은 최소 폭·낱말 사이 줄바꿈(QA-810).
   {
     key: "reason",
     header: "근거",
+    className: "min-w-[11rem] break-keep",
     cell: (row) => {
       const text = orderReasonText(row.reason, 80);
       return text === EMPTY ? text : (

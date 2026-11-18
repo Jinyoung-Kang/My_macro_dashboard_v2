@@ -112,7 +112,7 @@ describe("QA-776 — 계좌 상세 최근 체결·구성 표의 종목 칸은 �
 // '순자산의 16.91% 매수 (목표 66.88%)' 256px)이 폭을 가장 많이 쥐고 있었음. 계좌2 주문 표(timedOrderColumns)와 한국 주문 표는 이미 크기를 낱말 사이에서
 // 접고 근거 칸에 최소 폭·break-keep을 둡니다.
 describe("QA-810 — 미국 주문 표의 근거 칸은 최소 폭을 지키고 크기 칸은 낱말 사이에서 접는다", () => {
-  it.fails("주문 표: '근거' 머리·칸에 최소 폭 + break-keep, '크기' 칸 글은 낱말 사이에서 접는 span", async () => {
+  it("주문 표: '근거' 머리·칸에 최소 폭 + break-keep, '크기' 칸 글은 낱말 사이에서 접는 span", async () => {
     render(<HoldingsSection books={[BOOK] as never} onChanged={() => {}} />);
     await settled();
     const orders = screen.getByRole("table", { name: "주문" });
