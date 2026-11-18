@@ -284,6 +284,34 @@ describe("교집합 — 분석 대상 거르기 목록(옛 기관 칩)", () => {
   });
 });
 
+describe("교집합 — 읽기가 실패한 뒤 다시 읽는 동안(QA-710)", () => {
+  // 수정 전 실패(plain it): { emptyText: true, listStatus: [], centerLoading: 0 } — useApi가 다시 읽을 때 failedAt을 남겨 firstLoadPending이 거짓이라, 기관 목록
+  // 자리는 placeholder가 null이 되어 빈 목록 글을 그리고 가운데 칸은 아무것도 그리지 않음(개편 전에는 `loading && !data`의 '교집합을 계산하는 중…').
+  it.fails("기관 목록·교집합을 읽지 못한 뒤 '다시 시도'를 누르면 응답이 올 때까지 둘 다 '불러오는 중' — 기관 목록 자리에 '고를 기관이 없습니다.'가 없다", async () => {
+    let fail = true;
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/institutions") || path.startsWith("/api/sec13f/consensus")) {
+        return fail ? Promise.reject(new Error("읽지 못했습니다.")) : new Promise(() => {});
+      }
+      return new Promise(() => {});
+    });
+    render(<ConsensusPage />);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "다시 시도" })).toHaveLength(2));
+    fail = false;
+    for (const button of screen.getAllByRole("button", { name: "다시 시도" })) fireEvent.click(button);
+    await waitFor(() => expect(screen.queryAllByRole("button", { name: "다시 시도" })).toHaveLength(0));
+
+    // 기관 목록 자리 — 모르는 상태를 '없다'로 적지 않고 읽는 중 자리표시(처음 읽기와 같은 이름). 가운데 칸 — 실패 뒤 다시 읽는 동안은 공용
+    // '불러오는 중' 한 줄(QA-655 규칙 — 처음 읽기의 KPI 자리표시가 아님).
+    const group = screen.getByRole("group", { name: "분석 대상 기관" });
+    expect({
+      emptyText: group.textContent?.includes("고를 기관이 없습니다."),
+      listStatus: within(group).queryAllByRole("status").map((status) => status.getAttribute("aria-label")),
+      centerLoading: screen.queryAllByText("교집합을 계산하는 중…").length,
+    }).toEqual({ emptyText: false, listStatus: ["기관 목록 불러오는 중"], centerLoading: 1 });
+  });
+});
+
 /** 스타일 화면 위험 응답(합성) — 위험 기여 하나는 음수(분산 효과로 포트폴리오 변동성을 줄이는 종목), VaR·ES는 손실이라 음수. */
 function riskBody(over: Record<string, unknown> = {}) {
   return {
