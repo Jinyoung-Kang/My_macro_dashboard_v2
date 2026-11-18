@@ -359,6 +359,9 @@ describe("자료", () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
     const records = await screen.findByRole("list", { name: "출발 기록" });
     expect(records.textContent).toContain("2026-10-29 22:40 START_POSTPONED");
+    // 결과 코드는 서버 식별자라 시스템 고정폭, 시각은 자릿수 맞춤.
+    expect(within(records).getByText("START_POSTPONED").className).toContain("font-mono");
+    expect(within(records).getByText("2026-10-29 22:40").className).toContain("tabular-nums");
     expect(records.textContent).toContain("과금 호출 kr_claude 2회(결정 행 없음 — 사용량에 셈)");
     expect(records.textContent).toContain("시도 1번째");
     expect(screen.getByRole("heading", { name: "규칙 계좌 몫 마지막 게이트 판정 — 세션 2026-11-03 · 2026-11-03 23:00" })).toBeTruthy();

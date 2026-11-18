@@ -390,8 +390,11 @@ function KrStartRecordsCard({
           ) : (
             <ul aria-label="출발 기록" className="flex flex-col gap-1.5 text-xs">
               {records.map((record) => (
-                <li key={record.key} className="leading-relaxed text-text-2">
-                  <span className="whitespace-nowrap font-semibold text-text">{record.at} {record.outcome}</span>
+                // 시각은 자릿수를 맞추고, 결과 코드(START_POSTPONED 등 서버 식별자)는 시스템 고정폭(명세 §3-6). 글은 그대로입니다.
+                <li key={record.key} className="break-keep leading-relaxed text-text-2">
+                  <span className="whitespace-nowrap font-semibold text-text">
+                    <span className="tabular-nums">{record.at}</span> <span className="font-mono">{record.outcome}</span>
+                  </span>
                   {record.parts.length > 0 && <span> · {record.parts.join(" · ")}</span>}
                 </li>
               ))}
