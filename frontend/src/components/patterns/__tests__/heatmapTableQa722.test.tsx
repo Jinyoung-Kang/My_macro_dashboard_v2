@@ -16,10 +16,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HeatmapTable, type HeatmapRow } from "../HeatmapTable";
 
-const COLUMNS = ["2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"].map((date) => ({ key: date, label: date.slice(2) }));
+// 열 여덟(13F 8분기) — 아래 흉내 폭(최소 640px 표)과 같은 최소 폭(128 + 8 × 64 = 640 — QA-729 뒤 열이 적은 표는 더 좁음).
+const COLUMNS = ["2024-09-30", "2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30"].map((date) => ({
+  key: date,
+  label: date.slice(2),
+}));
 const ROWS: HeatmapRow[] = [
-  { key: "alpha", label: "SYNTHETIC ALPHA CO", values: [1, 2, 3, 4] },
-  { key: "beta", label: "SYNTHETIC BETA CO", values: [4, 3, 2, 1] },
+  { key: "alpha", label: "SYNTHETIC ALPHA CO", values: [1, 2, 3, 4, 5, 6, 7, 8] },
+  { key: "beta", label: "SYNTHETIC BETA CO", values: [8, 7, 6, 5, 4, 3, 2, 1] },
 ];
 const NAME = "합성 히트맵 (좌우 스크롤)";
 
@@ -109,7 +113,7 @@ function stubBox(initial: Sizes) {
   };
 }
 
-/** 표(최소 폭 640px)가 보이는 폭마다 차지하는 크기 — 들어가면 상자를 채움. */
+/** 표(최소 폭 640px — 열 여덟)가 보이는 폭마다 차지하는 크기 — 들어가면 상자를 채움. */
 function fit(visible: number): Sizes {
   return { content: Math.max(640, visible), visible };
 }
@@ -132,7 +136,7 @@ function table(initialScroll: "start" | "end" = "end") {
       rowHeader="종목"
       columns={COLUMNS}
       rows={ROWS}
-      max={4}
+      max={8}
       format={(value) => value.toFixed(1)}
       legend={{ stepLabel: (step) => `단계 ${step}` }}
       initialScroll={initialScroll}

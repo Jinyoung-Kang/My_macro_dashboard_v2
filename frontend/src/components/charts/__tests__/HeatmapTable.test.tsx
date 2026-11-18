@@ -213,11 +213,13 @@ describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
     expect([...container.querySelectorAll("p")].map((paragraph) => paragraph.getAttribute("aria-hidden"))).toEqual(["true"]);
   });
 
-  it("영역 이름 '{caption} (좌우 스크롤)'·Tab 정지점, 최소 폭은 기본 640px 클래스·주면 인라인 폭", () => {
+  it("영역 이름 '{caption} (좌우 스크롤)'·Tab 정지점, 최소 폭은 주지 않으면 열 수에 맞춘 인라인 폭(열 다섯 — 128 + 5 × 64 = 448px)·주면 그 폭", () => {
     const { unmount } = renderTable([{ key: "r", label: "가상 행", values: [1, 2, 3, 4, 5] }]);
     const region = screen.getByRole("region", { name: "합성 행렬 (좌우 스크롤)" });
     expect(region.getAttribute("tabindex")).toBe("0");
-    expect(tokens(region.querySelector("table") as HTMLElement)).toContain("min-w-[640px]");
+    const fitted = region.querySelector("table") as HTMLElement;
+    expect(tokens(fitted)).not.toContain("min-w-[640px]");
+    expect(fitted.style.minWidth).toBe("448px");
     unmount();
     render(
       <HeatmapTable
@@ -242,9 +244,9 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
     const { container } = render(<WeightHeatmap dates={DATES} series={SERIES} />);
     expect(pinLines(container.firstElementChild as Element)).toEqual([
       "div class=\"min-w-0\"",
-      "  p aria-hidden=\"true\" class=\"mb-1 text-xs text-text-3 sm:hidden\" \"← 표를 좌우로 넘겨 보세요\"",
+      "  p aria-hidden=\"true\" class=\"mb-1 text-xs text-text-3 hidden\" \"← 표를 좌우로 넘겨 보세요\"",
       "  div aria-label=\"비중 히트맵 (좌우 스크롤)\" class=\"overflow-x-auto\" role=\"region\" tabindex=\"0\"",
-      "    table class=\"w-full min-w-[640px] border-collapse text-xs\"",
+      "    table class=\"w-full border-collapse text-xs\" style=\"min-width: 384px;\"",
       "      caption class=\"sr-only\" \"비중 히트맵\"",
       "      thead",
       "        tr class=\"text-xs text-text-3\"",
