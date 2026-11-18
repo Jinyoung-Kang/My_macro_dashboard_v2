@@ -127,3 +127,27 @@ describe("QA-810 — 미국 주문 표의 근거 칸은 최소 폭을 지키고 
     }
   });
 });
+
+// QA-821 — 미국 주문 표(QA-810이 열 폭을 고친 표)의 '상태' 칸은 열 규칙이 없어(CSS 기본 word-break normal) 취소 사유 글('재선정일 계획이 남는 현금을 다시 정함')이
+// 음절 중간에서 꺾임(개편 전부터 — 자기 빌드 1440 상태 칸 90px '재선정일 계/획이', 390~1280 78px '남/는'). 결정 로그 주문 표·한국 주문 표의 상태 칸은 이미
+// break-keep입니다. 칸 폭은 넓히지 않습니다(최소 폭 없음 — QA-810의 열 폭 결과를 지킴).
+describe("QA-821 — 미국 주문 표의 상태 칸은 낱말 사이에서만 꺾는다", () => {
+  it.fails("주문 표: '상태' 머리·칸에 break-keep, 최소 폭은 두지 않음", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.includes("/positions")) return Promise.resolve({ available: true, book: BOOK, cash: 500, lockouts: [], positions: [POSITION] });
+      if (path.includes("/orders")) {
+        return Promise.resolve({ available: true, orders: [ORDER, { ...ORDER, id: 8, status: "CANCELLED", rejectReason: "재선정일 계획이 남는 현금을 다시 정함", filledAtKst: null }] });
+      }
+      if (path.includes("/fills")) return Promise.resolve({ available: true, fills: [FILL] });
+      return new Promise(() => {});
+    });
+    render(<HoldingsSection books={[BOOK] as never} onChanged={() => {}} />);
+    await settled();
+    const orders = screen.getByRole("table", { name: "주문" });
+    expect(within(orders).getByText("재선정일 계획이 남는 현금을 다시 정함")).toBeTruthy();
+    for (const cell of column(orders, "상태")) {
+      expect(classes(cell), `${cell.tagName} ${cell.textContent ?? ""}`).toContain("break-keep");
+      expect(cell.className, cell.tagName).not.toMatch(/min-w-/);
+    }
+  });
+});
