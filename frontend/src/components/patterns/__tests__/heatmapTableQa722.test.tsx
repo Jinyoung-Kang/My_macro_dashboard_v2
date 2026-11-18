@@ -148,10 +148,14 @@ function table(initialScroll: "start" | "end" = "end") {
   );
 }
 
+/**
+ * 넘김 안내 줄의 보임('shown' 폭과 상관없이 · 'phone-only' sm 미만에서만 · 'hidden' 늘 숨김 — 최소 폭이 640px보다 좁고 넘치지 않는 표, QA-729)과 스크롤 자리.
+ * 'hidden'을 따로 읽어야 넘침을 잘못 재 안내가 숨은 것이 'shown'으로 읽혀 지나가지 않습니다(heatmapTableQa729의 hintState와 같은 판정).
+ */
 function observed() {
-  const hint = screen.getByText("← 표를 좌우로 넘겨 보세요");
+  const classes = screen.getByText("← 표를 좌우로 넘겨 보세요").className.split(/\s+/);
   return {
-    hint: hint.className.split(/\s+/).includes("sm:hidden") ? "phone-only" : "shown",
+    hint: classes.includes("hidden") ? "hidden" : classes.includes("sm:hidden") ? "phone-only" : "shown",
     scrollLeft: screen.getByRole("region", { name: NAME }).scrollLeft,
   };
 }
