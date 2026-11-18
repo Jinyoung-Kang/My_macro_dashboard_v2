@@ -39,11 +39,15 @@ export function selectionCountText(selected: number, total: number): string | nu
 /** 개수 서식(정수, 천 단위 쉼표). */
 const COUNT = (value: number) => formatNumber(value, 0);
 
-/** '기준 분기' 타일 — 응답에 기준 분기가 없으면 각 기관이 자기 최신 분기로 참여한 것(판정 글 — 숫자가 아님). */
+/**
+ * '교집합 기준 분기' 타일 — 응답에 기준 분기가 없으면 각 기관이 자기 최신 분기로 참여한 것(판정 글 — 숫자가 아님). 타일 이름을 '기준 분기'로만 두면
+ * 타일 묶음(role=group)의 이름이 왼쪽 칸 고르기 상자 '기준 분기'와 같아 같은 이름의 조작이 둘이 됩니다(낭독기·이름으로 찾기 모두).
+ */
 const LATEST_LABEL = "각 기관 최신";
+const REPORT_DATE_LABEL = "교집합 기준 분기";
 
 /**
- * 교집합 요약 KPI 띠 — 참여 기관 수·교집합 종목 수·기준 분기. 출처 줄은 첫 타일에만 둡니다(띠 전체가 같은 13F 공시 — 순유동성·섹터 띠와 같은 규칙).
+ * 교집합 요약 KPI 띠 — 참여 기관 수·교집합 종목 수·교집합 기준 분기. 출처 줄은 첫 타일에만 둡니다(띠 전체가 같은 13F 공시 — 순유동성·섹터 띠와 같은 규칙).
  * 참여 기관 수를 모르면(숫자가 아님) "—", 종목 수는 받은 행 수입니다.
  */
 export function consensusKpis(data: Pick<ConsensusResponse, "participantCount" | "rows" | "reportDate">, source: string): KpiItem[] {
@@ -53,8 +57,8 @@ export function consensusKpis(data: Pick<ConsensusResponse, "participantCount" |
     { key: "participants", label: "참여 기관", value: participants, format: COUNT, unit: "곳", source },
     { key: "rows", label: "교집합 종목", value: (data.rows ?? []).length, format: COUNT, unit: "개" },
     reportDate
-      ? { key: "reportDate", label: "기준 분기", value: reportDate }
-      : { key: "reportDate", label: "기준 분기", value: LATEST_LABEL, valueKind: "label" },
+      ? { key: "reportDate", label: REPORT_DATE_LABEL, value: reportDate }
+      : { key: "reportDate", label: REPORT_DATE_LABEL, value: LATEST_LABEL, valueKind: "label" },
   ];
 }
 
@@ -66,7 +70,7 @@ export function consensusKpisPending(source: string): KpiItem[] {
   return [
     { key: "participants", label: "참여 기관", value: null, pending: true, source },
     { key: "rows", label: "교집합 종목", value: null, pending: true },
-    { key: "reportDate", label: "기준 분기", value: null, pending: true },
+    { key: "reportDate", label: REPORT_DATE_LABEL, value: null, pending: true },
   ];
 }
 

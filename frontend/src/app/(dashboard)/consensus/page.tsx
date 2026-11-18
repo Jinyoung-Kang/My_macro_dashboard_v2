@@ -2,26 +2,26 @@
 
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
+import { KpiStrip } from "@/components/patterns";
 import {
-  Banner,
-  Card,
+  Callout,
   EmptyState,
   ErrorState,
   filterChipClasses,
   Loading,
-  Metric,
   PageHeader,
+  Panel,
   Select,
   SourceBadge,
   Table,
 } from "@/components/ui";
 import { CheckIcon } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { consensusBars, securityNote } from "@/lib/consensus";
 import { EMPTY, formatCurrency, formatWeightPercent } from "@/lib/format";
-import { filerBadges, participantsLine } from "@/lib/consensusScreen";
+import { consensusKpis, consensusKpisPending, filerBadges, participantsLine } from "@/lib/consensusScreen";
 import { filerName } from "@/lib/holdings";
 import { isSelected, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
@@ -34,6 +34,9 @@ import { endpoints } from "@/lib/endpoints";
  * 여러 기관이 같은 분기에 공통 보유한 종목과, 동시 순매수/순매도가 몰린
  * 종목을 집계합니다. 기관마다 공시 분기가 다를 수 있으므로 기준 분기를
  * 고르면 그 분기를 공시한 기관만 참여합니다.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → '분석 대상'·조건 패널 → 교집합 요약 KPI 띠(처음 읽는 동안은 같은 꼴의 자리표시) →
+ * '공통 보유 상위 종목' 막대 → '교집합 상세' 표 → 참여 기관 줄 → '이번 분기 공통 신규 매수'.
  */
 export default function ConsensusPage() {
   const institutions = useApi<{ institutions: { name: string; cik: string }[] }>(
@@ -46,9 +49,8 @@ export default function ConsensusPage() {
   const [minHolders, setMinHolders] = useState("2");
 
   const ciks = selected.length > 0 ? selected.join(",") : "";
-  const { data, loading, error, reload } = useApi<ConsensusResponse>(
-    endpoints.institution.consensus({ minHolders, topN: 40, ciks, reportDate }),
-  );
+  const consensus = useApi<ConsensusResponse>(endpoints.institution.consensus({ minHolders, topN: 40, ciks, reportDate }));
+  const { data, error, reload } = consensus;
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
   const usdKrw = useUsdKrw();
 
@@ -62,11 +64,18 @@ export default function ConsensusPage() {
   // 이름이 겹치는 행(CUSIP으로 갈린 같은 이름)만 막대 이름표에 구분자를 붙입니다(QA-114).
   const chartData = consensusBars(data?.rows ?? []);
 
+  // 교집합 요약 — 처음 읽는 동안(과 조건을 바꿔 다시 읽는 동안)은 같은 세 타일의 자리표시, 응답이 오면 값(저장본이 없으면 두지 않음).
+  const kpis = data?.available
+    ? consensusKpis(data, SOURCES.sec13f)
+    : firstLoadPending(consensus)
+      ? consensusKpisPending(SOURCES.sec13f)
+      : [];
+
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader title="기관 13F Money 교집합" description="여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도" />
 
-      <Card title="분석 대상" subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체).">
+      <Panel title="분석 대상" subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체).">
         <div className="flex flex-wrap gap-2">
           {(institutions.data?.institutions ?? []).map((entry) => {
             const active = isSelected(allCiks, selected, entry.cik);
@@ -105,33 +114,33 @@ export default function ConsensusPage() {
             }))}
           />
         </div>
-      </Card>
+      </Panel>
 
-      {loading && !data && <Loading label="교집합을 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
 
       {data && !data.available && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           조건을 만족하는 공통 보유 종목이 없습니다. 기준 분기나 최소 기관 수를 조정해 보세요.
-        </Banner>
+        </Callout>
       )}
+
+      {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 띠 높이가 같게. */}
+      {kpis.length > 0 ? <KpiStrip label="교집합 요약" items={kpis} pendingMatchesValue /> : null}
 
       {data?.available && (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="참여 기관" value={`${data.participantCount}곳`} />
-            <Metric label="교집합 종목" value={`${data.rows.length}개`} />
-            <Metric
-              label="기준 분기"
-              value={data.reportDate ?? "각 기관 최신"}
+          <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
+            <HorizontalBars
+              data={chartData}
+              unit="곳"
+              digits={0}
+              neutral
+              ariaLabel="공통 보유 상위 종목 — 보유 기관 수"
+              height={Math.max(260, chartData.length * 26)}
             />
-          </div>
+          </Panel>
 
-          <Card title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
-            <HorizontalBars data={chartData} unit="곳" digits={0} neutral height={Math.max(260, chartData.length * 26)} />
-          </Card>
-
-          <Card title="교집합 상세" source={SOURCES.sec13f} subtitle={usdKrw.note}>
+          <Panel title="교집합 상세" source={SOURCES.sec13f} subtitle={usdKrw.note}>
             <Table
               rows={data.rows}
               rowKey={(row) => row.key}
@@ -192,7 +201,7 @@ export default function ConsensusPage() {
                 },
               ]}
             />
-          </Card>
+          </Panel>
 
           <p className="text-xs text-text-3">{participantsLine(data.participants)}</p>
         </>
@@ -237,7 +246,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
   const usdKrw = useUsdKrw();
 
   return (
-    <Card
+    <Panel
       title="이번 분기 공통 신규 매수" source={SOURCES.sec13f}
       subtitle={`여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다. ${usdKrw.note}`}
       actions={
@@ -307,7 +316,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 

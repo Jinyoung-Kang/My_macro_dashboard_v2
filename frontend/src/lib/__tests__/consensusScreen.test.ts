@@ -44,12 +44,12 @@ describe("교집합 화면 — 거르기 목록", () => {
 });
 
 describe("교집합 화면 — KPI 띠", () => {
-  it("참여 기관·교집합 종목·기준 분기 — 출처 줄은 첫 타일에만, 기준 분기가 없으면 판정 글 '각 기관 최신'", () => {
+  it("참여 기관·교집합 종목·교집합 기준 분기 — 출처 줄은 첫 타일에만, 기준 분기가 없으면 판정 글 '각 기관 최신'", () => {
     const tiles = consensusKpis({ participantCount: 12, rows: [row(), row({ key: "cusip:2" })], reportDate: null }, "SEC 13F");
     expect(tiles.map((tile) => [tile.label, tile.value, tile.unit ?? null, tile.source ?? null, tile.valueKind ?? "number"])).toEqual([
       ["참여 기관", 12, "곳", "SEC 13F", "number"],
       ["교집합 종목", 2, "개", null, "number"],
-      ["기준 분기", "각 기관 최신", null, null, "label"],
+      ["교집합 기준 분기", "각 기관 최신", null, null, "label"],
     ]);
     expect(tiles[0].format?.(1234)).toBe("1,234");
     expect(consensusKpis({ participantCount: 3, rows: [], reportDate: "2026-06-30" }, "S")[2]).toMatchObject({ value: "2026-06-30" });
@@ -66,7 +66,7 @@ describe("교집합 화면 — KPI 띠", () => {
     expect(tiles.map((tile) => [tile.label, tile.pending, tile.source ?? null])).toEqual([
       ["참여 기관", true, "SEC 13F"],
       ["교집합 종목", true, null],
-      ["기준 분기", true, null],
+      ["교집합 기준 분기", true, null],
     ]);
   });
 });

@@ -134,3 +134,55 @@ describe("교집합 — 동시 매수·매도·새로 담은 기관 수는 개�
     expect(within(fresh).getByText("3곳")).toBeTruthy();
   });
 });
+
+describe("교집합 — 네 상태(읽는 중·오류·저장본 없음·모르는 값)", () => {
+  const consensusOnly = (answer: () => Promise<unknown>) =>
+    api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/sec13f/consensus") ? answer() : new Promise(() => {})));
+
+  it("읽는 중이면 교집합 요약 자리에 같은 세 타일의 자리표시, 조건 고르기는 그대로", async () => {
+    consensusOnly(() => new Promise(() => {}));
+    render(<ConsensusPage />);
+    const strip = await screen.findByRole("region", { name: "교집합 요약" });
+    expect(within(strip).getAllByRole("status").map((status) => status.getAttribute("aria-label"))).toEqual([
+      "참여 기관 불러오는 중",
+      "교집합 종목 불러오는 중",
+      "교집합 기준 분기 불러오는 중",
+    ]);
+    expect(screen.getByLabelText("기준 분기")).toBeTruthy();
+    expect(screen.getByLabelText("최소 공통 보유 기관 수")).toBeTruthy();
+  });
+
+  it("읽지 못하면 오류와 '다시 시도' — 누르면 교집합을 한 번 더 읽는다", async () => {
+    consensusOnly(() => Promise.reject(new Error("교집합을 읽지 못했습니다.")));
+    render(<ConsensusPage />);
+    expect(await screen.findByText("교집합을 읽지 못했습니다.")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "교집합 요약" })).toBeNull();
+    const before = api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/sec13f/consensus")).length;
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() =>
+      expect(api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/sec13f/consensus")).length).toBe(before + 1));
+  });
+
+  it("조건을 만족하는 종목이 없으면(저장본 없음) 그 안내만 — 요약 띠·표는 없다", async () => {
+    consensusOnly(() => Promise.resolve({ available: false, participants: [], participantCount: 0, availableDates: [], reportDate: null, minHolders: 2, rows: [] }));
+    render(<ConsensusPage />);
+    expect(await screen.findByText(/조건을 만족하는 공통 보유 종목이 없습니다/)).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "교집합 요약" })).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("모르는 비중·평가액은 '—'(0으로 채우지 않음), 요약 띠는 값", async () => {
+    consensusOnly(() => Promise.resolve({
+      available: true, participants: ["가상 연기금"], participantCount: 1, availableDates: [], reportDate: "2026-06-30", minHolders: 2,
+      rows: [{ key: "cusip:000000401", name: "SYNTHETIC UNKNOWN CO", cusip: "000000401", holders: ["가상 연기금"], actions: [], holderCount: 2,
+        totalValue: null, avgWeight: null, maxWeight: null, buyCount: 0, sellCount: 0 }],
+    }));
+    render(<ConsensusPage />);
+    const table = (await screen.findByText("SYNTHETIC UNKNOWN CO")).closest("table") as HTMLElement;
+    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(within(table).queryByText("0.00%")).toBeNull();
+    const strip = screen.getByRole("region", { name: "교집합 요약" });
+    expect(within(strip).getByRole("group", { name: "교집합 기준 분기" }).textContent).toContain("2026-06-30");
+    expect(within(strip).getByRole("group", { name: "참여 기관" }).textContent).toContain("1곳");
+  });
+});
