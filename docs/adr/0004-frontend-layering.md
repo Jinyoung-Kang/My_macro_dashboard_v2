@@ -198,5 +198,5 @@
   `components/ui/__tests__/Dialog.test.tsx`.
 - '읽는 법' 접기 `components/patterns/ReadingGuide.tsx` — 화면 패턴(긴 설명 문단을 처음에 접는 `<details>` — 머리 '읽는 법' + 낭독기 전용 주제 글(보이는 글이 이름 앞),
   좁은 화면 44px 누름 자리(TEXT_TARGET), 본문 72ch 12px 보조 글). P5b /style 화면 부품으로 만들었다가 P6(패턴 단계)에서 글자 그대로 옮겼습니다(진행 기록 P5b 검토 '공용으로
-  올리기'). 데이터를 그리지 않는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 /style 셋, P6 보유·선정·결정 안내 글, 지키는 시험은
+  올리기'). 데이터를 그리지 않는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 /style 셋, P6 보유 탭(계좌 초기화·주문·체결 — 처음 적은 '보유·선정·결정 안내 글'은 틀림, 진행 기록 §P6 '바로잡음'), 지키는 시험은
   `components/patterns/__tests__/ReadingGuide.test.tsx`·`app/(dashboard)/__tests__/analysisScreenStates.test.tsx`.
