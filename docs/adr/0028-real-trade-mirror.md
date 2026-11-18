@@ -160,8 +160,12 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
     → 비현금성 노출 감소 ≤ 30%p(`derisk-over`) → 목표 합 ≥ 90(`targets-thin`)·≤ 101(`targets-over` — 책 현금 음수) → 판정 회전율 ≤ 스탑 감소만 뺀 책 변화량 + 20%p
     (`over-allowance` — 셈 어긋남 교차 확인) → 판정 회전율 ≤ 150(`over-cap`). 판정 회전율과 계좌 어긋남은 막는 종목 자리에 이 기능의 미종료 주문만 두어 **매매 제한(VI·
     거절 대기) 종목도 센다** — 풀리면 같은 창 마무리가 검사 없이 맞추므로. 목표 합에 스탑 크레딧은 주지 않는다(사용자 결정 R2). 하루 한도가 모자란 날은 멈춘다(R3).
-  - 한 번만: 따로 저장하지 않는다 — 묶음은 세션마다 하나이고 다음 세션의 앞 거래일 결정은 `SCHEDULED`라 G4에서 걸린다. 판정 중 예외는 그 주기에 묶음도 멈춤도 없이 건너뛰고
-    (`rebalance-check-error`), 다음 시도(30초 뒤)에도 실패하면 '준비 안 됨'(`rebalance-check-unavailable`)을 알린다 — 그 사이 스탑 매도는 돈다.
+  - 한 번만: 따로 저장하지 않는다 — 묶음은 세션마다 하나이고 다음 세션의 앞 거래일 결정은 `SCHEDULED`라 G4에서 걸린다. 예외로 보내는 묶음을 만든 잠금에서는 남은 몫
+    (`capped`·`deferred-*`)이 있어도 `sync_pending`을 끈다(QA-803 — 같은 트랜잭션의 기존 갱신 자리). 켜 두면 다음 날 `turnoverHalt`가 예외 묶음과의 목표 변화량(≈ 0)만 보아
+    60%를 넘는 남은 몫이 열두 확인 없이 나갔다. 계획 3-6의 첫째 줄('`sync_pending` 규칙 그대로')과 셋째 줄('다음 날까지 남은 몫이 60%를 넘으면 지금처럼 멈춘다 — 이어 주기
+    없음')이 '`sync_pending`이 켜진 채 들어온 예외 묶음'에서 부딪혀 셋째 줄(멈춤)로 정했다(2026-11-19 사용자 위임 결정 — 더 멈추는 쪽). 예외가 아닌 묶음의 `sync_pending` 규칙은
+    그대로다. 판정 중 예외는 그 주기에 묶음도 멈춤도 없이 건너뛰고(`rebalance-check-error`), 다음 시도(30초 뒤)에도 실패하면 '준비 안 됨'
+    (`rebalance-check-unavailable`)을 알린다 — 그 사이 스탑 매도는 돈다.
   - 기록: 예외로 새 묶음을 만들면 같은 트랜잭션에 `TURNOVER_EXEMPT`(알림 — 텔레그램은 고정 글뿐, detail은 %·배율·개수만), 예외가 걸리지 않은 멈춤은 HALT detail에
     `rebalanceCheck`와 셌으면 숫자 칸·`uncounted`·`sellsDropped`(하루 건수로 밀리는 매도 수 — QA-801)(텔레그램은 지금처럼 `사유: turnover`). 규칙 계좌의 평소 묶음은
     같은 측정값과 서버 하루 한도의 E 대비 크기를 묶음 로그 한 줄에 남긴다(관찰 — 판정에 쓰지 않음, 실패해도 묶음에 영향 없음).
@@ -177,7 +181,7 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   이번 범위 밖이다(넓히지도 막지도 않음). 미리 보기 계산은 그대로이고 경고 글만 고쳤다. 런타임 끄기 스위치는 두지 않는다(되돌림 배포와 화면 끄기).
   계약은 [명세 §3.1·§12.2·§13.2](../specs/2026-11-06-real-trade-mirror.md), 판정은 `RealTradeRebalance`(순수), 시험은 `RealTradeRebalanceTest`(경계·계획 4절 사례·
   대기 STOP 종목 제외와 1% 거름)·`RealTradeNoticesTest.texts`·`RealTradeJobDbTest`의 `rebalance*`(보냄 — 시각 맞추기·시가 맞추기 날, 교체 수, 매매 제한 종목, 스탑 기준,
-  미룬 매수의 마무리, 남은 몫 뒤 / 멈춤 — 입구 다섯과 열두 확인 가운데 교차 확인을 뺀 각각, Claude 책 그대로, 판정 오류, 한 번만)·`scheduledDecisionStillHalts`·
+  미룬 매수의 마무리, 남은 몫 뒤 / 멈춤 — 입구 다섯과 열두 확인 가운데 교차 확인을 뺀 각각, Claude 책 그대로, 판정 오류, 한 번만, 예외 묶음 다음 날의 남은 몫 — QA-803)·`scheduledDecisionStillHalts`·
   `observationLogDoesNotChangeBatch`, 화면 `realtradeCodes.test.ts`·`realtrade.test.ts`. 교차 확인(`over-allowance`)은 두 셈(판정 회전율·책 변화량)의 어긋남을 잡는
   장치다 — 종목마다 |지금 − 보유| ≤ |지금 − 앞| + |앞 − 보유|라 판정 회전율은 대개 책 변화량 + 계좌 어긋남(앞 확인에서 ≤ 20) 안이어서 정상 계좌·목표로는 작업 경로에서
   만들기 어려워 순수 시험(`judgeTableBoundaries`·`crossCheckUsesStopOnlyDrift`)만 본다.

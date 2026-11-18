@@ -894,7 +894,8 @@ class RealTradeJob {
      * 확인을 모두 지나면 보내고 {@code TURNOVER_EXEMPT} 이벤트, 어긋나면 HALT detail에 판정 코드, 판정 오류면 그 주기 건너뜀). 묶음을 만들면서(같은
      * 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건
      * 상한·현금·하루 한도로 그날 다 못 맞춘 남은 몫({@link #LEFTOVER_SKIPS})이 있으면, sync_pending을 켠 일 뒤 {@value #SYNC_PENDING_MAX_BATCHES}번째 묶음까지는 켜 둡니다(켜기 창에서 확인한
-     * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔).
+     * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔). 재선정 회전율 예외로 보내는 묶음은 남은 몫이 있어도 끕니다(QA-803 — 다음 날까지
+     * 남은 몫이 60%를 넘으면 지금처럼 멈춤, 이어 주기 없음).
      *
      * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
      */
@@ -973,7 +974,10 @@ class RealTradeJob {
             Batch batch = existing.orElseGet(() -> store.upsertBatch(MARKET, c.today,
                     RealTradeStore.BATCH_SYNC, planned.sourceBook(), mapper.valueToTree(batchTargets(weightPct, f.account())),
                     targets.absorbedOrderIds(), f.equity()));
-            boolean keep = current.syncPending() && since.isPresent() && batchesSince(batch, since.get()) < SYNC_PENDING_MAX_BATCHES;
+            // 재선정 회전율 예외로 보내는 묶음이면 남은 몫이 있어도 sync_pending을 끔(QA-803 — 켜 두면 다음 날 turnoverHalt가 이 묶음과의 목표 변화량 ≈ 0만
+            // 보아 60%를 넘는 남은 몫을 열두 확인 없이 보냄. 다음 날까지 남은 몫이 60%를 넘으면 지금처럼 멈춤 — 이어 주기 없음)
+            boolean keep = exempt == null && current.syncPending() && since.isPresent()
+                    && batchesSince(batch, since.get()) < SYNC_PENDING_MAX_BATCHES;
             if (current.syncPending() && !keep && !store.updateConfig(current.withSyncPending(false), null)) {
                 return null;
             }

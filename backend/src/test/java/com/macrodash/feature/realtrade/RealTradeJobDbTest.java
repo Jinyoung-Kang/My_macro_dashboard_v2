@@ -4597,7 +4597,7 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @DisplayName("sync_pending 남은 몫 묶음이 목표 변화량 > 60(RT2-1)으로 멈출 사례가 재선정 다음 묶음이면 — 예외로 보냄, sync_pending 규칙 그대로")
+    @DisplayName("sync_pending 남은 몫 묶음이 목표 변화량 > 60(RT2-1)으로 멈출 사례가 재선정 다음 묶음이면 — 예외로 보냄, 예외 묶음이라 sync_pending 끔(QA-803)")
     void rebalanceAfterLeftoverDriftHalt() {
         rebalanceDay(P2, H2, NOW_N2, Set.of());
         RealTradeFixtures.clean(jdbc);
@@ -4608,17 +4608,18 @@ class RealTradeJobDbTest {
         run("09:10:05");
 
         assertExempt("남은 몫 뒤 재선정");
-        // 규칙 그대로 — 이 묶음에도 남은 몫(현금 부족으로 미룬 매수)이 있고 켠 뒤 두 번째 묶음이라 세 번째 묶음까지 유지
-        assertThat(cfg().syncPending()).isTrue();
+        // 이 묶음에도 남은 몫(현금 부족으로 미룬 매수)이 있고 켠 뒤 두 번째 묶음이지만 예외로 보낸 묶음이라 끔(QA-803 — 다음 날 남은 몫이 60%를 넘으면 지금처럼 멈춤).
+        // 예외 전에는 '켠 채'(세 번째 묶음까지 유지)를 단언했다.
+        assertThat(cfg().syncPending()).isFalse();
     }
 
     // QA-803 — sync_pending이 켜진 채 들어온 재선정 묶음이 예외로 나가면 잠금 안 keep(= sync_pending ∧ 남은 몫 ∧ 켠 뒤 세 번째 묶음 전)이 참이라 sync_pending이
     // 그대로 켜져 있고, 다음 날 turnoverHalt가 앞 묶음(= 예외 묶음)과의 목표 변화량(≈ 0)만 보아 회전율 60%를 넘는 남은 몫이 열두 확인 없이 나갔다(계획 3-6
     // 셋째 줄·명세 §12.2 '다음 날까지 남은 몫이 60%를 넘으면 지금처럼 멈춘다(이어 주기 없음)'와 어긋남).
-    // 수정 전: S 묶음 로그 '(남은 몫 — 회전율 예외 유지)', S+1 로그 '남은 몫 묶음 — 회전율 119.92%지만 목표 변화량 0.00%라 회전율 예외 유지'로 주문 4건이 나가
+    // 수정 전(재현 커밋 5d7fc8c9에서는 @Disabled): S 묶음 로그 '(남은 몫 — 회전율 예외 유지)', S+1 로그 '남은 몫 묶음 — 회전율 119.92%지만 목표 변화량
+    // 0.00%라 회전율 예외 유지'로 주문 4건이 나가
     // 'expected: "HALTED" but was: "LIVE"'(그날 관찰 로그의 계좌 어긋남 119.92% — 열두 확인을 봤다면 account-drift), 그 묶음에서 sync_pending 꺼짐(세 번째 묶음).
     @Test
-    @org.junit.jupiter.api.Disabled("QA-803 재현 — 수정 전에는 예외 묶음 뒤에도 sync_pending이 남아 다음 날 남은 몫이 회전율 검사 없이 나감")
     @DisplayName("QA-803: sync_pending이 켜진 채 재선정 예외 묶음(S) → 예외 잠금에서 sync_pending 끔 → S+1(결정 SCHEDULED)의 남은 몫 회전율 > 60이면 지금처럼 멈춤")
     void rebalanceExemptTurnsOffSyncPendingSoLeftoverHaltsNextDay() {
         // 단계 S = 2026-11-05(목) — 앞 거래일 11-04가 재선정 결정일. 켬(ENABLE) → 11-04 묶음(켠 뒤 첫 묶음, 남은 몫으로 sync_pending 유지) → 11-05 예외 묶음
