@@ -23,7 +23,7 @@ function rgbOf(hex: string): string {
 
 describe("비중 히트맵 칸은 순차 팔레트 다섯 단계로 칠한다(QA-692)", () => {
   // 수정 전 실패(plain it으로 돌린 값): 첫 칸(10 ÷ 10 = 1, 단계 5)의 data-step이 null이고 바탕이 'rgba(57, 135, 229, 0.7)'.
-  it.fails("칠한 칸마다 data-step 1~5와 그 단계의 바탕 — 계열 파랑 rgba가 없다", () => {
+  it("칠한 칸마다 data-step 1~5와 그 단계의 바탕 — 계열 파랑 rgba가 없다", () => {
     render(
       <WeightHeatmap
         dates={["2025-12-31", "2026-03-31", "2026-06-30", "2026-09-30"]}

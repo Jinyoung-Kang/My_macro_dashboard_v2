@@ -145,3 +145,11 @@
 - 표 칸 변화 `ChangeCell`(`components/patterns/ChangeChip.tsx` — 변화 칩 파일에 둠) — 화면 패턴(공용 변화 칩의 표 칸 꼴: 작은 크기·칸 안에서 꺾지 않음, 변화량·변화율을 둘 다 모르면
   공용 표가 모르는 칸에 그리는 것과 같은 '—'(Empty — 읽기 '값 없음') — 0.00%를 만들지 않음, 데이터 칸 강조색 금지 목록의 변화 칩 파일). 섹터·COT·매크로 표가 화면마다 따로 두던
   감싸개를 P5a 검토에서 하나로 합쳤고, P5b 기관 표 등락 칸이 같은 것을 씁니다. 지키는 시험은 `components/patterns/__tests__/ChangeChip.test.tsx`.
+- 표 히트맵 `components/charts/HeatmapTable.tsx`(+ 순수 모듈 `lib/heatmap.ts`) — 차트 모듈 안의 표(Recharts 아님 — 크기 고정 `ChartSizeHold`와 무관, 화면은 `@/components/charts`에서
+  가져옴. 패턴 배럴이 아니라 차트 모듈에 둔 까닭은 화면 시험이 `vi.mock("@/components/charts")`로 히트맵을 빼고 있어서 — 옮기면 그 시험들에서 실제 표가 그려짐).
+  행 × 열 칸에 숫자를 적고 칸 바탕을 순차 팔레트 다섯 단계로 칠함(값 ÷ 최댓값 (0, 0.2]→1 … (0.8, 1]→5, `data-step`, 단계별 글자색 — 단계 1~3 본문색·4~5 바탕색, 모름 '—'·0(`zeroText`)·0 이하는
+  칠하지 않음, 칠한 칸과 범례 견본은 고대비에서도 색 그대로), 범례(견본 다섯 + 단계 글 + '밝은 단계일수록 큼' + 설명 글), 영역 이름 '{표 이름} (좌우 스크롤)'.
+  단계·팔레트·글자색은 React 없는 `lib/heatmap`(`heatmapStep`·`heatmapStepRange`·`SEQUENTIAL_STEPS`·`SEQUENTIAL_TEXT` — 명세 §3-5 순차 팔레트)이 정하고 표는 그리기만 합니다.
+  데이터 칸 강조색 금지 목록·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
+  비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/charts/__tests__/HeatmapTable.test.tsx`·
+  `components/charts/__tests__/weightHeatmapQa692.test.tsx`·`lib/__tests__/heatmap.test.ts`.

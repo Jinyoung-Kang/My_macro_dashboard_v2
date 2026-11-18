@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { EMPTY, formatNumber, formatWeightPercent } from "@/lib/format";
+import { heatmapStep, heatmapStepRange, SEQUENTIAL_STEPS, SEQUENTIAL_TEXT } from "@/lib/heatmap";
 
 /*
  * 표 히트맵 — 차트 모듈 안의 표(Recharts를 쓰지 않음 — 크기 고정 ChartSizeHold와 무관). 화면은 `@/components/charts`에서 가져옵니다(index가 다시 내보냄).
@@ -15,12 +16,15 @@ export type HeatmapColumn = { key: string; label: string; title?: string };
 export type HeatmapRow = { key: string; label: string; title?: string; values: readonly (number | null | undefined)[] };
 
 /**
- * 표 히트맵 — 행 × 열 값을 칸에 적고 값의 크기를 칸 바탕으로 칠합니다. 색만으로 값을 나르지 않도록 칸 안에 숫자도 함께 적습니다.
+ * 표 히트맵 — 행 × 열 값을 칸에 적고 값의 크기를 칸 바탕의 순차 팔레트 단계로 칠합니다. 색만으로 값을 나르지 않도록 칸 안에 숫자도 함께 적습니다.
  *
  * - 영역 이름은 `${caption} (좌우 스크롤)`(가로로 스크롤하는 상자 — 키보드로도 옮길 수 있게 Tab 정지점).
- * - 값을 모르는 칸은 '—', 0인 칸은 `zeroText`(주면 — 예: 비중의 '·' 미보유), 둘 다 칠하지 않습니다. 0보다 큰 값만 `max`에 견준 크기로 칠합니다.
+ * - 칸 바탕은 순차 팔레트 다섯 단계(lib/heatmap — 명세 §3-5, 어두운 단계 = 0에 가까움 → 밝은 단계 = 큼): 값 ÷ `max`가 (0, 0.2]면 단계 1 … (0.8, 1]이면 5.
+ *   칸 글자색은 단계마다 정해 두었습니다(단계 1~3 본문색·4~5 바탕색 — 모두 4.5:1 이상). 칠한 칸에는 `data-step`(1~5)을 붙입니다.
+ *   고대비(forced-colors)에서도 단계가 남게 칠한 칸과 범례 견본은 색을 시스템 색으로 바꾸지 않습니다(forced-color-adjust: none — 글자·바탕 쌍이 4.5:1 이상이라 그대로 읽힘).
+ * - 값을 모르는 칸은 '—', 0인 칸은 `zeroText`(주면 — 예: 비중의 '·' 미보유), 둘 다 칠하지 않습니다. 0 이하·`max`가 0 이하도 칠하지 않습니다.
  * - 첫 열(`rowHeader`)은 가로 스크롤 때 왼쪽에 붙어 남습니다.
- * - `legend.note`는 표 아래 설명 글입니다.
+ * - 범례(표 아래): 단계 견본 다섯(장식) + 단계 글(`legend.stepLabel` — 예 '최댓값의 0~20%') + '밝은 단계일수록 큼', 그 아래 `legend.note`(설명 글).
  * - `minWidth`(px)를 주지 않으면 표 최소 폭 640px입니다.
  */
 export function HeatmapTable({
@@ -41,7 +45,7 @@ export function HeatmapTable({
   max: number;
   format: (value: number) => string;
   zeroText?: string;
-  legend: { note?: ReactNode };
+  legend: { stepLabel: (step: 1 | 2 | 3 | 4 | 5) => string; note?: ReactNode };
   minWidth?: number;
 }) {
   return (
@@ -66,21 +70,14 @@ export function HeatmapTable({
               <td title={row.title} className="sticky left-0 bg-surface px-3 py-1.5 text-left text-text-2">{row.label}</td>
               {row.values.map((value, index) => {
                 const column = columns[index];
-                // 0인 칸은 "데이터 없음"이 아니라 그 값이 0이라는 뜻입니다(비중이면 그 분기에 보유하지 않음).
-                const ratio = typeof value === "number" && max > 0 ? value / max : 0;
+                // 0인 칸은 "데이터 없음"이 아니라 그 값이 0이라는 뜻입니다(비중이면 그 분기에 보유하지 않음) — 칠하지 않습니다.
+                const step = heatmapStep(value, max);
                 return (
                   <td
                     key={`${row.key}-${column?.key ?? index}`}
-                    className="px-2 py-1.5 text-right tabular-nums"
-                    style={{
-                      backgroundColor:
-                        typeof value === "number" && value > 0
-                          ? `rgba(57, 135, 229, ${0.08 + ratio * 0.62})`
-                          : "transparent",
-                      // 칠한 칸의 숫자는 본문색(text) — 농도 전 범위(불투명도 0.08~0.70)에서 패널 면(surface) 위 13.7~5.3:1(WCAG AA 4.5:1).
-                      // 보조 글자색(text-2)은 가장 진한 칸에서 3.5:1이라 쓰지 않습니다.
-                      color: typeof value === "number" && value > 0 ? "var(--text)" : undefined,
-                    }}
+                    data-step={step === 0 ? undefined : step}
+                    className={step === 0 ? "px-2 py-1.5 text-right tabular-nums" : "px-2 py-1.5 text-right tabular-nums forced-color-adjust-none"}
+                    style={step === 0 ? undefined : { backgroundColor: SEQUENTIAL_STEPS[step - 1], color: SEQUENTIAL_TEXT[step - 1] }}
                     title={`${row.title ?? row.label} · ${column ? column.title ?? column.label : ""}`}
                   >
                     {typeof value === "number"
@@ -95,16 +92,32 @@ export function HeatmapTable({
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-xs text-text-3">{legend.note}</p>
+      <ul aria-label="칸 색 단계" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-3">
+        {STEPS.map((step) => (
+          <li key={step} className="inline-flex items-center gap-1 tabular-nums">
+            <span
+              aria-hidden="true"
+              className="size-3 shrink-0 rounded-sm border border-border forced-color-adjust-none"
+              style={{ backgroundColor: SEQUENTIAL_STEPS[step - 1] }}
+            />
+            {legend.stepLabel(step)}
+          </li>
+        ))}
+        <li>밝은 단계일수록 큼</li>
+      </ul>
+      {legend.note ? <p className="mt-1 text-xs text-text-3">{legend.note}</p> : null}
     </div>
   );
 }
+
+/** 범례의 단계 차례. */
+const STEPS = [1, 2, 3, 4, 5] as const;
 
 /**
  * 비중 히트맵 — 분기마다 어느 종목의 비중이 커지고 줄었는지(13F 포트폴리오 화면). 표 히트맵(`HeatmapTable`)의 감싸개입니다.
  *
  * <p>선 차트로 15개 종목을 겹쳐 그리면 색이 모자라고 선이 엉킵니다. 값의 크기를
- * 색 농도로 칠하면 "어느 칸이 진해지는가"만 보면 됩니다.
+ * 색 단계로 칠하면 "어느 칸이 밝아지는가"만 보면 됩니다(단계는 표 안 최댓값에 견준 크기).
  *
  * <p>색만으로 값을 나르지 않도록 <b>칸 안에 숫자도 함께</b> 적습니다.
  */
@@ -124,6 +137,8 @@ export function WeightHeatmap({
 
   const values = names.flatMap((name) => series[name] ?? []);
   const max = Math.max(...values.filter((v): v is number => typeof v === "number"), 0);
+  // 들고 있었지만 0.05% 미만인 칸은 '<0.1%' — '0.0%'면 미보유('·')처럼 없는 값으로 읽힙니다(QA-454).
+  const formatWeight = (value: number) => (unit === "%" ? formatWeightPercent(value, 1) : `${formatNumber(value, 1)}${unit}`);
 
   return (
     <HeatmapTable
@@ -137,15 +152,18 @@ export function WeightHeatmap({
         values: (series[name] ?? []).map((value) => (typeof value === "number" && !(value > 0) ? 0 : value)),
       }))}
       max={max}
-      // 들고 있었지만 0.05% 미만인 칸은 '<0.1%' — '0.0%'면 미보유('·')처럼 없는 값으로 읽힙니다(QA-454).
-      format={(value) => (unit === "%" ? formatWeightPercent(value, 1) : `${formatNumber(value, 1)}${unit}`)}
+      format={formatWeight}
       // 0%는 "미보유"입니다. 값을 모르는 것(EMPTY)과 같은 기호를 쓰면 둘을 구분할 수 없습니다.
       zeroText="·"
       legend={{
+        stepLabel: (step) => {
+          const [low, high] = heatmapStepRange(step);
+          return `최댓값의 ${Math.round(low * 100)}~${Math.round(high * 100)}%`;
+        },
         note: (
           <>
-            색이 진할수록 비중이 큽니다. &quot;·&quot;는 그 분기에 <b>보유하지 않았다</b>는 뜻이고,
-            &quot;{EMPTY}&quot;는 <b>값을 모른다</b>는 뜻입니다 — 둘은 다릅니다.
+            {max > 0 ? <>최댓값은 이 표에서 가장 큰 비중({formatWeight(max)})입니다. </> : null}
+            &quot;·&quot;는 그 분기에 <b>보유하지 않았다</b>는 뜻이고, &quot;{EMPTY}&quot;는 <b>값을 모른다</b>는 뜻입니다 — 둘은 다르고, 둘 다 칠하지 않습니다.
           </>
         ),
       }}
