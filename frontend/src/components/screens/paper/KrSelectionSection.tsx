@@ -225,7 +225,8 @@ const MEMBER_COLUMNS: Column<KrMemberRow>[] = [
   {
     key: "reasons",
     header: "사유",
-    className: "min-w-64",
+    // 사유 글은 낱말 사이에서만 꺾습니다('최' / '소'가 되지 않게 — QA-817).
+    className: "min-w-64 break-keep",
     cell: (row) => (
       // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖 문서 폭을 넓히지 않게(가려진 칸에서도 상자 안에 머묾).
       <span className={`relative text-xs ${row.financialCheck ? "text-warn" : "text-text-2"}`}>
@@ -264,10 +265,13 @@ function signed(text: string, value: number | null) {
   return <span className={value === null ? "text-text-3" : "text-text"}>{text}</span>;
 }
 
-/** 코드(줄바꿈 없음) + 이름 — 좁은 화면에서는 이름이 다음 줄로 내려갑니다(구성원 표는 열이 whitespace-nowrap이라 한 줄). */
+/**
+ * 코드(줄바꿈 없음) + 이름 — 좁은 화면에서는 이름이 한 덩어리로 다음 줄로 내려갑니다(break-keep — 낱말 사이에서만 꺾음, 예전에는 '한화에어로' / '스페이스'처럼
+ * 음절 중간에서 꺾였음 — QA-817). 구성원 표는 열이 whitespace-nowrap이라 한 줄입니다.
+ */
 function CodeName({ code, name }: { code: string; name: string }) {
   return (
-    <span>
+    <span className="break-keep">
       <span className="whitespace-nowrap font-semibold text-text">{code}</span>
       {name && name !== "—" && <span className="ml-1 text-xs text-text-2">{name}</span>}
     </span>

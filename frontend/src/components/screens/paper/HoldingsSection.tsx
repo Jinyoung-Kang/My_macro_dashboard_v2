@@ -609,7 +609,8 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
   {
     key: "ticker",
     header: "종목",
-    className: "min-w-[9rem]",
+    // 기업명은 낱말 사이에서만 꺾습니다('한화에어로스페이' / '스'가 되지 않게 — QA-817, 계좌 상세 표의 QA-776과 같은 규칙).
+    className: "min-w-[9rem] break-keep",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span><TickerName code={row.ticker} /></span>

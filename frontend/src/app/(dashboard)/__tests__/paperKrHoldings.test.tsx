@@ -443,7 +443,7 @@ describe("QA-817 — 한국 체결 표의 종목 칸은 낱말 사이에서만 �
     return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
   }
 
-  it.fails("체결 표 '종목' 머리·칸에 break-keep", async () => {
+  it("체결 표 '종목' 머리·칸에 break-keep", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(overview(BOOKS));
     reads["/api/paper/books/kr_rules/positions"] = () => Promise.resolve(POSITIONS);
     reads["/api/paper/books/kr_rules/orders"] = () => Promise.resolve(ORDERS);

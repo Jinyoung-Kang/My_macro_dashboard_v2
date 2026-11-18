@@ -316,7 +316,7 @@ describe("QA-817 — 한국 종목 선정 표의 이름·사유는 낱말 사이
     return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
   }
 
-  it.fails("매수 목표 표의 종목 이름과 구성원 표 '사유' 칸에 break-keep", async () => {
+  it("매수 목표 표의 종목 이름과 구성원 표 '사유' 칸에 break-keep", async () => {
     reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
       available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
     });

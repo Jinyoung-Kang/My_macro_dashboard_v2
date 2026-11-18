@@ -627,7 +627,7 @@ describe("QA-817 — 한국 수집 상태 표의 칸은 낱말 사이에서만 �
     return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
   }
 
-  it.fails("항목·기준·범위·상태 열의 머리·칸에 break-keep", async () => {
+  it("항목·기준·범위·상태 열의 머리·칸에 break-keep", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
     reads["/api/paper/status?market=KR"] = () => Promise.resolve({
       ...KR_STATUS,
