@@ -8,7 +8,7 @@ import { IsaSection } from "@/components/screens/isa/IsaSection";
 import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
-import { Button, Callout, ErrorState, Freshness, Loading, PageHeader, Panel, underlineTabClasses } from "@/components/ui";
+import { Button, Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Tabs } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
@@ -230,32 +230,26 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
             </Panel>
           )}
 
-          {/* 밑줄 탭 — 위 하위 메뉴 줄(시장)보다 한 단계 작게(sm) 둬 두 줄의 위계를 가릅니다. 좁으면 줄을 바꾸지 않고 가로로 스크롤합니다. */}
+          {/* 밑줄 탭(공용 탭 줄 — 위 하위 메뉴 줄보다 한 단계 작게 sm). 좁으면 줄을 바꾸지 않고 가로로 스크롤하며 고른 탭·키보드로 옮긴 탭을 줄 안에
+              보이게 합니다. Tab으로는 고른 탭 하나에 들어오고 →·←·Home·End는 포커스만 옮깁니다(여는 것은 누르기·Enter·Space — QA-739). */}
           {data?.available && (
-            <div role="tablist" aria-label="모의 매매 화면" className="flex overflow-x-auto border-b border-border">
-              {tabs.map((entry) => {
-                const active = entry.key === tab;
-                return (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    role="tab"
-                    id={`paper-tab-${entry.key}`}
-                    aria-selected={active}
-                    aria-controls="paper-tabpanel"
-                    onClick={() => {
-                      setPreselect("");
-                      setFocusProposal(null);
-                      showTab(entry.key);
-                    }}
-                    className={underlineTabClasses(active, "sm")}
-                  >
-                    {entry.label}
-                    {entry.opensIn && <span className="ml-1 text-xs text-text-3">(준비 중)</span>}
-                  </button>
-                );
-              })}
-            </div>
+            <Tabs
+              label="모의 매매 화면"
+              idPrefix="paper-tab"
+              panelId="paper-tabpanel"
+              size="sm"
+              value={current.key}
+              items={tabs.map((entry) => ({
+                key: entry.key,
+                label: entry.label,
+                suffix: entry.opensIn ? <span className="ml-1 text-xs text-text-3">(준비 중)</span> : undefined,
+              }))}
+              onChange={(key) => {
+                setPreselect("");
+                setFocusProposal(null);
+                showTab(key);
+              }}
+            />
           )}
 
           {/* 탭 줄이 없을 때(개요 없이 실제 계좌 탭만)는 탭 이름을 패널 이름으로 둡니다. */}

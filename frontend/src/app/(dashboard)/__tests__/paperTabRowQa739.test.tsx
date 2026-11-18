@@ -70,7 +70,7 @@ afterEach(() => {
 const strip = () => screen.getByRole("tablist", { name: "모의 매매 화면" });
 
 describe("QA-739 — 모의매매 탭 줄을 공용 탭 줄과 같게", () => {
-  it.fails("고른 탭 하나만 Tab 정지점이고 →·Home·End가 포커스만 옮긴다(고른 탭·주소 그대로)", async () => {
+  it("고른 탭 하나만 Tab 정지점이고 →·Home·End가 포커스만 옮긴다(고른 탭·주소 그대로)", async () => {
     render(<PaperScreen initialTab="settings" />);
     await screen.findByRole("tablist", { name: "모의 매매 화면" });
     const tabs = within(strip()).getAllByRole("tab");
@@ -90,7 +90,7 @@ describe("QA-739 — 모의매매 탭 줄을 공용 탭 줄과 같게", () => {
     expect(window.location.pathname).toBe("/paper/us/settings");
   });
 
-  it.fails("줄이 폭보다 길면 주소로 연 탭(설정 — 일곱째)이 줄 안에 보이게 줄을 옮겨 둔다", async () => {
+  it("줄이 폭보다 길면 주소로 연 탭(설정 — 일곱째)이 줄 안에 보이게 줄을 옮겨 둔다", async () => {
     render(<PaperScreen initialTab="settings" />);
     await screen.findByRole("tablist", { name: "모의 매매 화면" });
     const settings = screen.getByRole("tab", { name: "설정" });
