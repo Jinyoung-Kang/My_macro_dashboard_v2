@@ -300,3 +300,36 @@ describe("고른 기관 패널 — 포트폴리오 읽기 상태", () => {
     signal.token = 0;
   });
 });
+
+// ------------------------------------------------------------------ 보유 표 — 동작 배지와 행 바탕(QA-697)
+
+/** 요소의 바탕 클래스 토큰(변형 접두어 'hover:' 등을 뗀 'bg-…'). `prefix`가 있으면 그 변형만. */
+function bgTokens(element: Element, prefix = ""): string[] {
+  return [...element.classList].filter((name) => name.startsWith(`${prefix}bg-`)).map((name) => name.slice(prefix.length));
+}
+
+describe("보유 표 '직전 분기 대비' 배지 — 행 바탕에 묻히지 않고 한 줄(QA-697)", () => {
+  // 공용 표 행이 마우스를 올리거나 고르면 칠하는 바탕과 배지 바탕이 같은 토큰이면(테두리 없는 배지) 그때 배지 상자가 사라집니다(1.00:1). 배지는 칸 안에서
+  // 줄을 바꾸지 않아야 합니다(좁은 칸에서 '비중 축소 / (Reduced)' 두 줄로 접힘). jsdom이라 그리지 않고 클래스로 셉니다.
+  // 수정 전(plain it으로 잼): 옛 ui Table 행 'hover:bg-surface-2'와 SourceBadge 'bg-surface-2'(테두리 없음)가 같음 — same = ['bg-surface-2'],
+  // 배지 칸 'break-keep px-3 py-1.5 tabular-nums text-left'(whitespace-nowrap 없음).
+  it.fails("행 바탕(hover·고름)과 같은 바탕의 테두리 없는 배지가 없고, 배지는 줄바꿈 없는 칸 안", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
+      if (path.startsWith("/api/sec13f/portfolio")) return Promise.resolve(changePortfolio());
+      return new Promise(() => {});
+    });
+    render(<InstitutionsPage />);
+    const badge = await screen.findByText("비중 축소 (Reduced)");
+    const row = badge.closest("tr") as HTMLElement;
+    const box = badge.closest('[class*="bg-"]') as HTMLElement;
+    const bordered = box.classList.contains("border");
+    const rowBackgrounds = [...bgTokens(row), ...bgTokens(row, "hover:")];
+    const same = bordered ? [] : rowBackgrounds.filter((token) => bgTokens(box).includes(token));
+    expect(same).toEqual([]);
+
+    const cell = badge.closest("td, th") as HTMLElement;
+    const nowrap = badge.closest(".whitespace-nowrap");
+    expect(nowrap !== null && cell.contains(nowrap)).toBe(true);
+  });
+});
