@@ -167,6 +167,14 @@ describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
     expect(tokens(headers[0])).toEqual(expect.arrayContaining(["sticky", "left-0", "bg-surface"]));
   });
 
+  it("머리 칸(모서리·열 머리·행 머리)은 한글을 낱말 사이에서만 꺾는다(break-keep — 유사도 행렬의 기관 이름이 글자 사이에서 꺾였음)", () => {
+    renderTable([{ key: "r", label: "가상 국부펀드", values: [1, 2, 3, 4, 5] }]);
+    const table = screen.getByRole("table", { name: "합성 행렬" });
+    const heads = [...table.querySelectorAll("th")];
+    expect(heads).toHaveLength(7);
+    expect(heads.filter((head) => !tokens(head).includes("break-keep")).map((head) => head.textContent)).toEqual([]);
+  });
+
   it("견줄 최댓값이 0 이하면 아무 칸도 칠하지 않는다", () => {
     renderTable([{ key: "r", label: "가상 행", values: [1, 2, 3, 4, 5] }], { max: 0 });
     expect(cellsOf("가상 행").every((cell) => !cell.hasAttribute("data-step") && cell.style.backgroundColor === "")).toBe(true);
@@ -235,20 +243,20 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
       "    caption class=\"sr-only\" \"비중 히트맵\"",
       "    thead",
       "      tr class=\"text-xs text-text-3\"",
-      "        th class=\"sticky left-0 bg-surface px-3 py-2 text-left font-medium\" scope=\"col\" \"종목\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2025-12-31\" \"25-12-31\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-03-31\" \"26-03-31\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-06-30\" \"26-06-30\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-09-30\" \"26-09-30\"",
+      "        th class=\"sticky left-0 break-keep bg-surface px-3 py-2 text-left font-medium\" scope=\"col\" \"종목\"",
+      "        th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2025-12-31\" \"25-12-31\"",
+      "        th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-03-31\" \"26-03-31\"",
+      "        th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-06-30\" \"26-06-30\"",
+      "        th class=\"break-keep px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-09-30\" \"26-09-30\"",
       "    tbody",
       "      tr",
-      "        th class=\"sticky left-0 bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC ALPHA CO\"",
+      "        th class=\"sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC ALPHA CO\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"5\" style=\"background-color: rgb(214, 159, 214); color: var(--bg);\" title=\"SYNTHETIC ALPHA CO · 2025-12-31\" \"10.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"4\" style=\"background-color: rgb(189, 107, 189); color: var(--bg);\" title=\"SYNTHETIC ALPHA CO · 2026-03-31\" \"8.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"3\" style=\"background-color: rgb(157, 63, 157); color: var(--text);\" title=\"SYNTHETIC ALPHA CO · 2026-06-30\" \"6.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"2\" style=\"background-color: rgb(124, 50, 124); color: var(--text);\" title=\"SYNTHETIC ALPHA CO · 2026-09-30\" \"4.0%\"",
       "      tr",
-      "        th class=\"sticky left-0 bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC BETA CO\"",
+      "        th class=\"sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC BETA CO\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2025-12-31\" \"<0.1%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2026-03-31\" \"2.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-06-30\" \"·\"",

@@ -3,27 +3,46 @@
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import {
-  Banner,
-  Card,
+  DataTable,
+  FilterList,
+  type InspectorContext,
+  InspectorFrame,
+  InspectorTrigger,
+  KpiStrip,
+  type PropertyItem,
+  PropertyList,
+  Skeleton,
+  SplitPane,
+} from "@/components/patterns";
+import {
+  Callout,
   EmptyState,
   ErrorState,
-  filterChipClasses,
   Loading,
-  Metric,
   PageHeader,
+  Panel,
   Select,
   SourceBadge,
-  Table,
 } from "@/components/ui";
-import { CheckIcon } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { consensusBars, securityNote } from "@/lib/consensus";
-import { EMPTY, formatCurrency, formatWeightPercent } from "@/lib/format";
-import { filerName, filerShortName } from "@/lib/holdings";
-import { isSelected, toggleSelection } from "@/lib/selection";
-import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
+import { EMPTY, formatCurrency, formatNumber, formatWeightPercent } from "@/lib/format";
+import {
+  consensusKpis,
+  consensusKpisPending,
+  consensusRowItems,
+  filerBadges,
+  institutionChoices,
+  type NewBuyRow,
+  newBuyRowItems,
+  participantsLine,
+  securityTitles,
+  selectionCountText,
+} from "@/lib/consensusScreen";
+import { effectiveSelection, toggleSelection } from "@/lib/selection";
+import type { ConsensusResponse, ConsensusRow, NewBuysResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
@@ -33,6 +52,11 @@ import { endpoints } from "@/lib/endpoints";
  * 여러 기관이 같은 분기에 공통 보유한 종목과, 동시 순매수/순매도가 몰린
  * 종목을 집계합니다. 기관마다 공시 분기가 다를 수 있으므로 기준 분기를
  * 고르면 그 분기를 공시한 기관만 참여합니다.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → 두 칸 틀(SplitPane — 오른쪽 칸 없음). 왼쪽(넓은 화면 13rem)은 '분석 대상' 거르기 목록
+ * (옛 파란 기관 칩 12개 — 넓은 화면 세로 목록·좁은 화면 태그 줄바꿈)과 '조건'(기준 분기·최소 공통 보유 기관 수), 가운데는 교집합 요약 KPI 띠(처음
+ * 읽는 동안은 같은 꼴의 자리표시) → '공통 보유 상위 종목' 막대 → '교집합 상세' 표 → 참여 기관 줄 → '이번 분기 공통 신규 매수'. 좁은 화면(lg 미만)은
+ * 한 칸으로 왼쪽 칸이 위입니다(접지 않음).
  */
 export default function ConsensusPage() {
   const institutions = useApi<{ institutions: { name: string; cik: string }[] }>(
@@ -45,15 +69,16 @@ export default function ConsensusPage() {
   const [minHolders, setMinHolders] = useState("2");
 
   const ciks = selected.length > 0 ? selected.join(",") : "";
-  const { data, loading, error, reload } = useApi<ConsensusResponse>(
-    endpoints.institution.consensus({ minHolders, topN: 40, ciks, reportDate }),
-  );
+  const consensus = useApi<ConsensusResponse>(endpoints.institution.consensus({ minHolders, topN: 40, ciks, reportDate }));
+  const { data, error, reload } = consensus;
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
   const usdKrw = useUsdKrw();
 
   const toggle = (cik: string) => {
     setSelected((previous) => toggleSelection(allCiks, previous, cik));
   };
+  // 보이는 고름(빈 목록 = 전체를 풀어 쓴 것) — 거르기 목록의 켬과 개수가 요청 ciks와 같은 규칙입니다(QA-003).
+  const effective = effectiveSelection(allCiks, selected);
 
   // 기준 분기 선택지는 응답에 딸려 옵니다. 고른 분기의 응답을 기다리는 동안 선택지가 '최신 분기' 하나로 줄면
   // 화면은 최신을 보이는데 요청은 고른 분기로 나갔습니다 — 마지막 목록을 씁니다(QA-047).
@@ -61,172 +86,227 @@ export default function ConsensusPage() {
   // 이름이 겹치는 행(CUSIP으로 갈린 같은 이름)만 막대 이름표에 구분자를 붙입니다(QA-114).
   const chartData = consensusBars(data?.rows ?? []);
 
+  // 교집합 요약 — 처음 읽는 동안(과 조건을 바꿔 다시 읽는 동안)은 같은 세 타일의 자리표시, 응답이 오면 값(저장본이 없으면 두지 않음).
+  const kpis = data?.available
+    ? consensusKpis(data, SOURCES.sec13f)
+    : firstLoadPending(consensus)
+      ? consensusKpisPending(SOURCES.sec13f)
+      : [];
+
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader title="기관 13F Money 교집합" description="여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도" />
 
-      <Card title="분석 대상" subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체).">
-        <div className="flex flex-wrap gap-2">
-          {(institutions.data?.institutions ?? []).map((entry) => {
-            const active = isSelected(allCiks, selected, entry.cik);
-            return (
-              <button
-                key={entry.cik}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggle(entry.cik)}
-                className={filterChipClasses(active)}
-              >
-                {active ? <CheckIcon size={14} /> : null}
-                {filerName(entry.name) ?? `CIK ${entry.cik}`}
-              </button>
-            );
-          })}
-        </div>
+      {/* 왼쪽 칸 — 분석 대상 기관(거르기 목록)과 조건. 좁은 화면은 한 칸으로 위에 둡니다(접지 않음 — 조작이 지금처럼 바로 보임). */}
+      <SplitPane
+        left={
+          <>
+            <Panel
+              title="분석 대상" count={selectionCountText(effective.length, allCiks.length) ?? undefined}
+              subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체)."
+            >
+              <FilterList
+                label="분석 대상 기관"
+                items={institutionChoices(institutions.data?.institutions)}
+                selected={effective}
+                onToggle={toggle}
+                selection="multiple"
+                narrow="wrap"
+                placeholder={
+                  institutions.error ? (
+                    <ErrorState message={institutions.error} onRetry={institutions.reload} />
+                  ) : firstLoadPending(institutions) ? (
+                    <Skeleton lines={4} label="기관 목록 불러오는 중" />
+                  ) : null
+                }
+                emptyText="고를 기관이 없습니다."
+              />
+            </Panel>
+            <Panel title="조건">
+              <div className="flex flex-wrap items-end gap-3 lg:flex-col lg:items-stretch">
+                <Select
+                  label="기준 분기"
+                  value={reportDate}
+                  onChange={setReportDate}
+                  options={[
+                    { value: "", label: "각 기관의 최신 분기" },
+                    ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
+                  ]}
+                />
+                <Select
+                  label="최소 공통 보유 기관 수"
+                  value={minHolders}
+                  onChange={setMinHolders}
+                  options={["2", "3", "4", "5"].map((value) => ({
+                    value,
+                    label: `${value}곳 이상`,
+                  }))}
+                />
+              </div>
+            </Panel>
+          </>
+        }
+      >
+        {error && <ErrorState message={error} onRetry={reload} />}
 
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <Select
-            label="기준 분기"
-            value={reportDate}
-            onChange={setReportDate}
-            options={[
-              { value: "", label: "각 기관의 최신 분기" },
-              ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
-            ]}
-          />
-          <Select
-            label="최소 공통 보유 기관 수"
-            value={minHolders}
-            onChange={setMinHolders}
-            options={["2", "3", "4", "5"].map((value) => ({
-              value,
-              label: `${value}곳 이상`,
-            }))}
-          />
-        </div>
-      </Card>
+        {data && !data.available && (
+          <Callout tone="warn">
+            조건을 만족하는 공통 보유 종목이 없습니다. 기준 분기나 최소 기관 수를 조정해 보세요.
+          </Callout>
+        )}
 
-      {loading && !data && <Loading label="교집합을 계산하는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
+        {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 띠 높이가 같게. */}
+        {kpis.length > 0 ? <KpiStrip label="교집합 요약" items={kpis} pendingMatchesValue /> : null}
 
-      {data && !data.available && (
-        <Banner tone="warn">
-          조건을 만족하는 공통 보유 종목이 없습니다. 기준 분기나 최소 기관 수를 조정해 보세요.
-        </Banner>
-      )}
+        {data?.available && (
+          <>
+            <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
+              <HorizontalBars
+                data={chartData}
+                unit="곳"
+                digits={0}
+                neutral
+                ariaLabel="공통 보유 상위 종목 — 보유 기관 수"
+                height={Math.max(260, chartData.length * 26)}
+              />
+            </Panel>
 
-      {data?.available && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="참여 기관" value={`${data.participantCount}곳`} />
-            <Metric label="교집합 종목" value={`${data.rows.length}개`} />
-            <Metric
-              label="기준 분기"
-              value={data.reportDate ?? "각 기관 최신"}
-            />
-          </div>
+            <Panel
+              title="교집합 상세" source={SOURCES.sec13f} count={`${data.rows.length.toLocaleString("ko-KR")}개`}
+              subtitle={`종목 이름을 누르면 보유 기관 목록과 함께 자세한 값을 봅니다. ${usdKrw.note}`}
+            >
+              <ConsensusTable rows={data.rows} krw={usdKrw} />
+            </Panel>
 
-          <Card title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
-            <HorizontalBars data={chartData} unit="곳" digits={0} neutral height={Math.max(260, chartData.length * 26)} />
-          </Card>
+            <p className="text-xs text-text-3">{participantsLine(data.participants)}</p>
+          </>
+        )}
 
-          <Card title="교집합 상세" source={SOURCES.sec13f} subtitle={usdKrw.note}>
-            <Table
-              rows={data.rows}
-              rowKey={(row) => row.key}
-              columns={[
-                { key: "name", header: "종목", render: (row) => <SecurityName row={row} /> },
-                {
-                  key: "holderCount",
-                  header: "보유 기관",
-                  align: "right",
-                  render: (row) => `${row.holderCount}곳`,
-                },
-                {
-                  key: "buy",
-                  header: "동시 매수",
-                  align: "right",
-                  render: (row) => (
-                    <span className={row.buyCount > 0 ? "text-up" : "text-text-3"}>
-                      {row.buyCount}
-                    </span>
-                  ),
-                },
-                {
-                  key: "sell",
-                  header: "동시 매도",
-                  align: "right",
-                  render: (row) => (
-                    <span className={row.sellCount > 0 ? "text-down" : "text-text-3"}>
-                      {row.sellCount}
-                    </span>
-                  ),
-                },
-                {
-                  key: "avgWeight",
-                  header: "평균 비중",
-                  align: "right",
-                  render: (row) => formatWeightPercent(row.avgWeight),
-                },
-                {
-                  key: "maxWeight",
-                  header: "최대 비중",
-                  align: "right",
-                  render: (row) => formatWeightPercent(row.maxWeight),
-                },
-                {
-                  key: "totalValue",
-                  header: "합산 평가액",
-                  align: "right",
-                  render: (row) => (
-                    <span className="flex flex-col items-end">
-                      <span>{formatCurrency(row.totalValue)}</span>
-                      {usdKrw.toKrw(row.totalValue) && (
-                        <span className="text-xs text-text-3">
-                          {usdKrw.toKrw(row.totalValue)}
-                        </span>
-                      )}
-                    </span>
-                  ),
-                },
-                {
-                  key: "holders",
-                  header: "보유 기관 목록",
-                  render: (row) => (
-                    <span className="flex flex-wrap gap-1">
-                      {row.holders.map((holder) => (
-                        <FilerBadge key={holder} name={holder} />
-                      ))}
-                    </span>
-                  ),
-                },
-              ]}
-            />
-          </Card>
-
-          <p className="text-xs text-text-3">
-            참여 기관: {data.participants.map((name) => filerName(name) ?? name).join(", ") || EMPTY}
-          </p>
-        </>
-      )}
-
-      <NewBuysCard reportDate={reportDate} />
+        <NewBuysCard reportDate={reportDate} />
+      </SplitPane>
     </div>
   );
 }
 
+/** 원/달러 병기 — 공용 환율 훅(useUsdKrw)이 돌려주는 것. */
+type UsdKrw = ReturnType<typeof useUsdKrw>;
+
 /**
- * 종목 이름과 그 아래 작은 글씨의 증권 구분자(CUSIP, 합친 행은 발행사). 행은 증권으로 갈리고 표시 이름은 겹칠 수
- * 있어(같은 이름의 다른 ETF, 클래스 표기가 갈려 두 행으로 남은 A·C주), 이름만 적으면 어느 행이 어느 증권인지 알 수
- * 없습니다(QA-114). 기관 포트폴리오 화면의 '종목' 칸과 같은 모양입니다.
+ * 교집합 상세 표 — 공용 표 + 검사 대화상자(늘 대화상자 — 일곱 칸 표라 옆 칸을 두면 표가 눌림, 섹터 표와 같은 판단). 종목 이름이 검사를 여는 줄 단추이고,
+ * 보유 기관 목록(배지)은 검사 칸으로 옮겼습니다 — 표에 두면 행이 배지 줄 수만큼 높아졌습니다(사용자 결정 거리 4 — 권장안 가). 검사는 받은 값만
+ * 보이고 새로 읽지 않습니다. 동시 매수·매도는 기관 수라 본문 잉크입니다(QA-703).
  */
-function SecurityName({ row }: { row: { key: string; name: string; cusip?: string | null } }) {
+function ConsensusTable({ rows, krw }: { rows: ConsensusRow[]; krw: UsdKrw }) {
+  const titles = securityTitles(rows);
+  return (
+    <InspectorFrame
+      label="교집합 종목"
+      layout="dialog"
+      titleOf={(key) => titles.get(key) ?? null}
+      renderDetail={(key) => {
+        const row = rows.find((entry) => entry.key === key);
+        return row ? <SecurityDetail items={consensusRowItems(row, krw)} filersLabel="보유 기관" filers={row.holders} /> : null;
+      }}
+    >
+      {(inspector) => (
+        <DataTable
+          caption="교집합 상세"
+          rows={rows}
+          rowKey={(row) => row.key}
+          scrollHint="overflow"
+          columns={[
+            { key: "name", header: "종목", rowHeader: true, className: "break-keep", cell: (row) => <SecurityName row={row} inspector={inspector} /> },
+            { key: "holderCount", header: "보유 기관", align: "right", cell: (row) => `${formatNumber(row.holderCount, 0)}곳` },
+            // 기관 몇 곳이라는 개수입니다 — 오르내린 값이 아니라 등락색(빨강·파랑)을 쓰지 않습니다(QA-703).
+            { key: "buy", header: "동시 매수", align: "right", cell: (row) => row.buyCount },
+            { key: "sell", header: "동시 매도", align: "right", cell: (row) => row.sellCount },
+            { key: "avgWeight", header: "평균 비중", align: "right", cell: (row) => formatWeightPercent(row.avgWeight) },
+            { key: "maxWeight", header: "최대 비중", align: "right", cell: (row) => formatWeightPercent(row.maxWeight) },
+            { key: "totalValue", header: "합산 평가액", align: "right", cell: (row) => moneyCell(row.totalValue, krw) },
+          ]}
+        />
+      )}
+    </InspectorFrame>
+  );
+}
+
+/** 공통 신규 매수 표 — 교집합 상세와 같은 틀(검사 대화상자), 기관 목록은 검사 칸에. 새로 담은 기관 수는 개수라 본문 잉크입니다(QA-703). */
+function NewBuysTable({ rows, krw }: { rows: NewBuyRow[]; krw: UsdKrw }) {
+  const titles = securityTitles(rows);
+  return (
+    <InspectorFrame
+      label="공통 신규 매수 종목"
+      layout="dialog"
+      titleOf={(key) => titles.get(key) ?? null}
+      renderDetail={(key) => {
+        const row = rows.find((entry) => entry.key === key);
+        return row ? <SecurityDetail items={newBuyRowItems(row, krw)} filersLabel="새로 담은 기관" filers={row.buyers} /> : null;
+      }}
+    >
+      {(inspector) => (
+        // 네 칸이지만 390에서 표 자연 폭(416px)이 패널 안쪽(332px)보다 넓어 오른쪽 칸이 안내 없이 가려졌습니다(브라우저 확인) — 넘침 안내를 둡니다
+        // (공용 표의 안내는 640px 최소 폭과 함께라 1024의 가운데 칸 482px에서도 좌우로 넘김).
+        <DataTable
+          caption="이번 분기 공통 신규 매수"
+          rows={rows}
+          rowKey={(row) => row.key}
+          scrollHint="overflow"
+          columns={[
+            { key: "name", header: "종목", rowHeader: true, className: "break-keep", cell: (row) => <SecurityName row={row} inspector={inspector} /> },
+            { key: "buyerCount", header: "새로 담은 기관", align: "right", cell: (row) => <span className="font-semibold">{formatNumber(row.buyerCount, 0)}곳</span> },
+            { key: "avgWeight", header: "평균 비중", align: "right", cell: (row) => formatWeightPercent(row.avgWeight) },
+            { key: "totalValue", header: "합산 평가액", align: "right", cell: (row) => moneyCell(row.totalValue, krw) },
+          ]}
+        />
+      )}
+    </InspectorFrame>
+  );
+}
+
+/** 합산 평가액 칸 — 달러(조·억 단위)와 그 아래 원화(환율을 알 때만). 값을 모르면 null(표가 '—'). */
+function moneyCell(value: number | null, krw: UsdKrw) {
+  const usd = formatCurrency(value);
+  if (usd === EMPTY) return null;
+  const won = krw.toKrw(value);
+  return won ? (
+    <span className="flex flex-col items-end">
+      <span>{usd}</span>
+      <span className="text-xs text-text-3">{won}</span>
+    </span>
+  ) : (
+    usd
+  );
+}
+
+/**
+ * 종목 이름(검사를 여는 줄 단추)과 그 아래 작은 글씨의 증권 구분자(CUSIP, 합친 행은 발행사). 행은 증권으로 갈리고 표시 이름은 겹칠 수
+ * 있어(같은 이름의 다른 ETF, 클래스 표기가 갈려 두 행으로 남은 A·C주), 이름만 적으면 어느 행이 어느 증권인지 알 수 없습니다(QA-114).
+ * 기관 포트폴리오 화면의 '종목' 칸과 같은 모양입니다.
+ */
+function SecurityName({ row, inspector }: { row: { key: string; name: string; cusip?: string | null }; inspector: InspectorContext }) {
   const note = securityNote(row);
   return (
-    <span className="flex flex-col">
-      <span className="text-text-2">{row.name}</span>
+    <span className="flex min-w-0 flex-col items-start">
+      <InspectorTrigger inspector={inspector} itemKey={row.key}>
+        {row.name}
+      </InspectorTrigger>
       {note && <span className="text-xs text-text-3">{note}</span>}
     </span>
+  );
+}
+
+/** 검사 칸 내용 — 속성 목록(lib/consensusScreen)과 기관 배지 목록. 받은 값만 보입니다(새로 읽지 않음). */
+function SecurityDetail({ items, filersLabel, filers }: { items: PropertyItem[]; filersLabel: string; filers: readonly string[] }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <PropertyList items={items} source={SOURCES.sec13f} />
+      <section aria-label={filersLabel} className="min-w-0">
+        <h3 className="mb-1 text-caption font-semibold text-text-2">
+          {filersLabel} <span className="font-normal tabular-nums text-text-3">{filers.length.toLocaleString("ko-KR")}곳</span>
+        </h3>
+        <FilerBadges names={filers} />
+      </section>
+    </div>
   );
 }
 
@@ -249,9 +329,10 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
   const usdKrw = useUsdKrw();
 
   return (
-    <Card
+    <Panel
       title="이번 분기 공통 신규 매수" source={SOURCES.sec13f}
-      subtitle={`여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다. ${usdKrw.note}`}
+      count={data?.available ? `${data.rows.length.toLocaleString("ko-KR")}개` : undefined}
+      subtitle={`여러 기관이 같은 분기에 처음 담은 종목 — 교집합보다 한 발 앞선 신호입니다. 종목 이름을 누르면 기관 목록과 함께 자세한 값을 봅니다. ${usdKrw.note}`}
       actions={
         <Select
           label="최소 기관 수"
@@ -272,65 +353,25 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
 
       {data?.available && (
         <>
-          <Table
-            rows={data.rows}
-            rowKey={(row) => row.key}
-            columns={[
-              { key: "name", header: "종목", render: (row) => <SecurityName row={row} /> },
-              {
-                key: "buyerCount",
-                header: "새로 담은 기관",
-                align: "right",
-                render: (row) => <span className="font-semibold text-up">{row.buyerCount}곳</span>,
-              },
-              {
-                key: "avgWeight",
-                header: "평균 비중",
-                align: "right",
-                render: (row) => formatWeightPercent(row.avgWeight),
-              },
-              {
-                key: "totalValue",
-                header: "합산 평가액",
-                align: "right",
-                render: (row) => (
-                  <span className="flex flex-col items-end">
-                    <span>{formatCurrency(row.totalValue)}</span>
-                    {usdKrw.toKrw(row.totalValue) && (
-                      <span className="text-xs text-text-3">
-                        {usdKrw.toKrw(row.totalValue)}
-                      </span>
-                    )}
-                  </span>
-                ),
-              },
-              {
-                key: "buyers",
-                header: "기관 목록",
-                render: (row) => (
-                  <span className="flex flex-wrap gap-1">
-                    {row.buyers.map((buyer) => (
-                      <FilerBadge key={buyer} name={buyer} />
-                    ))}
-                  </span>
-                ),
-              },
-            ]}
-          />
+          <NewBuysTable rows={data.rows} krw={usdKrw} />
           <p className="mt-2 text-xs text-text-3">
             기준 분기 {data.rows[0]?.reportDate ?? EMPTY} · {data.note}
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
-/** 기관 배지 — 짧은 이름(국기를 뗀 첫 낱말, lib/holdings.filerShortName), 전체 이름은 마우스 설명으로. */
-function FilerBadge({ name }: { name: string }) {
+/** 기관 배지 목록 — 짧은 이름(국기를 뗀 첫 낱말, lib/consensusScreen filerBadges), 전체 이름은 마우스 설명으로. */
+function FilerBadges({ names }: { names: readonly string[] }) {
   return (
-    <span title={filerName(name) ?? name}>
-      <SourceBadge>{filerShortName(name)}</SourceBadge>
-    </span>
+    <ul className="flex flex-wrap gap-1">
+      {filerBadges(names).map((badge) => (
+        <li key={badge.key} title={badge.full}>
+          <SourceBadge>{badge.short}</SourceBadge>
+        </li>
+      ))}
+    </ul>
   );
 }
