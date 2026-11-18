@@ -286,6 +286,12 @@ public class PaperStore {
     }
 
     /**
+     * 체결 하나와 그 주문(장중 기록 STOP의 되감기·확정 순자산 줄의 되감기가 함께 읽음 — ADR 0045). 주문 레코드는 그 행 그대로(상태 FILLED·근거 JSON 포함)입니다.
+     */
+    public record OrderFill(Order order, Fill fill) {
+    }
+
+    /**
      * 체결과 그 체결 봉(V17 {@code paper_fills.bar_at}·{@code fill_rung} — 미국 Claude 계좌2의 시각 지정 체결만 씀, 그 밖의 체결은 둘 다 null).
      * 체결 레코드({@link Fill})에는 이 두 칸이 없습니다 — 장부가 쓰는 체결 경로는 그대로이고, 실행 감사가 읽을 때만 함께 읽습니다.
      */
@@ -955,6 +961,23 @@ public class PaperStore {
                 });
     }
 
+    /**
+     * 상태의 현금·순자산·평가액·노출 넷과 {@code updated_at}만 바꿉니다(ADR 0045 — 한국 장중 기록 STOP). 마지막 관측·처리 시각(멱등 키)과 순자산 줄 날짜는
+     * 그대로 두어 밤 장부의 '이미 처리한 관측치' 판정과 결정 관문의 세션 판정이 바뀌지 않게 합니다({@link #upsertState}는 모든 칸을 덮음).
+     *
+     * @return 상태 행이 있어 바꿨으면 true(없는 책이면 false — 아무것도 바꾸지 않음)
+     */
+    public boolean updateStateValuation(String code, double cash, double nav, double equityValue, double exposurePct) {
+        return jdbc.update("UPDATE paper_book_state SET cash = ?, nav = ?, equity_value = ?, exposure_pct = ?, updated_at = now() "
+                + "WHERE book_code = ?", ps -> {
+                    ps.setBigDecimal(1, money(cash, "cash"));
+                    ps.setBigDecimal(2, money(nav, "nav"));
+                    ps.setBigDecimal(3, money(equityValue, "equity_value"));
+                    ps.setBigDecimal(4, money(exposurePct, "exposure_pct"));
+                    ps.setString(5, code);
+                }) == 1;
+    }
+
     // ------------------------------------------------------------------ 보유
     /** 한 책의 보유, ticker 순. */
     public List<Position> positions(String code) {
@@ -1176,6 +1199,19 @@ public class PaperStore {
             setInstant(ps, 1, filledAt);
             ps.setLong(2, id);
         });
+    }
+
+    /**
+     * 대기(PENDING) 주문 하나를 체결로 바꿉니다 — 대기일 때만 바꾸는 한 문장이라, 그사이 체결·취소·만료된 주문을 덮지 않습니다(ADR 0045 — 한국 장중 기록
+     * STOP. 부르는 쪽은 false면 그 트랜잭션을 되돌림). 밤 장부는 지금처럼 {@link #markOrderFilled}를 씁니다.
+     *
+     * @return 바꿨으면 true, 없거나 이미 대기가 아니면 false(아무것도 바꾸지 않음)
+     */
+    public boolean markOrderFilledIfPending(long id, Instant filledAt) {
+        return jdbc.update("UPDATE paper_orders SET status = 'FILLED', filled_at = ? WHERE id = ? AND status = 'PENDING'", ps -> {
+            setInstant(ps, 1, filledAt);
+            ps.setLong(2, id);
+        }) == 1;
     }
 
     /** 상태와 거절 사유를 그대로 씁니다(사유가 null이면 비움). */
@@ -1444,6 +1480,64 @@ public class PaperStore {
                         + "LEFT JOIN paper_fill_confirmations c ON c.fill_id = f.id "
                         + "WHERE f.book_code = ? AND NOT f.is_backfill AND c.fill_id IS NULL ORDER BY f.id",
                 (rs, rowNum) -> new UnconfirmedFill(fillOf(rs), rs.getString("timing")), code);
+    }
+
+    /** 장중 기록 STOP을 가르는 근거 조건 — 근거 {@code intradayFill.mode}가 ON(ADR 0045). SHADOW 대조 기록은 장부를 바꾸지 않아 들지 않습니다. */
+    private static final String INTRADAY_RECORDED = "o.source = 'STOP' AND o.status = 'FILLED' AND o.reason->'intradayFill'->>'mode' = 'ON'";
+
+    /**
+     * 그 책의 장중 기록 STOP 체결(ADR 0045) — 출처 STOP·상태 FILLED·근거 {@code intradayFill.mode = ON}이고 체결의 관측일(체결 봉 날짜)이 {@code after}보다
+     * 뒤인 것(null이면 날짜를 가리지 않음), 관측일·체결 번호 순. 실제 계좌·ISA 공개 창의 되감기(그 세션 밤 처리 전까지 대기로 봄)와 일시정지 표시가 읽습니다.
+     */
+    public List<OrderFill> intradayRecordedStops(String code, LocalDate after) {
+        List<Fill> fills = after == null
+                ? jdbc.query("SELECT " + prefixed("f.", FILL_COLUMNS) + " FROM paper_fills f JOIN paper_orders o ON o.id = f.order_id "
+                        + "WHERE f.book_code = ? AND " + INTRADAY_RECORDED + " ORDER BY f.observation_date, f.id", (rs, rowNum) -> fillOf(rs), code)
+                : jdbc.query("SELECT " + prefixed("f.", FILL_COLUMNS) + " FROM paper_fills f JOIN paper_orders o ON o.id = f.order_id "
+                        + "WHERE f.book_code = ? AND " + INTRADAY_RECORDED + " AND f.observation_date > ? ORDER BY f.observation_date, f.id",
+                        (rs, rowNum) -> fillOf(rs), code, Date.valueOf(after));
+        return withOrders(fills);
+    }
+
+    /**
+     * 그 책의 체결 가운데 관측일(체결 봉 날짜)이 {@code day}보다 뒤인 것과 그 주문, 체결 번호 순(사후 체결 포함 — 부르는 쪽이 가림). 금융위 D 순자산 줄의
+     * 확정이 'D 뒤 체결'을 볼 때 읽습니다(ADR 0045 — 그 체결이 장중 기록 STOP 매도뿐인지 주문 근거로 가름). 같은 이름의 {@link #fillsAfter}(시장·체결 번호 —
+     * 알림 자리)와 다른 읽기입니다.
+     */
+    public List<OrderFill> fillsObservedAfter(String code, LocalDate day) {
+        return withOrders(jdbc.query("SELECT " + FILL_COLUMNS + " FROM paper_fills WHERE book_code = ? AND observation_date > ? ORDER BY id",
+                (rs, rowNum) -> fillOf(rs), code, Date.valueOf(day)));
+    }
+
+    /**
+     * 그 책에서 장중 체결 대조 근거({@code reason.intradayFill} — ADR 0045, SHADOW·ON)가 있고 아직 밤 결과와 견주지 않은({@code intradayFill.check}가 없는)
+     * 대기가 아닌 주문(체결·만료·취소 — 밤 장부가 그 주문을 닫음), 최근 {@code days}일(DB 시각)에 만든 것만, 번호 순. 장중 감시 단계가 밤 처리 뒤 대조를 남길 때
+     * 읽습니다.
+     */
+    public List<Order> intradayFillsToCheck(String code, int days) {
+        return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE book_code = ? AND status <> 'PENDING' "
+                        + "AND reason->'intradayFill' IS NOT NULL AND reason->'intradayFill'->'check' IS NULL "
+                        + "AND created_at >= now() - make_interval(days => ?) ORDER BY id", orderMapper(), code, days);
+    }
+
+    /** 체결들에 그 주문을 붙임(체결 순서 그대로) — 주문은 한 번에 읽습니다. */
+    private List<OrderFill> withOrders(List<Fill> fills) {
+        if (fills.isEmpty()) {
+            return List.of();
+        }
+        Long[] ids = fills.stream().map(Fill::orderId).distinct().toArray(Long[]::new);
+        Map<Long, Order> orders = new java.util.HashMap<>();
+        jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE id = ANY(?)",
+                ps -> ps.setArray(1, ps.getConnection().createArrayOf("bigint", ids)), orderMapper())
+                .forEach(order -> orders.put(order.id(), order));
+        List<OrderFill> out = new ArrayList<>();
+        for (Fill fill : fills) {
+            Order order = orders.get(fill.orderId());
+            if (order != null) {
+                out.add(new OrderFill(order, fill));
+            }
+        }
+        return List.copyOf(out);
     }
 
     /**

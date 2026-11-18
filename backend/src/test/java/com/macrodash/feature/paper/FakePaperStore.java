@@ -165,6 +165,17 @@ class FakePaperStore extends PaperStore {
                 s.lastObservedAt(), s.lastProcessedCollectedAt(), s.lastNavTradingDate(), dbNow));
     }
 
+    @Override
+    public boolean updateStateValuation(String code, double cash, double nav, double equityValue, double exposurePct) {
+        BookState s = states.get(code);
+        if (s == null) {
+            return false;
+        }
+        states.put(code, new BookState(code, cash, nav, equityValue, exposurePct, s.lastObservedAt(), s.lastProcessedCollectedAt(),
+                s.lastNavTradingDate(), dbNow));
+        return true;
+    }
+
     // ------------------------------------------------------------------ 보유·재진입 금지
     @Override
     public List<Position> positions(String code) {
@@ -286,6 +297,16 @@ class FakePaperStore extends PaperStore {
     public void markOrderFilled(long id, Instant filledAt) {
         Order o = orders.get(id);
         orders.put(id, with(o, "FILLED", o.rejectReason(), filledAt));
+    }
+
+    @Override
+    public boolean markOrderFilledIfPending(long id, Instant filledAt) {
+        Order o = orders.get(id);
+        if (o == null || !"PENDING".equals(o.status())) {
+            return false;
+        }
+        orders.put(id, with(o, "FILLED", o.rejectReason(), filledAt));
+        return true;
     }
 
     @Override
@@ -469,6 +490,33 @@ class FakePaperStore extends PaperStore {
     public Optional<LocalDate> latestFillDate(String code) {
         return fills.values().stream().filter(f -> f.bookCode().equals(code)).map(Fill::observationDate)
                 .filter(java.util.Objects::nonNull).max(Comparator.naturalOrder());
+    }
+
+    @Override
+    public List<OrderFill> intradayRecordedStops(String code, LocalDate after) {
+        return fills.values().stream().filter(f -> f.bookCode().equals(code)
+                        && (after == null || (f.observationDate() != null && f.observationDate().isAfter(after))))
+                .map(f -> new OrderFill(orders.get(f.orderId()), f))
+                .filter(of -> of.order() != null && "STOP".equals(of.order().source()) && "FILLED".equals(of.order().status())
+                        && of.order().reason() != null && "ON".equals(of.order().reason().path("intradayFill").path("mode").asString(null)))
+                .sorted(Comparator.comparing((OrderFill of) -> of.fill().observationDate()).thenComparingLong(of -> of.fill().id()))
+                .toList();
+    }
+
+    @Override
+    public List<OrderFill> fillsObservedAfter(String code, LocalDate day) {
+        return fills.values().stream().filter(f -> f.bookCode().equals(code) && f.observationDate() != null
+                        && f.observationDate().isAfter(day))
+                .map(f -> new OrderFill(orders.get(f.orderId()), f)).filter(of -> of.order() != null).toList();
+    }
+
+    @Override
+    public List<Order> intradayFillsToCheck(String code, int days) {
+        Instant since = dbNow.minus(java.time.Duration.ofDays(days));
+        return orders.values().stream().filter(o -> o.bookCode().equals(code) && !"PENDING".equals(o.status())
+                        && o.reason() != null && o.reason().has("intradayFill") && !o.reason().path("intradayFill").has("check")
+                        && (o.createdAt() == null || !o.createdAt().isBefore(since)))
+                .toList();
     }
 
     @Override

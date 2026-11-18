@@ -555,6 +555,103 @@ class PaperStoreDbTest {
                 .as("주문 칸을 그대로 읽음").containsExactly(java.time.LocalTime.of(10, 30), null);
     }
 
+    @Test
+    @DisplayName("ADR 0045 장중 기록 STOP의 쓰기·읽기: 대기일 때만 체결로 바꿈(두 번째·취소된 주문은 false), 상태는 현금·순자산·평가액·노출 넷만(마지막 관측·처리·"
+            + "순자산 줄 날짜 그대로, 없는 책은 false), 장중 기록 STOP 읽기는 근거 intradayFill.mode = ON(jsonb)·출처 STOP·FILLED·관측일 > 기준(null이면 전부)만, "
+            + "D 뒤 체결 읽기는 관측일 > D인 체결과 그 주문, 대조 남은 주문은 근거가 있고 check가 없는 대기 아닌 주문")
+    void intradayRecordedStopReadsAndWrites() {
+        store.insertBookIfAbsent(new PaperStore.Book(BOOK, "RULES", "한국 책", 100_000_000, null, "ACTIVE", null,
+                PaperStore.Book.MARKET_KR, PaperStore.Book.CURRENCY_KRW));
+        Instant observed = Instant.parse("2026-10-22T12:00:00Z");
+        Instant processed = Instant.parse("2026-10-22T12:01:00Z");
+        store.upsertState(new PaperStore.BookState(BOOK, 1_000_000, 2_000_000, 1_000_000, 50, observed, processed, DAY.minusDays(1), null));
+        assertThat(store.updateStateValuation(BOOK, 1_234_567.1234, 2_100_000.5, 865_433.3766, 41.2123)).isTrue();
+        PaperStore.BookState state = store.state(BOOK).orElseThrow();
+        assertThat(state.cash()).isEqualTo(1_234_567.1234);
+        assertThat(state.nav()).isEqualTo(2_100_000.5);
+        assertThat(state.equityValue()).isEqualTo(865_433.3766);
+        assertThat(state.exposurePct()).isEqualTo(41.2123);
+        assertThat(state.lastObservedAt()).as("마지막 관측 그대로").isEqualTo(observed);
+        assertThat(state.lastProcessedCollectedAt()).as("멱등 키 그대로").isEqualTo(processed);
+        assertThat(state.lastNavTradingDate()).as("순자산 줄 날짜 그대로").isEqualTo(DAY.minusDays(1));
+        assertThat(store.updateStateValuation(OTHER_BOOK, 1, 1, 0, 0)).as("상태 행이 없는 책").isFalse();
+
+        Instant early = Instant.parse("2001-01-01T00:00:00Z");
+        long pending = store.insertOrder(stop("AAA", "PENDING", null, early));
+        Instant filledAt = Instant.parse("2026-10-23T00:16:20Z");
+        assertThat(store.markOrderFilledIfPending(pending, filledAt)).isTrue();
+        assertThat(store.order(pending).orElseThrow().status()).isEqualTo("FILLED");
+        assertThat(store.order(pending).orElseThrow().filledAt()).isEqualTo(filledAt);
+        assertThat(store.markOrderFilledIfPending(pending, filledAt.plusSeconds(60))).as("이미 체결 — 덮지 않음").isFalse();
+        assertThat(store.order(pending).orElseThrow().filledAt()).isEqualTo(filledAt);
+        long cancelled = store.insertOrder(stop("BBB", "PENDING", null, early));
+        assertThat(store.cancelPendingOrder(cancelled, "일시정지")).isTrue();
+        assertThat(store.markOrderFilledIfPending(cancelled, filledAt)).as("취소된 주문").isFalse();
+        assertThat(store.order(cancelled).orElseThrow().status()).isEqualTo("CANCELLED");
+        assertThat(store.markOrderFilledIfPending(Long.MAX_VALUE, filledAt)).as("없는 주문").isFalse();
+
+        LocalDate d = DAY;                       // 장부가 처리한 마지막 세션
+        LocalDate s = d.plusDays(1);             // 장중 기록 세션
+        long on = filledStop("CCC", Map.of("mode", "ON", "recordedAt", "2026-10-24T00:16:20Z"), s, early);
+        long onOld = filledStop("DDD", Map.of("mode", "ON"), d, early.plusSeconds(1));
+        filledStop("EEE", Map.of("mode", "SHADOW"), s, early.plusSeconds(2));                 // 대조 기록만 — 장부를 바꾸지 않음
+        filledStop("FFF", null, s, early.plusSeconds(3));                                        // 밤 체결 STOP
+        long claude = store.insertOrder(new PaperStore.Order(0, BOOK, null, "GGG", "SELL", null, null, null, "MARKET", "CLAUDE",
+                "FILLED", null, MAPPER.valueToTree(Map.of("intradayFill", Map.of("mode", "ON"))), d, early.plusSeconds(4), d.plusDays(3),
+                early.plusSeconds(4)));
+        store.insertFill(krFill(claude, "GGG", s));                                              // 출처가 STOP이 아님
+        store.insertOrder(stop("HHH", "PENDING", Map.of("mode", "ON"), early.plusSeconds(5)));  // 대기 — 체결이 없음
+
+        assertThat(store.intradayRecordedStops(BOOK, d)).extracting(f -> f.order().id()).as("관측일 > D").containsExactly(on);
+        assertThat(store.intradayRecordedStops(BOOK, null)).extracting(f -> f.order().id()).as("기준 없음 — 관측일·번호 순")
+                .containsExactly(onOld, on);
+        assertThat(store.intradayRecordedStops(BOOK, s)).isEmpty();
+        PaperStore.OrderFill read = store.intradayRecordedStops(BOOK, d).get(0);
+        assertThat(read.fill().orderId()).isEqualTo(on);
+        assertThat(read.fill().observationDate()).isEqualTo(s);
+        assertThat(read.order().reason().path("intradayFill").path("recordedAt").asString()).isEqualTo("2026-10-24T00:16:20Z");
+        assertThat(read.order().status()).isEqualTo("FILLED");
+        assertThat(store.intradayRecordedStops(OTHER_BOOK, null)).isEmpty();
+
+        List<PaperStore.OrderFill> after = store.fillsObservedAfter(BOOK, d);
+        assertThat(after).extracting(f -> f.order().ticker()).as("관측일 > D인 체결 전부(근거·출처와 상관없이), 체결 번호 순")
+                .containsExactly("CCC", "EEE", "FFF", "GGG");
+        assertThat(after.get(1).order().reason().path("intradayFill").path("mode").asString()).isEqualTo("SHADOW");
+        assertThat(store.fillsObservedAfter(BOOK, s)).isEmpty();
+
+        assertThat(store.intradayFillsToCheck(BOOK, 30000)).extracting(PaperStore.Order::ticker).as("근거가 있고 대기가 아님")
+                .containsExactly("CCC", "DDD", "EEE", "GGG");
+        PaperStore.Order checked = store.order(on).orElseThrow();
+        tools.jackson.databind.node.ObjectNode reason = (tools.jackson.databind.node.ObjectNode) checked.reason().deepCopy();
+        ((tools.jackson.databind.node.ObjectNode) reason.get("intradayFill")).putObject("check").put("match", true);
+        store.updateOrderReason(on, reason);
+        assertThat(store.intradayFillsToCheck(BOOK, 30000)).extracting(PaperStore.Order::ticker).as("check를 남긴 주문은 빠짐")
+                .containsExactly("DDD", "EEE", "GGG");
+        assertThat(store.intradayFillsToCheck(BOOK, 1)).as("최근 하루 — 2001년에 만든 주문은 빠짐").isEmpty();
+    }
+
+    private static PaperStore.Order stop(String ticker, String status, Map<String, Object> intradayFill, Instant createdAt) {
+        Map<String, Object> reason = new java.util.LinkedHashMap<>();
+        reason.put("stopMode", "INTRADAY_WATCH");
+        if (intradayFill != null) {
+            reason.put("intradayFill", intradayFill);
+        }
+        return new PaperStore.Order(0, BOOK, null, ticker, "SELL", null, null, null, "MARKET", "STOP", status, null,
+                MAPPER.valueToTree(reason), DAY.minusDays(1), createdAt, DAY.plusDays(1), "FILLED".equals(status) ? createdAt : null);
+    }
+
+    private long filledStop(String ticker, Map<String, Object> intradayFill, LocalDate observation, Instant createdAt) {
+        long id = store.insertOrder(stop(ticker, "FILLED", intradayFill, createdAt));
+        store.insertFill(krFill(id, ticker, observation));
+        return id;
+    }
+
+    private static PaperStore.Fill krFill(long orderId, String ticker, LocalDate observation) {
+        return new PaperStore.Fill(0, orderId, BOOK, ticker, "SELL", 10, 70_000, 70_000, 5, 700_000,
+                observation.atStartOfDay(java.time.ZoneOffset.UTC).toInstant(), observation, "TOSS_1M_AT", false, null,
+                new java.math.BigDecimal("105.0000"), new java.math.BigDecimal("1400.0000"), new java.math.BigDecimal("350.0000"));
+    }
+
     private static PaperStore.Order claudeOrder(String code, String ticker, String timing, String status, LocalDate asOf,
                                                 Instant createdAt) {
         return new PaperStore.Order(0, code, null, ticker, "BUY", null, 5.0, null, timing, "CLAUDE", status, null, null,
