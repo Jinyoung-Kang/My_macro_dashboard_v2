@@ -169,7 +169,7 @@ function holdingColumns(
       header: "종목",
       rowHeader: true,
       // 옆 칸 배치에서는 공백 없는 긴 낱말(회사 이름)도 비상으로 꺾습니다(wrap-anywhere) — 문턱 가까운 폭(표 532px 안팎)에서 표가 넘치지 않게.
-      // 1440(표 598px)에서는 이름 칸이 가장 긴 낱말보다 넓어 꺾이지 않습니다.
+      // 1440(표 598px)에서도 QA 자료 12기관 보유 줄 가운데 'STMICROELECTRONICS' 한 낱말은 이름 칸 안에서 꺾입니다(1374에서는 80낱말, 표 넘침은 0px — 693f9b35 본문).
       cell: ({ holding }) => (
         <span className={`flex flex-col items-start${side ? " wrap-anywhere" : ""}`}>
           {/* 이름을 누르면 그 종목의 주가·정보 팝업 창(사용자 요청 2026-11-18 — 티커 없는 줄은 공시 이름으로 찾은 후보를 고름) */}
