@@ -17,7 +17,7 @@ import { TickerQuickView } from "../TickerQuickView";
 afterEach(() => cleanup());
 
 describe("QA-738 — 종목 글 단추의 누름 자리", () => {
-  it.fails("좁은 화면 높이·폭 44px, 넓은 화면 24px(공용 줄 단추 조각) — 한 글자 코드도", () => {
+  it("좁은 화면 높이·폭 44px, 넓은 화면 24px(공용 줄 단추 조각) — 한 글자 코드도", () => {
     render(<TickerQuickView market="US" code="F">F</TickerQuickView>);
     const button = screen.getByRole("button", { name: "F" });
     const classes = button.className.split(/\s+/);
