@@ -569,6 +569,36 @@ describe("스타일 — 기관별 성격 표와 검사 칸", () => {
   });
 });
 
+describe("스타일 — 기관별 성격을 처음 읽는 동안 값이 온 뒤의 꼴로 자리를 잡는다(QA-715)", () => {
+  // 수정 전 실패(plain it): { rows: 0, subtitle: false } — 처음 읽는 동안 패널 본문은 '13F 저장본을 읽는 중…' 한 줄(68px)이고 부제가 없어, 값이 오면 부제(응답 글 +
+  // 안내 — 1024 이상 두 줄)와 표(1440 640px·390 1,195px)가 생기며 아래 '기관 간 유사도'·'포트폴리오 위험'을 밀었음(검토 자기 빌드 CLS 1440 0.5199).
+  it.fails("표 꼴 자리(머리 + 줄 12)와 값이 온 뒤와 같은 부제 — 응답 글(note)은 부제가 아니라 표 아래", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    const view = render(<GuruPage />);
+    const panel = screen.getByRole("heading", { level: 2, name: "기관별 성격" }).closest("section") as HTMLElement;
+    const pending = within(panel).queryByRole("status", { name: "기관별 성격 불러오는 중" });
+    const hint = "기관 이름을 누르면 소개·HHI·수집 분기 수와 기관 상세 링크를 봅니다.";
+    expect({
+      rows: pending ? pending.querySelectorAll("li").length : 0,
+      subtitle: within(panel).queryByText(hint) !== null,
+    }).toEqual({ rows: 12, subtitle: true });
+    view.unmount();
+
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles"
+        ? Promise.resolve({ available: true, note: "합성 응답 글 — 13F 한계", rows: [{ cik: "0000000031", key: "a", name: "가상 자산운용", desc: "", reportDate: "2026-06-30",
+            totalValue: 1e9, holdingCount: 10, effectiveHoldings: 5.5, hhi: 0.18, top10Weight: 90, turnover: 3, quarterCount: 2 }] })
+        : new Promise(() => {}));
+    render(<GuruPage />);
+    await screen.findByRole("button", { name: "가상 자산운용" });
+    const loaded = screen.getByRole("heading", { level: 2, name: "기관별 성격" }).closest("section") as HTMLElement;
+    const subtitle = within(loaded).getByText(hint);
+    expect(subtitle.textContent).toBe(hint);
+    const note = within(loaded).getByText("합성 응답 글 — 13F 한계");
+    expect(note.compareDocumentPosition(within(loaded).getByRole("table")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+});
+
 describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기관 표·'/' 표지", () => {
   it("위험 지표는 KPI 띠 여덟 타일(첫 타일 보조 글 '표본 n일 · 시작 ~ 끝'), 모르는 값은 '—'(0으로 채우지 않음)", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
