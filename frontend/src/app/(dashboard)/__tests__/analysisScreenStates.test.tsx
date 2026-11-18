@@ -521,3 +521,43 @@ describe("스타일 — 기관별 성격 표와 검사 칸", () => {
     expect(screen.queryByRole("table", { name: "기관별 성격" })).toBeNull();
   });
 });
+
+describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기관 표·'/' 표지", () => {
+  it("위험 지표는 KPI 띠 여덟 타일(첫 타일 보조 글 '표본 n일 · 시작 ~ 끝'), 모르는 값은 '—'(0으로 채우지 않음)", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/guru/risk")
+        ? Promise.resolve(riskBody({ metrics: { volatility: 14.2, var95: -1.13, var99: null, es95: -1.63, es99: -2.27, maxDrawdown: 7.64, beta: 0.82, trackingError: 6.1,
+          samples: 250, from: "2025-11-04", to: "2026-11-04" } }))
+        : new Promise(() => {}));
+    render(<GuruPage />);
+    const strip = await screen.findByRole("region", { name: "위험 지표" });
+    const tiles = within(strip).getAllByRole("group");
+    expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual([
+      "연율 변동성", "베타 (vs SPY)", "추적오차 (연율)", "최대낙폭", "VaR (95%)", "VaR (99%)", "ES (95%)", "ES (99%)",
+    ]);
+    expect(tiles[0].textContent).toContain("14.20%");
+    expect(tiles[0].textContent).toContain("표본 250일 · 2025-11-04 ~ 2026-11-04");
+    expect(tiles[5].textContent).toContain("값 없음");
+    expect(tiles[5].textContent).not.toContain("0.00");
+    // 등락색 없음 — 위험의 크기라 본문 잉크.
+    expect(strip.querySelectorAll(".text-up, .text-down")).toHaveLength(0);
+  });
+
+  it("보유 기관 검색 결과는 공용 표(개수 줄 'n건'), 입력은 셸 '/' 표지 — 화면에 하나(교집합·스코어카드에는 없음)", async () => {
+    api.apiGetShared.mockImplementation((path: string) => (path.startsWith("/api/guru/holders") ? Promise.resolve(holders()) : new Promise(() => {})));
+    const view = render(<GuruPage />);
+    const input = screen.getByPlaceholderText("NVIDIA");
+    expect(document.querySelectorAll("[data-shell-filter]")).toHaveLength(1);
+    expect(input.hasAttribute("data-shell-filter")).toBe(true);
+    fireEvent.change(input, { target: { value: QUERY } });
+    fireEvent.click(screen.getByRole("button", { name: "찾기" }));
+    const table = await screen.findByRole("table", { name: "이 종목을 누가 들고 있나 — 찾은 보유 줄" });
+    expect(within(table).getAllByText("CUSIP 000000201")).toHaveLength(2);
+    const card = screen.getByRole("heading", { name: "이 종목을 누가 들고 있나" }).closest("section") as HTMLElement;
+    expect(within(card).getByText("2건")).toBeTruthy();
+    view.unmount();
+
+    render(<ConsensusPage />);
+    expect(document.querySelectorAll("[data-shell-filter]")).toHaveLength(0);
+  });
+});

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { HeatmapTable, HorizontalBars } from "@/components/charts";
-import { DataTable, Empty, InspectorFrame, InspectorTrigger, PropertyList } from "@/components/patterns";
+import { DataTable, Empty, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList } from "@/components/patterns";
 import {
   Button,
   buttonClasses,
@@ -13,19 +13,16 @@ import {
   inputClasses,
   LINK_CLASSES,
   Loading,
-  Metric,
   PageHeader,
   Panel,
   Select,
-  SourceBadge,
-  Table,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
-import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
+import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
@@ -40,6 +37,9 @@ import {
   profileItems,
   profileName,
   profileTitle,
+  riskInstitutionName,
+  riskKpis,
+  signedUnitText,
   similarityHeatmap,
   similarityMax,
   similarityPairs,
@@ -424,39 +424,12 @@ function RiskCard() {
         </Callout>
       )}
 
-      {/* 값은 손실·변동 폭이라 등락색 없이 본문 잉크, 음수(VaR·ES는 손실이라 음수)는 −(U+2212)(QA-709). */}
+      {/* 위험 지표 KPI 띠(lib/styleScreen riskKpis) — 값은 위험의 크기라 등락색 없이 본문 잉크, 음수(VaR·ES는 손실이라 음수)는 −(U+2212)(QA-709),
+          단위는 값 옆 작은 글. 첫 타일 보조 글의 날짜는 꺾지 않습니다(keepDates). 출처는 이 패널 머리가 적습니다. */}
       {metrics && (
-        <>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric
-              label="연율 변동성"
-              value={withMinusSign(formatWithUnit(metrics.volatility, 2, "%"))}
-              caption={`표본 ${metrics.samples}일 · ${metrics.from} ~ ${metrics.to}`}
-            />
-            <Metric
-              label={`베타 (vs ${data!.benchmark})`}
-              value={withMinusSign(formatNumber(metrics.beta, 2))}
-              caption="1.0이면 벤치마크와 같은 폭으로 움직였다는 뜻"
-            />
-            <Metric
-              label="추적오차 (연율)"
-              value={withMinusSign(formatWithUnit(metrics.trackingError, 2, "%"))}
-              caption="벤치마크와 얼마나 달랐나 — 좋고 나쁨은 말하지 않습니다"
-            />
-            <Metric
-              label="최대낙폭"
-              value={withMinusSign(formatWithUnit(metrics.maxDrawdown, 2, "%"))}
-              caption="구간 내 고점 대비 최대 하락"
-            />
-          </div>
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="VaR (95%)" value={withMinusSign(formatWithUnit(metrics.var95, 2, "%"))} caption="일일 최대 예상 손실" />
-            <Metric label="VaR (99%)" value={withMinusSign(formatWithUnit(metrics.var99, 2, "%"))} caption="극단 상황" />
-            <Metric label="ES (95%)" value={withMinusSign(formatWithUnit(metrics.es95, 2, "%"))} caption="VaR 초과 시 평균 손실" />
-            <Metric label="ES (99%)" value={withMinusSign(formatWithUnit(metrics.es99, 2, "%"))} caption="VaR 초과 시 평균 손실" />
-          </div>
-        </>
+        <div className="mt-4">
+          <KpiStrip label="위험 지표" items={riskKpis(metrics, data!.benchmark)} keepDates />
+        </div>
       )}
 
       {(data?.sectors?.length ?? 0) > 0 && (
@@ -470,6 +443,7 @@ function RiskCard() {
             digits={1}
             valueName="비중"
             neutral
+            ariaLabel={`${riskInstitutionName(profiles.data?.rows, cik)} 섹터 노출 비중`}
             height={Math.max(200, data!.sectors!.length * 28)}
           />
         </div>
@@ -478,14 +452,18 @@ function RiskCard() {
       {(data?.contributions?.length ?? 0) > 0 && (
         <div className="mt-5">
           <h3 className="mb-2 text-xs font-semibold text-text-2">종목별 위험 기여</h3>
-          <Table
+          <DataTable
+            caption="종목별 위험 기여"
             rows={data!.contributions!}
             rowKey={(row) => row.ticker}
+            scrollHint="overflow"
             columns={[
               {
                 key: "name",
                 header: "종목",
-                render: (row) => (
+                rowHeader: true,
+                className: "break-keep",
+                cell: (row) => (
                   <span className="flex flex-col">
                     <span className="text-text-2">{row.name}</span>
                     <span className="text-xs text-text-3">
@@ -495,31 +473,17 @@ function RiskCard() {
                   </span>
                 ),
               },
-              {
-                key: "weight",
-                header: "비중",
-                align: "right",
-                render: (row) => formatWeightPercent(row.weight),
-              },
-              {
-                key: "volatility",
-                header: "개별 변동성",
-                align: "right",
-                render: (row) => formatWithUnit(row.volatility, 1, "%"),
-              },
+              { key: "weight", header: "비중", align: "right", cell: (row) => formatWeightPercent(row.weight) },
+              { key: "volatility", header: "개별 변동성", align: "right", cell: (row) => formatWithUnit(row.volatility, 1, "%") },
               {
                 key: "contribution",
                 header: "위험 기여",
                 align: "right",
                 // 포트폴리오 변동성에 보탠 몫이라 오르내린 값이 아닙니다 — 등락색 없이 본문 잉크, 음수(분산 효과로 줄인 몫)는 −(U+2212)(QA-704).
-                render: (row) => <span className="font-semibold">{withMinusSign(formatWithUnit(row.contribution, 2, "%p"))}</span>,
+                cell: (row) =>
+                  row.contribution === null ? null : <span className="font-semibold">{signedUnitText(row.contribution, 2, "%p")}</span>,
               },
-              {
-                key: "share",
-                header: "기여 비중",
-                align: "right",
-                render: (row) => withMinusSign(formatWithUnit(row.share, 1, "%")),
-              },
+              { key: "share", header: "기여 비중", align: "right", cell: (row) => signedUnitText(row.share, 1, "%") },
             ]}
           />
           <ReadingGuide topic="위험 기여">
@@ -566,10 +530,12 @@ function HoldersCard() {
       >
         <label className="flex flex-col gap-1">
           <span className="text-xs text-text-3">종목명(일부 또는 전체)</span>
+          {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. */}
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="NVIDIA"
+            data-shell-filter=""
             className={inputClasses("sm")}
           />
         </label>
@@ -598,42 +564,30 @@ function HoldersCard() {
               더 길게 적어 좁히세요.
             </p>
           )}
-          <Table
-            rows={data!.rows}
-            rowKey={(row, index) => `${row.cik}-${row.cusip}-${index}`}
+          {/* 같은 기관·CUSIP 줄이 둘 이상일 수 있어(응답에 줄을 가르는 칸이 없음) 받은 차례를 키에 넣습니다(옛 표와 같은 키). */}
+          <DataTable
+            caption="이 종목을 누가 들고 있나 — 찾은 보유 줄"
+            rows={data!.rows.map((row, index) => ({ ...row, key: `${row.cik}-${row.cusip}-${index}` }))}
+            rowKey={(row) => row.key}
+            count
+            scrollHint="overflow"
             columns={[
-              { key: "institution", header: "기관", render: (row) => filerName(row.institution) ?? `CIK ${row.cik}` },
+              { key: "institution", header: "기관", rowHeader: true, className: "break-keep", cell: (row) => filerName(row.institution) ?? `CIK ${row.cik}` },
               {
                 key: "name",
                 header: "종목",
-                render: (row) => (
+                className: "break-keep",
+                cell: (row) => (
                   <span className="flex flex-col">
                     <span className="text-text-2">{row.name}</span>
                     <span className="text-xs text-text-3">CUSIP {row.cusip}</span>
                   </span>
                 ),
               },
-              {
-                key: "weight",
-                header: "비중",
-                align: "right",
-                render: (row) => (
-                  <span className="font-semibold">{formatWeightPercent(row.weight)}</span>
-                ),
-              },
-              {
-                key: "value",
-                header: "평가액",
-                align: "right",
-                render: (row) => formatCurrency(row.value),
-              },
-              {
-                key: "reportDate",
-                header: "기준 분기",
-                // 날짜는 접지 않습니다 — 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
-                className: "whitespace-nowrap",
-                render: (row) => <SourceBadge>{row.reportDate}</SourceBadge>,
-              },
+              { key: "weight", header: "비중", align: "right", cell: (row) => <span className="font-semibold">{formatWeightPercent(row.weight)}</span> },
+              { key: "value", header: "평가액", align: "right", cell: (row) => formatCurrency(row.value) },
+              // 날짜는 접지 않습니다 — 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
+              { key: "reportDate", header: "기준 분기", className: "whitespace-nowrap", cell: (row) => row.reportDate },
             ]}
           />
         </div>
