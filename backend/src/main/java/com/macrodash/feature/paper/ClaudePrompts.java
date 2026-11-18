@@ -132,6 +132,9 @@ final class ClaudePrompts {
      * 장중 확인 절(c2-2 — 출력 절 앞). 아침 결정의 {@code checkpoint} 요청과 장중 확인 응답의 규칙을 함께 적습니다 — 장중 확인 호출도 같은 시스템
      * 프롬프트(c2-2 렌더링)를 씁니다. 확인 시각 목록은 {@code ExecutionSection#CHECKPOINT_TIMES}와 같은 문장입니다({@code DecisionTimingsLockTest}).
      * '실시간'이라는 말은 쓰지 않습니다(계좌2 명세 §7-2의 3 — 잰 지연이 생기기 전).
+     *
+     * <p>끈 판 고정 글이라 바이트 그대로 둡니다(고정본 {@code render-us-claude2-c2-v0-default.txt}). 그 안의 MARKET 괄호 글('생성 + 60초가 지난 첫 분')은
+     * ADR 0044 뒤 실제 체결 시점(생성 뒤 처음 시작하는 분)과 다른 알려진 차이입니다 — 끈 판을 쓰지 않는 동안 그대로(ADR 0044 결정 D2).
      */
     static final String CLAUDE2_CHECKPOINT_SECTION = """
             ## 장중 확인(고정)
@@ -190,7 +193,7 @@ final class ClaudePrompts {
             - 이 결정의 응답 checkpoints에 항목을 적으면 목표 세션(13_execution.session) 장중 그 시각에 다시 부른다 — 세션당 13_execution.intraday.maxPerSession번까지다(0이면 받지 않는다). 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 호출마다 비용이 드니 그 시각에 판단할 것이 분명할 때만 적고, 필요 없으면 checkpoints를 비운다.
             - 항목은 at(뉴욕 시각 HH:MM — 13_execution.intraday의 firstEt~lastEt 안, 보통 날 09:40~15:30 ET), feed, watch, question(그때 판단할 것, 300자 이내)이다. 두 시각은 20분 이상 떨어져야 한다. feed는 MINUTE(watch의 감시 종목 10개 이하 + 보유·대기 종목의 1분봉, 5분마다 수집, 잰 지연을 함께 줌 — watch에 한 종목 이상) 또는 HOURLY(유니버스 전 종목의 시간별 관측치, 최대 60분 묵음)다. watch는 8_prices 종목이나 보유 종목이다. 규칙에 맞지 않는 항목만 버려지고(CHECKPOINT_INVALID) 이 결정의 주문 판정은 그대로다.
             - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 자료가 오는 대로 체결한다.
-            - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 마감 5분 전부터는 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 확정 종가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
+            - 장중 판단 주문의 timing은 MARKET(응답 뒤 주문을 만든 다음 처음 시작하는 분의 1분봉 시가 — 1분 안, 마감 5분 전부터는 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 확정 종가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
             - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
             - 13_execution.intraday.guarantee가 있으면 그 세션에 남은 예약이 없고 부른 판단이 minPerSession번보다 적을 때 코드가 그 시각(보통 날 12:30 ET)에 한 번 부르고(보장), events가 있으면 보유 종목·지수(SPY)가 크게 움직이거나 보유 종목이 트레일링 스탑가에 가까워질 때 코드가 가장 이른 남은 예약을 앞당기거나 판단을 하나 더한다(사건 — 세션당 횟수·간격 안). 그렇게 부른 판단의 패킷은 그 까닭(1_basis.origin·3_request.trigger)을 싣는다.
             """;
@@ -373,6 +376,9 @@ final class ClaudePrompts {
      * 한국 계좌2의 장중 확인 절(단계 2b — 명세 2026-11-02 §5·§10, 체결 절 다음·출력 절 앞). 밤 결정의 {@code checkpoint} 요청과 장중 확인 응답의 규칙을
      * 함께 적습니다 — 장중 확인 호출({@code PaperKrCheckpointJob})도 같은 시스템 프롬프트를 씁니다. 확인 시각은 {@link KrCheckpointRequest#TIMES}와 같은
      * 문장입니다({@code DecisionTimingsLockTest}). '실시간'이라는 말은 쓰지 않습니다(저장본은 확인 시각 뒤 한 장).
+     *
+     * <p>끈 판 고정 글이라 바이트 그대로 둡니다(고정본 {@code render-kr-claude2-v0-default.txt}). MARKET 괄호 글('생성 + 60초가 지난 첫 분')은 ADR 0044 뒤
+     * 실제 체결 시점(생성 뒤 처음 시작하는 분)과 다른 알려진 차이입니다(ADR 0044 결정 D2).
      */
     static final String KR_CLAUDE2_CHECKPOINT_SECTION = """
             ## 장중 확인(고정)
@@ -446,7 +452,7 @@ final class ClaudePrompts {
             - 이 결정의 응답 checkpoints에 항목을 적으면 다음 KRX 거래일(1_basis.nextSession) 장중 그 시각에 다시 부른다 — 세션당 1_basis.intraday.maxPerSession번까지다(0이면 받지 않는다). 그 시각을 놓치면(서버 꺼짐·자료 없음·호출 상한) 나중에 대신 부르지 않고 재시도도 없다. 호출마다 비용이 드니 그 시각에 판단할 것이 분명할 때만 적고, 필요 없으면 checkpoints를 비운다.
             - 항목은 at(한국 시간 HH:MM — 1_basis.intraday의 firstKst~lastKst 안, 보통 날 09:10~14:50 KST), watch, question(그때 판단할 것, 300자 이내)이다. 두 시각은 20분 이상 떨어져야 한다. watch는 그때 볼 종목 1~10개(8_prices 종목이나 보유 종목, 중복 없이)이고, 보유·대기 종목과 함께 그 시각 뒤에 한 번 받은 토스증권 1분봉(종목마다 최근 30개, 저장본 지연을 함께 줌)이 장중 판단 패킷에 들어간다. 규칙에 맞지 않는 항목만 버려지고(CHECKPOINT_INVALID) 이 결정의 주문 판정은 그대로다.
             - 장중 판단의 응답 action은 KEEP(아무것도 바꾸지 않음) 또는 REPLACE다. REPLACE의 응답이 형식 검사를 통과하면(주문이 없거나 모두 거절돼도) 기준 시각이 아직 오지 않은 대기 주문만 취소되고, 기준 시각이 지난 주문은 이미 체결된 것으로 보아 그날 밤 장부가 그 시각 가격으로 체결한다.
-            - 장중 판단 주문의 timing은 MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 종가 단일가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
+            - 장중 판단 주문의 timing은 MARKET(응답 뒤 주문을 만든 다음 처음 시작하는 분의 1분봉 시가 — 1분 안, 그 분이 마감 10분 전 이후면 거절), AT_MINUTE(그날 아직 오지 않은 분 — atLocal) 또는 NEXT_CLOSE(그날 종가 단일가)다. 주문마다 executionNote를 쓰고, 장중 판단의 summary는 600자 이내다.
             - 장중 판단의 응답 nextCheckpoint에 같은 모양의 항목 하나를 적으면 그날의 다음 판단을 그 시각으로 예약하거나 바꾼다(세션당 횟수를 다 썼으면 버려진다). null이면 남은 예약은 그대로다.
             - 1_basis.intraday.guarantee가 있으면 그 세션에 남은 예약이 없고 부른 판단이 minPerSession번보다 적을 때 코드가 그 시각(보통 날 11:30 KST)에 한 번 부르고(보장), events가 있으면 보유 종목·지수(069500)가 크게 움직이거나 보유 종목이 트레일링 스탑가에 가까워질 때 코드가 가장 이른 남은 예약을 앞당기거나 판단을 하나 더한다(사건 — 세션당 횟수·간격 안). 그렇게 부른 판단의 패킷은 그 까닭(1_basis.origin·2_request.trigger)을 싣는다.
             """;

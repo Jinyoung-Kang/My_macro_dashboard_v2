@@ -1413,4 +1413,16 @@ class KrPacketBuilderTest {
         }
         return null;
     }
+
+    @Test
+    @DisplayName("ADR 0044: 한국 감시 ON 결정 패킷 고정본(packet-kr-ft-stopwatch-scheduled.json)에서 바뀐 것은 스탑 문장의 체결 시점 구절뿐(12_hardRules 스탑 줄·1_basis.stopWatch.rule "
+            + "두 곳) — 되돌리면 ADR 0044 전 고정본과 바이트까지 같다")
+    void onlyTheStopTimingSentenceChanged() {
+        String now = new String(Golden.resourceBytes("paper/golden/packet-kr-ft-stopwatch-scheduled.json"), java.nio.charset.StandardCharsets.UTF_8);
+        String fresh = "감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다";
+        assertThat(now.split(java.util.regex.Pattern.quote(fresh), -1)).as("새 구절 두 번(하드 규칙·1_basis)").hasSize(3);
+        assertThat(now).doesNotContain("감지 + 60초 뒤 첫 분");
+        assertThat(Golden.sha256(now.replace(fresh, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다")))
+                .isEqualTo("0c9426e644e8bc4e8804b25539daeb72f49d5c778385b9381405ae17aa2c47c2");
+    }
 }

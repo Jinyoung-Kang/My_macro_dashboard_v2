@@ -321,7 +321,7 @@ class StopWatchTest {
     }
 
     @Nested
-    @DisplayName("주문 시점 — T = 감지 + 60초 뒤 첫 분")
+    @DisplayName("주문 시점 — T = 감지 뒤 처음 시작하는 분(ADR 0044)")
     class Targets {
 
         @Test

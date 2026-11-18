@@ -34,7 +34,7 @@ import java.util.Objects;
  * @param timingNames    받는 체결 시점 → 검증기 근거 문구의 이름(시점마다 하나, 그 밖의 항목은 버림) — 기본 계좌는 그 시장의
  *                       {@link PaperMarket#timingNames}
  * @param timed          시각 지정 체결 계좌인가({@link PaperBooks.Execution#TIMED} — 미국 Claude 계좌2): 주문은 목표 세션 E 하루짜리, 검증기가 그
- *                       결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안 — {@link UsTimedFills#closedTimings})을 거절, 앞으로 체결로 출발하므로
+ *                       결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안의 메뉴 시점·마감 5분 전 뒤의 장중 시장가 — {@link UsTimedFills#closedTimings})을 거절, 앞으로 체결로 출발하므로
  *                       이달 재량 주문 수에서 출발(INITIAL) 결정의 주문을 뺌(한국 계산 — 계좌2 명세 §4-1의 5·§10-5). 기본 계좌는 거짓
  * @param checkpoints    장중 확인 판인가(계좌2 단계 2 — 설정 {@value Claude2Settings#CHECKPOINTS}를 켠 결정, {@link #US_CLAUDE2_C2}): 응답 스키마에
  *                       {@code checkpoint} 칸, 고정 문단 c2-2, 패킷 {@code executionMenuVersion} 2·{@code 13_execution.checkpointOptions}. 그 밖은 거짓

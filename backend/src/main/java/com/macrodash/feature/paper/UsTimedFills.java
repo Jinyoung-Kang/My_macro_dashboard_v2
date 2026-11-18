@@ -51,7 +51,7 @@ import java.util.Set;
  * 먼저 모두 구한 뒤 그 순서로 적용합니다. 가격 사다리(원가격 × (1 ± 슬리피지)):
  * <ol>
  *   <li>R1 {@value #RUNG_AT}·R2 {@value #RUNG_NEXT} — T 봉 시가(거래량 &gt; 0), 아니면 T+1~T+4분 첫 거래 봉 시가. 실행 감사의 반사실과 같은 판정
- *       ({@link ExecutionAudit#fromBars} — ⑤ T &gt; 주문 생성 + 60초·봉 시작 ≥ T, ⑥ 봉의 세션 = E, ⑦ 완성된 봉, ⑧ 이어받은 종목 아님·거래량 &gt; 0·
+ *       ({@link ExecutionAudit#fromBars} — ⑤ T &gt; 주문 생성 + 여유(장중 시장가 0·그 밖 60초)·봉 시작 ≥ T, ⑥ 봉의 세션 = E, ⑦ 완성된 봉, ⑧ 이어받은 종목 아님·거래량 &gt; 0·
  *       그 세션을 받은 시각 &gt; 주문 생성)이라 같은 주문의 체결과 반사실이 갈리지 않습니다.</li>
  *   <li>R2b {@value #RUNG_LATE}(대체) — 창 안 거래 봉이 없고 E 안에서 T 뒤 첫 거래 봉({@code firstTradeAfter[T]})이 있으면 그 봉 시가. W 뒤에 받은
  *       저장본·이어받은 값이 아닌 그 종목 항목만(§10-4) — E가 W에서 끝났으면(3a 조건) W 전에 받은 저장본의 완성된 봉(⑤~⑧)도 씁니다(T 뒤 실제로
@@ -90,7 +90,7 @@ import java.util.Set;
  * 안에서 끝납니다.
  *
  * <p><b>장부 재검사</b>(§8 끝): 고른 봉이 ⑤⑥을 어기면(수집기 저장본의 값이 틀림 — 창에 든 T 앞 봉·다른 날 봉 등) 체결하지 않고 운영 알림
- * ({@code Outcome.alerts})으로 남깁니다. 주문 자체가 ⑤를 어기면(T ≤ 생성 + 60초 — 검증기 {@code LATE_FOR_TIMING}이 막는 것)·E 마감 뒤 시각(조기
+ * ({@code Outcome.alerts})으로 남깁니다. 주문 자체가 ⑤를 어기면(T ≤ 생성 + 여유 — 장중 시장가 0·그 밖 60초, 검증기 {@code LATE_FOR_TIMING}이 막는 것)·E 마감 뒤 시각(조기
  * 폐장)이면 체결할 수 없어 취소하고 알림을 남깁니다. 장부 오류(예외)가 아니므로 그 책의 다른 처리는 그대로 됩니다.
  *
  * <p><b>늦게 풂</b>({@code paper_order_exec.late_resolved}, M4)은 여기서 쓰지 않습니다 — 실행 감사 작업이 체결 행(사다리 칸 {@code fill_rung}·장부 반영
@@ -102,7 +102,7 @@ final class UsTimedFills {
 
     /**
      * 시각 지정 시점 — 실행 감사의 메뉴({@link ExecutionAudit#MENU} — V17 timing CHECK·수집기 MENU와 같은 글자)와 장중 확인 응답의 장중 시장가
-     * {@value PaperBooks#MARKET}(단계 2 — V18, 기준 시각은 그 주문의 생성 + 60초 뒤 첫 분 {@link ExecutionAudit#marketTarget}), 분 단위 지정 시각
+     * {@value PaperBooks#MARKET}(단계 2 — V18, 기준 시각은 그 주문의 생성 뒤 처음 시작하는 분 {@link ExecutionAudit#marketTarget} — ADR 0044), 분 단위 지정 시각
      * {@value PaperBooks#AT_MINUTE}(V22 — ADR 0027 결정 1, 기준 시각은 E의 그 주문 시각 {@code target_local}). 이 목록이 시간별 체결에서
      * 빼는 시점({@code UsPaperMarket.fillable})·장부 만료 단계가 남기는 시점·2b가 푸는 시점을 함께 정합니다.
      */
@@ -194,7 +194,7 @@ final class UsTimedFills {
         Map<String, OrderValidator.Closed> out = new LinkedHashMap<>();
         for (String timing : timings) {
             if (PaperBooks.MARKET.equals(timing)) {
-                // 장중 시장가(장중 확인 응답) — 기준 시각 T = 지금 + 60초 뒤 첫 분이 그 세션 정규장 안이고 마감 5분 전 앞이어야 함.
+                // 장중 시장가(장중 확인·판단 응답) — 기준 시각 T = 지금 뒤 처음 시작하는 분이 그 세션 정규장 안이고 마감 5분 전 앞이어야 함(ADR 0044).
                 Instant target = ExecutionAudit.marketTarget(now);
                 Instant last = close.minus(MARKET_BEFORE_CLOSE);
                 if (target.isBefore(calendar.openInstant(session))

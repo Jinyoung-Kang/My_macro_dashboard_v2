@@ -53,7 +53,10 @@ final class FreeTiming {
     private static final Pattern CLOCK = Pattern.compile(CLOCK_PATTERN);
     /** 가장 이른 지정 시각은 개장 이만큼 뒤(10분 — 개장 단일가와 개장 직후는 받지 않음). 값은 {@link SessionWindows#OPEN_OFFSET}(단일 출처). */
     static final Duration AFTER_OPEN = SessionWindows.OPEN_OFFSET;
-    /** 주문 생성 뒤 이만큼 지나지 않은 시각은 늦은 주문(체결 조건 ⑤ — {@link ExecutionAudit#AFTER_CREATED}와 같은 60초). */
+    /**
+     * 주문 생성 뒤 이만큼 지나지 않은 시각은 늦은 주문(체결 조건 ⑤ — {@link ExecutionAudit#AFTER_CREATED}와 같은 60초, 분 단위 지정 시각·시가·종가). 장중
+     * 시장가의 기준 분은 지금 뒤 처음 시작하는 분이라 이 가드를 쓰지 않습니다({@link ExecutionAudit#afterCreated} — ADR 0044).
+     */
     static final Duration AFTER_CREATED = ExecutionAudit.AFTER_CREATED;
 
     private static final String KEY_PREFIX = PaperBooks.AT_MINUTE + "@";

@@ -672,7 +672,8 @@ class CheckpointPacketTest {
     }
 
     @Test
-    @DisplayName("ADR 0030: 장중 확인·판단 패킷(MINUTE·HOURLY·자유 시점 MINUTE)에서 바뀐 것은 4_portfolio.expected.note의 어림 설명 문구뿐('슬리피지·수수료·매도 제비용 빼고 어림') — 되돌리면 ADR 0030 전 고정본과 바이트까지 같다")
+    @DisplayName("ADR 0030: 장중 확인·판단 패킷(MINUTE·HOURLY·자유 시점 MINUTE)에서 바뀐 것은 4_portfolio.expected.note의 어림 설명 문구뿐('슬리피지·수수료·매도 제비용 빼고 어림') — 되돌리면 ADR 0030 전 고정본과 바이트까지 같다"
+            + "(자유 시점 판은 ADR 0044의 MARKET 문장도 함께 되돌림 — onlyTheMarketSentenceChangedForFirstMinute)")
     void onlyTheEstimateNoteChangedForCosts() {
         String now = "(슬리피지·수수료·매도 제비용 빼고 어림)";
         String before = "(슬리피지 빼고 어림)";
@@ -687,7 +688,30 @@ class CheckpointPacketTest {
                 .isEqualTo("abfbeafb164199cb8480708ba235908016081edd5ca6b9e543127419cc765adc");
         assertThat(Golden.sha256(hourly.replace(now, before)))
                 .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
-        assertThat(Golden.sha256(free.replace(now, before)))
+        assertThat(free.split(java.util.regex.Pattern.quote(FT_MARKET_NOW), -1)).as("ADR 0044 MARKET 문장 한 번").hasSize(2);
+        assertThat(Golden.sha256(free.replace(FT_MARKET_NOW, FT_MARKET_BEFORE).replace(now, before)))
                 .isEqualTo("975c2a754f253b55f417eedbb5efb23f83d803d9ac9ce744c3c0d85a60a7e29a");
+    }
+
+    /** ADR 0044 — 켠 판 장중 판단 패킷 하드 규칙의 MARKET 문장(지금 글, ADR 0044 전 글). */
+    static final String FT_MARKET_NOW = "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) "
+            + "이후면 MALFORMED로 거절.";
+    static final String FT_MARKET_BEFORE = "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 "
+            + "MALFORMED로 거절.";
+
+    @Test
+    @DisplayName("ADR 0044: 미국 자유 시점 판 장중 판단 패킷 고정본 셋(분·사건·이어받기)에서 바뀐 것은 하드 규칙의 MARKET 문장 한 줄뿐 — 되돌리면 ADR 0044 전 "
+            + "고정본과 바이트까지 같다(끈 판 고정본 packet-us-claude2-checkpoint-*.json은 바이트 그대로 — 고정본 시험)")
+    void onlyTheMarketSentenceChangedForFirstMinute() {
+        Map<String, String> before = new java.util.LinkedHashMap<>();
+        before.put("packet-us-ft-intraday-minute.json", "7356757d2b53dffcb6748cb915a22225845d6949b20e36e8776becf950dca567");
+        before.put("packet-us-ft-intraday-minute-event.json", "add8f691d98df3ef07c0fe641d2792258df592d678e52fe36595fac55ac1068d");
+        before.put("packet-us-ft-intraday-minute-continuity.json", "37a298b87f4ba7fb44e0f9b0d95493b1f10471cf267a11b08186dee742995cb9");
+        for (Map.Entry<String, String> golden : before.entrySet()) {
+            String now = new String(Golden.resourceBytes("paper/golden/" + golden.getKey()), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(now.split(java.util.regex.Pattern.quote(FT_MARKET_NOW), -1)).as(golden.getKey() + " 새 문장 한 번").hasSize(2);
+            assertThat(now).as(golden.getKey()).doesNotContain("생성 + 60초가 지난 첫 분");
+            assertThat(Golden.sha256(now.replace(FT_MARKET_NOW, FT_MARKET_BEFORE))).as(golden.getKey()).isEqualTo(golden.getValue());
+        }
     }
 }

@@ -681,7 +681,7 @@ final class ClaudeDecisionPipeline {
                 checks.universe(), checks.etfs(), Set.copyOf(paper.cashLikeTickers()), checks.lockedOut(),
                 checks.noPrice(), monthly, stale, heldQty, checks.unfillable(), checks.wholeShares());
         // 검증기의 시장 몫 — 계좌의 받는 시점·시점 순위·이름(계좌2 명세 §10-5), 시장의 금액 표기. 기본 계좌는 시장 묶음 값 그대로.
-        // 시각 지정 체결 계좌(계좌2)는 그 결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안 — §6-2)을 더합니다.
+        // 시각 지정 체결 계좌(계좌2)는 그 결정에서 닫힌 시점(조기 폐장 마감 뒤·지금 + 60초 안의 메뉴 시점·마감 5분 전 뒤의 장중 시장가 — §6-2)을 더합니다.
         OrderValidator.Market timingRules = profile.orderValidation();
         if (profile.timed()) {
             timingRules = timingRules.withClosed(UsTimedFills.closedTimings(profile.timings(), asOf, clock.instant(),

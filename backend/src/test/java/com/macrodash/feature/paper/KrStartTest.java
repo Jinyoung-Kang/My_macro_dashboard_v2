@@ -1430,6 +1430,22 @@ class KrStartTest {
         assertThat(basis.path("stopWatch").path("rule").asString()).isEqualTo(StopWatch.rule(true));
     }
 
+    @Test
+    @DisplayName("ADR 0044: 한국 자유 시점 판 장중 판단 패킷(감시 ON) 고정본에서 바뀐 것은 지시문의 MARKET 문장과 스탑 문장의 체결 시점 구절(12_hardRules·"
+            + "1_basis.stopWatch.rule)뿐 — 되돌리면 ADR 0044 전 고정본(같은 시험이 지금 글로 처음 만든 것)과 바이트까지 같다")
+    void onlyTheMarketAndStopSentencesChangedInTheKrIntradayPacket() {
+        String now = new String(com.macrodash.Golden.resourceBytes("paper/golden/packet-kr-ft-intraday-stopwatch.json"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        String market = "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가(그 분이 마감 10분 전 이후면 거절)";
+        String stop = "감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다";
+        assertThat(now.split(java.util.regex.Pattern.quote(market), -1)).as("MARKET 문장 한 번").hasSize(2);
+        assertThat(now.split(java.util.regex.Pattern.quote(stop), -1)).as("스탑 구절 두 번").hasSize(3);
+        assertThat(now).doesNotContain("생성 + 60초가 지난 첫 분").doesNotContain("감지 + 60초 뒤 첫 분");
+        String before = now.replace(market, "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가(그 분이 마감 10분 전 이후면 거절)")
+                .replace(stop, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다");
+        assertThat(com.macrodash.Golden.sha256(before)).isEqualTo("6ee31d655da6f3ee2504246f765382b4f6bbdae974acc1dcd2e5368d7e9895c2");
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

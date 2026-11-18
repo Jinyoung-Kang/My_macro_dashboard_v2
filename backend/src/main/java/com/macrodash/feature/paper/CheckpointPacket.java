@@ -452,7 +452,7 @@ final class CheckpointPacket {
 
     /**
      * 아직 고를 수 있는 시점 — 기준 시각 T가 지금 + 60초보다 뒤(⑤)이고, 시각 지정 시점은 E 마감 전(조기 폐장일 13:00 뒤 AT_*는 없음). MARKET은 검증기와
-     * 같은 규칙({@link UsTimedFills#closedTimings} — 지금 + 60초 뒤 첫 분이 정규장 안·마감 5분 전 앞)일 때만.
+     * 같은 규칙({@link UsTimedFills#closedTimings} — 지금 뒤 처음 시작하는 분이 정규장 안·마감 5분 전 앞, ADR 0044)일 때만.
      */
     static List<String> remainingTimings(LocalDate session, TradingCalendar calendar, Instant now) {
         Instant close = calendar.closeInstant(session);
@@ -859,6 +859,8 @@ final class CheckpointPacket {
 
     private static Map<String, Object> hardRules(JsonNode morningPacket, boolean free, boolean stopWatch) {
         Map<String, Object> out = new LinkedHashMap<>();
+        // 끈 판 줄은 바이트 그대로(고정본 packet-us-claude2-checkpoint-*.json) — MARKET 문장('생성 + 60초가 지난 첫 분')은 ADR 0044 뒤 실제 체결 시점과
+        // 다른 알려진 차이(ADR 0044 결정 D2). 켠 판 줄은 freeHardRuleLines.
         List<String> lines = free ? freeHardRuleLines(stopWatch) : List.of(
                 "주문 timing은 " + String.join("·", TIMINGS) + " 가운데 기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 "
                         + "받는다 — 지난 시점은 LATE_FOR_TIMING, 조기 폐장일 마감 뒤 시점은 MALFORMED로 거절. MARKET은 응답 뒤 생성 + 60초가 "
@@ -878,8 +880,8 @@ final class CheckpointPacket {
     private static List<String> freeHardRuleLines(boolean stopWatch) {
         List<String> lines = new ArrayList<>(List.of(
                 "주문 timing은 " + String.join("·", FreeTiming.INTRADAY_TIMINGS) + " 가운데 아직 고를 수 있는 것(1_basis.remainingTimings)만 받는다. "
-                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) 이후면 "
-                        + "MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
+                        + "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) "
+                        + "이후면 MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
                         + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute). NEXT_CLOSE는 이 세션 확정 종가.",
                 "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순) < NEXT_CLOSE).",
                 "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "

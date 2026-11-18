@@ -540,4 +540,37 @@ class FreeTimingDecisionTest {
         verify(packets, never()).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE2_FT), anyString(), any());
         verify(packets, never()).assemble(any(), eq(ClaudeBookProfile.US_CLAUDE_FT), anyString(), any());
     }
+
+    /** ADR 0044 — 켠 판 시스템 프롬프트 장중 판단 절의 MARKET 괄호 글(지금 글, ADR 0044 전 글) — 미국·한국. */
+    static final String US_MARKET_NOW = "MARKET(응답 뒤 주문을 만든 다음 처음 시작하는 분의 1분봉 시가 — 1분 안, 마감 5분 전부터는 거절)";
+    static final String US_MARKET_BEFORE = "MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 마감 5분 전부터는 거절)";
+    static final String KR_MARKET_NOW = "MARKET(응답 뒤 주문을 만든 다음 처음 시작하는 분의 1분봉 시가 — 1분 안, 그 분이 마감 10분 전 이후면 거절)";
+    static final String KR_MARKET_BEFORE = "MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가 — 그 분이 마감 10분 전 이후면 거절)";
+
+    @Test
+    @DisplayName("ADR 0044: 켠 판 시스템 프롬프트 고정본 일곱(미국 셋·한국 넷)에서 바뀐 것은 장중 판단 절의 MARKET 괄호 글 하나뿐 — 되돌리면 ADR 0044 전 고정본과 "
+            + "바이트까지 같다. 끈 판 장중 확인 글(render-us-claude2-c2·render-kr-claude2)은 옛 글 그대로(알려진 차이 — 바이트 그대로)")
+    void onlyTheMarketSentenceChanged() {
+        java.util.Map<String, String[]> goldens = new java.util.LinkedHashMap<>();
+        goldens.put("render-us-ft-claude-v0-default.txt", new String[]{"us", "c27cff9379b80d2227148c2780721a42984a5a767177488e00ad35fe475438a8"});
+        goldens.put("render-us-ft-claude2-v0-default.txt", new String[]{"us", "38afee5a7863f50fdfc5f8e02558192f2ebc47503a37ab7eb47962b6a8c6ca10"});
+        goldens.put("render-us-ft-claude-v0-continuity.txt", new String[]{"us", "c5d73d37ee231b3a94b75c54d979ed40a4443e3b56d76a58f23e77aaf02e7aec"});
+        goldens.put("render-kr-ft-claude-v0-default.txt", new String[]{"kr", "ffee6010765e8854366db02417e31fa30e2f5145924d5bea58869f7dca50a2c9"});
+        goldens.put("render-kr-ft-claude2-v0-default.txt", new String[]{"kr", "cd414a29af390e975933da124d983363dfe615ddc2da9daff7aa9f6f495641dd"});
+        goldens.put("render-kr-ft-claude-v0-stopwatch.txt", new String[]{"kr", "ce7266001d979bd0b4dd1e041da2a818a7a6df1af8be878d871f9360ccf87c64"});
+        goldens.put("render-kr-ft-claude2-v0-continuity.txt", new String[]{"kr", "322a9da2e4861ef199dd2631da43c292d8eb308bdd4feeddd5cb5d4b4800a11e"});
+        for (java.util.Map.Entry<String, String[]> golden : goldens.entrySet()) {
+            String now = new String(Golden.resourceBytes("paper/golden/" + golden.getKey()), StandardCharsets.UTF_8);
+            boolean us = "us".equals(golden.getValue()[0]);
+            String fresh = us ? US_MARKET_NOW : KR_MARKET_NOW;
+            assertThat(now.split(java.util.regex.Pattern.quote(fresh), -1)).as(golden.getKey() + " 새 글 한 번").hasSize(2);
+            assertThat(now).as(golden.getKey()).doesNotContain("생성 + 60초가 지난 첫 분");
+            assertThat(Golden.sha256(now.replace(fresh, us ? US_MARKET_BEFORE : KR_MARKET_BEFORE))).as(golden.getKey())
+                    .isEqualTo(golden.getValue()[1]);
+        }
+        for (String off : List.of("render-us-claude2-c2-v0-default.txt", "render-kr-claude2-v0-default.txt")) {
+            assertThat(new String(Golden.resourceBytes("paper/golden/" + off), StandardCharsets.UTF_8)).as(off + " — 끈 판은 옛 글 그대로")
+                    .contains("MARKET(응답 뒤 생성 + 60초가 지난 첫 분에 시작한 1분봉 시가");
+        }
+    }
 }

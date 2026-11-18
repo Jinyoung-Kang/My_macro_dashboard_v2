@@ -1397,7 +1397,7 @@ class UsTimedFillsTest {
     }
 
     @Nested
-    @DisplayName("장중 시장가 MARKET — 기준 시각 T = 생성 + 60초 뒤 첫 분, 사다리 R1→R2→R2b→R3·3a")
+    @DisplayName("장중 시장가 MARKET — 기준 시각 T = 생성 뒤 처음 시작하는 분(ADR 0044), 사다리 R1→R2→R2b→R3·3a")
     class Market {
 
         /** 10:33:10 ET 생성 → T = 10:34 ET. */

@@ -31,8 +31,9 @@ import java.util.Map;
  *   <li><b>매시</b>({@code AT_1000}~{@code AT_1500}, T = hh:00): R1 {@value #SOURCE_AT} — 라벨 hh:01 봉 시가(거래량 &gt; 0) → R2 {@value #SOURCE_NEXT} —
  *       창(라벨 hh:02~hh:05) 안 첫 거래 봉 시가(경고) → R2b {@value #SOURCE_LATE} — 그날 마감 봉 라벨 이하에서 T 뒤 첫 거래 봉 시가(대체). 셋 다 없으면
  *       기다림(멈춘 가격으로 채우지 않음 — 만료까지).</li>
- *   <li><b>장중 시장가</b>({@code MARKET} — 장중 확인 응답만, 단계 2b): T = 그 주문의 기준 분({@link ExecutionAudit#marketTarget} — (생성 + 60초)를 분으로
- *       내린 뒤 + 1분, 미국과 같은 식), 사다리는 매시와 같음(창 키 'HH:MM' — 수집기가 그 주문의 창을 더함). T가 목표 세션 날짜가 아니면 체결하지 않습니다.</li>
+ *   <li><b>장중 시장가</b>({@code MARKET} — 장중 확인·판단 응답과 장중 감시 STOP, 단계 2b): T = 그 주문의 기준 분({@link ExecutionAudit#marketTarget} — 생성 뒤
+ *       처음 시작하는 분, 생성을 분으로 내린 뒤 + 1분, 미국과 같은 식 — ADR 0044), 사다리는 매시와 같음(창 키 'HH:MM' — 수집기가 그 주문의 창을 더함 — R1은
+ *       라벨 T+1 봉이라 봉 구간이 생성 뒤). 고른 봉의 라벨은 장부가 다시 봅니다({@link #recheck}). T가 목표 세션 날짜가 아니면 체결하지 않습니다.</li>
  *   <li><b>종가</b>({@code NEXT_CLOSE}): {@value #SOURCE_CLOSE} — 마감 단일가 봉 종가(거래량 &gt; 0). 라벨은 그날 마감 시각(그 실행 달력 — 장 시간 변경일
  *       포함)에 NXT 종목이면 + 1분(G2: NXT 15:31, NXT 미지원 표시 주식·ETF 15:30). NXT 여부를 모르면 기다림. 토스 일봉 종가로 채우지 않습니다(G2 — 20:00까지
  *       체결이 섞여 18/21 다름). 금융위 종가가 들어오면 확정 조정이 그 값으로 고칩니다.</li>
@@ -142,7 +143,7 @@ final class KrTimedLadder {
      * 그 결정에서 닫힌 한국 매시 시점(검증기 {@link OrderValidator.Market#closed} — 명세 §2): 목표 세션 E(기준 거래일 다음 KRX 거래일)의 기준 시각 T가
      * 그날 정규장 개장 전이거나 마감 단일가 시간(마감 10분 전부터 — {@link #CLOSING_AUCTION})에 걸리면 MALFORMED(장 시간 변경일 —
      * {@code kr.calendar.openTimeOverrides}), T가 지금 + 60초 이전이면 LATE_FOR_TIMING. 장중 시장가(MARKET — 장중 확인 응답, 단계 2b)는 지금 만들 주문의
-     * 기준 분({@link ExecutionAudit#marketTarget})이 그 세션 정규장 밖이거나 종가 단일가 시간이면 MALFORMED. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다.
+     * 기준 분({@link ExecutionAudit#marketTarget} — 지금 뒤 처음 시작하는 분)이 그 세션 정규장 밖이거나 종가 단일가 시간이면 MALFORMED. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다.
      * 시가·종가는 닫지 않습니다.
      *
      * @param timings 받는 체결 시점(계좌 프로필)

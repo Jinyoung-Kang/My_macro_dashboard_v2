@@ -281,7 +281,7 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @DisplayName("장중 시장가(MARKET) 주문의 목표 시각 = 생성 + 60초 뒤 첫 분(10:32:10 → 10:34 ET) — 메뉴 반사실은 지금처럼(생성 전 시각은 null), MARKET 칸은 반사실 표에 없음")
+    @DisplayName("장중 시장가(MARKET) 주문의 목표 시각 = 생성 뒤 처음 시작하는 분(10:33:10 → 10:34 ET) — 메뉴 반사실은 지금처럼(생성 전 시각은 null), MARKET 칸은 반사실 표에 없음")
     void marketTargetAtIsWritten() {
         long id = order("AAPL", PaperBooks.MARKET, "PENDING", MON, et(TUE, 10, 33).plusSeconds(10));
         bars(tuesdayMorning());
