@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
+import { InspectorSubheading } from "../InspectorFrame";
 import { MasterDetail } from "../MasterDetail";
 import { PropertyList } from "../PropertyList";
 import { Skeleton } from "../Skeleton";
@@ -766,3 +767,23 @@ describe("MasterDetail — 넓은 검사 칸(inspectorWidth=\"wide\")·제목 �
     expect(screen.getByRole("region", { name: "결정 기록 — 결정 #7" })).toBeTruthy();
   });
 });
+
+/** 검사 칸 안 절 머리(InspectorSubheading — 검사 칸 틀과 같은 규칙). */
+function DetailSection({ name }: { name: string }) {
+  return <InspectorSubheading fallback="h3">{`${name} 절`}</InspectorSubheading>;
+}
+
+describe("MasterDetail — 검사 칸 안 절 머리 단계(P6 검토)", () => {
+  it("옆 칸(제목 h3)이면 절 h4, 대화상자(제목 h2)면 절 h3", () => {
+    stubWide();
+    const { unmount } = renderList({ renderDetail: (row) => <DetailSection name={row.name} /> });
+    fireEvent.click(row("Apple Inc."));
+    expect(screen.getByRole("heading", { name: "Apple Inc. 절" }).tagName).toBe("H4");
+    unmount();
+    vi.unstubAllGlobals();
+    renderList({ renderDetail: (row) => <DetailSection name={row.name} /> });
+    fireEvent.click(row("Bank of America"));
+    expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Bank of America 절" }).tagName).toBe("H3");
+  });
+});
+

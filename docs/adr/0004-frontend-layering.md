@@ -149,7 +149,10 @@
   `hooks/useSideBySide`를 목록-검사(`MasterDetail`)와 함께 씁니다(기준 폭 인자). 줄 전체가 단추인 목록은 `MasterDetail`, 줄 안에 링크·단추가 있는 표는 이 틀입니다.
   데이터 칸 강조색 금지 목록에 넣습니다. 처음 쓰는 곳은 매크로 지표 표(lg)·섹터 표(dialog)(P5a), P5b 보유 표·P6 계좌 비교 표가 같은 틀을 씁니다.
   P6(패턴 단계)에서 선택을 더했습니다(기본값이면 그대로): 배치 `wide`(틀 64rem부터 옆 28rem — 계좌 표), 문맥 `inline`(지금 옆 칸 배치인가 — P5b 공용 부품 희망 1, 13F 화면은
-  그대로), `dialogFocus`(대화상자 첫 포커스를 제목에). P6에서 쓰는 곳은 모의 개요 계좌 표(wide)·보유 표(lg)·미국 기관 선정 구간(dialog — QA-735)·설정 편집 줄(lg). 지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.
+  그대로), `dialogFocus`(대화상자 첫 포커스를 제목에). P6에서 쓰는 곳은 모의 개요 계좌 표(wide)·보유 표(lg)·미국 기관 선정 구간(dialog — QA-735)·설정 편집 줄(lg). P6 검토에서
+  검사 칸 안 절 머리 `InspectorSubheading`(`fallback`·`depth` — 칸 제목보다 depth 단계 아래 태그)와 그 범위 `InspectorHeadingScope`(DOM 없음 — 이 틀과 목록-검사가 `renderDetail`을 감쌈: 옆 칸은 제목
+  `headingLevel`, 대화상자는 h2)를 더했습니다 — 같은 상세가 옆 칸과 대화상자 두 자리에 그려져도 절 머리가 제목 바로 아래 단계가 되게(검사 칸 밖은 fallback 그대로라 다른 화면 변화 없음).
+  지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.
 - 시각순 목록 `components/patterns/Timeline.tsx` — 화면 패턴(목록-검사 `MasterDetail` 위 — 줄마다 시각 열 `<time>`(5.5rem·tabular-nums)·종류 태그(공용 `Tag` —
   톤이면 아이콘 + 글, 주의·위험은 '주의:')·한 줄 요약(말줄임 없이 낱말 사이에서 꺾음, 좁은 틀은 둘째 줄)·추정/이전 값 배지, 고르면 검사 칸 제목 = 기록의 `title`,
   펼칠 때 읽는 자세한 값은 `renderDetail` 안의 자식이 읽음 — 데이터 칸 강조색 금지 목록). 명세 §8-2는 P6이었지만 처음 쓰는 곳이 국면 판정 기록(P5a)이라

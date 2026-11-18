@@ -15,7 +15,16 @@ export { type EntityChange, EntityHeader, type EntityKind, type EntityKindSpec }
 export { FilterList, type FilterListItem, type FilterListPendingRow } from "./FilterList";
 export { type HeatmapColumn, type HeatmapRow, HeatmapTable } from "./HeatmapTable";
 export { Hero } from "./Hero";
-export { type InspectorContext, InspectorFrame, type InspectorLayout, InspectorTrigger, type InspectorTriggerProps } from "./InspectorFrame";
+export {
+  type InspectorContext,
+  InspectorFrame,
+  InspectorHeadingScope,
+  type InspectorLayout,
+  InspectorSubheading,
+  InspectorTrigger,
+  type InspectorTriggerProps,
+  type SubheadingTag,
+} from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
 export { MasterDetail, type MasterDetailGroup } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";

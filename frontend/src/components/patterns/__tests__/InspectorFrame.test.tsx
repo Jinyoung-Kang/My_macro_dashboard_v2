@@ -13,7 +13,7 @@ import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 import { DataTable } from "../DataTable";
-import { InspectorFrame, InspectorTrigger, type InspectorLayout } from "../InspectorFrame";
+import { InspectorFrame, InspectorSubheading, InspectorTrigger, type InspectorLayout, type SubheadingTag } from "../InspectorFrame";
 import { PropertyList } from "../PropertyList";
 import { Skeleton } from "../Skeleton";
 
@@ -591,3 +591,39 @@ describe("InspectorFrame — 넓은 배치(wide)·배치 문맥(inline)·제목 
     expect(document.activeElement?.tagName).not.toBe("H2");
   });
 });
+
+/** 검사 칸 안 절 머리 — InspectorSubheading이 고른 태그로 그립니다. */
+function Section({ fallback = "h4" as SubheadingTag, depth = 1 as 1 | 2 }) {
+  return (
+    <InspectorSubheading fallback={fallback} depth={depth}>
+      {`절 ${depth}`}
+    </InspectorSubheading>
+  );
+}
+
+describe("InspectorFrame — 검사 칸 안 절 머리 단계(InspectorSubheading, P6 검토)", () => {
+  it("옆 칸은 제목(h3) 다음 h4·h5, headingLevel 4면 h5, 대화상자는 제목(h2) 다음 h3, 검사 칸 밖은 fallback", async () => {
+    stubWide();
+    const levels = () => [...document.querySelectorAll("h3, h4, h5, h6")].filter((node) => node.textContent?.startsWith("절 ")).map((node) => node.tagName);
+    const detail = () => (
+      <>
+        <Section />
+        <Section depth={2} />
+      </>
+    );
+    const { unmount } = renderFrame({ defaultKey: "us10y", layout: "lg", renderDetail: detail });
+    expect(levels()).toEqual(["H4", "H5"]);
+    unmount();
+    const deeper = renderFrame({ defaultKey: "us10y", layout: "lg", headingLevel: 4, renderDetail: detail });
+    expect(levels()).toEqual(["H5", "H6"]);
+    deeper.unmount();
+    renderFrame({ layout: "dialog", renderDetail: detail });
+    fireEvent.click(trigger("미국채 10년물"));
+    await screen.findByRole("dialog");
+    expect(levels()).toEqual(["H3", "H4"]);
+    cleanup();
+    render(<Section fallback="h3" />);
+    expect(levels()).toEqual(["H3"]);
+  });
+});
+

@@ -8,6 +8,8 @@ import { useSideBySide } from "@/hooks/useSideBySide";
 import { useWideShell } from "@/hooks/useWideShell";
 import { listKeyAction, SHELL_LIST_ATTR } from "@/lib/shortcuts";
 
+import { InspectorHeadingScope } from "./InspectorFrame";
+
 const DEFAULT_HINT = "줄을 고르면 이 칸에 자세한 값이 나옵니다(j/k·↑↓로 옮김).";
 
 /**
@@ -336,7 +338,9 @@ export function MasterDetail<T>({
             {currentItem !== null && currentItem !== undefined ? (
               <>
                 <Heading className="break-keep wrap-anywhere text-heading-sm text-text">{itemLabel(currentItem)}</Heading>
-                <div className="mt-2 min-w-0">{renderDetail(currentItem)}</div>
+                <div className="mt-2 min-w-0">
+                  <InspectorHeadingScope level={headingLevel}>{renderDetail(currentItem)}</InspectorHeadingScope>
+                </div>
               </>
             ) : (
               <p className="text-sm text-text-2">{inspectorHint}</p>
@@ -356,7 +360,11 @@ export function MasterDetail<T>({
         initialFocus={dialogFocus}
         dismissible={dialogDismissible}
       >
-        {dialogItem !== null && dialogItem !== undefined ? <div className="mt-3 min-w-0">{renderDetail(dialogItem)}</div> : null}
+        {dialogItem !== null && dialogItem !== undefined ? (
+          <div className="mt-3 min-w-0">
+            <InspectorHeadingScope level={2}>{renderDetail(dialogItem)}</InspectorHeadingScope>
+          </div>
+        ) : null}
       </Dialog>
     </div>
   );

@@ -92,6 +92,8 @@ describe("components/patterns 배럴", () => {
         "HeatmapTable",
         "Hero",
         "InspectorFrame",
+        "InspectorHeadingScope",
+        "InspectorSubheading",
         "InspectorTrigger",
         "KpiStrip",
         "MasterDetail",

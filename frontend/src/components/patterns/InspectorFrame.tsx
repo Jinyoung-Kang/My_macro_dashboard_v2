@@ -1,6 +1,20 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type FocusEvent, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type HTMLAttributes,
+  type JSX,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { ROW_TRIGGER } from "@/components/ui/classes";
@@ -256,7 +270,9 @@ export function InspectorFrame({
     panelBody = (
       <>
         <Heading className="break-keep wrap-anywhere text-heading-sm text-text">{shownTitle}</Heading>
-        <div className="mt-2 min-w-0">{renderDetail(shownKey)}</div>
+        <div className="mt-2 min-w-0">
+          <InspectorHeadingScope level={headingLevel}>{renderDetail(shownKey)}</InspectorHeadingScope>
+        </div>
       </>
     );
   } else {
@@ -292,7 +308,11 @@ export function InspectorFrame({
         placement="top"
         initialFocus={dialogFocus}
       >
-        {dialogTitle !== null && dialogKey !== null ? <div className="mt-3 min-w-0">{renderDetail(dialogKey)}</div> : null}
+        {dialogTitle !== null && dialogKey !== null ? (
+          <div className="mt-3 min-w-0">
+            <InspectorHeadingScope level={2}>{renderDetail(dialogKey)}</InspectorHeadingScope>
+          </div>
+        ) : null}
       </Dialog>
     </div>
   );
@@ -320,4 +340,35 @@ export function InspectorTrigger({
       {children}
     </button>
   );
+}
+
+/** 검사 칸 제목의 단계 — 옆 칸이면 그 틀의 `headingLevel`(기본 h3), 대화상자면 h2(ui/Dialog 제목). 검사 칸 밖이면 null. */
+const InspectorHeadingContext = createContext<2 | 3 | 4 | null>(null);
+
+/**
+ * 검사 칸 내용의 머리 단계 범위(작업대 P6 검토) — 목록-검사(MasterDetail)·검사 칸 틀(InspectorFrame)이 `renderDetail`을 이것으로 감쌉니다(DOM 없음). 안의 절
+ * 머리(`InspectorSubheading`)가 그 칸 제목 바로 아래 단계를 받습니다.
+ */
+export function InspectorHeadingScope({ level, children }: { level: 2 | 3 | 4; children: ReactNode }): JSX.Element {
+  return <InspectorHeadingContext.Provider value={level}>{children}</InspectorHeadingContext.Provider>;
+}
+
+/** 절 머리 태그(h3~h6). */
+export type SubheadingTag = "h3" | "h4" | "h5" | "h6";
+
+/**
+ * 검사 칸 안 절 머리(작업대 P6 검토) — 검사 칸 제목보다 `depth`단계 아래 태그로 그립니다: 옆 칸(제목 h3)이면 h4, 대화상자(제목 h2)면 h3(`depth` 2면 h5·h4).
+ * 같은 상세가 옆 칸과 대화상자 두 자리에 그려져, 제 머리 단계를 고정하면 옆 칸에서는 제목과 같은 단계가 되거나 대화상자에서는 한 단계를 건너뛰었습니다(모의
+ * 결정 상세의 절 h3 = 옆 칸 제목 h3, 개요 검사 대화상자 h2 아래 곡선 패널 h4). 검사 칸 밖(요청 카드·시작 카드 등)에서는 `fallback` 태그 그대로입니다.
+ * 글자 모양은 부르는 쪽 클래스 그대로입니다(단계만 바뀜).
+ */
+export function InspectorSubheading({
+  fallback,
+  depth = 1,
+  children,
+  ...rest
+}: { fallback: SubheadingTag; depth?: 1 | 2; children: ReactNode } & Omit<HTMLAttributes<HTMLHeadingElement>, "children">): JSX.Element {
+  const level = useContext(InspectorHeadingContext);
+  const tag: SubheadingTag = level === null ? fallback : (`h${level + depth}` as SubheadingTag);
+  return createElement(tag, rest, children);
 }
