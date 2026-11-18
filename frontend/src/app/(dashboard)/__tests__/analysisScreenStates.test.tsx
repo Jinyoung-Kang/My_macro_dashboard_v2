@@ -228,3 +228,52 @@ describe("교집합 — 검사 칸(종목 이름 → 대화상자)", () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+describe("교집합 — 분석 대상 거르기 목록(옛 기관 칩)", () => {
+  const INSTITUTIONS = {
+    institutions: [
+      { key: "a", name: "🇺🇸 가상 자산운용 (Synthetic AM)", cik: "1", desc: "" },
+      { key: "b", name: "가상 연기금", cik: "2", desc: "" },
+      { key: "c", name: "가상 국부펀드", cik: "3", desc: "" },
+    ],
+  };
+
+  it("처음엔 모두 켬(빈 고름 = 전체 — QA-003), 하나를 끄면 개수 'n곳 / 전체곳'이 줄고 마지막 하나까지 끄면 다시 전체", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/sec13f/institutions") ? Promise.resolve(INSTITUTIONS) : new Promise(() => {}));
+    render(<ConsensusPage />);
+    const group = await screen.findByRole("group", { name: "분석 대상 기관" });
+    const pressed = () => within(group).getAllByRole("button").map((button) => [button.textContent, button.getAttribute("aria-pressed")]);
+    await waitFor(() => expect(pressed()).toEqual([["가상 자산운용 (Synthetic AM)", "true"], ["가상 연기금", "true"], ["가상 국부펀드", "true"]]));
+    const panel = group.closest("section") as HTMLElement;
+    expect(within(panel).getByText("3곳 / 3곳")).toBeTruthy();
+
+    fireEvent.click(within(group).getByRole("button", { name: "가상 연기금" }));
+    expect(pressed()).toEqual([["가상 자산운용 (Synthetic AM)", "true"], ["가상 연기금", "false"], ["가상 국부펀드", "true"]]);
+    expect(within(panel).getByText("2곳 / 3곳")).toBeTruthy();
+
+    fireEvent.click(within(group).getByRole("button", { name: "가상 자산운용 (Synthetic AM)" }));
+    fireEvent.click(within(group).getByRole("button", { name: "가상 국부펀드" }));
+    expect(pressed().every(([, state]) => state === "true")).toBe(true);
+    expect(within(panel).getByText("3곳 / 3곳")).toBeTruthy();
+  });
+
+  it("기관 목록을 읽는 동안은 자리표시, 읽지 못하면 오류와 '다시 시도'(누르면 목록만 한 번 더)", async () => {
+    let fail = false;
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/sec13f/institutions")) return fail ? Promise.reject(new Error("기관 목록을 읽지 못했습니다.")) : new Promise(() => {});
+      return new Promise(() => {});
+    });
+    const { unmount } = render(<ConsensusPage />);
+    expect(await screen.findByRole("status", { name: "기관 목록 불러오는 중" })).toBeTruthy();
+    unmount();
+
+    fail = true;
+    render(<ConsensusPage />);
+    expect(await screen.findByText("기관 목록을 읽지 못했습니다.")).toBeTruthy();
+    const institutionCalls = () => api.apiGetShared.mock.calls.filter(([path]) => String(path).startsWith("/api/sec13f/institutions")).length;
+    const before = institutionCalls();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(institutionCalls()).toBe(before + 1));
+  });
+});

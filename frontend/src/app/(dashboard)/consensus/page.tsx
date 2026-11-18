@@ -4,25 +4,26 @@ import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import {
   DataTable,
+  FilterList,
   type InspectorContext,
   InspectorFrame,
   InspectorTrigger,
   KpiStrip,
   type PropertyItem,
   PropertyList,
+  Skeleton,
+  SplitPane,
 } from "@/components/patterns";
 import {
   Callout,
   EmptyState,
   ErrorState,
-  filterChipClasses,
   Loading,
   PageHeader,
   Panel,
   Select,
   SourceBadge,
 } from "@/components/ui";
-import { CheckIcon } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
@@ -33,13 +34,14 @@ import {
   consensusKpisPending,
   consensusRowItems,
   filerBadges,
+  institutionChoices,
   type NewBuyRow,
   newBuyRowItems,
   participantsLine,
   securityTitles,
+  selectionCountText,
 } from "@/lib/consensusScreen";
-import { filerName } from "@/lib/holdings";
-import { isSelected, toggleSelection } from "@/lib/selection";
+import { effectiveSelection, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, ConsensusRow, NewBuysResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -51,8 +53,10 @@ import { endpoints } from "@/lib/endpoints";
  * 종목을 집계합니다. 기관마다 공시 분기가 다를 수 있으므로 기준 분기를
  * 고르면 그 분기를 공시한 기관만 참여합니다.
  *
- * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → '분석 대상'·조건 패널 → 교집합 요약 KPI 띠(처음 읽는 동안은 같은 꼴의 자리표시) →
- * '공통 보유 상위 종목' 막대 → '교집합 상세' 표 → 참여 기관 줄 → '이번 분기 공통 신규 매수'.
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리 → 두 칸 틀(SplitPane — 오른쪽 칸 없음). 왼쪽(넓은 화면 13rem)은 '분석 대상' 거르기 목록
+ * (옛 파란 기관 칩 12개 — 넓은 화면 세로 목록·좁은 화면 태그 줄바꿈)과 '조건'(기준 분기·최소 공통 보유 기관 수), 가운데는 교집합 요약 KPI 띠(처음
+ * 읽는 동안은 같은 꼴의 자리표시) → '공통 보유 상위 종목' 막대 → '교집합 상세' 표 → 참여 기관 줄 → '이번 분기 공통 신규 매수'. 좁은 화면(lg 미만)은
+ * 한 칸으로 왼쪽 칸이 위입니다(접지 않음).
  */
 export default function ConsensusPage() {
   const institutions = useApi<{ institutions: { name: string; cik: string }[] }>(
@@ -73,6 +77,8 @@ export default function ConsensusPage() {
   const toggle = (cik: string) => {
     setSelected((previous) => toggleSelection(allCiks, previous, cik));
   };
+  // 보이는 고름(빈 목록 = 전체를 풀어 쓴 것) — 거르기 목록의 켬과 개수가 요청 ciks와 같은 규칙입니다(QA-003).
+  const effective = effectiveSelection(allCiks, selected);
 
   // 기준 분기 선택지는 응답에 딸려 옵니다. 고른 분기의 응답을 기다리는 동안 선택지가 '최신 분기' 하나로 줄면
   // 화면은 최신을 보이는데 요청은 고른 분기로 나갔습니다 — 마지막 목록을 씁니다(QA-047).
@@ -91,83 +97,93 @@ export default function ConsensusPage() {
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader title="기관 13F Money 교집합" description="여러 기관이 공통 보유한 종목 · 동시 매수/매도 집중도" />
 
-      <Panel title="분석 대상" subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체).">
-        <div className="flex flex-wrap gap-2">
-          {(institutions.data?.institutions ?? []).map((entry) => {
-            const active = isSelected(allCiks, selected, entry.cik);
-            return (
-              <button
-                key={entry.cik}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggle(entry.cik)}
-                className={filterChipClasses(active)}
-              >
-                {active ? <CheckIcon size={14} /> : null}
-                {filerName(entry.name) ?? `CIK ${entry.cik}`}
-              </button>
-            );
-          })}
-        </div>
+      {/* 왼쪽 칸 — 분석 대상 기관(거르기 목록)과 조건. 좁은 화면은 한 칸으로 위에 둡니다(접지 않음 — 조작이 지금처럼 바로 보임). */}
+      <SplitPane
+        left={
+          <>
+            <Panel
+              title="분석 대상" count={selectionCountText(effective.length, allCiks.length) ?? undefined}
+              subtitle="전체 기관이 선택된 상태에서 시작합니다. 빼고 싶은 기관을 누르세요(전부 빼면 다시 전체)."
+            >
+              <FilterList
+                label="분석 대상 기관"
+                items={institutionChoices(institutions.data?.institutions)}
+                selected={effective}
+                onToggle={toggle}
+                selection="multiple"
+                narrow="wrap"
+                placeholder={
+                  institutions.error ? (
+                    <ErrorState message={institutions.error} onRetry={institutions.reload} />
+                  ) : firstLoadPending(institutions) ? (
+                    <Skeleton lines={4} label="기관 목록 불러오는 중" />
+                  ) : null
+                }
+                emptyText="고를 기관이 없습니다."
+              />
+            </Panel>
+            <Panel title="조건">
+              <div className="flex flex-wrap items-end gap-3 lg:flex-col lg:items-stretch">
+                <Select
+                  label="기준 분기"
+                  value={reportDate}
+                  onChange={setReportDate}
+                  options={[
+                    { value: "", label: "각 기관의 최신 분기" },
+                    ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
+                  ]}
+                />
+                <Select
+                  label="최소 공통 보유 기관 수"
+                  value={minHolders}
+                  onChange={setMinHolders}
+                  options={["2", "3", "4", "5"].map((value) => ({
+                    value,
+                    label: `${value}곳 이상`,
+                  }))}
+                />
+              </div>
+            </Panel>
+          </>
+        }
+      >
+        {error && <ErrorState message={error} onRetry={reload} />}
 
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <Select
-            label="기준 분기"
-            value={reportDate}
-            onChange={setReportDate}
-            options={[
-              { value: "", label: "각 기관의 최신 분기" },
-              ...(availableDates ?? []).map((date) => ({ value: date, label: date })),
-            ]}
-          />
-          <Select
-            label="최소 공통 보유 기관 수"
-            value={minHolders}
-            onChange={setMinHolders}
-            options={["2", "3", "4", "5"].map((value) => ({
-              value,
-              label: `${value}곳 이상`,
-            }))}
-          />
-        </div>
-      </Panel>
+        {data && !data.available && (
+          <Callout tone="warn">
+            조건을 만족하는 공통 보유 종목이 없습니다. 기준 분기나 최소 기관 수를 조정해 보세요.
+          </Callout>
+        )}
 
-      {error && <ErrorState message={error} onRetry={reload} />}
+        {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 띠 높이가 같게. */}
+        {kpis.length > 0 ? <KpiStrip label="교집합 요약" items={kpis} pendingMatchesValue /> : null}
 
-      {data && !data.available && (
-        <Callout tone="warn">
-          조건을 만족하는 공통 보유 종목이 없습니다. 기준 분기나 최소 기관 수를 조정해 보세요.
-        </Callout>
-      )}
+        {data?.available && (
+          <>
+            <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
+              <HorizontalBars
+                data={chartData}
+                unit="곳"
+                digits={0}
+                neutral
+                ariaLabel="공통 보유 상위 종목 — 보유 기관 수"
+                height={Math.max(260, chartData.length * 26)}
+              />
+            </Panel>
 
-      {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 띠 높이가 같게. */}
-      {kpis.length > 0 ? <KpiStrip label="교집합 요약" items={kpis} pendingMatchesValue /> : null}
+            <Panel
+              title="교집합 상세" source={SOURCES.sec13f} count={`${data.rows.length.toLocaleString("ko-KR")}개`}
+              subtitle={`종목 이름을 누르면 보유 기관 목록과 함께 자세한 값을 봅니다. ${usdKrw.note}`}
+            >
+              <ConsensusTable rows={data.rows} krw={usdKrw} />
+            </Panel>
 
-      {data?.available && (
-        <>
-          <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
-            <HorizontalBars
-              data={chartData}
-              unit="곳"
-              digits={0}
-              neutral
-              ariaLabel="공통 보유 상위 종목 — 보유 기관 수"
-              height={Math.max(260, chartData.length * 26)}
-            />
-          </Panel>
+            <p className="text-xs text-text-3">{participantsLine(data.participants)}</p>
+          </>
+        )}
 
-          <Panel
-            title="교집합 상세" source={SOURCES.sec13f} count={`${data.rows.length.toLocaleString("ko-KR")}개`}
-            subtitle={`종목 이름을 누르면 보유 기관 목록과 함께 자세한 값을 봅니다. ${usdKrw.note}`}
-          >
-            <ConsensusTable rows={data.rows} krw={usdKrw} />
-          </Panel>
-
-          <p className="text-xs text-text-3">{participantsLine(data.participants)}</p>
-        </>
-      )}
-
-      <NewBuysCard reportDate={reportDate} />
+        <NewBuysCard reportDate={reportDate} />
+      </SplitPane>
     </div>
   );
 }
