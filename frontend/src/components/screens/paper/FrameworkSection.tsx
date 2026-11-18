@@ -1036,8 +1036,11 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-/** 표 칸 글 — 낱말 사이에서 꺾고 긴 낱말(영문 식별자)은 칸 안에서 꺾습니다. */
-const CELL_TEXT = "break-keep wrap-anywhere text-text-2";
+/**
+ * 표 칸 글 — 낱말 사이에서 꺾고, 칸보다 긴 낱말(영문 식별자)만 넘칠 때 꺾습니다(wrap-break-word). wrap-anywhere는 칸의 최소 폭을 한 글자로 줄여
+ * 넓은 화면에서도 짧은 칸('이유')이 '합/성'처럼 글자 사이에서 꺾였습니다(자기 빌드 1440 — 옛 표 QA-526과 같은 까닭).
+ */
+const CELL_TEXT = "break-keep wrap-break-word text-text-2";
 
 /** 평가 표(OS 절차 B) — 공용 DataTable(행 32px·좁은 화면 최소 640px + 넘김 안내 — 옛 표와 같은 넘김), 평가는 공용 태그(일치 정상·보완 중립·수정 필요·모순 주의). */
 const ASSESSMENT_COLUMNS: readonly Column<ProposalAssessmentRow>[] = [
@@ -1051,7 +1054,7 @@ function operationColumns(beforeHeader: string): Column<ProposalOperationRow>[] 
   return [
     { key: "op", header: "변경", cell: (row) => <span className="font-semibold text-text">{row.op}</span>, className: "whitespace-nowrap" },
     { key: "target", header: "대상", cell: (row) => <code className="font-mono text-text-2">{row.target}</code>, className: "whitespace-nowrap" },
-    { key: "before", header: beforeHeader, cell: (row) => <span className="break-keep wrap-anywhere text-text-3">{row.before}</span> },
+    { key: "before", header: beforeHeader, cell: (row) => <span className="break-keep wrap-break-word text-text-3">{row.before}</span> },
     {
       key: "after",
       header: "바꿀 글",

@@ -347,7 +347,7 @@ function NeutralTag({ children }: { children: string }) {
 const HISTORY_COLUMNS: readonly Column<SettingsHistoryRow>[] = [
   { key: "version", header: "버전", cell: (row) => <span className="font-semibold text-text">{row.version}</span>, className: "whitespace-nowrap" },
   { key: "createdAt", header: "저장 시각", cell: (row) => row.createdAt, className: "whitespace-nowrap" },
-  { key: "changes", header: "바뀐 값", cell: (row) => <span className="break-keep wrap-anywhere text-text-2">{row.changes}</span> },
+  { key: "changes", header: "바뀐 값", cell: (row) => <span className="break-keep wrap-break-word text-text-2">{row.changes}</span> },
   {
     key: "rules",
     header: "규칙 계좌 영향",
