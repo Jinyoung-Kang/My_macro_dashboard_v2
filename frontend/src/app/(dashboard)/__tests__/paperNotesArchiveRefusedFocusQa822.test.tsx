@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("QA-822 — 보관하지 않았다는 답(200 ok:false)이면 포커스는 그 메모의 '보관 #n'으로", () => {
-  it.fails("좁은 배치(대화상자): 알림은 그 칸의 role=status, 포커스는 '보관 #902'", async () => {
+  it("좁은 배치(대화상자): 알림은 그 칸의 role=status, 포커스는 '보관 #902'", async () => {
     render(<NotesSection startDate="2026-10-23" />);
     const list = await screen.findByRole("list", { name: "메모" });
     fireEvent.click(within(list).getByRole("button", { name: /#902/ }));
@@ -57,7 +57,7 @@ describe("QA-822 — 보관하지 않았다는 답(200 ok:false)이면 포커스
     await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "보관 #902" })));
   });
 
-  it.fails("넓은 배치(옆 검사 칸): 포커스는 '보관 #902'(BODY로 떨어지지 않음)", async () => {
+  it("넓은 배치(옆 검사 칸): 포커스는 '보관 #902'(BODY로 떨어지지 않음)", async () => {
     vi.stubGlobal(
       "matchMedia",
       (query: string) =>

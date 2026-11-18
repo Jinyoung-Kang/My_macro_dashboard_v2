@@ -117,8 +117,11 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
   useEffect(() => {
     const target = focusAfter.current;
     if (target === null || confirmingArchive !== null || archive.busy) return;
+    // 요청이 성공해도 서버가 보관하지 않았다고 답하면(200 {ok:false, message}) 메모는 목록에 남습니다 — 실패와 같이 그 '보관 #n'으로 돌아갑니다(QA-822 — 예전에는
+    // 메모가 빠지기를 끝없이 기다려 포커스가 BODY·대화상자 틀에 남았음).
+    const archived = target.archived && archive.result?.ok !== false;
     // 보관했는데 목록을 아직 다시 읽지 않았으면(그 메모가 보관 전 그대로) 기다립니다.
-    if (target.archived && rows.some((row) => row.id === target.id && !row.archived)) return;
+    if (archived && rows.some((row) => row.id === target.id && !row.archived)) return;
     focusAfter.current = null;
     const button = document.querySelector<HTMLButtonElement>(`button[data-note-archive="${target.id}"]`);
     if (button && !button.disabled) {
