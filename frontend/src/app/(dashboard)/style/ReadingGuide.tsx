@@ -13,7 +13,7 @@ export function ReadingGuide({ topic, children }: { topic: string; children: Rea
   return (
     <details className="group mt-3 min-w-0">
       <summary
-        className={`${TEXT_TARGET} w-fit cursor-pointer list-none gap-1 rounded-sm text-[13px] font-medium text-text-2 hover:text-text [&::-webkit-details-marker]:hidden ${FOCUS_RING}`}
+        className={`${TEXT_TARGET} w-fit cursor-pointer list-none gap-1 rounded-sm text-caption font-medium text-text-2 hover:text-text [&::-webkit-details-marker]:hidden ${FOCUS_RING}`}
       >
         읽는 법<span className="sr-only"> — {topic}</span>
         <ChevronDownIcon size={14} className="motion-safe:transition-transform group-open:rotate-180" />
