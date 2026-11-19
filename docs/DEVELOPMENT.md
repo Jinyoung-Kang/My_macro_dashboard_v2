@@ -601,7 +601,7 @@ Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정
 재부팅이 필요해지면(`/var/run/reboot-required`) 또는 Livepatch가 지금 커널을 지원하지 않거나 점검·적용이 실패하거나 지원 기한이 30일 안이거나 마지막 점검이
 48시간보다 오래되면 `scripts/vultr/reboot-check.sh`가 매일 16:10 KST에 운영 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`)으로 사유·패키지·권장 재부팅
 시각과 할 일('실행:' — 재부팅이면 아래 재부팅·확인·DNS 복구 명령, Livepatch만이면 확인 명령, 2026-11-13)을 한 통 보냅니다(같은 날 같은 글은 한 번, 이상이 없으면
-보내지 않음 — syslog `journalctl -t my-macro-reboot-check`). Livepatch 상태는 세 번까지 다시 묻고, 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 적습니다(QA-417). 같은 판정을 `deploy.sh` 끝 요약과 서버의
+보내지 않음 — syslog `journalctl -t my-macro-reboot-check`). Livepatch 상태는 root가 아니면 `sudo -n`으로 읽고(cron에는 사용자 세션 버스가 없어 root가 아닌 사용자의 snap 실행이 실패함 — QA-417 후속), 세 번까지 다시 묻고, 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 적습니다(QA-417). 그래서 서버의 ubuntu에는 비밀번호 없는 sudo가 있어야 합니다(`bootstrap.sh`). 같은 판정을 `deploy.sh` 끝 요약과 서버의
 `make status`가 한 줄로 찍습니다. cron 등록(서버 ubuntu — 서버 시간대는 UTC, 여러 번 돌려도 한 줄):
 
 ```bash
