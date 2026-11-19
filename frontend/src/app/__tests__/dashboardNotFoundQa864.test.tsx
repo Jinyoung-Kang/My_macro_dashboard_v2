@@ -40,7 +40,8 @@ describe("셸 안 notFound()의 화면(QA-864)", () => {
     render(<NotFound />);
     expect(screen.getByRole("heading", { level: 1, name: "찾을 수 없는 화면" })).toBeTruthy();
     expect(screen.queryByRole("main")).toBeNull();
-    expect(screen.getByText("주소가 틀렸거나 없는 화면입니다. 주소를 확인하거나 홈에서 다시 찾아 주세요.")).toBeTruthy();
+    // 안내 한 줄은 낱말 사이에서만 꺾음(390에서 '…홈|에서' — P7 합친 뒤 검토).
+    expect(screen.getByText("주소가 틀렸거나 없는 화면입니다. 주소를 확인하거나 홈에서 다시 찾아 주세요.").className).toContain("break-keep");
     const links = screen.getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(["/"]);
     const home = screen.getByRole("link", { name: "← 홈" });

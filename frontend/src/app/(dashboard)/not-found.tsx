@@ -16,7 +16,11 @@ const HOME_LINK = `${TEXT_TARGET} min-w-11 rounded-sm text-accent underline-offs
 export default function DashboardNotFound() {
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
-      <PageHeader title="찾을 수 없는 화면" description="주소가 틀렸거나 없는 화면입니다. 주소를 확인하거나 홈에서 다시 찾아 주세요." />
+      {/* 안내 한 줄은 낱말 사이에서만 꺾습니다 — 390에서 '…홈|에서'처럼 음절 사이가 갈렸습니다. 공용 머리 설명의 규칙은 다른 화면도 바꾸므로 여기만(정보 수집 머리와 같음). */}
+      <PageHeader
+        title="찾을 수 없는 화면"
+        description={<span className="break-keep">주소가 틀렸거나 없는 화면입니다. 주소를 확인하거나 홈에서 다시 찾아 주세요.</span>}
+      />
       <p className="text-sm">
         <Link href="/" className={HOME_LINK}>
           ← 홈

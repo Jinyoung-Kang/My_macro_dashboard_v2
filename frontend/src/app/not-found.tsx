@@ -20,7 +20,8 @@ export default function NotFound() {
         </Link>
       }
     >
-      <p className="mt-2 text-sm leading-relaxed text-text-2">
+      {/* 낱말 사이에서만 꺾습니다 — 390에서 '…확인하|거나'처럼 음절 사이가 갈렸습니다. */}
+      <p className="mt-2 break-keep text-sm leading-relaxed text-text-2">
         주소가 틀렸거나 없는 화면입니다. 주소를 확인하거나 홈에서 다시 찾아 주세요.
       </p>
     </AuthCard>
