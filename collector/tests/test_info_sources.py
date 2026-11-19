@@ -114,6 +114,50 @@ def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_상한
     assert left["body_status"] == "partial" and left["body"] == "Short teaser.", "못 연 글은 피드 요약으로 둡니다"
 
 
+FULL_FEED_BLOG = info_blogs.Blog(BLOG.key, BLOG.task, BLOG.label, BLOG.site, BLOG.feed, short_posts_in_feed=True)
+
+
+def test_피드가_짧은_글도_전문을_싣는_블로그는_짧은_글의_글_페이지를_열지_않는다(store, example_host):
+    # Marginal Revolution 꼴 — 짧은 글 8편이 글 페이지를 두 번씩 열고 얻은 것이 없었음(2026-11-20 저장된 글로 확인).
+    routes = {BLOG.feed: _feed(_item(1, content="A two-sentence post. It is complete in the feed."))}
+    routes["https://blog.example.com/2026/11/post-1/?utm_source=rss"] = _page(1)
+    fetch = FakeFetch(routes)
+
+    detail = info_blogs.collect(FULL_FEED_BLOG, fetch=fetch, now=NOW)
+
+    assert fetch.pages() == []
+    row = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
+    assert row["body_status"] == "partial" and row["body"].startswith("A two-sentence post"), "짧은 글은 지금처럼 피드 글을 partial로"
+    assert row["meta"].get("pageTries") is None
+    assert "밀린 글" not in detail, "열 글이 아니라 밀린 글로 세지 않습니다"
+
+
+def test_피드가_짧은_글도_전문을_싣는_블로그도_피드_글이_비면_글_페이지를_연다(store, example_host):
+    routes = {BLOG.feed: _feed(_item(1, content=None, summary=""))}
+    routes["https://blog.example.com/2026/11/post-1/?utm_source=rss"] = _page(1)
+    fetch = FakeFetch(routes)
+
+    info_blogs.collect(FULL_FEED_BLOG, fetch=fetch, now=NOW)
+
+    assert fetch.pages() == ["https://blog.example.com/2026/11/post-1/?utm_source=rss"]
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "full"
+
+
+def test_기본_블로그는_짧은_글이면_지금처럼_글_페이지를_연다(store, example_host):
+    routes = {BLOG.feed: _feed(_item(1, content="A two-sentence post. It is complete in the feed."))}
+    routes["https://blog.example.com/2026/11/post-1/?utm_source=rss"] = _page(1)
+    fetch = FakeFetch(routes)
+
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    assert fetch.pages() == ["https://blog.example.com/2026/11/post-1/?utm_source=rss"]
+
+
+def test_짧은_글도_전문을_싣는_블로그는_세_곳이다():
+    assert {b.key for b in info_blogs.BLOGS if b.short_posts_in_feed} == {
+        "blog.marginalrevolution", "blog.econbrowser", "blog.humbledollar"}, "글 페이지에 본문을 기대는 Wolf Street 등은 켜지 않습니다"
+
+
 def test_QA388_피드_항목의_링크가_그_블로그의_호스트가_아니면_글_페이지를_열지_않는다(store, example_host):
     """
     피드 항목의 링크가 정책 표의 **다른** 호스트(KRX 등)를 가리켜도 글 페이지로 열면, 그 호스트의 세션 쿠키가 붙은 요청이 나가고

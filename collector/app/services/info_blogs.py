@@ -8,6 +8,7 @@ app/services/info_blogs.py
   2. 새 글(정규화한 주소의 id로 이미 받은 글은 건너뜀, 30일보다 오래된 글은 넣지 않음)마다
      - 피드에 본문이 있으면(글자 400자 이상) 그 본문을 씁니다 — 같은 글을 다시 열지 않는 것이 출처 부하가 가장 적습니다.
      - 피드에 본문이 없거나 짧으면, 최근 7일 글만 글 페이지를 열어 본문을 고릅니다(실행 한 번에 최대 PAGE_FETCHES_PER_RUN건, 한 글에 두 번까지).
+       피드가 짧은 글도 전문을 싣는 블로그(Blog.short_posts_in_feed)는 피드 글이 비었을 때만 엽니다.
   3. info_items에 넣거나 채웁니다(본문은 더 나은 판정일 때만 덮음 — store.upsert_info_items).
 
 [실패 규칙]
@@ -54,7 +55,10 @@ PAGE_MISSED_RATIO = 0.5
 
 @dataclass(frozen=True)
 class Blog:
-    """블로그 하나 — 출처 키(info_items.source), 태스크 이름, 화면 이름, 사이트 주소(출처 링크), 피드 주소, 다음 실행까지의 간격(분, 하한·상한)."""
+    """
+    블로그 하나 — 출처 키(info_items.source), 태스크 이름, 화면 이름, 사이트 주소(출처 링크), 피드 주소, 다음 실행까지의 간격(분, 하한·상한),
+    피드가 짧은 글도 전문을 싣는가(short_posts_in_feed — 켜면 피드 글이 있는 한 400자에 못 미쳐도 글 페이지를 열지 않음).
+    """
 
     key: str
     task: str
@@ -62,6 +66,7 @@ class Blog:
     site: str
     feed: str
     minutes: tuple[int, int] = (180, 480)
+    short_posts_in_feed: bool = False
 
 
 BLOGS: tuple[Blog, ...] = (
@@ -70,8 +75,10 @@ BLOGS: tuple[Blog, ...] = (
          "https://abnormalreturns.com/feed/"),
     Blog("blog.awealthofcommonsense", "info_blog_awealthofcommonsense", "A Wealth of Common Sense",
          "https://awealthofcommonsense.com/", "https://awealthofcommonsense.com/feed/"),
+    # 피드가 짧은 글도 전문을 싣는 곳(2026-11-20 저장된 글로 확인 — 짧은 글의 글 페이지에서 더 얻은 본문이 없었음): Marginal Revolution·
+    # Econbrowser(글 페이지에서는 댓글을 본문으로 고름)·HumbleDollar. 글 페이지를 열지 않습니다(출처 부하와 4 GB 서버의 브라우저 기동을 줄임).
     Blog("blog.marginalrevolution", "info_blog_marginalrevolution", "Marginal Revolution", "https://marginalrevolution.com/",
-         "https://marginalrevolution.com/feed"),
+         "https://marginalrevolution.com/feed", short_posts_in_feed=True),
     Blog("blog.ritholtz", "info_blog_ritholtz", "The Big Picture (Ritholtz)", "https://ritholtz.com/", "https://ritholtz.com/feed/"),
     Blog("blog.calculatedrisk", "info_blog_calculatedrisk", "Calculated Risk", "https://calculatedrisk.substack.com/",
          "https://calculatedrisk.substack.com/feed"),
@@ -81,12 +88,14 @@ BLOGS: tuple[Blog, ...] = (
          (360, 900)),
     Blog("blog.klement", "info_blog_klement", "Klement on Investing", "https://klementoninvesting.substack.com/",
          "https://klementoninvesting.substack.com/feed"),
-    Blog("blog.econbrowser", "info_blog_econbrowser", "Econbrowser", "https://econbrowser.com/", "https://econbrowser.com/feed"),
+    Blog("blog.econbrowser", "info_blog_econbrowser", "Econbrowser", "https://econbrowser.com/", "https://econbrowser.com/feed",
+         short_posts_in_feed=True),
     Blog("blog.conversableeconomist", "info_blog_conversableeconomist", "Conversable Economist",
          "https://conversableeconomist.com/", "https://conversableeconomist.com/feed/"),
     Blog("blog.alphaarchitect", "info_blog_alphaarchitect", "Alpha Architect", "https://alphaarchitect.com/",
          "https://alphaarchitect.com/feed/"),
-    Blog("blog.humbledollar", "info_blog_humbledollar", "HumbleDollar", "https://humbledollar.com/", "https://humbledollar.com/feed/"),
+    Blog("blog.humbledollar", "info_blog_humbledollar", "HumbleDollar", "https://humbledollar.com/", "https://humbledollar.com/feed/",
+         short_posts_in_feed=True),
     # Blogger 피드(약 1.3 MB) — 요약 칸에 본문 전체가 옵니다. 글이 드물어 간격을 길게 둡니다.
     Blog("blog.damodaran", "info_blog_damodaran", "Musings on Markets (Damodaran)", "https://aswathdamodaran.blogspot.com/",
          "https://aswathdamodaran.blogspot.com/feeds/posts/default?alt=rss", (360, 900)),
@@ -326,12 +335,14 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
 
 def _page_worthy(blog: Blog, entry: dict, seen: dict | None, now: datetime) -> bool:
     """
-    글 페이지를 열 만한가 — 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았고, 그 글의 주소가 **이 블로그 자신의 호스트**
+    글 페이지를 열 만한가 — 피드가 짧은 글도 전문을 싣는 블로그라면 피드 글이 비었고, 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았고, 그 글의 주소가 **이 블로그 자신의 호스트**
     (사이트·피드 주소의 호스트)이며 그 호스트가 정책 표에 있음.
 
     피드 항목의 링크는 출처가 정하는 값입니다. 정책 표의 다른 호스트(KRX 등)를 가리키는 링크까지 열면 그 호스트의 세션 쿠키가 붙은 요청이
     나가고 응답이 이 블로그의 글로 저장됩니다(QA-388). 그런 글은 피드 요약으로만 둡니다.
     """
+    if blog.short_posts_in_feed and entry["text"]:
+        return False                              # 피드 글이 그 글의 전문 — 짧은 글일 뿐입니다
     published = entry["published_at"]
     if published is not None and published < now - timedelta(days=PAGE_MAX_AGE_DAYS):
         return False
