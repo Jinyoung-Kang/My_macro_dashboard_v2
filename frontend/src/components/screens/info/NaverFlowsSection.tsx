@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pager } from "@/components/Pager";
 import { ChangeCell, DataTable, StaleBadge } from "@/components/patterns";
 import { Callout, Card, ErrorState, Freshness, LINK_CLASSES, Loading, NativeSelect, SourceBadge } from "@/components/ui";
+import { FOCUS_RING, TEXT_TARGET_SHORT } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
@@ -24,8 +25,11 @@ import {
   sharesText,
 } from "@/lib/info";
 
-/** 짧은 출처 링크 — 공용 링크 모양에 좁은 화면 폭 하한 44px(글은 가운데). 넓은 화면은 글 폭 그대로. */
-const SHORT_LINK = `${LINK_CLASSES} min-w-11 justify-center lg:min-w-0`;
+/**
+ * 짧은 출처 링크 — 짧은 글 단추 누름 자리(ui/classes TEXT_TARGET_SHORT — 좁은 화면 높이·폭 44px, 글 가운데, 넓은 화면은 글 크기)에 공용 링크와 같은
+ * 색·밑줄·포커스 링(LINK_CLASSES의 TEXT_TARGET 뒤 조각). 예전에는 LINK_CLASSES + 같은 폭 조각을 손으로 붙였습니다(클래스 묶음은 같음 — P7 검토).
+ */
+const SHORT_LINK = `${TEXT_TARGET_SHORT} rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline ${FOCUS_RING}`;
 
 /**
  * 네이버 투자자별 매매동향(코스피·코스닥 최근 10거래일, 억 원)과 외국인·기관 순매수·순매도 상위(당일). 장중 순위는 네이버의 추정이라 금액이 없고
