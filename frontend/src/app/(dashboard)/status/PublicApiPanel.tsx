@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
+import { Button, Callout, ErrorState, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import type { PublicApiDiagnosticsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -22,7 +23,7 @@ export function PublicApiPanel() {
   );
 
   return (
-    <Card
+    <Panel
       title="국내 공공 API 연결 진단" source="공공데이터포털(천문연·금융위) · 금융감독원 Open DART — 실제 호출"
       subtitle="공공데이터포털(특일정보·주식시세) · Open DART — 누를 때마다 API당 1회 호출"
       actions={
@@ -37,17 +38,21 @@ export function PublicApiPanel() {
         </p>
       )}
       {error && <ErrorState message={error} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
       {data?.available && data.apis && (
-        <Table
+        <DataTable
+          dense
+          count
+          caption="국내 공공 API 연결 진단"
           rows={data.apis}
           rowKey={(row) => row.label}
           columns={[
-            { key: "label", header: "API", render: (row) => row.label },
+            { key: "label", header: "API", className: "break-keep", cell: (row) => row.label },
             {
               key: "state",
               header: "상태",
-              render: (row) =>
+              className: "whitespace-nowrap",
+              cell: (row) =>
                 row.ok ? (
                   <StatusText tone="ok">정상</StatusText>
                 ) : row.configured ? (
@@ -56,16 +61,16 @@ export function PublicApiPanel() {
                   <StatusText tone="neutral">키 없음</StatusText>
                 ),
             },
-            { key: "detail", header: "내용", render: (row) => <span className="text-xs">{row.detail ?? EMPTY}</span> },
+            { key: "detail", header: "내용", className: "min-w-[14rem] break-keep wrap-anywhere text-caption", cell: (row) => row.detail },
             {
               key: "ms",
               header: "응답",
               align: "right",
-              render: (row) => (row.elapsedMs === null ? EMPTY : `${formatNumber(row.elapsedMs, 0)}ms`),
+              cell: (row) => (row.elapsedMs === null ? null : `${formatNumber(row.elapsedMs, 0)}ms`),
             },
           ]}
         />
       )}
-    </Card>
+    </Panel>
   );
 }

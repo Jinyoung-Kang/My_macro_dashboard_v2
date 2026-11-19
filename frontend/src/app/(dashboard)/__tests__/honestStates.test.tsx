@@ -64,9 +64,12 @@ describe("QA-102 상태 화면 오류·경고 로그 — 수집기에 닿지 못
 
     render(<StatusPage />);
     const section = (await screen.findByRole("heading", { name: "수집 오류·경고 로그" })).closest("section") as HTMLElement;
-    const metric = (await within(section).findByText("누락 데이터셋")).parentElement as HTMLElement;
+    await within(section).findByText("누락 데이터셋");
+    // P7: KPI 띠 타일(이름 있는 묶음) — 값은 '—'(읽기 '값 없음')와 사유, 숫자(0개)가 아닙니다.
+    const tile = within(section).getByRole("group", { name: "누락 데이터셋" });
 
-    expect(metric.textContent).toBe("누락 데이터셋—");
+    expect(tile.textContent).toBe("누락 데이터셋—값 없음확인 못 함");
+    expect(tile.textContent).not.toMatch(/\d/);
     expect(within(section).queryByText(/오류·경고가 없습니다/)).toBeNull();
   });
 });
