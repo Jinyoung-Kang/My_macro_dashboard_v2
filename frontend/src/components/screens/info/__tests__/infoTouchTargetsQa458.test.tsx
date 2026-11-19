@@ -107,6 +107,12 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     await screen.findByRole("button", { name: "국내 출처 0" });
     expect(screen.getByRole("link", { name: "한국거래소 정보데이터시스템(계정 로그인) · 확정치" })).toBeTruthy();
     expect(smallTargets(container)).toEqual([]);
+    // 두세 글자 출처 링크는 좁은 화면 폭도 44px(머리 없는 크롬 390에서 '기관' 24px·'외국인' 36px 폭이었음 — ui-audit).
+    for (const name of ["외국인", "기관"]) {
+      const classes = (screen.getByRole("link", { name }).getAttribute("class") ?? "").split(/\s+/);
+      expect(classes, name).toContain("min-w-11");
+      expect(classes, name).toContain("lg:min-w-0");
+    }
     unmount();
 
     const status = render(<InfoHub tab="status" />);

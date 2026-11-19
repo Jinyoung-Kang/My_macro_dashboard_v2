@@ -24,6 +24,9 @@ import {
   sharesText,
 } from "@/lib/info";
 
+/** 짧은 출처 링크 — 공용 링크 모양에 좁은 화면 폭 하한 44px(글은 가운데). 넓은 화면은 글 폭 그대로. */
+const SHORT_LINK = `${LINK_CLASSES} min-w-11 justify-center lg:min-w-0`;
+
 /**
  * 네이버 투자자별 매매동향(코스피·코스닥 최근 10거래일, 억 원)과 외국인·기관 순매수·순매도 상위(당일). 장중 순위는 네이버의 추정이라 금액이 없고
  * 주식 수만 보입니다('—'는 0이 아니라 출처가 주지 않은 값). 시장·투자주체를 골라 한 쌍씩 보이고 순위는 10줄씩 넘깁니다.
@@ -40,18 +43,19 @@ export function NaverFlowsSection() {
     <Card
       title="네이버 투자자별 매매동향·매매상위"
       source={
-        // 출처 글과 링크 셋을 '출처 ·' 뒤 한 글 흐름으로(QA-836 — 예전에는 블록 flex 상자라 '출처 ·'만 윗줄에 남았음). 링크는 공용 링크 모양(좁은 화면 44px).
+        // 출처 글과 링크 셋을 '출처 ·' 뒤 한 글 흐름으로(QA-836 — 예전에는 블록 flex 상자라 '출처 ·'만 윗줄에 남았음). 링크는 공용 링크 모양(좁은 화면 44px),
+        // 두세 글자 링크('외국인'·'기관')는 좁은 화면 폭도 44px(SHORT_LINK — 짧은 글 단추 규칙, ui/classes TEXT_TARGET_SHORT).
         <>
           {data?.source ?? "네이버 증권"} (비공식) ·{" "}
           <a href={data?.sourceUrls?.trader ?? "https://stock.naver.com/market/stock/kr/trend/trader"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
             매매동향
           </a>
           {" · "}
-          <a href={data?.sourceUrls?.foreigner ?? "https://stock.naver.com/market/stock/kr/trend/foreigner"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
+          <a href={data?.sourceUrls?.foreigner ?? "https://stock.naver.com/market/stock/kr/trend/foreigner"} target="_blank" rel="noopener noreferrer" className={SHORT_LINK}>
             외국인
           </a>
           {" · "}
-          <a href={data?.sourceUrls?.organization ?? "https://stock.naver.com/market/stock/kr/trend/organization"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
+          <a href={data?.sourceUrls?.organization ?? "https://stock.naver.com/market/stock/kr/trend/organization"} target="_blank" rel="noopener noreferrer" className={SHORT_LINK}>
             기관
           </a>
         </>
