@@ -461,4 +461,18 @@ describe("정보 수집 화면", () => {
     expect(within(row).getAllByText("—")).toHaveLength(2);      // 기사 수·요약을 모름
     expect(screen.getByRole("link", { name: "WAEDGE NEWS 거장 (비공식)" }).getAttribute("href")).toBe("https://waedge.example/");
   });
+
+  // 작업대 P7: 머리는 설명 한 줄 + '자세히' 접기(예전 긴 설명의 나머지와 화면 바닥 12px 문단 — 문구는 지우지 않음).
+  it("머리: 설명 한 줄, 긴 설명과 차단 통과 수집 안내는 '자세히' 안(처음에는 접힘)", async () => {
+    routes({ "/api/info/catalog": CATALOG });
+    render(<InfoHub tab="status" />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "출처 상태" })).toBeTruthy();
+    expect(screen.getByText("모든 출처의 마지막 실행·판정·다음 실행을 한 표에서 봅니다.")).toBeTruthy();
+    const details = screen.getByText("자세히").closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText("끊긴 출처는 텔레그램과 화면 위 안내로도 알립니다.")).toBeTruthy();
+    expect(within(details).getByText(/차단 통과 수집\(블로그·waedge·네이버·KRX·TradingView 캘린더\)은 운영 서버에서만/)).toBeTruthy();
+    await screen.findByRole("region", { name: /^출처 상태 / });
+  });
 });
