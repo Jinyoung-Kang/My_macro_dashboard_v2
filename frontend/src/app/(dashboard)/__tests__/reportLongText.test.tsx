@@ -1,7 +1,8 @@
 /**
  * AI 리포트의 긴 글 문법(작업대 P7 — 실행 명세 §7 7행 'AI 리포트: 긴 글 문법').
  *
- * - 문단·목록은 긴 글 단계(15/24 — text-running)·한 줄 72자 폭·낱말 사이 줄바꿈, 절 제목은 heading-sm. 표는 넓이 그대로(최소 520px), 글 칸은 낱말 사이 줄바꿈.
+ * - 문단·목록은 긴 글 단계(15/24 — text-running)·한 줄 72자 폭·낱말 사이 줄바꿈, 절 제목은 heading-sm. 표는 공용 표(최소 640px — QA-869), 글 칸은 낱말 사이 줄바꿈
+ *   (첫 열은 행 머리 th).
  * - 목차는 공용 긴 화면 목차(SectionIndex — xl부터 세로 목록). 뒤로·앞으로 가기(hashchange)로 해시가 절이 되면 그 절로 옮깁니다(D3b 넘김 — 예전 버튼 줄은
  *   기록만 쌓고 기록 이동에는 본문이 움직이지 않았음). 절이 둘 이하면 목차 없음.
  * - 원문(Markdown) 보기와 AI 입력 원본은 공용 로그 상자(LogPanel — 이름 있는 영역), 생성 실패는 위험 안내 상자(제목 '생성 실패').
@@ -60,9 +61,9 @@ describe("AI 리포트 본문 — 긴 글 문법", () => {
     const list = screen.getByText("합성 수급 한 줄").closest("ul") as HTMLElement;
     expect(list.className).toContain("max-w-[72ch]");
     expect(screen.getByRole("heading", { name: "2. 수급", level: 3 }).className).toContain("text-heading-sm");
-    const cell = within(screen.getByRole("table")).getByText("외국인 순매수").closest("td") as HTMLElement;
+    const cell = within(screen.getByRole("table")).getByText("외국인 순매수").closest("th") as HTMLElement;
     expect(cell.className).toContain("break-keep");
-    expect(screen.getByRole("table").className).toContain("min-w-[520px]");
+    expect(screen.getByRole("table").className).toContain("min-w-[640px]");
   });
 
   it("목차는 공용 긴 화면 목차(xl부터 세로 목록) — 절이 둘 이하면 목차 없음", () => {

@@ -45,7 +45,7 @@ describe("더보기 화면의 조밀 표 — 넘김 안내", () => {
   });
 
   // QA-869: 손으로 만든 표(<table> + overflow-x-auto 상자)는 위 검사를 비껴 넘김 안내 없이 넘쳤습니다(AI 리포트 본문 표) — 표는 모두 공용 조밀 표로 그립니다.
-  it.fails("손으로 만든 <table>이 없다 — 표는 모두 공용 DataTable(QA-869)", () => {
+  it("손으로 만든 <table>이 없다 — 표는 모두 공용 DataTable(QA-869)", () => {
     const raw: string[] = [];
     for (const dir of DIRS) {
       for (const file of files(join(ROOT, dir))) {

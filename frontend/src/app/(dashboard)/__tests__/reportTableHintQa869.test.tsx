@@ -7,7 +7,7 @@
  *
  * 기대: 공용 조밀 표(DataTable — 넘김 안내 scrollHint="overflow"·표 이름)로 그려, 표마다 '{절 제목} 표'(한 절에 둘 이상이면 '표 n') 이름의 영역·caption과
  * 넘김 안내 줄이 있습니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 'Unable to find an accessible element with the role "region" and name "2. 수급 표 1 (좌우 스크롤)"'(영역
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 'Unable to find an accessible element with the role "region" and name "2. 수급 표 1 (좌우 스크롤)"'(영역
  * 이름이 모두 '리포트 표 (좌우 스크롤)'), 둘째 사례 'Unable to find an element with the text: ← 표를 좌우로 넘겨 보세요', moreTablesScrollHint 새 사례
  * "expected [ 'ai/report/ReportView.tsx' ] to deeply equal []".
  */
@@ -36,7 +36,7 @@ const REPORT = `## 1. 핵심 요약
 `;
 
 describe("AI 리포트 본문 표 — 넘김 안내·표 이름(QA-869)", () => {
-  it.fails("표마다 '{절 제목} 표'(한 절에 둘 이상이면 '표 n') 이름의 영역과 caption", () => {
+  it("표마다 '{절 제목} 표'(한 절에 둘 이상이면 '표 n') 이름의 영역과 caption", () => {
     render(<ReportView markdown={REPORT} />);
     const names = ["2. 수급 표 1", "2. 수급 표 2", "3. 금리 표"];
     for (const name of names) {
@@ -46,7 +46,7 @@ describe("AI 리포트 본문 표 — 넘김 안내·표 이름(QA-869)", () => 
     expect(screen.queryByRole("region", { name: "리포트 표 (좌우 스크롤)" })).toBeNull();
   });
 
-  it.fails("표마다 넘김 안내 줄('← 표를 좌우로 넘겨 보세요')이 표 앞에 있다", () => {
+  it("표마다 넘김 안내 줄('← 표를 좌우로 넘겨 보세요')이 표 앞에 있다", () => {
     render(<ReportView markdown={REPORT} />);
     const hints = screen.getAllByText("← 표를 좌우로 넘겨 보세요");
     expect(hints).toHaveLength(3);
