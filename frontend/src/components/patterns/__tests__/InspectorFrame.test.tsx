@@ -4,6 +4,7 @@
  * 불러오는 중·오류(renderDetail이 Skeleton·ErrorState를 돌려주면 그대로 — 자리표시는 부르는 쪽이 그림).
  * 넓은 화면은 matchMedia 대역(lib/shellCommands WIDE_SHELL_MEDIA)으로, 틀 폭은 getBoundingClientRect·ResizeObserver 대역으로 흉내 냅니다(MasterDetail.test와 같음).
  * jsdom은 크기 질의를 계산하지 않아 옆 칸 자리(@lg·@min-[52rem])는 클래스로 봅니다. 누름 자리(lg 미만 44px), 강조색 없음.
+ * P7 선택 dialogDescriptionOf: 주지 않으면 대화상자 DOM 그대로(설명 줄·aria-describedby 없음), 주면 대화상자에만 설명 줄.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -589,6 +590,58 @@ describe("InspectorFrame — 넓은 배치(wide)·배치 문맥(inline)·제목 
     const dialog = await screen.findByRole("dialog", { name: "VIX" });
     await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
     expect(document.activeElement?.tagName).not.toBe("H2");
+  });
+});
+
+describe("InspectorFrame — 대화상자 설명 줄(dialogDescriptionOf, P7)", () => {
+  /** 대화상자 상자의 자식 차례 — 태그와 클래스(제목·설명·내용·닫기 단추). */
+  const layoutOf = (dialog: HTMLElement) => [...dialog.children].map((child) => `${child.tagName}.${child.getAttribute("class") ?? ""}`);
+
+  it("주지 않으면 대화상자 DOM 그대로 — 제목 다음 바로 내용, 설명 줄과 aria-describedby 없음", () => {
+    renderFrame();
+    fireEvent.click(trigger("VIX"));
+    const dialog = screen.getByRole("dialog", { name: "VIX" });
+    expect(dialog.hasAttribute("aria-describedby")).toBe(false);
+    const children = layoutOf(dialog);
+    expect(children.map((child) => child.split(".")[0])).toEqual(["H2", "DIV", "BUTTON"]);
+    expect(children[1]).toBe("DIV.mt-3 min-w-0");
+    expect(within(dialog).getByText("15.30")).toBeTruthy();
+  });
+
+  it("주면 대화상자 제목 아래 설명 줄(그 키의 글) — aria-describedby로 이어지고, 내용은 그 아래", () => {
+    const describeKey = vi.fn((key: string) => `합성 출처 · ${key} 2026-11-15 09:00 KST`);
+    renderFrame({ dialogDescriptionOf: describeKey });
+    expect(describeKey).not.toHaveBeenCalled();
+    fireEvent.click(trigger("VIX"));
+    const dialog = screen.getByRole("dialog", { name: "VIX" });
+    expect(describeKey).toHaveBeenCalledWith("vix");
+    const describedBy = dialog.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const description = document.getElementById(describedBy as string) as HTMLElement;
+    expect(description.textContent).toBe("합성 출처 · vix 2026-11-15 09:00 KST");
+    expect(dialog.contains(description)).toBe(true);
+    expect(layoutOf(dialog).map((child) => child.split(".")[0])).toEqual(["H2", "DIV", "DIV", "BUTTON"]);
+    expect(dialog.children[1]).toBe(description);
+    expect(within(dialog.children[2] as HTMLElement).getByText("15.30")).toBeTruthy();
+  });
+
+  it("옆 검사 칸 배치에는 그리지 않는다 — 함수를 부르지 않고 설명 글도 없음, 좁은 틀로 바뀌면 대화상자에만", () => {
+    stubWide();
+    const frame = stubFrameWidth(1200);
+    const describeKey = vi.fn((key: string) => `설명 ${key}`);
+    renderFrame({ layout: "lg", dialogDescriptionOf: describeKey });
+    fireEvent.click(trigger("VIX"));
+    const region = screen.getByRole("region", { name: "지표 미리보기 — VIX" });
+    expect(within(region).getByText("15.30")).toBeTruthy();
+    expect(screen.queryByText("설명 vix")).toBeNull();
+    expect(region.hasAttribute("aria-describedby")).toBe(false);
+    expect(describeKey).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    frame.resize(800);
+    fireEvent.click(trigger("달러 인덱스"));
+    const dialog = screen.getByRole("dialog", { name: "달러 인덱스" });
+    expect(within(dialog).getByText("설명 dxy")).toBeTruthy();
+    expect(describeKey.mock.calls.every(([key]) => key === "dxy")).toBe(true);
   });
 });
 

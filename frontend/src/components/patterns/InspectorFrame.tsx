@@ -103,6 +103,9 @@ const VANISHED = "고른 줄이 지금 자료에 없습니다. 다른 줄을 고
  * - `renderDetail`은 PropertyList·링크·자리표시(Skeleton·ErrorState)를 그립니다 — 펼칠 때 읽는 자세한 값은 그 안의 자식이 읽습니다(틀은 읽지 않음).
  * - 작업대 P6 선택(기본값이면 위 동작 그대로): 배치 `wide`(틀 64rem부터 옆 28rem, 그 아래 대화상자), 문맥의 `inline`(지금 옆 칸 배치인가 — 표가 배치에 따라
  *   그릴 때), `dialogFocus="title"`(대화상자를 열 때 첫 포커스를 제목에 — ui/Dialog initialFocus).
+ * - 작업대 P7 선택(주지 않으면 대화상자 DOM 그대로 — 설명 줄·aria-describedby 없음): `dialogDescriptionOf`(키 → 대화상자 제목 아래 설명 줄 — ui/Dialog
+ *   description, aria-describedby로 이어짐). 대화상자에만 그리고 옆 검사 칸에는 그리지 않습니다(옆 칸 머리에 둘 것은 부르는 쪽이 `renderDetail` 안에 둠).
+ *   처음 쓰는 곳은 정보 수집 뉴스·글(좁은 배치의 원문 대화상자를 원문 팝업과 같은 꼴 — 제목 + '출처 · 시각')입니다.
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(줄 단추는 중립 잉크 — InspectorTrigger, 고른 행은 표의 잉크 막대 — 데이터 칸 강조색 금지 목록).
  */
 export function InspectorFrame({
@@ -116,6 +119,7 @@ export function InspectorFrame({
   inspectorHint = DEFAULT_HINT,
   headingLevel = 3,
   dialogFocus = "content",
+  dialogDescriptionOf,
   children,
 }: {
   /** 검사 칸 영역 이름의 앞부분 — 예 '지표 미리보기'. */
@@ -135,6 +139,8 @@ export function InspectorFrame({
   headingLevel?: 2 | 3 | 4;
   /** 대화상자를 열 때 첫 포커스 — 내용(기본) 또는 제목. */
   dialogFocus?: "content" | "title";
+  /** 대화상자 제목 아래 설명 줄(ui/Dialog description — aria-describedby). 옆 검사 칸에는 그리지 않습니다. 주지 않으면 설명 줄 없음. */
+  dialogDescriptionOf?: (key: string) => ReactNode;
   children: (inspector: InspectorContext) => ReactNode;
 }): JSX.Element {
   const wide = useWideShell();
@@ -304,6 +310,7 @@ export function InspectorFrame({
           if (!open) setDialogKey(null);
         }}
         title={dialogTitle ?? label}
+        description={dialogDescriptionOf && dialogTitle !== null && dialogKey !== null ? dialogDescriptionOf(dialogKey) : undefined}
         size="lg"
         placement="top"
         initialFocus={dialogFocus}

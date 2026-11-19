@@ -152,6 +152,8 @@
   그대로), `dialogFocus`(대화상자 첫 포커스를 제목에). P6에서 쓰는 곳은 모의 개요 계좌 표(wide)·보유 표(lg)·미국 기관 선정 구간(dialog — QA-735)·설정 편집 줄(lg). P6 검토에서
   검사 칸 안 절 머리 `InspectorSubheading`(`fallback`·`depth` — 칸 제목보다 depth 단계 아래 태그)와 그 범위 `InspectorHeadingScope`(DOM 없음 — 이 틀과 목록-검사가 `renderDetail`을 감쌈: 옆 칸은 제목
   `headingLevel`, 대화상자는 h2)를 더했습니다 — 같은 상세가 옆 칸과 대화상자 두 자리에 그려져도 절 머리가 제목 바로 아래 단계가 되게(검사 칸 밖은 fallback 그대로라 다른 화면 변화 없음).
+  P7(패턴 단계)에서 선택 `dialogDescriptionOf`(키 → 대화상자 제목 아래 설명 줄 — ui/Dialog `description`·aria-describedby, 옆 검사 칸에는 그리지 않음, 주지 않으면 대화상자 DOM 그대로 — 고정 사례)를
+  더했습니다 — 쓰는 곳은 정보 수집 뉴스·글(좁은 배치의 원문 대화상자를 원문 팝업과 같은 꼴로).
   지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.
 - 시각순 목록 `components/patterns/Timeline.tsx` — 화면 패턴(목록-검사 `MasterDetail` 위 — 줄마다 시각 열 `<time>`(5.5rem·tabular-nums)·종류 태그(공용 `Tag` —
   톤이면 아이콘 + 글, 주의·위험은 '주의:')·한 줄 요약(말줄임 없이 낱말 사이에서 꺾음, 좁은 틀은 둘째 줄)·추정/이전 값 배지, 고르면 검사 칸 제목 = 기록의 `title`,
