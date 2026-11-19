@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState, type FocusEvent } from "react";
+import { FormEvent, useEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
-import { Button, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -17,6 +17,12 @@ import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
+
+/** 규칙 표 줄의 쓰기 — 켜기·끄기(POST {enabled})와 지우기(DELETE). */
+type RuleAction = "toggle" | "delete";
+
+/** 규칙 표 안 작은 단추 — 공용 Button(sm)과 같은 모양에, 요청 중(aria-disabled)이면 꺼진 단추처럼 보임(QA-898 — 원문 번역 단추 QA-887과 같은 꼴). */
+const RULE_BUTTON = `${buttonClasses("default", "sm")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`;
 
 /** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
 const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
@@ -57,6 +63,45 @@ export default function AlertsPage() {
   const reloadAll = () => {
     void rules.reload();
     void inbox.reload();
+  };
+
+  // 규칙 표 줄의 쓰기(QA-898). 단추의 켜짐 조건은 예전 그대로(disabled={demo})이고, 그 줄의 쓰기와 뒤따른 규칙 다시 읽기가 끝날 때까지 같은 줄 두 단추의
+  // 누름만 무시합니다(aria-disabled로 요청 중임을 알림 — 진짜 disabled가 아니라 포커스가 남음). 예전에는 두 번 누르거나 Enter를 되풀이하면 같은 POST·DELETE가
+  // 두 번 가고, 두 번째 DELETE는 서버 404라 지운 직후 경고가 떴습니다. 경로·메서드·본문·확인 없음은 그대로(moreWritesKeep). 다른 줄은 그대로 누를 수 있습니다.
+  // 누른 단추에 포커스가 있었고 끝난 뒤 포커스가 <body>면(지운 줄이 사라짐 등) 그 줄의 같은 단추 → 누를 때의 다음 줄의 같은 단추 → 표(가로 스크롤 상자)로 옮깁니다.
+  const ruleBusy = useRef(new Set<number>());
+  const [busyRules, setBusyRules] = useState<ReadonlySet<number>>(() => new Set());
+  const [ruleRefocus, setRuleRefocus] = useState<{ id: number; action: RuleAction; next: number | null } | null>(null);
+  const rulesTable = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ruleRefocus === null) return;
+    setRuleRefocus(null);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const box = rulesTable.current;
+    if (box === null) return;
+    const find = (id: number | null) =>
+      id === null ? null : box.querySelector<HTMLElement>(`[data-rule-id="${id}"][data-rule-action="${ruleRefocus.action}"]`);
+    (find(ruleRefocus.id) ?? find(ruleRefocus.next) ?? box.querySelector<HTMLElement>('[role="region"]'))?.focus();
+  }, [ruleRefocus]);
+  const ruleWrite = async (event: MouseEvent<HTMLButtonElement>, row: AlertRule, action: RuleAction) => {
+    if (ruleBusy.current.has(row.id)) return;
+    ruleBusy.current.add(row.id);
+    setBusyRules(new Set(ruleBusy.current));
+    const hadFocus = document.activeElement === event.currentTarget;
+    const shown = rules.data?.rules ?? [];
+    const next = shown[shown.findIndex((rule) => rule.id === row.id) + 1]?.id ?? null;
+    try {
+      if (action === "toggle") await toggle.run(row.id, !row.enabled);
+      else await remove.run(row.id);
+      const reloaded = rules.reload();
+      void inbox.reload();
+      await reloaded;
+    } finally {
+      ruleBusy.current.delete(row.id);
+      setBusyRules(new Set(ruleBusy.current));
+      if (hadFocus) setRuleRefocus({ id: row.id, action, next });
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -129,37 +174,57 @@ export default function AlertsPage() {
             <Callout tone="warn">{toggle.error ?? remove.error}</Callout>
           </div>
         )}
-        <DataTable<AlertRule>
-          dense
-          count
-          scrollHint="overflow"
-          caption="알림 규칙"
-          rows={rules.data?.rules ?? []}
-          rowKey={(row) => String(row.id)}
-          emptyText="규칙이 없습니다."
-          columns={[
-            { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => withoutLeadingIcon(row.description) },
-            { key: "created", header: "만든 날", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
-            {
-              key: "enabled",
-              header: "상태",
-              // 표 안 조작은 작은 단추(넓은 화면 24px — 명세 §3-7, table-cell-controls-md-30의 이 화면 몫).
-              cell: (row) => (
-                <Button size="sm" disabled={demo} onClick={async () => { await toggle.run(row.id, !row.enabled); reloadAll(); }}>
-                  {row.enabled ? "켜짐 — 끄기" : "꺼짐 — 켜기"}
-                </Button>
-              ),
-            },
-            {
-              key: "delete",
-              header: <span className="sr-only">지우기</span>,
-              align: "right",
-              cell: (row) => (
-                <Button size="sm" disabled={demo} onClick={async () => { await remove.run(row.id); reloadAll(); }}>지우기</Button>
-              ),
-            },
-          ]}
-        />
+        <div ref={rulesTable}>
+          <DataTable<AlertRule>
+            dense
+            count
+            scrollHint="overflow"
+            caption="알림 규칙"
+            rows={rules.data?.rules ?? []}
+            rowKey={(row) => String(row.id)}
+            emptyText="규칙이 없습니다."
+            columns={[
+              { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => withoutLeadingIcon(row.description) },
+              { key: "created", header: "만든 날", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
+              {
+                key: "enabled",
+                header: "상태",
+                // 표 안 조작은 작은 단추(넓은 화면 24px — 명세 §3-7, table-cell-controls-md-30의 이 화면 몫).
+                cell: (row) => (
+                  <button
+                    type="button"
+                    disabled={demo}
+                    aria-disabled={busyRules.has(row.id) || undefined}
+                    data-rule-id={row.id}
+                    data-rule-action="toggle"
+                    onClick={(event) => void ruleWrite(event, row, "toggle")}
+                    className={RULE_BUTTON}
+                  >
+                    {row.enabled ? "켜짐 — 끄기" : "꺼짐 — 켜기"}
+                  </button>
+                ),
+              },
+              {
+                key: "delete",
+                header: <span className="sr-only">지우기</span>,
+                align: "right",
+                cell: (row) => (
+                  <button
+                    type="button"
+                    disabled={demo}
+                    aria-disabled={busyRules.has(row.id) || undefined}
+                    data-rule-id={row.id}
+                    data-rule-action="delete"
+                    onClick={(event) => void ruleWrite(event, row, "delete")}
+                    className={RULE_BUTTON}
+                  >
+                    지우기
+                  </button>
+                ),
+              },
+            ]}
+          />
+        </div>
 
         <form onSubmit={submit} className="mt-5 flex max-w-md flex-col gap-3">
           <h3 className="text-sm font-semibold text-text">규칙 만들기</h3>

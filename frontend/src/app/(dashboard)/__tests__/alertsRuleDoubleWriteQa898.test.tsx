@@ -80,7 +80,7 @@ const row = (table: HTMLElement, text: string) => within(table).getByText(text).
 const button = (table: HTMLElement, text: string, name: string | RegExp) => within(row(table, text)).getByRole("button", { name });
 
 describe("알림 규칙 표 두 번 누름(QA-898)", () => {
-  it.fails("'지우기'를 요청 중에 다시 누르면 무시 — 같은 줄 두 단추는 aria-disabled(진짜 disabled 아님), 다른 줄은 그대로", async () => {
+  it("'지우기'를 요청 중에 다시 누르면 무시 — 같은 줄 두 단추는 aria-disabled(진짜 disabled 아님), 다른 줄은 그대로", async () => {
     const table = await openTable();
     const remove = button(table, "규칙 셋", "지우기");
     fireEvent.click(remove);
@@ -102,7 +102,7 @@ describe("알림 규칙 표 두 번 누름(QA-898)", () => {
     expect(api.apiDelete.mock.calls).toEqual([["/api/alerts/rules/3"]]);
   });
 
-  it.fails("'켜짐 — 끄기'를 요청 중에 다시 누르면 무시 — 끝나면 다시 누를 수 있다", async () => {
+  it("'켜짐 — 끄기'를 요청 중에 다시 누르면 무시 — 끝나면 다시 누를 수 있다", async () => {
     const table = await openTable();
     const toggle = button(table, "규칙 넷", "켜짐 — 끄기");
     fireEvent.click(toggle);
@@ -122,7 +122,7 @@ describe("알림 규칙 표 두 번 누름(QA-898)", () => {
     ]);
   });
 
-  it.fails("지운 줄이 사라지면 포커스는 다음 줄의 '지우기'로, 실패하면 누른 단추에 남는다", async () => {
+  it("지운 줄이 사라지면 포커스는 다음 줄의 '지우기'로, 실패하면 누른 단추에 남는다", async () => {
     const table = await openTable();
     const remove = button(table, "규칙 셋", "지우기");
     act(() => remove.focus());
@@ -139,7 +139,7 @@ describe("알림 규칙 표 두 번 누름(QA-898)", () => {
     expect(document.activeElement).toBe(button(table, "규칙 넷", "지우기"));
   });
 
-  it.fails("마지막 줄을 지우면 포커스는 표(가로 스크롤 상자)로", async () => {
+  it("마지막 줄을 지우면 포커스는 표(가로 스크롤 상자)로", async () => {
     const table = await openTable();
     const remove = button(table, "규칙 다섯", "지우기");
     act(() => remove.focus());
