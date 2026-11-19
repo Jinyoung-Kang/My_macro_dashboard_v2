@@ -468,7 +468,8 @@ describe("정보 수집 화면", () => {
     render(<InfoHub tab="status" />);
 
     expect(screen.getByRole("heading", { level: 1, name: "출처 상태" })).toBeTruthy();
-    expect(screen.getByText("모든 출처의 마지막 실행·판정·다음 실행을 한 표에서 봅니다.")).toBeTruthy();
+    // 설명 한 줄은 낱말 사이에서만 꺾음(390에서 '…봅|니다.' — P7 검토).
+    expect(screen.getByText("모든 출처의 마지막 실행·판정·다음 실행을 한 표에서 봅니다.").className).toContain("break-keep");
     const details = screen.getByText("자세히").closest("details") as HTMLDetailsElement;
     expect(details.open).toBe(false);
     expect(within(details).getByText("끊긴 출처는 텔레그램과 화면 위 안내로도 알립니다.")).toBeTruthy();

@@ -53,7 +53,8 @@ export default function InfoHub({ tab }: { tab: InfoTab }) {
     <div className="space-y-6">
       <PageHeader
         title={head.title}
-        description={head.description}
+        // 설명 한 줄은 낱말 사이에서만 꺾습니다 — 390에서 '…봅|니다.'처럼 음절 사이가 갈렸습니다(P7 검토). 공용 머리 설명의 규칙은 P7 밖 화면도 바꾸므로 여기만.
+        description={<span className="break-keep">{head.description}</span>}
         details={
           <div className="space-y-2">
             {head.more ? <p>{head.more}</p> : null}
