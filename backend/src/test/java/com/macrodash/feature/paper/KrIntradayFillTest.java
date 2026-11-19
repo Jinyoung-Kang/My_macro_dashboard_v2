@@ -277,6 +277,37 @@ class KrIntradayFillTest {
         assertThat(reasons(notCompared)).isEmpty();
     }
 
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-792 — 수정 전 실패: 세금만 다른 밤 체결의 대조가 match=true·reasons [] (기대 false·[COST_MISMATCH])")
+    @DisplayName("QA-792: 밤 뒤 대조 — 관측가·출처·수량·관측일이 같아도 밤 체결의 비용(수수료·세금·슬리피지 — 기록 때와 밤의 금융위 시장 구분·설정이 갈린 날)이 "
+            + "기록과 다르면 COST_MISMATCH(불일치 — 현금이 갈림), 설정 판도 다르면 SETTINGS_CHANGED를 함께")
+    void nightCheckComparesCosts() {
+        ObjectNode record = MAPPER.createObjectNode().put(KrIntradayFill.MODE, "SHADOW").put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD)
+                .put(KrIntradayFill.RAW_PRICE, 70_170).put(KrIntradayFill.PRICE_SOURCE, KrTimedLadder.SOURCE_AT).put(KrIntradayFill.QTY, 10)
+                .put(KrIntradayFill.TARGET_AT, kst("2026-11-17T13:11").toString()).put(KrIntradayFill.SETTINGS_VERSION, 29)
+                .put(KrIntradayFill.FEE, new BigDecimal("105.2550")).put(KrIntradayFill.TAX, new BigDecimal("1403"))
+                .put(KrIntradayFill.SLIPPAGE_COST, new BigDecimal("350.85"));
+        Order filled = filled(PaperBooks.ORDER_FILLED);
+        Instant now = kst("2026-11-17T21:01");
+        Fill same = nightFill(new BigDecimal("105.255"), new BigDecimal("1403"), new BigDecimal("350.8500"));
+        Map<String, Object> equal = KrIntradayFill.check(record, filled, same, 29, now);
+        assertThat(equal.get("match")).as("소수 자릿수만 다른 같은 값").isEqualTo(true);
+        assertThat(reasons(equal)).isEmpty();
+
+        Fill taxed = nightFill(new BigDecimal("105.255"), new BigDecimal("1052"), new BigDecimal("350.85"));
+        Map<String, Object> differed = KrIntradayFill.check(record, filled, taxed, 29, now);
+        assertThat(differed.get("match")).isEqualTo(false);
+        assertThat(reasons(differed)).containsExactly("COST_MISMATCH");
+        Map<String, Object> saved = KrIntradayFill.check(record, filled, taxed, 30, now);
+        assertThat(saved.get("match")).as("설정 판이 달라도 비용이 다르면 불일치").isEqualTo(false);
+        assertThat(reasons(saved)).containsExactly("COST_MISMATCH", KrIntradayFill.SETTINGS_CHANGED);
+    }
+
+    private static Fill nightFill(BigDecimal fee, BigDecimal tax, BigDecimal slippage) {
+        return new Fill(9, 1, PaperBooks.KR_RULES, "005930", PaperBooks.SELL, 10, 70_134.915, 70_170, 5, 701_349.15, kst("2026-11-17T21:00"), S,
+                KrTimedLadder.SOURCE_AT, false, kst("2026-11-17T21:00:01"), fee, tax, slippage);
+    }
+
     @SuppressWarnings("unchecked")
     private static List<String> reasons(Map<String, Object> check) {
         return (List<String>) check.get(KrIntradayFill.REASONS);
