@@ -19,7 +19,7 @@ const FILE = resolve(__dirname, "../not-found.tsx");
 afterEach(() => cleanup());
 
 describe("없는 주소 화면의 '← 홈' 링크(QA-862)", () => {
-  it.fails("좁은 화면에서 높이·폭 44px(min-h-11·min-w-11), 넓은 화면은 글 크기(lg:min-h-0·lg:min-w-0)", async () => {
+  it("좁은 화면에서 높이·폭 44px(min-h-11·min-w-11), 넓은 화면은 글 크기(lg:min-h-0·lg:min-w-0)", async () => {
     const NotFound = ((await import(/* @vite-ignore */ FILE)) as { default: ComponentType }).default;
     render(<NotFound />);
     const link = screen.getByRole("link", { name: "← 홈" });

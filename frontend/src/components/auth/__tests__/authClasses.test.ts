@@ -54,8 +54,8 @@ describe("인증 화면 클래스", () => {
     expect(Object.keys(authClasses.AUTH_MESSAGE_TONE).sort()).toEqual(["error", "ok"]);
   });
 
-  it("동의 체크(AUTH_CHECK)·글 링크(AUTH_LINK)·주 단추(AUTH_SUBMIT)는 lg 미만 44px", () => {
-    for (const name of ["AUTH_CHECK", "AUTH_LINK", "AUTH_SUBMIT"] as const) {
+  it("동의 체크(AUTH_CHECK)·글 링크(AUTH_LINK·AUTH_LINK_SHORT)·주 단추(AUTH_SUBMIT)는 lg 미만 44px", () => {
+    for (const name of ["AUTH_CHECK", "AUTH_LINK", "AUTH_LINK_SHORT", "AUTH_SUBMIT"] as const) {
       expect(belowLgTarget(authClasses[name]), name).toBeNull();
     }
   });
