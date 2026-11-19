@@ -24,7 +24,7 @@ describe("설정 탭 — 장중 스탑 감시 스위치", () => {
     expect(groups.map((group) => [group.key, group.title])).toEqual([
       ["", "일반 — Claude 계좌 · 장부 · 검증기 · 규칙 계좌 · 메모"],
       ["stopWatch", "미국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
-      ["kr.stopWatch", "한국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
+      ["kr.stopWatch", "한국 계좌 — 장중 스탑 감시(mode OFF · SHADOW 기록만 · ON 주문 — ADR 0032, fill 장중 체결 기록 OFF · SHADOW 대조 · ON — ADR 0045, 규칙 계좌 영향)"],
     ]);
     const rows = Object.fromEntries(groups.flatMap((group) => group.rows).map((row) => [row.key, row]));
     expect(rows["stopWatch.mode"]).toMatchObject({ kind: "choice", current: "OFF", isDefault: true });
@@ -84,6 +84,25 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
     expect(rows["kr.rules.timing"]).toBe("다음 거래일 지정 시각(AT_MINUTE)");
     expect(rows["kr.rules.timingAtKst"]).toBe("09:10");
     expect(rows["kr.stopWatch.mode"]).toBe("켬(ON — 장중 감시 주문)");
+  });
+
+  it("한국 — 스탑 문장에 장중 체결 기록 kr.stopWatch.fill 세 경우(ADR 0045), 세 프로필 지금 설정에 그 키와 이름표", () => {
+    for (const code of ["kr_rules", "kr_claude"]) {
+      expect(text(code, "sell")).toContain("설정 kr.stopWatch.fill(ADR 0045)을 따릅니다");
+      expect(text(code, "sell")).toContain("그날 밤 장부가 적고");
+      expect(text(code, "sell")).toContain("기준 분 몇 분 뒤 장중에 적어 보유·현금이 바로 바뀝니다");
+      expect(text(code, "sell")).toContain("실제 계좌·ISA는 그 세션 밤 장부 처리 전까지 그 스탑을 대기로 봅니다");
+    }
+    for (const code of ["kr_rules", "kr_claude", "kr_claude2"]) {
+      const order = keys(code);
+      expect(order).toContain("kr.stopWatch.fill");
+      expect(order.indexOf("kr.stopWatch.fill")).toBe(order.indexOf("kr.stopWatch.mode") + 1);
+    }
+    const value = (fill: string) => Object.fromEntries(accountSettingRows("kr_rules", { kr: { stopWatch: { mode: "ON", fill } } })
+      .map((row) => [row.key, row.value]))["kr.stopWatch.fill"];
+    expect(value("OFF")).toBe("끔(OFF — 밤 장부)");
+    expect(value("SHADOW")).toBe("대조만(SHADOW — 밤 장부)");
+    expect(value("ON")).toBe("켬(ON — 장중 기록)");
   });
 
   // QA-313 뒤 리뷰: 출발 결정의 주문은 kr.rules.timing과 상관없이 다음 KR 거래일 시가(KrRuleBookService — NEXT_OPEN 고정)인데 매수 문장('재선정일과

@@ -4421,7 +4421,8 @@ const SETTING_GROUP: Record<string, string> = {
   "kr.tax": "한국 계좌 — 매도 세금(세율 · 시행일)",
   "kr.rules": "한국 계좌 — 규칙 계좌(수급 신호 · 재선정)",
   "kr.calendar": "한국 계좌 — 거래일 달력(임시휴장 · 장 시간 변경일)",
-  "kr.stopWatch": "한국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
+  "kr.stopWatch":
+    "한국 계좌 — 장중 스탑 감시(mode OFF · SHADOW 기록만 · ON 주문 — ADR 0032, fill 장중 체결 기록 OFF · SHADOW 대조 · ON — ADR 0045, 규칙 계좌 영향)",
   "kr.news": "한국 계좌 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)",
 };
 
