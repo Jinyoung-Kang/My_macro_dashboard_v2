@@ -6,7 +6,7 @@ import { SignedBars } from "@/components/charts";
 import { ChangeChip, DataTable } from "@/components/patterns";
 import { Callout, Freshness, Loading, Panel, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { formatKst, formatNumber, formatShares, formatSignedKrw, withMinusSign } from "@/lib/format";
+import { formatKst, formatNumber, formatShares, formatSignedKrw, signedKrwText, withMinusSign } from "@/lib/format";
 import type { FlowRow, FlowWindow, MarketFlowsResponse, StockFlowsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -34,9 +34,6 @@ function windowCell(value: FlowWindow | undefined, format: (n: number | null) =>
     </span>
   );
 }
-
-/** 부호 있는 원화 금액(본문 잉크, 음수 −). 모르면 null. */
-const signedKrw = (value: number | null) => (value === null ? null : withMinusSign(formatSignedKrw(value)));
 
 // ------------------------------------------------------------------ 시장 전체
 export function MarketFlowsPanel({ market }: { market: string }) {
@@ -82,7 +79,7 @@ export function MarketFlowsPanel({ market }: { market: string }) {
             rowKey={(row) => row.key}
             columns={[
               { key: "label", header: "투자자", rowHeader: true, className: "whitespace-nowrap", cell: (row) => row.label },
-              { key: "latest", header: "최근일 순매수", align: "right", cell: (row) => signedKrw(row.latest) },
+              { key: "latest", header: "최근일 순매수", align: "right", cell: (row) => signedKrwText(row.latest) },
               { key: "net5", header: "5일 누적", align: "right", cell: (row) => windowCell(row.net5, formatSignedKrw) },
               { key: "net20", header: "20일 누적", align: "right", cell: (row) => windowCell(row.net20, formatSignedKrw) },
               { key: "streak", header: "연속", align: "right", cell: (row) => streakText(row.streak, summary.records) },

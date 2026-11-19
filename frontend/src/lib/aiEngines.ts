@@ -9,8 +9,7 @@ import type { AiEngine, AiQuota } from "./types";
 
 /** 못 쓰는 이유별 라벨 꼬리. 이유를 모르는(예전 백엔드) 경우는 예전 문구 "키 없음"입니다. */
 function unavailableSuffix(engine: AiEngine): string {
-  if (engine.available) return "";
-  return engine.unavailableReason === "not_allowed" ? " (이 배포에서 사용 안 함)" : " (키 없음)";
+  return engine.available ? "" : ` (${engineAvailability(engine)})`;
 }
 
 /**

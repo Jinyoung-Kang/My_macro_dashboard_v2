@@ -3,7 +3,7 @@
 import { DataTable } from "@/components/patterns";
 import { Callout, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { formatKst, formatSigned, formatSignedKrw, withMinusSign } from "@/lib/format";
+import { formatKst, formatSigned, signedKrwText, withMinusSign } from "@/lib/format";
 import type { SpotFuturesResponse, SpotFuturesRow } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -27,7 +27,6 @@ function verdictClass(verdict: string): string {
 }
 
 /** 부호 있는 수(본문 잉크, 음수 −) — 모르면 null(공용 표가 '—'). */
-const signedKrw = (value: number | null) => (value === null ? null : withMinusSign(formatSignedKrw(value)));
 const signedContracts = (value: number | null) => (value === null ? null : withMinusSign(formatSigned(value, 0)));
 
 export function SpotFuturesCard() {
@@ -70,10 +69,10 @@ export function SpotFuturesCard() {
             rowKey={(row) => row.key}
             columns={[
               { key: "label", header: "투자자", rowHeader: true, className: "whitespace-nowrap", cell: (row) => row.label },
-              { key: "spot5", header: "현물 5일 (원)", align: "right", cell: (row) => signedKrw(row.spot5) },
+              { key: "spot5", header: "현물 5일 (원)", align: "right", cell: (row) => signedKrwText(row.spot5) },
               { key: "fut5", header: "선물 5일 (계약)", align: "right", cell: (row) => signedContracts(row.futures5) },
               { key: "v5", header: "5일 방향", className: "whitespace-nowrap", cell: (row) => <span className={verdictClass(row.verdict5)}>{row.verdict5}</span> },
-              { key: "spot20", header: "현물 20일 (원)", align: "right", cell: (row) => signedKrw(row.spot20) },
+              { key: "spot20", header: "현물 20일 (원)", align: "right", cell: (row) => signedKrwText(row.spot20) },
               { key: "fut20", header: "선물 20일 (계약)", align: "right", cell: (row) => signedContracts(row.futures20) },
               { key: "v20", header: "20일 방향", className: "whitespace-nowrap", cell: (row) => <span className={verdictClass(row.verdict20)}>{row.verdict20}</span> },
               { key: "vt", header: "당일", className: "whitespace-nowrap", cell: (row) => <span className={verdictClass(row.verdictToday)}>{row.verdictToday}</span> },
