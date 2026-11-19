@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-849 내 계정 — 새 비밀번호 불일치는 아이콘 + 글", () => {
-  it.fails("'새 비밀번호가 서로 다릅니다.'에 위험 아이콘과 낭독 머리말 '오류:'", async () => {
+  it("'새 비밀번호가 서로 다릅니다.'에 위험 아이콘과 낭독 머리말 '오류:'", async () => {
     render(<SessionUserProvider user={MEMBER}><AccountPage /></SessionUserProvider>);
     fireEvent.change(await screen.findByLabelText("새 비밀번호"), { target: { value: "first pass word" } });
     fireEvent.change(screen.getByLabelText("새 비밀번호 확인"), { target: { value: "second pass word" } });

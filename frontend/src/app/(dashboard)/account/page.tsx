@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Table } from "@/components/ui";
-import { StatusDot } from "@/components/ui/icons";
+import { StatusDot, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -99,7 +99,12 @@ export default function AccountPage() {
               />
             </label>
           ))}
-          {mismatch && <p className="text-xs text-danger">새 비밀번호가 서로 다릅니다.</p>}
+          {/* 위험은 색만이 아니라 아이콘 + 글(낭독 머리말 '오류:') — 위험색은 상승 빨강과 색만으로 갈리지 않음(QA-849). */}
+          {mismatch && (
+            <p className="text-xs">
+              <StatusText tone="danger" iconSize={12}>새 비밀번호가 서로 다릅니다.</StatusText>
+            </p>
+          )}
           {change.error && <Banner tone="warn">{change.error}</Banner>}
           {change.result?.ok && <Banner tone="info">{change.result.message}</Banner>}
           <Button
