@@ -53,12 +53,13 @@ export function AiEngineSection() {
             rows={engines.data.engines}
             rowKey={(row) => row.id}
             columns={[
-              // 열 폭(QA-875): 엔진 이름은 최소 10rem(눌려 3~5줄로 접히지 않게), 모델 이름(식별자)은 칸 안 아무 데서나 꺾일 수 있게 둡니다 — 줄바꿈 금지였을 때는
-              // 가장 긴 모델 이름(368px)이 줄지 않아 1024(상자 706px)에서 표가 넘쳐 '키' 칸이 가로 스크롤 뒤로 밀렸습니다.
+              // 열 폭(QA-875): 엔진 이름은 최소 10rem(눌려 3~5줄로 접히지 않게), 모델 이름(식별자)은 최소 12rem에 칸 안 아무 데서나 꺾일 수 있게, 용도는 최소
+              // 10rem — 최소 폭의 합(+ 키 칸·칸 여백)이 1024 상자(706px)에 듭니다. 모델 칸이 줄바꿈 금지였을 때는 가장 긴 모델 이름(368px)이 줄지 않아 1024에서
+              // 표가 넘쳐 '키' 칸이 가로 스크롤 뒤로 밀렸습니다.
               { key: "label", header: "엔진", rowHeader: true, className: "min-w-[10rem] break-keep", cell: (row) => engineLabel(row) },
               // 모델 이름은 식별자 — 고정폭 글(예전 출처 배지 모양).
-              { key: "model", header: "모델", className: "wrap-anywhere", cell: (row) => (row.model ? <span className="font-mono text-caption">{row.model}</span> : null) },
-              { key: "description", header: "용도", className: "min-w-[14rem] break-keep", cell: (row) => row.description || null },
+              { key: "model", header: "모델", className: "min-w-[12rem] wrap-anywhere", cell: (row) => (row.model ? <span className="font-mono text-caption">{row.model}</span> : null) },
+              { key: "description", header: "용도", className: "min-w-[10rem] break-keep", cell: (row) => row.description || null },
               {
                 key: "available",
                 header: "키",
