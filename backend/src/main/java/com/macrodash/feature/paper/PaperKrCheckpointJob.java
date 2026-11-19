@@ -9,6 +9,7 @@ import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Checkpoint;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.SettingsRow;
@@ -247,10 +248,12 @@ public class PaperKrCheckpointJob {
         }
         Optional<Snapshot> watch = Optional.of(snapshot);
         Instant calledAt = clock.instant();
-        Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
-                source, store.state(PaperBooks.KR_CLAUDE2).orElse(null), store.positions(PaperBooks.KR_CLAUDE2), pendingOrders(),
-                watch, quotes, version, row.version(), calendar, clock.instant(), null, KrStopFill.effective(row.body()).records()), mapper), row,
-                claudeSettings, today);
+        Attempt attempt = pipeline.attemptCheckpoint(version -> {
+            BookState state = store.state(PaperBooks.KR_CLAUDE2).orElse(null);
+            return KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf, source, state, store.positions(PaperBooks.KR_CLAUDE2),
+                    pendingOrders(), watch, quotes, version, row.version(), calendar, clock.instant(), null, KrStopFill.effective(row.body()).records(),
+                    intradayStopsRecorded(store, PaperBooks.KR_CLAUDE2, state, calendar)), mapper);
+        }, row, claudeSettings, today);
         if (attempt == null) {
             return mark(c, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }
@@ -279,6 +282,17 @@ public class PaperKrCheckpointJob {
         log.info("한국 Claude 계좌2 장중 확인 {} {} KST: {} — 결정 {}", session, KrTimedLadder.label(c.atLocal()),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
+    }
+
+    /**
+     * 그 장부에 밤 처리 전 장중 기록 스탑 매도가 있는가(ADR 0045 — 장중 판단·끈 판 장중 확인 패킷의 장부 글을 설정이 아니라 자료로도 고름, QA-791): 출처
+     * STOP·체결·근거 {@code intradayFill.mode = ON}이고 체결일 &gt; {@link KrPaperMarket#targetSession}(마지막 처리 저장본) — 마지막 처리가 없으면 모두. 실제
+     * 계좌·ISA 공개 창의 거울 보기({@link PaperMirrorService})가 되감는 행과 같은 조건입니다.
+     */
+    static boolean intradayStopsRecorded(PaperStore store, String code, BookState state, TradingCalendar calendar) {
+        LocalDate processed = state == null || state.lastProcessedCollectedAt() == null ? null
+                : KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), calendar);
+        return !store.intradayRecordedStops(code, processed).isEmpty();
     }
 
     /**

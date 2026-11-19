@@ -1462,7 +1462,6 @@ class KrStartTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-791 — 수정 전 실패: 4_portfolio.ledger.note가 LEDGER_NOTE('장부는 지난밤 관측치로 평가한 값이다…'), 기대 LEDGER_NOTE_INTRADAY_FILL")
     @DisplayName("QA-791: 그 세션에 장중 기록 판(ON)이 감시 스탑 매도를 장부에 적은 뒤 같은 세션에 kr.stopWatch.fill을 OFF로 바꾸면, 장중 판단 패킷의 장부 글"
             + "(4_portfolio.ledger.note)은 자료로 골라 장중 기록 판 글이고 스탑 문장(1_basis.stopWatch.rule)은 설정대로 밤 판 — 장부 글만 되돌리면 "
             + "packet-kr-ft-intraday-stopwatch.json과 바이트까지 같음")

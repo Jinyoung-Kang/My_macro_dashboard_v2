@@ -32,7 +32,7 @@
     `test_paper_stopwatch.py::test_한국_범위는_그_세션에_장중_기록으로_판_종목도_담는다`.
   - 글·고정본: `StopWatchTest.krFillPhraseIsTheOnlyChange`, `KrPacketBuilderTest.stopWatchFillOnPacket`(새 고정본 `packet-kr-ft-stopwatch-fill-scheduled.json` — 그 구절만 되돌리면 감시 ON 고정본, SHADOW는 그 고정본 그대로),
     `KrStartTest.goldenKrFreeIntradayPacketWithStopFill`(새 고정본 `packet-kr-ft-intraday-stopwatch-fill.json` — 구절과 장부 글만 되돌리면 `packet-kr-ft-intraday-stopwatch.json`),
-    `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF·SHADOW의 기존 고정본(`packet-kr-ft-stopwatch-scheduled.json`·`packet-kr-ft-intraday-stopwatch.json`·`packet-kr-claude2-checkpoint.json`·
+    `KrStartTest.ledgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(QA-791 — 기록 뒤 OFF여도 장부 글은 자료로), `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF·SHADOW의 기존 고정본(`packet-kr-ft-stopwatch-scheduled.json`·`packet-kr-ft-intraday-stopwatch.json`·`packet-kr-claude2-checkpoint.json`·
     `render-kr-ft-claude-v0-stopwatch.txt` 등)은 바이트 그대로다(기존 고정본 시험).
   - 설정·화면: `PaperSettingsServiceTest.krStopFillKey`, `KrRuleBookServiceTest`(규칙 계좌 영향 키), `frontend/src/lib/__tests__/paperStopWatch.test.ts`(세 프로필 키·이름표·스탑 문장).
   - 고치지 않고 통과하는 경계: `ArchitectureRulesTest.realtradeIsIsolated`, 수집기 `test_toss_trade.py` 쓰기 금지·`test_table_ownership.py`, `isaBoundary.test.ts`·`realtradeBoundary.test.ts`, `RealTradeJobDbTest`·`ManualAccountJobDbTest`.
@@ -116,11 +116,13 @@
     '금융위 확정가로 다시 판정하지 않고 그날 밤 장부에 반영' → '금융위 확정가로 다시 판정하지 않고, 그 분 봉에 거래가 있으면 기준 분 몇 분 뒤 장중에 장부에 반영(보유·현금이 바로 바뀜 — 종가 매도·그 분
     거래 없음·자료 부족·앞 시각 대기 주문·기업행위 의심이면 그날 밤)'(감시 ON인 모든 한국 Claude 결정 패킷의 `12_hardRules` 스탑 줄·`1_basis.stopWatch.rule`, 자유 시점 판 장중 판단 패킷의 `1_basis.stopWatch.rule`).
     장중 판단·끈 판 장중 확인 패킷의 장부 글 `4_portfolio.ledger.note`는 ON이면 '…지난밤 관측치로 평가한 값에 오늘 장중에 적힌 감시 스탑 매도를 더한 값…'(표지는 `KrCheckpointPacket.Inputs.intradayFill` —
-    두 작업이 함께 넘김). 시스템 프롬프트(`StopWatch.krPromptLine` — '곧바로 장중 시장가로 매도')는 그대로. 마감 브리핑의 한국 장부 안내는 **설정이 아니라 자료로** 고른다 — 그 세션 줄이 없는 계좌의
+    두 작업이 함께 넘김). ON이 아니어도 그 장부에 밤 처리 전 장중 기록 스탑이 있으면(자료 — `Inputs.intradayRecorded`, `PaperKrCheckpointJob.intradayStopsRecorded` — 거울 보기가 되감는 행과
+    같은 조건) 같은 글이다(QA-791 — 기록 뒤 같은 세션에 OFF로 바꿔도 현금·보유에는 이미 들어가 있음). 스탑 문장은 설정대로다. 시스템 프롬프트(`StopWatch.krPromptLine` — '곧바로 장중 시장가로 매도')는 그대로. 마감 브리핑의 한국 장부 안내는 **설정이 아니라 자료로** 고른다 — 그 세션 줄이 없는 계좌의
     체결에 장중 기록 스탑이 있을 때만 '장중 감시 스탑 매도를 기록되는 대로 반영했고(… 표시 날짜는 직전 장부 처리일), 그 밖의 체결·순자산·수급은 밤 장부 처리 뒤 확정'(ADR 0039 결과 일부 개정).
 12. **저장 시각**(D17): SHADOW·ON·OFF 저장은 장 마감(15:30) 뒤 ~ 다음 정기 결정 전에 한다 — 장중 판단 패킷의 `12_hardRules`는 그 세션 결정 패킷에서 복사하고(`KrCheckpointPacket`), `1_basis.stopWatch`는
     호출 때의 설정 행으로 만들어(`PaperKrIntradayJob.handle` — 그 실행이 연 설정 행), 결정 뒤 ~ 마감 전에 저장하면 한 패킷에 옛 문장과 새 문장이 함께 실리기 때문이다. 잘못된 기록이 보이면 장중에도
-    OFF로 바꾸고(실제 돈은 거울 보기가 주문 근거로 되감으므로 장중에 바꿔도 달라지지 않음), 그 세션 장중 판단 패킷에 두 문장이 섞인 것을 ADR 0018에 적는다.
+    OFF로 바꾸고(실제 돈은 거울 보기가 주문 근거로 되감으므로 장중에 바꿔도 달라지지 않음), 그 세션 장중 판단 패킷에 두 문장이 섞인 것을 ADR 0018에 적는다(장부 글은 자료로도 고르므로
+    그 세션 밤 처리 전까지 장중 기록 판 글 그대로 — 결정 11).
 
 ## 이유
 
