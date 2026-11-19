@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
-import { SELECTED_BAR } from "@/components/ui/classes";
+import { buttonClasses, SELECTED_BAR } from "@/components/ui/classes";
 import { SearchIcon, SpinnerIcon } from "@/components/ui/icons";
 import { useInfoSearchSuggest } from "@/hooks/useInfoSearch";
 import { entityKindLabel } from "@/lib/infoSearch";
 import type { SearchCandidate } from "@/lib/types";
-import { BUTTON_PRIMARY, KindIcon } from "./parts";
+import { KindIcon } from "./parts";
 
 /**
  * 정보 검색의 검색창 — 치는 동안은 수집기가 이미 가진 색인으로 후보만(외부 호출 없음), Enter나 '찾기'는 그 검색어로 풀기(후보 보기).
@@ -155,7 +155,7 @@ export function SearchBox({
           </p>
         ) : null}
       </div>
-      <button type="submit" className={BUTTON_PRIMARY}>
+      <button type="submit" className={buttonClasses("primary")}>
         찾기
       </button>
     </form>

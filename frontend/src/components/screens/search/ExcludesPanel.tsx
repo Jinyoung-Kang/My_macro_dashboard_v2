@@ -2,11 +2,12 @@
 
 import { useCallback, useId, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { NativeSelect, inputClasses } from "@/components/ui";
+import { buttonClasses, PANEL_CLASSES } from "@/components/ui/classes";
 import { ChevronDownIcon, StatusText } from "@/components/ui/icons";
 import { useInfoSearchExcludes } from "@/hooks/useInfoSearchWatch";
 import { EMPTY, formatKst } from "@/lib/format";
 import { excludeDraft, excludeKindLabel, excludeSeedGroups, type ExcludeKind } from "@/lib/infoSearch";
-import { BUTTON, BUTTON_PRIMARY, PANEL, PaneHeading } from "./parts";
+import { PaneHeading } from "./parts";
 
 /** 입력칸 — 공용 모양(테두리 3:1·포커스 링 2px·lg 미만 44px), 칸 폭을 다 씀. */
 const FIELD = `${inputClasses("md")} w-full`;
@@ -113,7 +114,7 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
                       <button
                         type="button"
                         data-exclude-id={row.id}
-                        className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                        className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
                         aria-disabled={busy || undefined}
                         aria-busy={removingId === row.id || undefined}
                         onClick={(event) => void remove(row.id, event.currentTarget)}
@@ -161,13 +162,13 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
   }
 
   return (
-    <section aria-label="매체 제외" className={`${PANEL} flex flex-col gap-3 p-3`}>
+    <section aria-label="매체 제외" className={`${PANEL_CLASSES} flex flex-col gap-3 p-3`}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((value) => !value)}
-        className={`${BUTTON} justify-between self-start`}
+        className={`${buttonClasses("default")} justify-between self-start`}
       >
         매체 제외 목록
         <ChevronDownIcon size={14} className={open ? "rotate-180" : ""} />
@@ -263,7 +264,7 @@ function AddExcludeForm({
         <button
           ref={submitRef}
           type="submit"
-          className={`${BUTTON_PRIMARY} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          className={`${buttonClasses("primary")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
           disabled={!value.trim()}
           aria-disabled={busy || undefined}
           aria-busy={busy || undefined}

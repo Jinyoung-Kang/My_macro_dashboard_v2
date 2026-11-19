@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { NativeSelect } from "@/components/ui";
+import { buttonClasses } from "@/components/ui/classes";
 import {
   PERIOD_BARS_NOTE,
   periodAriaLabel,
@@ -10,7 +11,6 @@ import {
   type PeriodBarsView,
   type PeriodBin,
 } from "@/lib/infoSearch";
-import { BUTTON } from "./parts";
 
 /**
  * 결과 위의 기간 막대(계약 §9-1) — 고른 기간의 건수를 7일·30일은 하루씩, 1년·2년은 주(월요일 시작, KST)마다 세로 막대로 둡니다. 새 의존성 없이
@@ -162,7 +162,7 @@ export function PeriodBars({
         {/* 좁힘·풂을 같은 상태 영역에서 알립니다. */}
         <p role="status">{active ? `좁힌 기간: ${periodLabel(active, unit)} · ${active.count}건` : ""}</p>
         {active ? (
-          <button type="button" className={BUTTON} onClick={clear}>
+          <button type="button" className={buttonClasses("default")} onClick={clear}>
             좁히기 풀기
           </button>
         ) : null}

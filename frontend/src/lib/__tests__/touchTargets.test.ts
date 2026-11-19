@@ -26,7 +26,6 @@ const {
   toggleClasses,
   underlineTabClasses,
 } = uiClasses;
-const { BUTTON, BUTTON_PRIMARY, LINK, segmentClass, toggleClass } = searchParts;
 
 const BOTH = [true, false] as const;
 
@@ -62,22 +61,14 @@ const UI_OTHERS: Record<string, string> = {
   SKELETON_BAR: "읽는 중 자리표시 막대(장식) — 누르지 않음",
 };
 
-const SEARCH_CONTROLS: Record<string, () => [string, string][]> = {
-  BUTTON: () => [["", BUTTON]],
-  BUTTON_PRIMARY: () => [["", BUTTON_PRIMARY]],
-  LINK: () => [["", LINK]],
-  segmentClass: () => BOTH.map((active): [string, string] => [String(active), segmentClass(active)]),
-  toggleClass: () =>
-    BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClass(pressed, compact)])),
-};
+/** 정보 검색 조각 — 조작 조각 별칭(BUTTON·LINK·segmentClass 등)은 P7에서 걷어 공용 키트 이름을 쓰므로 누르는 조각이 없습니다(위 UI_CONTROLS가 봄). */
+const SEARCH_CONTROLS: Record<string, () => [string, string][]> = {};
 
 const SEARCH_OTHERS: Record<string, string> = {
-  PANEL: "면(패널) 테두리 — 누르지 않음",
   PaneHeading: "구획 제목",
   KindIcon: "장식 아이콘",
   KindBadge: "종류 표지(글)",
   ItemKindTag: "결과 줄의 종류 표지(글)",
-  Tag: "별칭·식별자 꼬리표(글)",
   SourceStatusLine: "출처 상태 줄(글)",
 };
 

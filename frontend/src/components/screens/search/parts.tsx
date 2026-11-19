@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { buttonClasses } from "@/components/ui/classes";
 import { BuildingIcon, ClockIcon, LandmarkIcon, LockIcon, PersonIcon, StatusText, TagIcon } from "@/components/ui/icons";
 import { entityKindLabel, itemKindLabel, sourceStatusView } from "@/lib/infoSearch";
 import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
@@ -13,18 +12,10 @@ import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
  */
 
 /*
- * 조작 조각(단추·기간 고르기·켜고 끄는 단추·글 링크·면)은 공용 키트 components/ui/classes.ts로 옮겼고(작업대 실행 명세 §6·§8-4 — 옮기는 커밋),
- * 이 화면의 부품이 쓰던 이름 그대로 여기서 다시 내보냅니다. 단추 둘은 공용 단추의 기본(default)·주(primary) 모양이고, 기간 고르기는
- * 공용 기간 고르기(pillTabClasses)입니다.
+ * 조작 조각(단추·기간 고르기·켜고 끄는 단추·글 링크·면)과 꼬리표(Tag)는 공용 키트(components/ui/classes.ts·components/ui)의 이름 그대로 씁니다 —
+ * 이 파일이 다시 내보내던 별칭(BUTTON·BUTTON_PRIMARY·LINK·PANEL·segmentClass·toggleClass·Tag)은 정보 검색 정리(작업대 P7)에서 걷었습니다.
+ * 여기에는 정보 검색만 쓰는 조각만 남습니다.
  */
-export const BUTTON = buttonClasses("default");
-export const BUTTON_PRIMARY = buttonClasses("primary");
-export {
-  LINK_CLASSES as LINK,
-  PANEL_CLASSES as PANEL,
-  pillTabClasses as segmentClass,
-  toggleClasses as toggleClass,
-} from "@/components/ui/classes";
 
 /** 작은 글 머리(패널 안 구획 이름). */
 export function PaneHeading({ id, children }: { id?: string; children: ReactNode }) {
@@ -64,9 +55,6 @@ export function ItemKindTag({ kind }: { kind: string }) {
   if (kind !== "filing" && kind !== "research") return <>{label}</>;
   return <span className="inline-flex items-center rounded-control border border-border-strong px-1 leading-4 text-text-2">{label}</span>;
 }
-
-/** 별칭·식별자 꼬리표 — 공용 태그(ui Tag)의 중립 모양을 그대로 씁니다(작업대 실행 명세 §6). */
-export { Tag } from "@/components/ui";
 
 /** 상태마다 다른 모양의 아이콘(글과 함께 — 색만으로 가르지 않음). 받는 중은 시계, 운영 서버에서만은 자물쇠, 그 밖은 톤 기본. */
 function statusIcon(status: string) {

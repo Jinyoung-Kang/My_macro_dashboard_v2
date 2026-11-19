@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Loading } from "@/components/ui";
+import { PANEL_CLASSES } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
 import { useInfoSearchLinks } from "@/hooks/useInfoSearch";
 import type { InfoSearchWatch } from "@/hooks/useInfoSearchWatch";
@@ -27,7 +28,7 @@ import { ENTITY_GRID, ENTITY_LEFT } from "./entityGrid";
 import { FeedPanel } from "./FeedPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { LinksPanel } from "./LinksPanel";
-import { PANEL, SourceStatusLine } from "./parts";
+import { SourceStatusLine } from "./parts";
 import { WatchButton, WatchPane } from "./WatchPane";
 
 /** 대상 풀기 응답에 errors가 없을 때 — 그릴 때마다 새 객체를 만들지 않게(연결 탭 상태의 useMemo 의존값). */
@@ -201,7 +202,7 @@ export function EntityView({
                 aliasEditor={aliasEditor}
               />
             ) : (
-              <div className={`${PANEL} flex flex-col`}>
+              <div className={`${PANEL_CLASSES} flex flex-col`}>
                 <div className={ENTITY_GRID}>
                   <div className={`border-b border-border p-3 lg:border-b-0 lg:border-r ${ENTITY_LEFT}`}>{watchPane}</div>
                   <div className="min-w-0 px-3 py-2">

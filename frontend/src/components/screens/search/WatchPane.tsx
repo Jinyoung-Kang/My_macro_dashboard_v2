@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { SELECTED_BAR } from "@/components/ui/classes";
+import { buttonClasses, SELECTED_BAR, toggleClasses } from "@/components/ui/classes";
 import { BellIcon, BellOffIcon, ChevronDownIcon, SpinnerIcon, StarIcon, StatusText } from "@/components/ui/icons";
 import type { InfoSearchWatch, NotifyFrom } from "@/hooks/useInfoSearchWatch";
 import { DEMO_READ_ONLY } from "@/lib/access";
@@ -18,7 +18,7 @@ import {
   watchNotifyOf,
 } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind, SearchWatchItem } from "@/lib/types";
-import { BUTTON, KindIcon, PaneHeading, toggleClass } from "./parts";
+import { KindIcon, PaneHeading } from "./parts";
 
 /**
  * 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 28%, 많아야 14rem(224px). 40%·24rem이면 50개일 때 대상 화면의 거르기(1440x900에서
@@ -71,7 +71,7 @@ export function WatchPane({
         <StatusText tone="danger" colorText={false} iconSize={12}>
           관심 대상을 읽지 못했습니다 — {watch.error}
         </StatusText>
-        <button type="button" className={BUTTON} onClick={() => void watch.reload()}>
+        <button type="button" className={buttonClasses("default")} onClick={() => void watch.reload()}>
           다시 읽기
         </button>
       </div>
@@ -177,7 +177,7 @@ export function WatchPane({
             aria-expanded={expanded}
             aria-controls={bodyId}
             onClick={() => setExpanded((value) => !value)}
-            className={`${BUTTON} justify-between lg:hidden`}
+            className={`${buttonClasses("default")} justify-between lg:hidden`}
           >
             <span id={headingId}>
               관심 대상{count > 0 ? ` ${count}` : ""}
@@ -223,7 +223,7 @@ function NotifyToggle({ watch, item, from }: { watch: InfoSearchWatch; item: Sea
       onClick={() => {
         if (!blocked) void watch.setNotify(item.id, !on, from);
       }}
-      className={toggleClass(on, compact)}
+      className={toggleClasses(on, compact)}
     >
       {/* 종 모양도 상태마다 — 켬은 채운 종, 끔은 사선이 그어진 종(사용자 요청 2026-11-15). 상태는 글 '켬'·'끔'이 함께 전함(모양만으로 가르지 않음). */}
       {busy ? <SpinnerIcon size={14} className="motion-safe:animate-spin" /> : on ? <BellIcon size={14} filled /> : <BellOffIcon size={14} />}
@@ -264,7 +264,7 @@ export function WatchButton({
   if (demo) {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BUTTON} disabled aria-describedby={hintId}>
+        <button type="button" className={buttonClasses("default")} disabled aria-describedby={hintId}>
           <StarIcon size={14} />
           관심 대상 등록
         </button>
@@ -296,7 +296,7 @@ export function WatchButton({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
           disabled={!ready}
           aria-disabled={busy || undefined}
           aria-busy={busy || undefined}
