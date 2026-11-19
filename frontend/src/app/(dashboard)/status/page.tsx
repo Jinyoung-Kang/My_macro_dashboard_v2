@@ -15,14 +15,22 @@ import { IssuesPanel } from "./IssuesPanel";
 import { PublicApiPanel } from "./PublicApiPanel";
 import { VerificationPanel } from "./VerificationPanel";
 
+/**
+ * 실행(collector_runs) 상태의 글 — 수집기 runner._run_status·store.resolve_run_status가 적는 값 전부. empty는 실패가 전부 '수집 결과 없음'(소스가 새 데이터를
+ * 주지 않아 저장본 유지)인 실행이라 태스크 표 범례와 같은 글입니다(QA-847 — 예전에는 표에 없어 'empty'가 그대로 찍혔음).
+ */
 const RUN_STATUS_LABEL: Record<string, string> = {
   ok: "정상 종료",
   partial: "일부 실패",
+  empty: "데이터 없음(기존 저장본 유지)",
   fail: "전부 실패",
   running: "진행 중",
   interrupted: "비정상 종료",
   none: "기록 없음",
 };
+
+/** 표에 없는 상태 코드 — 지어내지 않고 '알 수 없음'과 받은 코드(영어 코드만 홀로 보이지 않게). */
+const runStatusLabel = (status: string): string => RUN_STATUS_LABEL[status] ?? `알 수 없음 (${status})`;
 
 /** 중단(interrupted)의 까닭 — KPI 타일의 상태 줄(주의 아이콘 + 글)로 둡니다. */
 const INTERRUPTED_REASON = "프로세스가 사라졌거나 신호가 끊겼습니다";
@@ -75,7 +83,7 @@ export default function StatusPage() {
     {
       key: "last",
       label: "최근 수집 상태",
-      value: RUN_STATUS_LABEL[resolvedStatus] ?? resolvedStatus,
+      value: runStatusLabel(resolvedStatus),
       valueKind: "label",
       status: resolvedStatus === "interrupted" ? { tone: "warn", text: INTERRUPTED_REASON } : undefined,
       note: lastRun?.startedAt ? `${formatKst(lastRun.startedAt)} 시작 · 대상 ${lastRun.groupName ?? EMPTY}` : null,

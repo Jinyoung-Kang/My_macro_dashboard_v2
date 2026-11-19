@@ -30,7 +30,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-847 최근 수집 상태 — 'empty'를 한국어 글로", () => {
-  it.fails("'empty'는 '데이터 없음(기존 저장본 유지)', 영어 코드는 보이지 않는다", async () => {
+  it("'empty'는 '데이터 없음(기존 저장본 유지)', 영어 코드는 보이지 않는다", async () => {
     render(<StatusPage />);
     const tile = await screen.findByRole("group", { name: "최근 수집 상태" });
     expect(within(tile).queryByText("empty")).toBeNull();
