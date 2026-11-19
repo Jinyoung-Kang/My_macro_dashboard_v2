@@ -26,7 +26,7 @@ function timeCell(value: string | null): ReactNode {
 
 /**
  * 출처 표(작업대 P7 — 정보 수집 출처 상태 탭과 분류 탭 다섯이 함께 씀). 출처 = 열 수 있는 대상: 이름(줄 단추)을 누르면 검사 대화상자(공용 InspectorFrame
- * `layout="dialog"` — 위쪽 고정, 닫으면 그 이름 단추로 포커스)에 상태·끊김·접근·기관·주기·수집 태스크·실행 시각 차례·받은 글·사유 전체·링크가 나옵니다.
+ * `layout="dialog"` — 위쪽 고정, 첫 포커스는 제목, 닫으면 그 이름 단추로 포커스)에 상태·끊김·접근·기관·주기·수집 태스크·실행 시각 차례·받은 글·사유 전체·링크가 나옵니다.
  * 검사 칸은 이미 읽은 catalog 응답의 값만 씁니다(새 요청 없음 — 출처별 실행 기록 여러 줄·데이터셋 목록은 catalog에 없어 그리지 않음).
  *
  * - 옆 검사 칸을 두지 않는 까닭: 이 표는 사유·기록(자르지 않는 긴 글 — 2026-11-12 사용자 결정)을 칸으로 두어, 1440 화면에서 옆 칸(18rem)을 두면 표 상자가
@@ -72,6 +72,9 @@ export function SourceTable({
           const source = byTask.get(key);
           return source ? <SourceDetail source={source} /> : null;
         }}
+        // 첫 포커스는 제목(출처 이름) — 기본(content)은 링크를 건너뛰어 오른쪽 위 '닫기'에 가서, 연 직후 Enter 한 번에 닫히고 낭독기가 '닫기'부터
+        // 읽었습니다(QA-886). 원문(QA-871)·알림·모의매매 검사 대화상자와 같습니다.
+        dialogFocus="title"
       >
         {(inspector) => (
           <DataTable<CatalogSource>

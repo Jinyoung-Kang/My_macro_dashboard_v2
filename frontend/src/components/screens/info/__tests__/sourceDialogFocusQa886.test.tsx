@@ -31,7 +31,7 @@ const SOURCE: CatalogSource = {
 };
 
 describe("출처 검사 대화상자의 첫 포커스(QA-886)", () => {
-  it.fails("이름 단추로 열면 첫 포커스는 제목(h2) — 닫기 단추가 아님, Esc 뒤 그 이름 단추로", async () => {
+  it("이름 단추로 열면 첫 포커스는 제목(h2) — 닫기 단추가 아님, Esc 뒤 그 이름 단추로", async () => {
     render(<SourceTable sources={[SOURCE]} variant="tab" caption="출처" pagerLabel="출처" emptyText="없음" />);
     const trigger = screen.getByRole("button", { name: "합성 블로그" });
     fireEvent.click(trigger);
