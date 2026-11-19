@@ -6,9 +6,8 @@ import { HorizontalBars } from "@/components/charts";
 import { knownBars } from "@/lib/chartData";
 import { ChangeCell, DataTable, InspectorFrame, InspectorTrigger } from "@/components/patterns";
 import {
-  Banner,
   Button,
-  Card,
+  Callout,
   ErrorState,
   Freshness,
   Loading,
@@ -88,10 +87,12 @@ export default function RadarPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="외국인/기관 수급 레이더 (KRX)"
-        description={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"]).join(" → ")}</>}
+        description="투자 주체별 순매수·순매도 상위 종목과 수급 지속성·재무·공통 종목"
+        // 폴백 체인(수집기의 실제 순서 — 백엔드가 내려줌)은 '자세히' 접기 안에(명세 §1 — 긴 설명은 지우지 않고 접기로).
+        details={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"]).join(" → ")}</>}
         actions={
           <>
             <Freshness
@@ -112,7 +113,7 @@ export default function RadarPage() {
 
       {owner && showDiagnostics && <DiagnosticsPanel />}
 
-      <Card>
+      <Panel>
         <div className="flex flex-wrap items-end gap-3">
           <Select
             label="시장"
@@ -164,17 +165,22 @@ export default function RadarPage() {
           />
         </div>
 
+        {/* 원 안 i 글자 대신 공용 안내 상자(중립 — 정보 아이콘 + 글). */}
         {unsupportedInvestors.length > 0 && (
-          <p className="mt-3 text-xs text-text-3">
-            ⓘ {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
-            {options.data?.unsupportedInvestorNote}
-          </p>
+          <div className="mt-3">
+            <Callout>
+              {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
+              {options.data?.unsupportedInvestorNote}
+            </Callout>
+          </div>
         )}
         {/* 토스 폴백으로 여섯 모두 고를 수 있을 때도, 넷은 한계가 있는 순위라 적어 둡니다 */}
         {unsupportedInvestors.length === 0 && TOSS_ONLY.includes(investor) && options.data?.unsupportedInvestorNote && (
-          <p className="mt-3 text-xs text-text-3">ⓘ {options.data.unsupportedInvestorNote}</p>
+          <div className="mt-3">
+            <Callout>{options.data.unsupportedInvestorNote}</Callout>
+          </div>
         )}
-      </Card>
+      </Panel>
 
       {/* 종목 랭킹을 보기 전에 시장 전체의 방향부터 — 선택한 시장을 따릅니다 */}
       <MarketFlowsPanel market={market} />
@@ -182,10 +188,10 @@ export default function RadarPage() {
       {loading && !data && <Loading label="수급 데이터를 불러오는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
 
-      {data?.warning && <Banner tone="warn">{data.warning}</Banner>}
+      {data?.warning && <Callout tone="warn">{data.warning}</Callout>}
 
       {data && !data.available && !data.warning && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           <div>{data.message ?? "수급 데이터를 얻지 못했습니다."}</div>
           {/* 소스별 사유를 함께 보여 줍니다.
               "수집기 상태를 확인하세요" 한 줄만 있으면, 수집기가 멀쩡한
@@ -197,7 +203,7 @@ export default function RadarPage() {
               ))}
             </ul>
           )}
-        </Banner>
+        </Callout>
       )}
 
       {data?.available && (

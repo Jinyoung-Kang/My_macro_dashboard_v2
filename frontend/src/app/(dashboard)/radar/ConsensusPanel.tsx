@@ -2,12 +2,14 @@
 
 import { HorizontalBars } from "@/components/charts";
 import { knownBars } from "@/lib/chartData";
-import { Banner, Card, ErrorState, Freshness, Loading, Metric, Table } from "@/components/ui";
+import { ChangeCell, DataTable, KpiStrip } from "@/components/patterns";
+import { Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { EMPTY, formatNumber } from "@/lib/format";
 import type { RadarConsensusResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 import { OmittedNote } from "./OmittedNote";
+import { signedAmount } from "./RankingDetail";
 
 /**
  * 외국인·기관 공통 순위(60초) — 위 조건(시장·매매 구분·기간·표시 종목 수)을 그대로 따릅니다. null이면 읽지 않습니다. 순위 검사 칸이 같은 응답을 쓰도록
@@ -62,7 +64,7 @@ export function ConsensusPanel({
   );
 
   return (
-    <Card
+    <Panel
       title={`외국인·기관 공통 ${tradeType}`} source={data?.sources?.length ? data.sources.join(" · ") : "외국인·기관 순위와 같은 출처 (위 순위 카드 참고)"}
       subtitle={data?.note}
       actions={
@@ -74,132 +76,130 @@ export function ConsensusPanel({
         />
       }
     >
-      {loading && !data && <Loading label="교집합을 계산하는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
+      {/* 안내 상자·KPI 띠·막대·표 사이는 12px(예전에는 주의 상자와 지표 칸 사이가 0px — D1 radar-banner-tiles-gap-zero). */}
+      <div className="flex flex-col gap-3">
+        {loading && !data && <Loading label="교집합을 계산하는 중…" />}
+        {error && <ErrorState message={error} onRetry={reload} />}
 
-      {data?.warning && <Banner tone="warn">{data.warning}</Banner>}
+        {data?.warning && <Callout tone="warn">{data.warning}</Callout>}
 
-      {data && !data.available && (
-        <Banner tone="warn">
-          <div>{data.message ?? "공통 종목이 없습니다."}</div>
-          {data.reasons && data.reasons.length > 0 && (
-            <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
-              {data.reasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          )}
-        </Banner>
-      )}
+        {data && !data.available && (
+          <Callout tone="warn">
+            <div>{data.message ?? "공통 종목이 없습니다."}</div>
+            {data.reasons && data.reasons.length > 0 && (
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+                {data.reasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            )}
+          </Callout>
+        )}
 
-      {rows.length > 0 && (
-        <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            <Metric
-              label={`공통 ${tradeType} 종목`}
-              value={`${rows.length}개`}
-              caption={`외국인 ${data?.foreignCount ?? EMPTY}개 · 기관 ${
-                data?.institutionCount ?? EMPTY
-              }개 목록의 교집합`}
+        {rows.length > 0 && (
+          <>
+            <KpiStrip
+              label={`공통 ${tradeType}`}
+              items={[
+                {
+                  key: "count",
+                  label: `공통 ${tradeType} 종목`,
+                  value: rows.length,
+                  format: (value) => formatNumber(value, 0),
+                  unit: "개",
+                  note: `외국인 ${data?.foreignCount ?? EMPTY}개 · 기관 ${data?.institutionCount ?? EMPTY}개 목록의 교집합`,
+                },
+                {
+                  key: "top",
+                  label: "합산 금액 1위",
+                  value: rows[0]?.name ?? null,
+                  valueKind: "label",
+                  note: rows[0]?.totalEok === null || rows[0]?.totalEok === undefined ? null : `${signedAmount(rows[0].totalEok, 1)}억 원`,
+                },
+                {
+                  key: "share",
+                  label: "집중도",
+                  value: (rows.length / Number(topN)) * 100,
+                  format: (value) => formatNumber(value, 0),
+                  unit: "%",
+                  note: `상위 ${topN}개 중 겹친 비율 — 높을수록 두 주체가 같은 종목을 봅니다.`,
+                },
+              ]}
             />
-            <Metric
-              label="합산 금액 1위"
-              value={rows[0]?.name ?? EMPTY}
-              caption={formatWithUnit(rows[0]?.totalEok, 1, "억 원")}
-            />
-            <Metric
-              label="집중도"
-              value={`${formatNumber((rows.length / Number(topN)) * 100, 0)}%`}
-              caption={`상위 ${topN}개 중 겹친 비율 — 높을수록 두 주체가 같은 종목을 봅니다.`}
-            />
-          </div>
 
-          <HorizontalBars
-            data={top.bars}
-            unit="억"
-            digits={0}
-            valueName={`외국인+기관 합산 ${tradeType} 금액`}
-            height={Math.max(260, top.bars.length * 26)}
-          />
-          <OmittedNote count={top.omitted} />
+            <div>
+              <HorizontalBars
+                data={top.bars}
+                unit="억"
+                digits={0}
+                valueName={`외국인+기관 합산 ${tradeType} 금액`}
+                ariaLabel={`외국인·기관 공통 ${tradeType} 상위 종목 합산 금액(억 원)`}
+                height={Math.max(260, top.bars.length * 26)}
+              />
+              <OmittedNote count={top.omitted} />
+            </div>
 
-          <div className="mt-4">
-            <Table
+            <DataTable
+              dense
+              count
+              scrollHint="overflow"
+              caption={`외국인·기관 공통 ${tradeType}`}
               rows={rows}
               rowKey={(row) => row.code}
               columns={[
                 {
                   key: "name",
                   header: "종목",
-                  render: (row) => (
+                  rowHeader: true,
+                  className: "break-keep",
+                  cell: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-text-2">{row.name}</span>
-                      <span className="text-xs text-text-3">{row.code}</span>
+                      <span>{row.name}</span>
+                      <span className="font-mono text-xs text-text-3">{row.code}</span>
                     </span>
                   ),
                 },
-                {
-                  key: "changePct",
-                  header: "등락률",
-                  align: "right",
-                  render: (row) => (
-                    <span className={deltaColor(row.changePct)}>
-                      {formatPercent(row.changePct)}
-                    </span>
-                  ),
-                },
+                { key: "changePct", header: "등락률", align: "right", cell: (row) => <ChangeCell changePct={row.changePct} /> },
                 {
                   key: "foreign",
                   header: "외국인(억)",
                   align: "right",
-                  render: (row) => (
-                    <span className="flex flex-col items-end">
-                      <span className={deltaColor(row.foreignEok, 1)}>
-                        {formatNumber(row.foreignEok, 1)}
-                      </span>
-                      <span className="text-xs text-text-3">
-                        {row.foreignRank === null ? EMPTY : `${row.foreignRank}위`}
-                      </span>
-                    </span>
-                  ),
+                  cell: (row) => <AmountWithRank amount={row.foreignEok} rank={row.foreignRank} />,
                 },
                 {
                   key: "institution",
                   header: "기관(억)",
                   align: "right",
-                  render: (row) => (
-                    <span className="flex flex-col items-end">
-                      <span className={deltaColor(row.institutionEok, 1)}>
-                        {formatNumber(row.institutionEok, 1)}
-                      </span>
-                      <span className="text-xs text-text-3">
-                        {row.institutionRank === null ? EMPTY : `${row.institutionRank}위`}
-                      </span>
-                    </span>
-                  ),
+                  cell: (row) => <AmountWithRank amount={row.institutionEok} rank={row.institutionRank} />,
                 },
                 {
                   key: "total",
                   header: "합산(억)",
                   align: "right",
-                  render: (row) => (
-                    <span className={`font-semibold ${deltaColor(row.totalEok, 1)}`}>
-                      {formatNumber(row.totalEok, 1)}
-                    </span>
-                  ),
+                  cell: (row) => (row.totalEok === null ? null : <span className="font-semibold">{signedAmount(row.totalEok, 1)}</span>),
                 },
               ]}
             />
-          </div>
 
-          <p className="mt-2 text-xs leading-relaxed text-text-3">
-            {buying
-              ? "두 주체가 함께 담은 종목입니다. 한쪽만 사는 종목보다 수급의 방향이 뚜렷하지만, 그것이 수익을 뜻하지는 않습니다."
-              : "두 주체가 함께 던진 종목입니다. 금액이 음수인 것은 순매도라는 뜻이며, 표기를 바꾸지 않았습니다."}{" "}
-            출처: {(data?.sources ?? []).join(" · ") || "출처 미상"}
-          </p>
-        </>
-      )}
-    </Card>
+            <p className="text-xs leading-relaxed text-text-3">
+              {buying
+                ? "두 주체가 함께 담은 종목입니다. 한쪽만 사는 종목보다 수급의 방향이 뚜렷하지만, 그것이 수익을 뜻하지는 않습니다."
+                : "두 주체가 함께 던진 종목입니다. 금액이 음수인 것은 순매도라는 뜻이며, 표기를 바꾸지 않았습니다."}{" "}
+              출처: {(data?.sources ?? []).join(" · ") || "출처 미상"}
+            </p>
+          </>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/** 금액(본문 잉크 + 부호, 음수 −) 아래 순위 보조 줄 — 순위를 모르면 '—'. */
+function AmountWithRank({ amount, rank }: { amount: number | null; rank: number | null }) {
+  return (
+    <span className="flex flex-col items-end">
+      <span>{signedAmount(amount, 1) ?? EMPTY}</span>
+      <span className="text-xs text-text-3">{rank === null ? EMPTY : `${rank}위`}</span>
+    </span>
   );
 }

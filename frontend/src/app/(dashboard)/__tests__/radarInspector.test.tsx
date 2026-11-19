@@ -6,6 +6,8 @@
  * - 표: 등락률은 공용 변화 칸(▲▼·sr 글), 순매수대금은 본문 잉크 + −(U+2212)(오르내린 값이 아님 — 등락색을 쓰지 않음), 고정폭 코드.
  * - 넓은 화면(옆 칸 배치)은 첫 줄을 처음에 보입니다(새 요청 없음). 좁은 화면은 대화상자.
  * - 링크: 종목 상세 /s/kr/{코드}, 공시 원문(DART — 새 창).
+ * - 나머지 패널(작업대 P7 같은 커밋 묶음): 시장 전체 순매수 금액은 잉크 + −, 공통 순매수는 KPI 띠 세 타일(안내 상자와 띠 사이 간격 — D1
+ *   radar-banner-tiles-gap-zero), 재무의 자본잠식은 주의 태그·흑자/적자 전환은 잉크 글, 막대 그림 셋의 구체 이름.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +19,11 @@ const api = vi.hoisted(() => {
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
-vi.mock("@/components/charts", () => ({ HorizontalBars: () => null, SignedBars: () => null }));
+// 그림 대신 이름만(차트 구체 이름 — chart-application-role-unnamed의 레이더 몫을 봄).
+vi.mock("@/components/charts", () => ({
+  HorizontalBars: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+  SignedBars: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+}));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
@@ -166,5 +172,66 @@ describe("수급 레이더 순위 — 검사 칸(이미 읽은 응답만)", () =
     expect(screen.getByRole("button", { name: "합성화학" }).closest("tr")?.getAttribute("aria-current")).toBe("true");
     await settled();
     expect(calls().length).toBe(before);
+  });
+});
+
+describe("수급 레이더 — 나머지 패널", () => {
+  const FLOWS = {
+    available: true, source: "합성 토스", note: "합성 메모", markets: {
+      KOSPI: {
+        records: 20, latestDate: "2026-11-18", latestUpdatedAt: "2026-11-18T07:00:00Z",
+        investors: [{ key: "foreigner", label: "외국인", latest: -120_000_000_000, net5: { sum: 30_000_000_000, days: 5, window: 5 }, net20: window20(-5e10), streak: -2 }],
+        breakdown: [{ key: "pensionFund", label: "연기금", latest: 1, net5: { sum: 1, days: 5, window: 5 }, net20: window20(2e10) }],
+      },
+    },
+  };
+
+  function withExtra(extra: Record<string, unknown>) {
+    const reads = { ...READS, ...extra };
+    api.apiGetShared.mockImplementation((path: string) => (path in reads ? Promise.resolve(reads[path]) : new Promise(() => {})));
+  }
+
+  it("시장 전체 순매수 금액은 본문 잉크 + −(등락색 없음), 막대 그림 셋에 구체 이름", async () => {
+    withExtra({ [endpoints.positioning.investorFlows]: FLOWS });
+    await rendered();
+    const table = await screen.findByRole("region", { name: "코스피 투자자별 순매수 (좌우 스크롤)" });
+    const row = within(table).getByText("외국인").closest("tr") as HTMLTableRowElement;
+    expect(row.cells[1].textContent).toBe("−1,200억 원");
+    expect(row.cells[3].textContent).toBe("−500.0억 원");
+    expect(row.innerHTML).not.toMatch(/text-(up|down)/);
+    expect(screen.getByRole("img", { name: "KOSPI 외국인 순매수 상위 종목 금액(억 원)" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "코스피 기관 세부 20일 누적 순매수(억 원)" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "외국인·기관 공통 순매수 상위 종목 합산 금액(억 원)" })).toBeTruthy();
+  });
+
+  it("공통 순매수: KPI 띠 세 타일, 주의 안내 상자와 띠 사이 간격(같은 12px 세로 묶음)", async () => {
+    withExtra({ [CONSENSUS_PATH]: { ...(READS[CONSENSUS_PATH] as object), warning: "합성 경고 — 한쪽 목록이 이전 값입니다." } });
+    await rendered();
+    const strip = screen.getByRole("region", { name: "공통 순매수" });
+    expect(within(strip).getAllByRole("group").map((tile) => tile.getAttribute("aria-label"))).toEqual(["공통 순매수 종목", "합산 금액 1위", "집중도"]);
+    expect(within(strip).getByRole("group", { name: "집중도" }).textContent).toContain("3%");
+    const warning = screen.getByText("합성 경고 — 한쪽 목록이 이전 값입니다.");
+    const column = strip.parentElement as HTMLElement;
+    expect(column.className).toContain("gap-3");
+    expect(column.contains(warning)).toBe(true);
+  });
+
+  it("재무: 자본잠식은 주의 태그(아이콘 + 글), 흑자·적자 전환은 본문 잉크 글", async () => {
+    withExtra({
+      [endpoints.publicData.fundamentals("000001,000002")]: {
+        available: true, priceDate: "2026-11-18", companies: [
+          { code: "000001", available: true, name: "합성전자", bsnsYear: "2025", fsLabel: "연결", capitalImpaired: true, operatingTurn: "적자전환", revenueGrowth: -4 },
+        ],
+      },
+    });
+    await rendered();
+    const table = screen.getByRole("region", { name: "재무·밸류에이션 체크 (좌우 스크롤)" });
+    const row = within(table).getByText("합성전자").closest("tr") as HTMLTableRowElement;
+    const debt = within(row.cells[1]).getByText("자본잠식").closest("span") as HTMLElement;
+    expect(debt.className).toContain("text-warn");
+    expect(debt.querySelector("svg")).not.toBeNull();
+    expect(row.cells[3].textContent).toBe("적자전환");
+    expect(row.cells[3].innerHTML).not.toMatch(/text-(up|down)/);
+    expect(within(row.cells[2]).getByText("하락")).toBeTruthy();
   });
 });

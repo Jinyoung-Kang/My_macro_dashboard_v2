@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Card, ErrorState, Loading, Select, Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
+import { Callout, ErrorState, Loading, Panel, Select } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { historySelection } from "@/lib/radar";
-import { deltaColor, EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY } from "@/lib/format";
+import { signedAmount } from "./RankingDetail";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
@@ -32,7 +34,7 @@ export function HistoryPanel({
   const { dates, selectedDate, dateOptions, rows } = historySelection(date, data);
 
   return (
-    <Card
+    <Panel
       title="누적 수급 이력" source={SOURCES.radarHistory}
       subtitle={data?.note}
       actions={
@@ -50,34 +52,30 @@ export function HistoryPanel({
       {/* 조회가 실패했으면 '이력 없음'이 아니라 실패입니다(QA-046). */}
       {error && <ErrorState message={error} onRetry={reload} />}
       {!loading && !error && dates.length === 0 && (
-        <Banner tone="info">
+        <Callout>
           아직 누적된 이력이 없습니다. 수집기를 꾸준히 돌리면 거래일별로 쌓입니다 —
           Naver·Daum은 과거 날짜 조회를 지원하지 않고 KRX 확정 순위는 수집기가 저장한 날짜만 있으므로 이 이력이 곧 백업입니다.
-        </Banner>
+        </Callout>
       )}
       {rows.length > 0 && (
-        <Table
-          rows={rows}
-          rowKey={(row, index) => `${row.code}-${index}`}
+        <DataTable
+          dense
+          count
+          caption="누적 수급 이력"
+          // 같은 종목이 한 날에 두 번 와도 갈리게 차례를 붙입니다(예전 표의 '{코드}-{차례}' 키와 같음).
+          rows={rows.map((row, index) => ({ ...row, key: `${row.code}-${index}` }))}
+          rowKey={(row) => row.key}
           columns={[
-            { key: "code", header: "종목코드", render: (row) => row.code },
-            { key: "name", header: "종목명", render: (row) => row.name },
-            {
-              key: "net",
-              header: "순매수대금(억)",
-              align: "right",
-              render: (row) => (
-                <span className={deltaColor(row.netAmountEok, 1)}>
-                  {formatNumber(row.netAmountEok, 1)}
-                </span>
-              ),
-            },
+            { key: "code", header: "종목코드", className: "whitespace-nowrap", cell: (row) => <span className="font-mono">{row.code}</span> },
+            { key: "name", header: "종목명", rowHeader: true, className: "break-keep", cell: (row) => row.name },
+            // 순매수 금액은 오르내린 값이 아니라 본문 잉크 + 부호(음수 −).
+            { key: "net", header: "순매수대금(억)", align: "right", cell: (row) => signedAmount(row.netAmountEok, 1) },
           ]}
         />
       )}
       {!loading && dates.length > 0 && rows.length === 0 && (
         <p className="text-xs text-text-3">{EMPTY} 해당 조건의 이력이 없습니다.</p>
       )}
-    </Card>
+    </Panel>
   );
 }

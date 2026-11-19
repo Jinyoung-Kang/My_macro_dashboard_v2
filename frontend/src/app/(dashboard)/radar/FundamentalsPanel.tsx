@@ -1,10 +1,11 @@
 "use client";
 
-import { Banner, Card, ErrorState, Freshness, Loading, Table } from "@/components/ui";
+import { ChangeCell, DataTable } from "@/components/patterns";
+import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { splitFundamentals } from "@/lib/radar";
 import { stableCodesKey } from "@/lib/transforms";
-import { deltaColor, EMPTY, formatKrw, formatNumber } from "@/lib/format";
+import { formatKrw, formatNumber } from "@/lib/format";
 import type { KrFundamentalsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -32,13 +33,14 @@ export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fu
   const { data, loading, error, reload } = fundamentals ?? own;
   const { all, rows, empty, covered } = splitFundamentals(codes, data?.companies ?? []);
 
+  // 모르면 null — 공용 표가 '—'(읽기 '값 없음')를 그립니다.
   const percent = (value: number | null | undefined) =>
-    value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}%`;
+    value === null || value === undefined ? null : `${formatNumber(value, 1)}%`;
   const multiple = (value: number | null | undefined) =>
-    value === null || value === undefined ? EMPTY : `${formatNumber(value, 1)}배`;
+    value === null || value === undefined ? null : `${formatNumber(value, 1)}배`;
 
   return (
-    <Card
+    <Panel
       title="재무·밸류에이션 체크 (DART 사업보고서 + 금융위 공식 시세)"
       source="금융감독원 Open DART 사업보고서 주요계정 (공식) · 금융위원회 주식시세정보 (공식, 시가총액)"
       subtitle="부채비율 = 부채총계÷자본총계 · 증가율은 전년 대비 · ROE = 순이익÷기말 자본 · PER·PBR = 시가총액÷직전 사업연도 순이익·자본"
@@ -48,7 +50,7 @@ export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fu
     >
       {loading && !data && <Loading label="공시 재무를 불러오는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone="info">{data.message}</Banner>}
+      {data && !data.available && <Callout>{data.message}</Callout>}
 
       {(data?.available || data?.priceDate) && (
         <>
@@ -65,16 +67,22 @@ export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fu
             </p>
           )}
           {rows.length > 0 && (
-            <Table
+            <DataTable
+              dense
+              count
+              scrollHint="overflow"
+              caption="재무·밸류에이션 체크"
               rows={rows}
               rowKey={(row) => row.code}
               columns={[
                 {
                   key: "name",
                   header: "종목",
-                  render: (row) => (
+                  rowHeader: true,
+                  className: "break-keep",
+                  cell: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-text-2">{row.name ?? row.code}</span>
+                      <span>{row.name ?? row.code}</span>
                       <span className="text-xs text-text-3">
                         {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
                       </span>
@@ -85,42 +93,39 @@ export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fu
                   key: "debt",
                   header: "부채비율",
                   align: "right",
-                  render: (row) =>
-                    row.capitalImpaired ? <span className="text-down">자본잠식</span> : percent(row.debtRatio),
+                  // 자본잠식은 비율이 아니라 상태 — 주의 태그(아이콘 + 글, 예전에는 하락색 글만).
+                  cell: (row) => (row.capitalImpaired ? <Tag tone="warn">자본잠식</Tag> : percent(row.debtRatio)),
                 },
-                { key: "rev", header: "매출 증가", align: "right", render: (row) => (
-                  <span className={deltaColor(row.revenueGrowth)}>{percent(row.revenueGrowth)}</span>
-                ) },
-                { key: "op", header: "영업이익 증가", align: "right", render: (row) =>
-                  row.operatingTurn ? (
-                    <span className={row.operatingTurn === "흑자전환" ? "text-up" : "text-down"}>{row.operatingTurn}</span>
-                  ) : (
-                    <span className={deltaColor(row.operatingIncomeGrowth)}>{percent(row.operatingIncomeGrowth)}</span>
-                  ),
+                // 증가율은 오르내린 값 — 공용 변화 칸(▲▼·부호·sr 글).
+                { key: "rev", header: "매출 증가", align: "right", cell: (row) => <ChangeCell changePct={row.revenueGrowth} pctDigits={1} /> },
+                {
+                  key: "op",
+                  header: "영업이익 증가",
+                  align: "right",
+                  // 흑자·적자 전환은 판정 글(증가율이 없음) — 본문 잉크 글(예전에는 상승·하락색만으로 갈랐음).
+                  cell: (row) => (row.operatingTurn ? row.operatingTurn : <ChangeCell changePct={row.operatingIncomeGrowth} pctDigits={1} />),
                 },
-                { key: "margin", header: "영업이익률", align: "right", render: (row) => percent(row.operatingMargin) },
-                { key: "roe", header: "ROE", align: "right", render: (row) => percent(row.roe) },
-                { key: "cap", header: "시가총액", align: "right", render: (row) => formatKrw(row.marketCap) },
-                { key: "per", header: "PER", align: "right", render: (row) => multiple(row.per) },
-                { key: "pbr", header: "PBR", align: "right", render: (row) => multiple(row.pbr) },
+                { key: "margin", header: "영업이익률", align: "right", cell: (row) => percent(row.operatingMargin) },
+                { key: "roe", header: "ROE", align: "right", cell: (row) => percent(row.roe) },
+                { key: "cap", header: "시가총액", align: "right", cell: (row) => (row.marketCap === null || row.marketCap === undefined ? null : formatKrw(row.marketCap)) },
+                { key: "per", header: "PER", align: "right", cell: (row) => multiple(row.per) },
+                { key: "pbr", header: "PBR", align: "right", cell: (row) => multiple(row.pbr) },
                 {
                   key: "link",
                   header: "공시",
                   align: "right",
-                  render: (row) =>
+                  cell: (row) =>
                     row.dartUrl ? (
                       <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 min-w-11 items-center justify-center px-1 text-accent underline lg:min-h-6 lg:min-w-6">
                         원문
                       </a>
-                    ) : (
-                      EMPTY
-                    ),
+                    ) : null,
                 },
               ]}
             />
           )}
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

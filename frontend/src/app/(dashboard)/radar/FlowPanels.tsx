@@ -3,9 +3,10 @@
 import { stableCodesKey } from "@/lib/transforms";
 import { streakText } from "@/lib/flows";
 import { SignedBars } from "@/components/charts";
-import { Banner, Card, Freshness, Loading, SourceBadge, Table } from "@/components/ui";
+import { ChangeChip, DataTable } from "@/components/patterns";
+import { Callout, Freshness, Loading, Panel, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatKst, formatNumber, formatShares, formatSignedKrw } from "@/lib/format";
+import { formatKst, formatNumber, formatShares, formatSignedKrw, withMinusSign } from "@/lib/format";
 import type { FlowRow, FlowWindow, MarketFlowsResponse, StockFlowsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -18,19 +19,24 @@ import { endpoints } from "@/lib/endpoints";
  *
  * 값이 없는 날(당일 잠정치의 개인·기관 세부)은 0이 아니라 "—"입니다. 누적이 모자란 날수로
  * 계산됐으면 "(n일)"을 붙입니다.
+ *
+ * 작업대 P7: 표는 공용 조밀 표, 순매수 금액·주식 수는 오르내린 값이 아니라 본문 잉크 + 부호(음수 −, U+2212 — 예전에는 등락색만), 외국인 보유율의 변화는
+ * 오르내린 값이라 공용 변화 칩(▲▼·부호·sr 글).
  */
 
-/** 누적값 + 일수가 모자라면 "(n일)". */
-function WindowCell({ value, format }: { value: FlowWindow; format: (n: number | null) => string }) {
+/** 누적값 + 일수가 모자라면 "(n일)" — 본문 잉크, 음수 부호 −. 모르면 null(공용 표가 '—'를 그림 — 칸 함수가 null을 돌려줘야 함). */
+function windowCell(value: FlowWindow | undefined, format: (n: number | null) => string) {
+  if (!value || value.sum === null) return null;
   return (
-    <span className={deltaColor(value.sum, 0)}>
-      {format(value.sum)}
-      {value.sum !== null && value.days < value.window && (
-        <span className="ml-1 text-xs text-text-3">({value.days}일)</span>
-      )}
+    <span>
+      {withMinusSign(format(value.sum))}
+      {value.days < value.window && <span className="ml-1 text-xs text-text-3">({value.days}일)</span>}
     </span>
   );
 }
+
+/** 부호 있는 원화 금액(본문 잉크, 음수 −). 모르면 null. */
+const signedKrw = (value: number | null) => (value === null ? null : withMinusSign(formatSignedKrw(value)));
 
 // ------------------------------------------------------------------ 시장 전체
 export function MarketFlowsPanel({ market }: { market: string }) {
@@ -38,9 +44,11 @@ export function MarketFlowsPanel({ market }: { market: string }) {
   const symbol = market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
   const summary = data?.markets?.[symbol];
 
+  const marketName = symbol === "KOSPI" ? "코스피" : "코스닥";
+
   return (
-    <Card
-      title={`${symbol === "KOSPI" ? "코스피" : "코스닥"} 전체 투자자별 매매대금`}
+    <Panel
+      title={`${marketName} 전체 투자자별 매매대금`}
       source={data?.source ?? "토스증권 Open API (공식)"}
       subtitle={
         summary?.latestDate
@@ -55,31 +63,28 @@ export function MarketFlowsPanel({ market }: { market: string }) {
       }
     >
       {loading && !data && <Loading />}
-      {error && <Banner tone="warn">{error}</Banner>}
-      {data && !summary && <Banner tone="warn">{data.message ?? `${symbol} 투자자별 매매대금이 없습니다.`}</Banner>}
+      {error && <Callout tone="warn">{error}</Callout>}
+      {data && !summary && <Callout tone="warn">{data.message ?? `${symbol} 투자자별 매매대금이 없습니다.`}</Callout>}
       {summary?.isStale && (
         // 이어받은 시장은 위 수집 시각(다른 시장을 받은 때)과 달리 예전 값입니다(QA-076).
-        <Banner tone="warn">
+        <Callout tone="warn">
           이전 값 — 이번 수집 실패: {summary.staleReason ?? "사유 모름"}
           {summary.fetchedAt ? ` · ${formatKst(summary.fetchedAt)}에 받은 값` : ""}
-        </Banner>
+        </Callout>
       )}
       {summary && (
         <div className="flex flex-col gap-4">
-          <Table<FlowRow>
+          <DataTable<FlowRow>
+            dense
+            caption={`${marketName} 투자자별 순매수`}
             rows={summary.investors ?? []}
             rowKey={(row) => row.key}
             columns={[
-              { key: "label", header: "투자자", render: (row) => row.label },
-              {
-                key: "latest",
-                header: `최근일 순매수`,
-                align: "right",
-                render: (row) => <span className={deltaColor(row.latest, 0)}>{formatSignedKrw(row.latest)}</span>,
-              },
-              { key: "net5", header: "5일 누적", align: "right", render: (row) => <WindowCell value={row.net5} format={formatSignedKrw} /> },
-              { key: "net20", header: "20일 누적", align: "right", render: (row) => <WindowCell value={row.net20} format={formatSignedKrw} /> },
-              { key: "streak", header: "연속", align: "right", render: (row) => streakText(row.streak, summary.records) },
+              { key: "label", header: "투자자", rowHeader: true, className: "whitespace-nowrap", cell: (row) => row.label },
+              { key: "latest", header: "최근일 순매수", align: "right", cell: (row) => signedKrw(row.latest) },
+              { key: "net5", header: "5일 누적", align: "right", cell: (row) => windowCell(row.net5, formatSignedKrw) },
+              { key: "net20", header: "20일 누적", align: "right", cell: (row) => windowCell(row.net20, formatSignedKrw) },
+              { key: "streak", header: "연속", align: "right", cell: (row) => streakText(row.streak, summary.records) },
             ]}
           />
           <div>
@@ -90,13 +95,14 @@ export function MarketFlowsPanel({ market }: { market: string }) {
                 .map((row) => ({ name: row.label, value: (row.net20.sum as number) / 1e8 }))}
               unit="억"
               valueName="20일 누적 순매수"
+              ariaLabel={`${marketName} 기관 세부 20일 누적 순매수(억 원)`}
               height={240}
             />
           </div>
           <p className="text-xs text-text-3">{data?.note}</p>
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -124,7 +130,7 @@ export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: s
     stock.breakdown?.find((row) => row.key === "pensionFund");
 
   return (
-    <Card
+    <Panel
       title="수급 지속성 — 며칠째 사고 있나 (종목별 20거래일)"
       source={data?.source ?? "토스증권 Open API (공식)"}
       actions={
@@ -136,24 +142,30 @@ export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: s
       }
     >
       {loading && !data && <Loading />}
-      {error && <Banner tone="warn">{error}</Banner>}
+      {error && <Callout tone="warn">{error}</Callout>}
       {data && stocks.length === 0 && (
-        <Banner tone="warn">{data.message ?? "이 종목들의 투자자별 매매동향이 아직 수집되지 않았습니다 (1시간 주기)."}</Banner>
+        <Callout tone="warn">{data.message ?? "이 종목들의 투자자별 매매동향이 아직 수집되지 않았습니다 (1시간 주기)."}</Callout>
       )}
       {stocks.length > 0 && (
         <>
-          <Table
+          <DataTable
+            dense
+            count
+            scrollHint="overflow"
+            caption="수급 지속성"
             rows={stocks}
             rowKey={(stock) => stock.code}
             columns={[
               {
                 key: "name",
                 header: "종목",
-                render: (stock) => (
+                rowHeader: true,
+                className: "break-keep",
+                cell: (stock) => (
                   <span className="flex flex-col">
-                    <span className="text-text-2">{names.get(stock.code) ?? stock.code}</span>
+                    <span>{names.get(stock.code) ?? stock.code}</span>
                     <span className="text-xs text-text-3">
-                      {stock.code} · {stock.latestDate}
+                      <span className="font-mono">{stock.code}</span> · {stock.latestDate}
                       {stock.provisional ? " 잠정" : ""}
                     </span>
                   </span>
@@ -163,54 +175,49 @@ export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: s
                 key: "f5",
                 header: "외국인 5일",
                 align: "right",
-                render: (stock) => { const row = investor(stock, "foreigner"); return row ? <WindowCell value={row.net5} format={formatShares} /> : EMPTY; },
+                cell: (stock) => windowCell(investor(stock, "foreigner")?.net5, formatShares),
               },
               {
                 key: "f20",
                 header: "외국인 20일",
                 align: "right",
-                render: (stock) => { const row = investor(stock, "foreigner"); return row ? <WindowCell value={row.net20} format={formatShares} /> : EMPTY; },
+                cell: (stock) => windowCell(investor(stock, "foreigner")?.net20, formatShares),
               },
               {
                 key: "fs",
                 header: "외국인 연속",
                 align: "right",
-                render: (stock) => streakText(investor(stock, "foreigner")?.streak, stock.records),
+                cell: (stock) => streakText(investor(stock, "foreigner")?.streak, stock.records),
               },
               {
                 key: "i20",
                 header: "기관 20일",
                 align: "right",
-                render: (stock) => { const row = investor(stock, "institution"); return row ? <WindowCell value={row.net20} format={formatShares} /> : EMPTY; },
+                cell: (stock) => windowCell(investor(stock, "institution")?.net20, formatShares),
               },
               {
                 key: "is",
                 header: "기관 연속",
                 align: "right",
-                render: (stock) => streakText(investor(stock, "institution")?.streak, stock.records),
+                cell: (stock) => streakText(investor(stock, "institution")?.streak, stock.records),
               },
               {
                 key: "p20",
                 header: "연기금 20일",
                 align: "right",
-                render: (stock) => { const row = pension(stock); return row ? <WindowCell value={row.net20} format={formatShares} /> : EMPTY; },
+                cell: (stock) => windowCell(pension(stock)?.net20, formatShares),
               },
               {
                 key: "hold",
                 header: "외국인 보유율",
                 align: "right",
-                render: (stock) => {
+                cell: (stock) => {
                   const holding = stock.foreignerHolding;
-                  if (!holding) return EMPTY;
+                  if (!holding) return null;
                   return (
                     <span className="flex flex-col items-end">
                       <span>{formatNumber(holding.ratePct, 2)}%</span>
-                      {holding.changePp !== null && (
-                        <span className={`text-xs ${deltaColor(holding.changePp, 2)}`}>
-                          {holding.changePp > 0 ? "+" : ""}
-                          {formatNumber(holding.changePp, 2)}%p
-                        </span>
-                      )}
+                      {holding.changePp !== null && <ChangeChip size="sm" nowrap change={holding.changePp} digits={2} unit="%p" />}
                     </span>
                   );
                 },
@@ -220,6 +227,6 @@ export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: s
           <p className="mt-2 text-xs text-text-3">{data?.note} “(n일)”은 값이 있는 날만 더했다는 뜻입니다.</p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
