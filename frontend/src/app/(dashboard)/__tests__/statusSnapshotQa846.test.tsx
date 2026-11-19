@@ -44,7 +44,7 @@ async function snapshotRow(name: string): Promise<HTMLTableRowElement> {
 }
 
 describe("QA-846 스냅샷 신선도 — 상태와 '오래됨'을 아이콘 + 글로", () => {
-  it.fails("상태 칸은 모든 줄이 상태 아이콘 + 한국어 글, 오래된 줄의 수집 칸에는 주의 태그 '오래됨'", async () => {
+  it("상태 칸은 모든 줄이 상태 아이콘 + 한국어 글, 오래된 줄의 수집 칸에는 주의 태그 '오래됨'", async () => {
     render(<StatusPage />);
     const expected: Record<string, string> = { macro: "정상", krx_futures: "추정치", kr_flows: "수집 실패" };
     for (const [name, label] of Object.entries(expected)) {

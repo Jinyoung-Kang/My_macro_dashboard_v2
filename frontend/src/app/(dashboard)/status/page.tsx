@@ -2,7 +2,7 @@
 
 import { DataTable, KpiStrip, SectionAnchor, SectionIndex, type Column, type KpiItem, type SectionIndexItem } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Tag } from "@/components/ui";
-import { ClockIcon, StatusIcon, StatusText } from "@/components/ui/icons";
+import { ClockIcon, StatusIcon, StatusText, type StatusTone } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
@@ -161,17 +161,21 @@ export default function StatusPage() {
       key: "status",
       header: "상태",
       className: "whitespace-nowrap",
-      cell: (row) => (
-        <span className={row.status === "estimated" ? "text-warn" : row.status === "ok" ? "text-ok" : "text-danger"}>
-          {row.status === "estimated" ? "추정치" : row.status}
-        </span>
-      ),
+      cell: (row) => {
+        const view = snapshotStatusView(row.status);
+        return <StatusText tone={view.tone}>{view.label}</StatusText>;
+      },
     },
     {
       key: "age",
       header: "수집",
       align: "right",
-      cell: (row) => <span className={row.stale ? "text-warn" : "text-text-3"}>{formatAge(row.ageSeconds ?? null)}</span>,
+      cell: (row) => (
+        <span className="inline-flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
+          <span className="text-text-3">{formatAge(row.ageSeconds ?? null)}</span>
+          {row.stale ? <Tag tone="warn">오래됨</Tag> : null}
+        </span>
+      ),
     },
     { key: "collectedAt", header: "수집 시각", className: "whitespace-nowrap", cell: (row) => formatKst(row.collectedAt) },
   ];
@@ -310,6 +314,17 @@ export default function StatusPage() {
       </SectionIndex>
     </div>
   );
+}
+
+/**
+ * 스냅샷 상태(snapshots.status — ok 확정치·estimated 추정치·error 수집 실패)의 표시 — 모든 줄이 아이콘 + 한국어 글(정상 줄 포함 — QA-846, 계획 U6).
+ * 모르는 코드는 정상·오류로 지어내지 않고 '알 수 없음 (코드)'(중립).
+ */
+function snapshotStatusView(status: string): { tone: StatusTone; label: string } {
+  if (status === "ok") return { tone: "ok", label: "정상" };
+  if (status === "estimated") return { tone: "warn", label: "추정치" };
+  if (status === "error") return { tone: "danger", label: "수집 실패" };
+  return { tone: "neutral", label: `알 수 없음 (${status})` };
 }
 
 /** 행 수 — 천 단위 쉼표, 소수 없음. */
