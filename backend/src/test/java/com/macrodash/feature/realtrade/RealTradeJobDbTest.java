@@ -4680,6 +4680,36 @@ class RealTradeJobDbTest {
         assertThat(cfg().syncPending()).as("예외 묶음을 만든 잠금에서 끔").isFalse();
     }
 
+    // QA-803 회귀 — 커밋된 재현 시험은 시각 맞추기 날(마무리 창이 묶음을 만드는 길)만 본다. 시가 날 창 끝 − 60초 뒤에 시작해 주문 없이(send=false) 만든
+    // 예외 묶음도 같은 잠금에서 sync_pending을 끄고, 마무리는 그 묶음의 남은 몫을 회전율 검사 없이 메운다(2026-11-19 두 번째 반박 확인이 고친 줄을 되돌린
+    // 사본에서 실패를 본 경로 R1).
+    @Test
+    @DisplayName("QA-803: 시가 날 창 끝 뒤(send=false)로 만든 재선정 예외 묶음도 sync_pending을 끄고, 마무리는 멈춤 없이 메움")
+    void rebalanceExemptLateStartWithoutSendTurnsOffSyncPending() {
+        rebalanceDay(P1, H1, NOW1, Set.of());
+        RealTradeFixtures.clean(jdbc);
+        enableEvent();
+        priorBatch(DECISION_DAY, P1);
+        RealTradeFixtures.live(store, true, d("10000000"));
+        Map<String, Double> price = new java.util.HashMap<>();
+        NOW1.keySet().forEach(sym -> price.put(sym, 1000.0));
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.empty());
+        when(paper.openTargets(BOOK, SESSION)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, NOW1, price, 1e7, 0, List.of(), List.of())));
+
+        run("08:57:40");
+
+        verify(client, never()).placeOrder(anyString());
+        assertExempt("send=false");
+        assertThat(cfg().syncPending()).as("send=false 예외 묶음 — 끔").isFalse();
+
+        run("09:00:40");
+
+        assertThat(sentSummaries()).isNotEmpty();
+        assertThat(events("HALT")).isEmpty();
+        assertThat(events("TURNOVER_EXEMPT")).hasSize(1);
+        assertThat(cfg().syncPending()).isFalse();
+    }
+
     @Test
     @DisplayName("관찰 로그 — 회전율 60% 안의 평소 규칙 계좌 묶음은 측정이 실패해도(대기 STOP 읽기가 던짐) 묶음·주문이 그대로 나감")
     void observationLogDoesNotChangeBatch() {
