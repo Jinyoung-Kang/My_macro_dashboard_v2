@@ -38,6 +38,7 @@ function windowCell(value: FlowWindow | undefined, format: (n: number | null) =>
 // ------------------------------------------------------------------ 시장 전체
 export function MarketFlowsPanel({ market }: { market: string }) {
   const { data, loading, error, refreshError } = useApi<MarketFlowsResponse>(endpoints.positioning.investorFlows, 300_000);
+  const pending = loading && !data;
   const symbol = market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
   const summary = data?.markets?.[symbol];
 
@@ -48,18 +49,29 @@ export function MarketFlowsPanel({ market }: { market: string }) {
       title={`${marketName} 전체 투자자별 매매대금`}
       source={data?.source ?? "토스증권 Open API (공식)"}
       subtitle={
-        summary?.latestDate
-          ? `기준일 ${summary.latestDate} · 갱신 ${formatKst(summary.latestUpdatedAt)}`
-          : undefined
+        summary?.latestDate ? (
+          `기준일 ${summary.latestDate} · 갱신 ${formatKst(summary.latestUpdatedAt)}`
+        ) : pending ? (
+          // 응답 전에는 글 없는 한 줄 자리(낭독 없음, 날짜를 만들지 않음) — 머리 높이가 응답 뒤 그대로(QA-892).
+          <span aria-hidden="true" className="invisible">
+            &nbsp;
+          </span>
+        ) : undefined
       }
       actions={
         <span className="flex items-center gap-2">
           {summary?.provisional && <SourceBadge>장중 잠정치</SourceBadge>}
-          <Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} refreshError={refreshError} />
+          <Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} refreshError={refreshError} pending={pending} />
         </span>
       }
     >
-      {loading && !data && <Loading />}
+      {/* 읽는 중 자리는 값이 온 뒤의 표 + 막대(240px) 높이 — 좁은 화면 577·md 515·lg 448px(QA 자료로 잰 본문 안쪽 높이)라, 응답 뒤 이 패널이 자라며 아래
+          순위·공통·이력 패널을 밀던 첫 적재 이동을 막습니다(QA-892 — 예전에는 한 줄 92~100px). */}
+      {pending && (
+        <div className="min-h-[36rem] md:min-h-[32rem] lg:min-h-[28rem]">
+          <Loading />
+        </div>
+      )}
       {error && <Callout tone="warn">{error}</Callout>}
       {data && !summary && <Callout tone="warn">{data.message ?? `${symbol} 투자자별 매매대금이 없습니다.`}</Callout>}
       {summary?.isStale && (

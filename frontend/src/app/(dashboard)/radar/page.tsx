@@ -95,11 +95,14 @@ export default function RadarPage() {
         details={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"]).join(" → ")}</>}
         actions={
           <>
+            {/* 응답 전에도 신선도 배지 폭의 자리 — P7에서 제목 칸이 좁아져(폴백 체인이 '자세히' 안으로) 1024~1279에서 응답 뒤 넓어진 동작 묶음이 둘째 줄로
+                꺾이며 아래 패널을 밀었습니다(QA-892). */}
             <Freshness
               collectedAt={data?.collectedAtKst}
               ageSeconds={data?.ageSeconds}
               stale={data?.stale}
               refreshError={refreshError}
+              pending={loading && !data}
             />
             <Button onClick={reload}>새로고침</Button>
             {owner && (
@@ -185,7 +188,12 @@ export default function RadarPage() {
       {/* 종목 랭킹을 보기 전에 시장 전체의 방향부터 — 선택한 시장을 따릅니다 */}
       <MarketFlowsPanel market={market} />
 
-      {loading && !data && <Loading label="수급 데이터를 불러오는 중…" />}
+      {/* 순위 읽는 중 자리는 화면 높이 이상 — 순위(막대 + 표, 30종목 약 1,900px)가 오며 공통·이력 패널을 첫 화면 밖으로 밀던 이동을 막습니다(QA-892). */}
+      {loading && !data && (
+        <div className="min-h-dvh">
+          <Loading label="수급 데이터를 불러오는 중…" />
+        </div>
+      )}
       {error && <ErrorState message={error} onRetry={reload} />}
 
       {data?.warning && <Callout tone="warn">{data.warning}</Callout>}

@@ -42,7 +42,7 @@ afterEach(() => cleanup());
 const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 describe("수급 레이더 첫 적재 자리(QA-892)", () => {
-  it.fails("응답 전: 머리 동작의 신선도 자리, 시장 전체 패널의 기준일 줄·본문 자리, 순위 읽는 중 자리(화면 높이 이상)", () => {
+  it("응답 전: 머리 동작의 신선도 자리, 시장 전체 패널의 기준일 줄·본문 자리, 순위 읽는 중 자리(화면 높이 이상)", () => {
     render(<SessionUserProvider user={OWNER}><RadarPage /></SessionUserProvider>);
     // 머리 동작 — '새로고침' 단추와 같은 묶음에 '수집' + 시각 꼴의 보이지 않는 자리(낭독 없음).
     const actions = screen.getByRole("button", { name: "새로고침" }).parentElement as HTMLElement;
