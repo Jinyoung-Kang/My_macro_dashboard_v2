@@ -16,7 +16,7 @@ import {
   Select,
   SourceBadge,
 } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
 import { MarketFlowsPanel, StockFlowsPanel, useStockFlows } from "./FlowPanels";
@@ -66,7 +66,11 @@ export default function RadarPage() {
 
   const query = endpoints.positioning.radarRanking({ market, investor, tradeType, intervalType: interval, topN });
 
-  const { data, loading, error, reload, refreshError } = useApi<RadarResponse>(query, 60_000);
+  const ranking = useApi<RadarResponse>(query, 60_000);
+  const { data, loading, error, reload, refreshError } = ranking;
+  // 응답 뒤 꼴의 큰 자리(머리 신선도 자리·화면 높이 자리)는 처음 읽는 동안만 — 실패 뒤 다시 읽는 동안(60초 자동 갱신·탭 복귀·다시 시도)에 켜면 오류 상자와
+  // 번갈아 머리 동작 묶음이 꺾였다 돌아오고 아래 패널이 오르내렸습니다(QA-895). 그때는 예전처럼 읽는 중 한 줄입니다.
+  const rankingFirstLoad = firstLoadPending(ranking);
   // 순위 종목의 수급 지속성·재무는 순위를 받았을 때만(예전처럼 패널이 그때만 그려져 읽던 것과 같음), 공통 순위는 늘 읽습니다.
   const rankedCodes = data?.available ? (data.rows ?? []).map((row) => row.code) : [];
   const flows = useStockFlows(rankedCodes);
@@ -102,7 +106,7 @@ export default function RadarPage() {
               ageSeconds={data?.ageSeconds}
               stale={data?.stale}
               refreshError={refreshError}
-              pending={loading && !data}
+              pending={rankingFirstLoad}
             />
             <Button onClick={reload}>새로고침</Button>
             {owner && (
@@ -189,11 +193,14 @@ export default function RadarPage() {
       <MarketFlowsPanel market={market} />
 
       {/* 순위 읽는 중 자리는 화면 높이 이상 — 순위(막대 + 표, 30종목 약 1,900px)가 오며 공통·이력 패널을 첫 화면 밖으로 밀던 이동을 막습니다(QA-892). */}
-      {loading && !data && (
-        <div className="min-h-dvh">
+      {loading && !data &&
+        (rankingFirstLoad ? (
+          <div className="min-h-dvh">
+            <Loading label="수급 데이터를 불러오는 중…" />
+          </div>
+        ) : (
           <Loading label="수급 데이터를 불러오는 중…" />
-        </div>
-      )}
+        ))}
       {error && <ErrorState message={error} onRetry={reload} />}
 
       {data?.warning && <Callout tone="warn">{data.warning}</Callout>}

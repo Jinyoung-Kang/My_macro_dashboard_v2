@@ -60,7 +60,7 @@ async function settle() {
 const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 describe("수급 레이더 실패 뒤 다시 읽는 동안(QA-895)", () => {
-  it.fails("탭 복귀로 다시 읽는 동안: 머리 동작의 신선도 자리·시장 전체 패널의 기준일 줄·본문 자리·순위 화면 높이 자리를 다시 켜지 않는다", async () => {
+  it("탭 복귀로 다시 읽는 동안: 머리 동작의 신선도 자리·시장 전체 패널의 기준일 줄·본문 자리·순위 화면 높이 자리를 다시 켜지 않는다", async () => {
     render(<SessionUserProvider user={OWNER}><RadarPage /></SessionUserProvider>);
     await settle();
     // 실패한 뒤 — 순위는 오류 상자, 시장 전체 패널은 주의 상자.
@@ -84,7 +84,8 @@ describe("수급 레이더 실패 뒤 다시 읽는 동안(QA-895)", () => {
     const actions = screen.getByRole("button", { name: "새로고침" }).parentElement as HTMLElement;
     expect(within(actions).queryByText("수집")?.closest("[aria-hidden='true']") ?? null).toBeNull();
     // 시장 전체 패널 — 기준일 줄 자리·본문 자리 없이 읽는 중 한 줄.
-    expect(market().querySelector("header p > [aria-hidden='true']")).toBeNull();
+    // (출처 줄의 ' · '도 aria-hidden이라 보이지 않는 자리만 — invisible.)
+    expect(market().querySelector("header p > [aria-hidden='true'].invisible")).toBeNull();
     expect(market().querySelector("[class*='min-h-[36rem]']")).toBeNull();
     expect(within(market()).getByText("불러오는 중…")).toBeTruthy();
     // 순위 — 화면 높이 자리 없이 읽는 중 한 줄.
