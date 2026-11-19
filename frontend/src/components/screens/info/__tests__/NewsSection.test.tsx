@@ -166,15 +166,28 @@ describe("뉴스·글 — 목록 + 원문 검사 칸(작업대 P7)", () => {
     expect(screen.getByRole("region", { name: "원문 — 고른 줄 없음" })).toBeTruthy();
   });
 
-  it("넓은 화면이라도 틀이 64rem보다 좁으면(1280·1024) 대화상자로 연다", async () => {
-    stubWide(900);
+  // 틀 폭으로 배치가 갈리는지를 한 사례에서 봅니다 — 대화상자만 보면 개편 전(모든 폭 원문 팝업)에서도 통과했습니다(P7 검토).
+  it("넓은 화면이라도 틀이 64rem보다 좁으면(1280·1024) 같은 누름이 대화상자 — 64rem 이상이면 옆 칸(대화상자 없음)", async () => {
+    stubWide(1200);
     articleRoutes();
+    const wide = render(<NewsSection />);
+    fireEvent.click(await screen.findByRole("button", { name: "Synthetic rates outlook" }));
+    expect(screen.getByRole("region", { name: "원문 — Synthetic rates outlook" })).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    wide.unmount();
+    vi.restoreAllMocks();
+
+    stubWide(900);
     render(<NewsSection />);
     const title = await screen.findByRole("button", { name: "Synthetic rates outlook" });
     expect(screen.queryByRole("region", { name: /^원문 — / })).toBeNull();
     expect(title.getAttribute("aria-haspopup")).toBe("dialog");
     fireEvent.click(title);
-    expect(await screen.findByRole("dialog", { name: "Synthetic rates outlook" })).toBeTruthy();
+    const dialog = await screen.findByRole("dialog", { name: "Synthetic rates outlook" });
+    const described = document.getElementById(dialog.getAttribute("aria-describedby") ?? "");
+    expect(described?.textContent).toBe("Synthetic Blog · 2026-11-15 09:00 KST");
+    // 검사 칸 틀의 대화상자 — 첫 포커스는 제목(QA-871).
+    expect(document.activeElement).toBe(within(dialog).getByRole("heading", { name: "Synthetic rates outlook" }));
   });
 
   it("좁은 화면: 대화상자 — 이름은 제목, 설명은 '출처 · 시각'(예전 원문 팝업과 같은 꼴), Esc로 닫으면 제목 단추로 포커스", async () => {
