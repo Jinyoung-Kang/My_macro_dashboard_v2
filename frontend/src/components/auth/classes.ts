@@ -8,6 +8,12 @@ import { buttonClasses, FOCUS_RING, TEXT_TARGET } from "@/components/ui/classes"
 /** 화면 가운데 카드 — 4px 모서리(rounded-card), 안쪽 24px. */
 export const AUTH_CARD = "w-full max-w-sm rounded-card border border-border bg-surface p-6";
 
+/**
+ * 대시보드 레이아웃의 안내 카드(백엔드에 연결하지 못함·운영자 계정 없음 — app/(dashboard)/layout.tsx) — 인증 카드와 같은 4px 모서리·안쪽 24px(모든 폭),
+ * 안내 글이 길어 폭은 max-w-lg, 주의 톤 경계. 처음에는 넓은 화면 안쪽이 32px(sm:p-8)이라 인증 카드와 달랐습니다(공용 키트 단계가 이 단계로 넘김).
+ */
+export const AUTH_NOTICE_CARD = "w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm";
+
 /** 카드 제목(h1) — 글자 단계 heading(20px 굵게). */
 export const AUTH_TITLE = "text-heading text-text";
 
