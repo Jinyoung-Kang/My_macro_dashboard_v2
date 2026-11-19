@@ -238,6 +238,9 @@ function ReaderFrame({
       }}
       selectedKey={selected}
       onSelectedKeyChange={onSelect}
+      // 대화상자 첫 포커스는 제목 — 내용의 첫 조작이 '한국어로 번역'(유료 번역 POST)이라 연 직후 Enter 한 번으로 번역이 요청되고 낭독기가 번역 단추부터
+      // 읽었습니다(QA-871). 번역 단추의 동작·문구·켜짐 조건은 그대로입니다.
+      dialogFocus="title"
       inspectorHint="제목을 고르면 이 칸에 받아 둔 원문이 열립니다."
     >
       {children}

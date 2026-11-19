@@ -6,7 +6,7 @@
  * 알림 검사 칸은 첫 포커스를 제목에 둡니다(dialogFocus="title").
  *
  * 기대: 첫 포커스는 대화상자 제목(h2 — 원문 제목). 번역 단추의 동작·문구·켜짐 조건은 그대로이고 열기만으로는 번역을 요청하지 않습니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례(블로그 글 — 본문을 읽는 동안 열려 조작이 없음) 'expected <button type="button" …(2)>…(1)</button> to be <h2 …>'
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례(블로그 글 — 본문을 읽는 동안 열려 조작이 없음) 'expected <button type="button" …(2)>…(1)</button> to be <h2 …>'
  * (activeElement가 닫기 단추), 둘째 사례(헤드라인 — 번역 단추가 바로 있음) activeElement가 '한국어로 번역' 단추.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -52,7 +52,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("원문 대화상자의 첫 포커스(QA-871)", () => {
-  it.fails("좁은 화면: 대화상자를 열면 첫 포커스는 제목 — 번역 단추가 아님, 열기만으로 번역 POST 없음", async () => {
+  it("좁은 화면: 대화상자를 열면 첫 포커스는 제목 — 번역 단추가 아님, 열기만으로 번역 POST 없음", async () => {
     render(<NewsSection />);
     fireEvent.click(await screen.findByRole("button", { name: "Synthetic rates outlook" }));
     const dialog = await screen.findByRole("dialog", { name: "Synthetic rates outlook" });
@@ -63,7 +63,7 @@ describe("원문 대화상자의 첫 포커스(QA-871)", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it.fails("좁은 화면 · 보도자료·경제지 헤드라인(본문을 따로 읽지 않아 번역 단추가 바로 있음): 첫 포커스는 제목, Enter 한 번으로 번역 POST 없음", async () => {
+  it("좁은 화면 · 보도자료·경제지 헤드라인(본문을 따로 읽지 않아 번역 단추가 바로 있음): 첫 포커스는 제목, Enter 한 번으로 번역 POST 없음", async () => {
     render(<NewsSection />);
     fireEvent.click(screen.getByRole("radio", { name: "보도자료·경제지" }));
     fireEvent.click(await screen.findByRole("button", { name: "ECB keeps rates unchanged" }));
