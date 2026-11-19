@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultEngineId, demoQuotaNote, engineLabel, engineOptions, quotaLabel } from "../aiEngines";
+import { defaultEngineId, demoQuotaNote, engineAvailability, engineLabel, engineOptions, quotaLabel } from "../aiEngines";
 import type { AiEngine } from "../types";
 
 function engine(id: string, available: boolean, unavailableReason: AiEngine["unavailableReason"] = null): AiEngine {
@@ -14,18 +14,26 @@ const AWS = [
 ];
 
 describe("엔진 선택지", () => {
-  it("못 쓰는 엔진은 막고 이유를 붙인다 — 허용 목록 밖은 '이 배포에서 사용 안 함', 키 없음은 예전 문구", () => {
+  // QA-850: 속도 안내는 선택지 글에 싣지 않습니다(고르기 상자에서 잘림) — 이름 + 못 쓰는 이유 꼬리만.
+  it("못 쓰는 엔진은 막고 이유를 붙인다 — 허용 목록 밖은 '이 배포에서 사용 안 함', 키 없음은 예전 문구(속도 안내는 싣지 않음)", () => {
     expect(engineOptions([...AWS, engine("cerebras_llama", false, "no_key")])).toEqual([
-      { value: "auto", label: "AUTO · 빠름 (이 배포에서 사용 안 함)", disabled: true },
-      { value: "anthropic_haiku", label: "ANTHROPIC_HAIKU · 빠름", disabled: false },
-      { value: "nvidia_nemotron", label: "NVIDIA_NEMOTRON · 빠름 (이 배포에서 사용 안 함)", disabled: true },
-      { value: "cerebras_llama", label: "CEREBRAS_LLAMA · 빠름 (키 없음)", disabled: true },
+      { value: "auto", label: "AUTO (이 배포에서 사용 안 함)", disabled: true },
+      { value: "anthropic_haiku", label: "ANTHROPIC_HAIKU", disabled: false },
+      { value: "nvidia_nemotron", label: "NVIDIA_NEMOTRON (이 배포에서 사용 안 함)", disabled: true },
+      { value: "cerebras_llama", label: "CEREBRAS_LLAMA (키 없음)", disabled: true },
     ]);
   });
 
-  it("이유가 없는(예전 백엔드) 못 쓰는 엔진은 '키 없음', 속도 힌트가 없으면 붙이지 않는다", () => {
+  it("이유가 없는(예전 백엔드) 못 쓰는 엔진은 '키 없음'", () => {
     const old: AiEngine = { id: "x", label: "X", provider: "x", model: null, description: "", available: false };
     expect(engineOptions([old])).toEqual([{ value: "x", label: "X (키 없음)", disabled: true }]);
+  });
+
+  it("쓸 수 있는지의 글(고르기 아래 속성) — 쓸 수 있음·이 배포에서 사용 안 함·키 없음(이유 모름 포함)", () => {
+    expect(engineAvailability({ available: true, unavailableReason: null })).toBe("쓸 수 있음");
+    expect(engineAvailability({ available: false, unavailableReason: "not_allowed" })).toBe("이 배포에서 사용 안 함");
+    expect(engineAvailability({ available: false, unavailableReason: "no_key" })).toBe("키 없음");
+    expect(engineAvailability({ available: false })).toBe("키 없음");
   });
 });
 
@@ -66,11 +74,11 @@ describe("엔진 이름 — 백엔드 라벨의 앞 그림 문자(제공자 색 
     expect(engineLabel({ id: "x", label: "" })).toBe("x");
   });
 
-  it("선택지 라벨도 같은 이름 + 속도 + 못 쓰는 이유", () => {
+  it("선택지 라벨도 같은 이름 + 못 쓰는 이유(속도는 싣지 않음 — QA-850)", () => {
     const options = engineOptions([
       { id: "nvidia_nemotron", label: "🟢 NVIDIA — Nemotron-3 Super 120B", provider: "nvidia", model: null, description: "",
         available: false, unavailableReason: "no_key", speedHint: "느림" },
     ] as never);
-    expect(options).toEqual([{ value: "nvidia_nemotron", label: "NVIDIA — Nemotron-3 Super 120B · 느림 (키 없음)", disabled: true }]);
+    expect(options).toEqual([{ value: "nvidia_nemotron", label: "NVIDIA — Nemotron-3 Super 120B (키 없음)", disabled: true }]);
   });
 });

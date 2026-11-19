@@ -8,7 +8,8 @@ import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
-import { defaultEngineId, demoQuotaNote, engineOptions, quotaLabel } from "@/lib/aiEngines";
+import { PropertyList } from "@/components/patterns";
+import { defaultEngineId, demoQuotaNote, engineAvailability, engineOptions, quotaLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
 import { formatKst, formatLatency, withoutLeadingIcon } from "@/lib/format";
 import type { AiEngines, AiResponse, SnapshotText } from "@/lib/types";
@@ -78,8 +79,8 @@ export default function AiReportPage() {
             label="AI 엔진"
             value={engineId}
             onChange={setPickedEngine}
-            // 고르기 전에 속도를 보여 줍니다. 추론형 모델이 느린 것은 고장이
-            // 아니라 그 모델의 성질인데, 목록만 보면 알 수 없었습니다.
+            // 선택지 글은 이름 + 못 쓰는 이유만(속도 안내까지 실으면 상자에서 잘렸음 — QA-850). 속도는 아래 '고른 엔진'에 보입니다 — 추론형 모델이
+            // 느린 것은 고장이 아니라 그 모델의 성질인데, 목록만 보면 알 수 없었습니다.
             options={engineOptions(engines.data?.engines ?? [])}
           />
           <Select
@@ -92,6 +93,20 @@ export default function AiReportPage() {
             }))}
           />
         </div>
+
+        {selectedEngine ? (
+          <div className="mt-3 max-w-md">
+            <PropertyList
+              title="고른 엔진"
+              dense
+              items={[
+                { label: "속도", value: selectedEngine.speedHint ?? null },
+                { label: "모델", value: selectedEngine.model, mono: true },
+                { label: "쓸 수 있는지", value: engineAvailability(selectedEngine) },
+              ]}
+            />
+          </div>
+        ) : null}
 
         <p className="mt-2 text-xs leading-relaxed text-text-3">
           {engineId === "auto"

@@ -40,7 +40,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-850 AI 리포트 엔진 고르기 — 선택지 글은 이름과 이유만, 속도·모델은 아래 속성", () => {
-  it.fails("선택지에 속도 안내가 없고, 고른 엔진의 속도·모델·쓸 수 있는지가 고르기 아래 속성 목록에", async () => {
+  it("선택지에 속도 안내가 없고, 고른 엔진의 속도·모델·쓸 수 있는지가 고르기 아래 속성 목록에", async () => {
     render(<AiReportPage />);
     const select = (await screen.findByLabelText("AI 엔진")) as HTMLSelectElement;
     await waitFor(() => expect(select.options).toHaveLength(2));
