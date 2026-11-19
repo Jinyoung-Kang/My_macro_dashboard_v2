@@ -30,7 +30,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-848 사용자 관리 — 행에 보이는 이메일은 한 번", () => {
-  it.fails("역할·등급 고르기는 보이지 않는 이름('{이메일} 역할|등급') — 행의 보이는 글에 이메일 한 번", async () => {
+  it("역할·등급 고르기는 보이지 않는 이름('{이메일} 역할|등급') — 행의 보이는 글에 이메일 한 번", async () => {
     render(<AdminUsersPage />);
     const role = await screen.findByLabelText(`${EMAIL} 역할`);
     expect(role.tagName).toBe("SELECT");

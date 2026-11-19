@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, inputClasses, Loading, NativeSelect, PageHeader, Select, Table } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { CheckIcon, StatusIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -97,30 +97,38 @@ export default function AdminUsersPage() {
           rowKey={(row) => String(row.id)}
           columns={[
             { key: "email", header: "이메일", render: (row) => row.email },
+            // 표 안 고르기는 보이는 이름표 없이 보이지 않는 이름('{이메일} 역할|등급')만 — 보이는 이름표를 그리면 한 행에 이메일이 세 번 찍혔습니다(QA-848).
+            // 머리 칸('역할'·'등급')과 같은 행의 이메일 칸이 보이는 이름을 대신합니다.
             {
               key: "role",
               header: "역할",
               render: (row) => (
-                <Select
-                  label={`${row.email} 역할`}
+                <NativeSelect
+                  aria-label={`${row.email} 역할`}
+                  inputSize="sm"
                   value={row.role}
                   disabled={savingId === row.id}
-                  onChange={(value) => void change(row, value, row.tier)}
-                  options={[{ value: "OWNER", label: "운영자" }, { value: "MEMBER", label: "회원" }]}
-                />
+                  onChange={(event) => void change(row, event.target.value, row.tier)}
+                >
+                  <option value="OWNER">운영자</option>
+                  <option value="MEMBER">회원</option>
+                </NativeSelect>
               ),
             },
             {
               key: "tier",
               header: "등급",
               render: (row) => (
-                <Select
-                  label={`${row.email} 등급`}
+                <NativeSelect
+                  aria-label={`${row.email} 등급`}
+                  inputSize="sm"
                   value={row.tier}
                   disabled={savingId === row.id}
-                  onChange={(value) => void change(row, row.role, value)}
-                  options={[{ value: "FREE", label: "무료" }, { value: "PRO", label: "유료" }]}
-                />
+                  onChange={(event) => void change(row, row.role, event.target.value)}
+                >
+                  <option value="FREE">무료</option>
+                  <option value="PRO">유료</option>
+                </NativeSelect>
               ),
             },
             {
