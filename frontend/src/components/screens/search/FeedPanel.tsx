@@ -771,12 +771,16 @@ export function FeedPanel({
         </div>
         {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄(묶음 줄 포함)의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴
             옆(셸 변수 --shell-nav-w — 기본 220px·끌어서 206~320px, 접으면 48px), 본문 스크롤 막대 옆까지). */}
+        {/* 아래 시트는 덮개(명세 §3-3 — 바탕 surface-2·밝은 경계 border-overlay·그림자)이고, 고정된 동안(잰 높이가 있을 때)만 덮개 표지(data-overlay)를
+            붙여 안의 공용 단추·요약 상자·닫기 hover가 한 단계 위 면(surface-3)을 씁니다(QA-858). xl의 오른쪽 칸(흐름 안)은 패널 면 그대로(bg-surface·
+            왼쪽 경계 border-strong)이고 표지가 없습니다. */}
         <div
           ref={sheetRef}
           style={sheetStyle(sheet)}
+          data-overlay={previewOpen && sheet.height > 0 ? "" : undefined}
           className={`${
             previewOpen
-              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[var(--shell-nav-w)]"
+              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-overlay bg-surface-2 shadow-overlay lg:bottom-0 lg:left-[var(--shell-nav-w)] xl:border-border-strong xl:bg-surface"
               : "border-t border-border"
           } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >
@@ -843,7 +847,7 @@ function PreviewFrame({ onClose, onKeyDown, children }: PreviewClose & { childre
           type="button"
           onClick={onClose}
           aria-label="미리 보기 닫기"
-          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
+          className="inline-flex size-11 items-center justify-center rounded-control text-text-2 hover:bg-control-fill hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
         >
           <XIcon size={14} />
         </button>
@@ -953,7 +957,7 @@ function FeedPreview({
       <p className="text-sm font-semibold leading-snug text-text">{item.title}</p>
       <FactList rows={rows} />
       {item.summary ? (
-        <p className="whitespace-pre-wrap rounded-control bg-surface-2 p-2 text-sm leading-6 text-text-2">{item.summary}</p>
+        <p className="whitespace-pre-wrap rounded-control bg-control-fill p-2 text-sm leading-6 text-text-2">{item.summary}</p>
       ) : (
         <p className="text-xs text-text-3">출처가 준 요약이 없습니다.</p>
       )}

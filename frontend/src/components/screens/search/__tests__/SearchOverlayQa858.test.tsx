@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("입력 후보 목록 — 덮개 토큰(QA-858)", () => {
-  it.fails("목록은 surface-2 바탕·밝은 경계(border-overlay)·그림자, ↓로 고른 줄은 surface-3이고 그 위 글자에 text-3이 없다", async () => {
+  it("목록은 surface-2 바탕·밝은 경계(border-overlay)·그림자, ↓로 고른 줄은 surface-3이고 그 위 글자에 text-3이 없다", async () => {
     vi.useFakeTimers();
     reads[endpoints.search.suggest("엔비")] = {
       available: true, items: [{ key: "us:NVDA", kind: "company", name: "엔비디아", sub: "NVDA · 미국", source: "sec" }],
@@ -118,7 +118,7 @@ describe("xl 미만 아래 미리 보기 시트 — 덮개 토큰(QA-858)", () =
     document.documentElement.style.removeProperty("--bottom-sheet");
   });
 
-  it.fails("고정 시트는 surface-2 바탕·밝은 경계·그림자와 덮개 표지(data-overlay), xl 오른쪽 칸은 지금 모양(surface·border-strong) — 안의 요약 상자·닫기 hover는 한 단계 위 면", async () => {
+  it("고정 시트는 surface-2 바탕·밝은 경계·그림자와 덮개 표지(data-overlay), xl 오른쪽 칸은 지금 모양(surface·border-strong) — 안의 요약 상자·닫기 hover는 한 단계 위 면", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
     setLocation("/search?e=us:NVDA&tab=timeline&range=30d");

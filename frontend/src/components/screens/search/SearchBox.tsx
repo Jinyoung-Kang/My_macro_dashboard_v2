@@ -124,7 +124,7 @@ export function SearchBox({
           role="listbox"
           aria-label="입력 후보"
           hidden={!expanded}
-          className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-control border border-border bg-surface-2 py-1 shadow-overlay"
+          className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-control border border-border-overlay bg-surface-2 py-1 shadow-overlay"
         >
           {items.map((candidate, index) => (
             <div
@@ -136,16 +136,18 @@ export function SearchBox({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(candidate)}
               onMouseMove={() => setActive(index)}
-              className={`relative flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1 text-sm lg:min-h-8 ${index === activeIndex ? "bg-surface" : ""}`}
+              // 고른 줄은 덮개 안 눌림 면(surface-3 — QA-858)이라 그 위 보조 글·아이콘은 text-2입니다(surface-3 위 text-3 금지 — 명세 §3-2). 보조 글·아이콘은
+              // 이 줄의 글자색을 물려받고(고르지 않은 줄 text-3), 이름은 늘 text입니다.
+              className={`relative flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1 text-sm lg:min-h-8 ${index === activeIndex ? "bg-surface-3 text-text-2" : "text-text-3"}`}
             >
               {index === activeIndex ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-              <span className="text-text-3">
+              <span className="shrink-0">
                 <KindIcon kind={candidate.kind} size={14} />
               </span>
               {/* 이름은 두 줄까지(그 뒤에만 말줄임), 보조 글은 줄어드는 칸이라 이름보다 먼저 줄고 폭의 45%를 넘지 않습니다 — 보조 글이 줄지 않던 때는
                   390에서 긴 보조 글이 이름을 몇 글자로 밀어냈습니다(QA-857). */}
               <span className="min-w-0 flex-1 break-keep wrap-anywhere line-clamp-2 text-text">{candidate.name}</span>
-              <span className="min-w-0 max-w-[45%] truncate text-xs text-text-3">
+              <span className="min-w-0 max-w-[45%] truncate text-xs">
                 {[entityKindLabel(candidate.kind), candidate.sub].filter(Boolean).join(" · ")}
               </span>
             </div>
