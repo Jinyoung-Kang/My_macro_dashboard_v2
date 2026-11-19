@@ -1,8 +1,8 @@
 "use client";
 
 import { CopyButton } from "@/components/CopyButton";
-import { KpiStrip, LogPanel, type KpiItem } from "@/components/patterns";
-import { Button, Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
+import { KpiStrip, LogPanel, Skeleton, type KpiItem } from "@/components/patterns";
+import { Button, Callout, ErrorState, Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import type { StatusIssuesResponse } from "@/lib/types";
@@ -42,7 +42,14 @@ export function IssuesPanel() {
         </div>
       }
     >
-      {loading && !data && <Loading label="실행 기록을 모으는 중…" />}
+      {/* 첫 읽기 동안 값이 온 뒤의 꼴(KPI 띠 네 타일 + 로그 상자 높이 한도 30rem)으로 자리를 잡습니다 — 읽는 중 글 한 줄뿐이면 응답 뒤 이 절이 약 520px
+          커지며 아래 태스크·스냅샷 표를 밀었습니다(1024 CLS 0.07 → 0.13 — QA-876). */}
+      {loading && !data && (
+        <div className="flex flex-col gap-3">
+          <KpiStrip label="오류·경고 불러오는 중" items={ISSUE_PENDING} />
+          <Skeleton height={LOG_PENDING_HEIGHT} label="실행 기록을 모으는 중" />
+        </div>
+      )}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && (
         <div className="flex flex-col gap-3">
@@ -67,6 +74,17 @@ export function IssuesPanel() {
     </Panel>
   );
 }
+
+/** 읽는 중 로그 상자 자리 — LogPanel 높이 한도 md(30rem = 480px). */
+const LOG_PENDING_HEIGHT = 480;
+
+/** 읽는 중 KPI 띠 — 값이 온 뒤의 네 타일과 같은 이름(값 자리 막대 + 상태 줄 한 줄 자리). */
+const ISSUE_PENDING: KpiItem[] = [
+  { key: "errors", label: "현재 오류", value: null, pending: true, pendingLines: 1 },
+  { key: "warnings", label: "현재 경고", value: null, pending: true, pendingLines: 1 },
+  { key: "groups", label: "최근 실패 유형", value: null, pending: true, pendingLines: 1 },
+  { key: "missing", label: "누락 데이터셋", value: null, pending: true, pendingLines: 1 },
+];
 
 /** 건수 — 천 단위 쉼표. */
 const count = (value: number) => value.toLocaleString("ko-KR", { maximumFractionDigits: 0 });

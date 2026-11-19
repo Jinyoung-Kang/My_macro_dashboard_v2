@@ -106,6 +106,19 @@ export default function AiReportPage() {
               ]}
             />
           </div>
+        ) : engines.loading && !engines.data ? (
+          // 엔진을 읽는 동안에도 같은 세 줄을 '—' + '불러오는 중'으로 — 응답 뒤 속성 목록이 자리 없이 들어와 아래 칸을 밀었습니다(CLS — QA-876).
+          <div className="mt-3 max-w-md">
+            <PropertyList
+              title="고른 엔진"
+              dense
+              items={[
+                { label: "속도", value: null, emptyReason: "불러오는 중" },
+                { label: "모델", value: null, emptyReason: "불러오는 중" },
+                { label: "쓸 수 있는지", value: null, emptyReason: "불러오는 중" },
+              ]}
+            />
+          </div>
         ) : null}
 
         <p className="mt-2 text-xs leading-relaxed text-text-3">

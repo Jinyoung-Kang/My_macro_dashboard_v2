@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { DataTable } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select } from "@/components/ui";
+import { DataTable, Skeleton } from "@/components/patterns";
+import { Button, Callout, ErrorState, inputClasses, Panel, Select } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { errorMessage, useAsyncAction } from "@/hooks/useAsyncAction";
@@ -18,6 +18,9 @@ const SAMPLE_PROMPTS = [
   "장단기 금리차 역전이 시장에 주는 의미를 3줄로 요약해 주세요.",
   "미결제약정이 늘면서 가격이 하락하는 국면을 한 문장으로 설명해 주세요.",
 ];
+
+/** 읽는 중 엔진 표 자리(px) — 값이 온 뒤의 개수 줄 + 표 높이에 가깝게(브라우저로 잰 값 — 진행 기록 §P7 '검토 반영'). */
+const ENGINE_TABLE_PENDING_HEIGHT = 360;
 
 /** AI 엔진 — 엔진별 키 설정 여부, 호출 응답·지연시간·폴오버 경로. */
 export function AiEngineSection() {
@@ -39,7 +42,13 @@ export function AiEngineSection() {
     <section className="flex flex-col gap-4">
       <h2 className="text-base font-semibold text-text">AI 엔진</h2>
 
-      {engines.loading && !engines.data && <Loading />}
+      {/* 엔진을 읽는 동안 값이 온 뒤의 패널(제목·출처·부제)과 표 높이만큼 자리를 잡습니다 — 읽는 중 글 한 줄 뒤 패널이 자리 없이 들어와 아래 호출 테스트를
+          밀었습니다(1024 CLS 0.26 → 0.41 — QA-876). */}
+      {engines.loading && !engines.data && (
+        <Panel title="등록된 엔진" source={SOURCES.aiEngines} subtitle="엔진별 응답·지연시간·자동 번역 동작을 확인합니다">
+          <Skeleton height={ENGINE_TABLE_PENDING_HEIGHT} label="엔진 목록을 읽는 중" />
+        </Panel>
+      )}
       {/* 엔진 목록을 받지 못하면 엔진 표가 없고 호출 버튼이 이유 없이 꺼져 있었습니다(QA-103, ai/report의 QA-050과 같음). */}
       {engines.error && <ErrorState message={engines.error} onRetry={engines.reload} />}
 
