@@ -141,10 +141,14 @@ describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다",
     api.apiPost.mockRejectedValue(new Error("요청 실패 (HTTP 500)"));
     render(<AlertsPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "읽음" }));
+    // P7: '읽음'은 알림을 고른 검사 칸(좁은 화면 대화상자)에 있습니다 — 실패 글은 그 칸과 알림함 머리 아래 둘 다.
+    fireEvent.click(await screen.findByText("국면 전환"));
+    const dialog = await screen.findByRole("dialog", { name: "국면 전환" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "읽음" }));
 
-    const inbox = (await screen.findByRole("heading", { name: "알림함" })).closest("section") as HTMLElement;
-    expect(await within(inbox).findByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    expect(await within(dialog).findByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    const inbox = (await screen.findByRole("heading", { name: "알림함", hidden: true })).closest("section") as HTMLElement;
+    expect(within(inbox).getByText("요청 실패 (HTTP 500)")).toBeTruthy();
   });
 });
 

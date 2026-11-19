@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { Banner, Button, Card, ErrorState, Freshness, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
+import { FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
+import { Banner, Button, Callout, Card, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Table, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { DEMO_READ_ONLY, isDemo } from "@/lib/access";
-import { ALERT_KINDS, notifyAlertsRead } from "@/lib/alerts";
+import { ALERT_KINDS, alertKindTag, inboxKinds, notifyAlertsRead } from "@/lib/alerts";
 import { apiDelete, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
@@ -25,6 +26,10 @@ type Result = { ok: boolean; message: string };
  * 데모 열람(ADR 0013)은 읽기 전용이라 읽음 처리·규칙 만들기·켜기/끄기·지우기를 막습니다(백엔드도 403).
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH — 그 대상에서 켠 것, 규칙 없음)은 제목을 누르면 그 대상의 타임라인으로 갑니다(정보 검색 화면 안쪽 주소만).
  * 그 알림은 규칙 없이 들어오므로 빈 알림함과 규칙 만들기(알림 종류 목록 아래)에 어디서 켜고 끄는지 적습니다(QA-443 — 데모 열람은 관심 대상을 읽지 않아 빼고).
+ *
+ * 작업대 P7(실행 명세 §7 7행 '알림: 타임라인과 필터 태그'): 알림함은 시각순 목록(Timeline — 발생일 열·종류 태그·제목 + '새 알림'·'지난 사건' 태그) + 화면 안
+ * 거르기 둘(알림 종류·읽음 상태 — 요청 없음) + 검사 칸(넓은 화면 왼쪽 목록 + 넓은 검사 칸, 첫 알림이 저절로 보임 / 좁은 화면 대화상자). 줄 단추 안에 단추를 둘 수
+ * 없어 '읽음'과 정보 검색 링크는 검사 칸으로 옮겼습니다(같은 POST·켜짐 조건 — 계획 U8).
  */
 export default function AlertsPage() {
   const demo = isDemo(useSessionUser());
@@ -68,13 +73,13 @@ export default function AlertsPage() {
 
   const items = inbox.data?.items ?? [];
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="알림"
         description="알림은 이 화면에만 쌓입니다(메일·메신저로 보내지 않음). 대시보드를 열면 위쪽 알림 벨과 탭 제목에 읽지 않은 수가 보입니다."
       />
 
-      <Card
+      <Panel
         title="알림함"
         subtitle={`읽지 않은 알림 ${inbox.data ? `${inbox.data.unread}건` : EMPTY} · 90일 보관`}
         actions={
@@ -89,7 +94,11 @@ export default function AlertsPage() {
       >
         {inbox.error && <ErrorState message={inbox.error} onRetry={inbox.reload} />}
         {/* 읽음 처리가 실패하면 목록만 다시 읽혀 항목이 그대로 남을 뿐 이유가 보이지 않았습니다(QA-103). */}
-        {read.error && <Banner tone="warn">{read.error}</Banner>}
+        {read.error && (
+          <div className="mb-3">
+            <Callout tone="warn">{read.error}</Callout>
+          </div>
+        )}
         {/* 읽는 중·실패에는 '아직 알림이 없습니다'가 아닙니다(QA-050). */}
         {!inbox.data ? (
           inbox.loading ? <Loading /> : null
@@ -99,38 +108,15 @@ export default function AlertsPage() {
               : "아직 알림이 없습니다. 아래에서 알림 규칙을 만드세요. 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림은 규칙 없이 여기에 들어옵니다."}
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {items.map((item: InboxItem) => (
-              <li
-                key={item.id}
-                // 읽지 않은 알림은 진한 테두리·점·굵은 제목(중립 — 강조 파랑은 누를 수 있는 것에만, 명세 A1), 읽은·지난 알림은 옅은 바탕.
-                className={`rounded-control border p-4 ${item.read || item.late ? "border-border bg-surface-2/50" : "border-border-strong bg-surface"}`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-text">
-                    {!item.read && !item.late && <span className="mr-1 text-text">●</span>}
-                    {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
-                    <InboxTitle item={item} />
-                  </p>
-                  <span className="text-xs text-text-3">
-                    {item.occurredOn}{item.late ? " · 지난 사건" : ""}
-                  </span>
-                </div>
-                <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-text-2">{withoutLeadingIcon(item.body)}</p>
-                {!item.read && !demo && (
-                  <button
-                    type="button"
-                    className="mt-2 text-xs text-text-3 underline hover:text-accent"
-                    onClick={async () => { await read.run([item.id]); void inbox.reload(); notifyAlertsRead(); }}
-                  >
-                    읽음
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+          <InboxTimeline
+            items={items}
+            demo={demo}
+            readBusy={read.busy}
+            readError={read.error}
+            onRead={async (id) => { await read.run([id]); void inbox.reload(); notifyAlertsRead(); }}
+          />
         )}
-      </Card>
+      </Panel>
 
       <Card
         title="알림 규칙"
@@ -212,20 +198,133 @@ export default function AlertsPage() {
   );
 }
 
+const ALL = "all";
+const UNREAD = "unread";
+
 /**
- * 알림함 줄의 제목 — 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 그 대상의 타임라인으로 가는 링크(payload.href — 정보 검색 화면 안쪽 주소만,
- * lib/infoSearch), 그 밖의 알림은 지금처럼 글. 링크는 누를 수 있는 것이라 강조 파랑(명세 A1).
+ * 알림함 시각순 목록 + 거르기 + 검사 칸. 거르기는 받은 알림 안에서만(요청 없음) — 알림 종류는 받은 종류만(전체 + 국면 전환·연속 순매수·13F 신규·관심 대상
+ * 새 글), 읽음 상태는 전체·읽지 않음. 둘 다 하나 고름(공용 거르기 목록 — 라디오, 강조 파랑 없는 잉크 고름).
+ * 줄: 발생일 · 종류 태그(중립) · 제목(그림 문자 뗌) + 읽지 않은 새 알림이면 굵은 제목과 '새 알림' 태그, 발생 3일 뒤에 들어온 알림이면 '지난 사건' 태그
+ * (예전 '●' 점만 첫 줄에 홀로 남던 것 — D1 alerts-unread-dot-alone — 과 옛 15px 제목이 없어짐).
  */
-function InboxTitle({ item }: { item: InboxItem }) {
-  const title = withoutLeadingIcon(item.title);
-  const href = searchWatchInboxHref(item);
-  if (!href) return <>{title}</>;
+function InboxTimeline({
+  items,
+  demo,
+  readBusy,
+  readError,
+  onRead,
+}: {
+  items: readonly InboxItem[];
+  demo: boolean;
+  readBusy: boolean;
+  readError: string | null;
+  onRead: (id: number) => Promise<void>;
+}) {
+  const [kindFilter, setKindFilter] = useState<string>(ALL);
+  const [readFilter, setReadFilter] = useState<string>(ALL);
+  const kinds = inboxKinds(items);
+  const kindItems: FilterListItem[] = [{ key: ALL, label: "전체" }, ...kinds.map((kind) => ({ key: kind, label: alertKindTag(kind) }))];
+  // 받은 종류가 바뀌어 고른 종류가 사라지면 전체로 봅니다.
+  const kindShown = kindFilter === ALL || kinds.includes(kindFilter as AlertKind) ? kindFilter : ALL;
+  const shown = items.filter(
+    (item) => (kindShown === ALL || item.kind === kindShown) && (readFilter === ALL || !item.read),
+  );
+  const byKey = new Map(items.map((item) => [String(item.id), item]));
+  const entries: TimelineEntry[] = shown.map((item) => {
+    const fresh = !item.read && !item.late;
+    return {
+      key: String(item.id),
+      at: item.occurredOn,
+      dateTime: item.occurredOn,
+      kind: { label: alertKindTag(item.kind) },
+      title: withoutLeadingIcon(item.title),
+      summary: (
+        <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className={fresh ? "font-semibold text-text" : "text-text"}>{withoutLeadingIcon(item.title)}</span>
+          {fresh ? <Tag>새 알림</Tag> : null}
+          {item.late ? <Tag>지난 사건</Tag> : null}
+        </span>
+      ),
+    };
+  });
+
   return (
-    <Link
-      href={href}
-      className="inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-    >
-      {title}
-    </Link>
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-2">
+        <FilterList label="알림 종류" selection="single" wide="wrap" items={kindItems} selected={[kindShown]} onToggle={setKindFilter} />
+        <FilterList
+          label="읽음 상태"
+          selection="single"
+          wide="wrap"
+          items={[{ key: ALL, label: "전체" }, { key: UNREAD, label: "읽지 않음" }]}
+          selected={[readFilter]}
+          onToggle={setReadFilter}
+        />
+      </div>
+      <Timeline
+        label="알림함"
+        entries={entries}
+        count
+        emptyText="고른 조건에 맞는 알림이 없습니다."
+        inspectorWidth="wide"
+        dialogFocus="title"
+        autoSelectFirst
+        inspectorHint="알림을 고르면 이 칸에 본문이 나옵니다."
+        renderDetail={(entry) => {
+          const item = byKey.get(entry.key);
+          return item ? <InboxDetail item={item} demo={demo} readBusy={readBusy} readError={readError} onRead={onRead} /> : null;
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * 알림 검사 칸 — 발생일·받은 시각·상태·지난 사건(속성 목록), 본문(긴 글 15/24, 줄바꿈 그대로, 그림 문자 뗌), 관심 대상 새 글이면 그 대상의 정보 검색 링크
+ * (정보 검색 화면 안쪽 주소만 — lib/infoSearch), 읽지 않았고 데모가 아니면 '읽음'(같은 POST {ids:[id]} — 누른 뒤 알림함 다시 읽기·읽음 신호). 읽음 처리 실패는
+ * 알림함 머리 아래와 여기 둘 다에 적습니다(대화상자가 열려 있으면 바깥 글이 가려짐).
+ */
+function InboxDetail({
+  item,
+  demo,
+  readBusy,
+  readError,
+  onRead,
+}: {
+  item: InboxItem;
+  demo: boolean;
+  readBusy: boolean;
+  readError: string | null;
+  onRead: (id: number) => Promise<void>;
+}) {
+  const href = searchWatchInboxHref(item);
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <PropertyList
+        dense
+        items={[
+          { label: "발생일", value: item.occurredOn },
+          { label: "받은 시각", value: formatKst(item.createdAt) },
+          { label: "상태", value: item.read ? "읽음" : "읽지 않음" },
+          { label: "지난 사건", value: item.late ? "예 — 발생 3일 뒤에 들어옴(읽지 않은 수에 세지 않음)" : "아니요" },
+        ]}
+      />
+      <p className="max-w-[72ch] whitespace-pre-line break-keep wrap-anywhere text-running text-text-2">{withoutLeadingIcon(item.body)}</p>
+      {href || (!item.read && !demo) ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {href ? (
+            <Link href={href} className={LINK_CLASSES}>
+              정보 검색에서 보기
+            </Link>
+          ) : null}
+          {!item.read && !demo ? (
+            <Button size="sm" disabled={readBusy} onClick={() => void onRead(item.id)}>
+              읽음
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {readError ? <Callout tone="warn">{readError}</Callout> : null}
+    </div>
   );
 }
