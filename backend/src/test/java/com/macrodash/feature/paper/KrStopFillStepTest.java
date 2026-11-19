@@ -386,7 +386,6 @@ class KrStopFillStepTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-790 — 수정 전 실패: 첫 주기 recorded 1건(주문 FILLED·체결 1행·보유 A 삭제), 기대 0건")
     @DisplayName("QA-790: ON 잠금 안 다시 확인 — 판정 입력(보유·기업행위 표시·since 거래량)을 읽은 뒤 마지막 처리 저장본을 읽기 전에 밤 장부 처리(S−1 재저장본)가 "
             + "대기 주문·보유 수량은 그대로 두고 기업행위 표시만 걸면, 그 책 기록을 버리고(대기 그대로) 다음 주기에 CORP_HOLD로 밤에 맡김")
     void onDiscardsWhenTheLedgerProcessedDuringTheEvaluation() {

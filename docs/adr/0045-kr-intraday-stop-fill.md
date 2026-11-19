@@ -20,7 +20,8 @@
   - 대상·관문: `KrIntradayFillTest.candidates`·`gateAt`·`orderGateTable`(G3)·`corpGateFour`(G4)·`nightCheck`, `RealTradePlannerTest.paperStopGateMatchesStopWindow`(G5 — 실제 매매 창 식과 같은 표),
     `KrStopFillTest.effectiveTable`(유효 값 = 감시 ON일 때만 그 값 — G1과 글 스위치가 함께 씀).
   - 단계(가짜 저장소): `KrStopFillStepTest` — SHADOW `shadowRecordsOnce`·`gatesDefer`·`givesUpBeforeTheClose`·`decidedNoR1IsRecordedAtOnce`·`checksAfterTheNight`, 스위치 `switchOff`, 잠금 `readsOutsideTheLedgerLock`·
-    `discardsWhenTheOrderMovedOn`, ON `onWritesTheLedger`·`onDefersUntilTheGateClears`·`onWritesTwoStopsInOneTransaction`(체결 알림 묶음 한 통 포함)·`onDiscardsWhenPendingOrdersChanged`, 작업 `jobCallsTheStepEveryCycle`.
+    `discardsWhenTheOrderMovedOn`, ON `onWritesTheLedger`·`onDefersUntilTheGateClears`·`onWritesTwoStopsInOneTransaction`(체결 알림 묶음 한 통 포함)·`onDiscardsWhenPendingOrdersChanged`·
+    `onDiscardsWhenTheLedgerProcessedDuringTheEvaluation`(QA-790), 작업 `jobCallsTheStepEveryCycle`.
   - 동치와 그 전제(실제 저장소·실제 밤 장부 — macrodash_test): `KrIntradayStopFillDbTest.intradayThenNightEqualsNightOnly`(장중 기록 → 금융위 D 도착·확정 조정 → S 밤 처리 = 밤 일괄, 뒤 시각 규칙 매수 포함, 사후 점검 일치)·
     `d12ProvisionalWithoutTheRow`·`nightWithoutTheTickerBreaksEquivalence`(동치가 깨지는 길 1 — S+1 시가 목표가 갈리는 범위 표시)·`nightCorporateActionBreaksEquivalence`(길 5)·`rollsBackWhenTheOrderIsNoLongerPending`(조건부 갱신 0행 → 그 책 되돌림).
   - 거울 보기: `PaperMirrorServiceTest.mirrorRewindsIntradayRecordedStop`·`mirrorStopsAfterTheNight`·`mirrorWhenTheNightIsLate`·`mirrorAfterPause`·`mirrorRewindsByTheProcessedSession`·`mirrorCashIsExactAfterAConfirmationShift`·
@@ -72,7 +73,7 @@
    - **G6** 금융위 D 줄 — 결정 8((가) 되감기)이라 관문이 없다.
    - 체결 조건: `KrFills.termsFor`(밤 `terms`에서 떼어 낸 요율·종목 구분·세율 시행일·호가 경고). 금융위 시장 구분이 없거나(`NO_FSC_MARKET`) 보류면(`HOLD`) 밤에 맡긴다. 보유가 없으면 `NO_POSITION`.
 5. **잠금과 쓰기**(ON): 저장본·금융위 시장 구분·확정 시세·장부 밀림·기업행위 판정은 장부 잠금 밖에서 한다(실제 매매 선점이 같은 잠금을 기다림). 잠금 안에서는 책마다 한 트랜잭션으로 그 책의
-   대기 주문 번호 집합과 마지막 처리 저장본이 판정 때와 같은지 다시 읽어, 다르면 그 책을 버리고(다음 주기에 다시 판정), 같으면 기준 시각 순으로 주문마다 밤 `auctionSell`과 같은 칸을 쓴다 —
+   대기 주문 번호 집합과 마지막 처리 저장본(그 책의 판정 입력보다 먼저 읽은 값 — 잠금 밖 판정 중에 끼어든 밤 장부 처리도 잡게, QA-790)이 판정 때와 같은지 다시 읽어, 다르면 그 책을 버리고(다음 주기에 다시 판정), 같으면 기준 시각 순으로 주문마다 밤 `auctionSell`과 같은 칸을 쓴다 —
    체결 행(관측 시각 = 감시 항목을 받은 시각, 관측일 S, 출처 R1, 비용 칸), **대기일 때만** 체결로 바꾸는 갱신(0행이면 예외 → 그 책 기록 전체 되돌림·대기 그대로), 보유 삭제(전량), 재진입 금지(체결한 날부터 —
    밤 `stopLockout`과 같은 값·글), 근거(밤 `annotate`와 같은 판정 근거 칸·호가 경고 + `intradayFill` — 결정 10), 상태는 현금·순자산·평가액·노출 네 칸만(`PaperStore.updateStateValuation` — 마지막 관측·처리
    시각과 순자산 줄 날짜는 그대로, 멱등 키와 결정 관문 세션 판정이 바뀌지 않게). 현금은 밤처럼 체결마다 소수 넷째 자리로 더한다. 순자산 줄은 쓰지 않는다(밤 `settle`). 작업 기록 `kr.stopwatch.fill`(근거·기록·

@@ -51,7 +51,8 @@ import java.util.TreeSet;
  *       봅니다(그 밤 관측치의 체결 봉 고르기·체결 조건, 기업행위 판정, 기록 뒤 일시정지, 그 세션 자료를 처리하지 않고 넘어감). 결과는 근거
  *       {@code intradayFill.check}(기업행위면 {@code postCheck}도)에 남기고, 다르면 운영 알림(건수·사유 코드)입니다 — 되돌리지는 않습니다.</li>
  *   <li><b>잠금</b>: 저장본·금융위 시장 구분·확정 시세·장부 밀림 판정은 장부 잠금({@link PaperLedgerService#exclusively}) 밖에서 읽고 셉니다. 잠금 안에서는
- *       책마다 한 트랜잭션으로 그 주문이 아직 대기이고 근거가 비었으며 보유 수량이 그대로인지만 다시 읽어, 바뀌었으면 버리고 아니면 씁니다 — 실제 매매의 선점이
+ *       책마다 한 트랜잭션으로 그 주문이 아직 대기이고 근거가 비었으며 보유 수량이 그대로인지만 다시 읽어, 바뀌었으면 버리고 아니면 씁니다(ON은 그 책의 대기 주문
+ *       번호와 마지막 처리 저장본도 — 저장본은 그 책 판정 입력보다 먼저 읽은 값이라 잠금 밖 판정 중에 끼어든 밤 장부 처리도 버림) — 실제 매매의 선점이
  *       같은 잠금을 기다리므로 잠금을 쥔 시간을 줄이고 작업 기록에 남깁니다({@code lockMillis}).</li>
  *   <li><b>작업 기록</b>: {@code kr.}{@value #JOB} — 근거를 남겼거나 대조했거나 알림·오류가 있을 때만(20초마다 쌓이지 않음).</li>
  * </ul>
@@ -192,10 +193,15 @@ final class KrStopFillStep {
         boolean giveUp = !fill.records() && !now.isBefore(close.minus(GIVE_UP_BEFORE_CLOSE));
         Map<String, List<Order>> pendingByBook = new LinkedHashMap<>();
         Map<String, List<Order>> due = new LinkedHashMap<>();
+        Map<String, Instant> processedAt = new HashMap<>();
         for (Book book : store.books(run.code())) {
             if (!PaperBooks.ACTIVE.equals(book.status()) || PaperBooks.KIND_BENCHMARK.equals(book.kind())) {
                 continue;
             }
+            // 마지막 처리 저장본을 그 책의 판정 입력(대기 주문·보유·기업행위 표시·since 거래량·확정 시세·장부 밀림)보다 먼저 읽습니다 — 그 뒤 잠금 밖에서 밤 장부
+            // 처리가 끼면 잠금 안 다시 확인(writeOn)이 이 값과 달라 그 책 기록을 버림(QA-790 — 늦게 읽으면 처리 뒤 값이라 오래된 판정이 통과).
+            BookState seenState = store.state(book.code()).orElse(null);
+            processedAt.put(book.code(), seenState == null ? null : seenState.lastProcessedCollectedAt());
             List<Order> pending = store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING);
             List<Order> mine = new ArrayList<>();
             for (Order o : pending) {
@@ -275,7 +281,6 @@ final class KrStopFillStep {
             mineOrders.forEach(o -> mine.add(o.ticker()));
             KrConfirmed confirmed = reader.quietly(() -> run.confirmedPrices(marketData, mine, settings, since));
             boolean caughtUp = mirror.ledgerCaughtUp(code, session);
-            BookState seenState = store.state(code).orElse(null);
             List<Evaluation> out = new ArrayList<>();
             for (Order o : mineOrders) {
                 JsonNode watched = Json.child(Json.child(payload, "tickers"), o.ticker());
@@ -285,7 +290,7 @@ final class KrStopFillStep {
             }
             if (!out.isEmpty()) {
                 evaluations.put(code, out);
-                seen.put(code, new Seen(ids(pendingByBook.get(code)), seenState == null ? null : seenState.lastProcessedCollectedAt()));
+                seen.put(code, new Seen(ids(pendingByBook.get(code)), processedAt.get(code)));
             }
         }
         long lockStarted = System.nanoTime();
@@ -345,7 +350,10 @@ final class KrStopFillStep {
         }
     }
 
-    /** 판정 때 본 그 책의 대기 주문 번호와 마지막 처리 저장본 — 잠금 안에서 바뀌었으면 그 책의 ON 기록을 버림(다음 주기에 다시 판정). */
+    /**
+     * 판정 때 본 그 책의 대기 주문 번호와 마지막 처리 저장본(판정 입력보다 먼저 읽은 값 — QA-790) — 잠금 안에서 바뀌었으면 그 책의 ON 기록을 버림(다음 주기에
+     * 다시 판정).
+     */
     private record Seen(Set<Long> pending, Instant processedAt) {
     }
 
