@@ -67,7 +67,7 @@ const crumbTexts = () =>
     .map((item) => item.textContent?.replace("›", "").trim());
 
 describe("정보 검색 대상 화면의 빵부스러기 대상 칸(QA-861)", () => {
-  it.fails("빵부스러기 함수 — 정보 검색에서 넘겨받은 이름('/search')이 마지막 칸, 첫 칸 '정보 검색'은 첫 화면 링크. 이름이 없거나 다른 주소면 한 칸", () => {
+  it("빵부스러기 함수 — 정보 검색에서 넘겨받은 이름('/search')이 마지막 칸, 첫 칸 '정보 검색'은 첫 화면 링크. 이름이 없거나 다른 주소면 한 칸", () => {
     expect(breadcrumbs("/search", MEMBER, { href: "/search", label: " 엔비디아 " })).toEqual([
       { label: "정보 검색", href: "/search" },
       { label: "엔비디아", href: null },
@@ -79,7 +79,7 @@ describe("정보 검색 대상 화면의 빵부스러기 대상 칸(QA-861)", ()
     }
   });
 
-  it.fails("대상 이름을 읽으면 '정보 검색 › 엔비디아'·탭 제목 앞 이름, 대상을 떠나면 칸이 사라진다", async () => {
+  it("대상 이름을 읽으면 '정보 검색 › 엔비디아'·탭 제목 앞 이름, 대상을 떠나면 칸이 사라진다", async () => {
     setLocation("/search?e=us:NVDA");
     render(
       <SessionUserProvider user={MEMBER}>
