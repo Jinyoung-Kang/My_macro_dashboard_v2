@@ -19,3 +19,15 @@ export const AUTH_SUBMIT = `mt-6 w-full ${buttonClasses("primary", "lg")}`;
  * 44px(TEXT_TARGET — 넓은 화면은 글 높이)과 포커스 링. 글 높이 그대로이던 때는 390px에서 19.5px였습니다(QA-465).
  */
 export const AUTH_LINK = `${TEXT_TARGET} rounded-sm hover:text-accent ${FOCUS_RING}`;
+
+/**
+ * 결과 상자(오류·성공 — AuthMessage, 로그인 오류) — 4px 모서리, 13px 글. 안은 공용 상태 글(StatusText — 아이콘 칸 + 낭독기 머리말 + 글)이라 색만으로
+ * 상태를 가르지 않습니다(명세 §0 W4, QA-855). 톤(테두리·틴트 바탕·글자색)은 AUTH_MESSAGE_TONE.
+ */
+export const AUTH_MESSAGE = "mt-4 rounded-control border px-3 py-2.5 text-[13px]";
+
+/** 결과 상자의 톤 — 오류는 위험 틴트, 성공은 정상 틴트(틴트 위 같은 톤 글자 4.54·6.9:1 — globals.css). */
+export const AUTH_MESSAGE_TONE = {
+  error: "border-danger/30 bg-danger-tint text-danger",
+  ok: "border-ok/30 bg-ok-tint text-ok",
+} as const;

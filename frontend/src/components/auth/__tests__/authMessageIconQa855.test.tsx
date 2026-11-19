@@ -45,7 +45,7 @@ function statusParts(text: string) {
 }
 
 describe("인증 화면의 상태 글 — 아이콘 + 글(QA-855)", () => {
-  it.fails("결과 상자(AuthMessage) — 오류는 아이콘과 낭독기 머리말 '오류: ', 성공은 아이콘", () => {
+  it("결과 상자(AuthMessage) — 오류는 아이콘과 낭독기 머리말 '오류: ', 성공은 아이콘", () => {
     render(
       <>
         <AuthMessage tone="error">링크가 만료됐습니다.</AuthMessage>
@@ -58,7 +58,7 @@ describe("인증 화면의 상태 글 — 아이콘 + 글(QA-855)", () => {
     expect(statusParts("메일을 보냈습니다.").icon).not.toBeNull();
   });
 
-  it.fails("로그인 오류 상자 — 아이콘과 낭독기 머리말(요청·문구 그대로)", async () => {
+  it("로그인 오류 상자 — 아이콘과 낭독기 머리말(요청·문구 그대로)", async () => {
     api.auth.session.mockResolvedValue({ authenticated: false, mailAvailable: false });
     api.auth.login.mockRejectedValue(new Error("이메일 또는 비밀번호가 맞지 않습니다."));
     render(<LoginPage />);
@@ -74,7 +74,7 @@ describe("인증 화면의 상태 글 — 아이콘 + 글(QA-855)", () => {
     expect(parts.prefix).toBe("오류: ");
   });
 
-  it.fails("가입 — 비밀번호 불일치 글에 아이콘(가입 단추는 지금처럼 막힘)", () => {
+  it("가입 — 비밀번호 불일치 글에 아이콘(가입 단추는 지금처럼 막힘)", () => {
     render(<SignupPage />);
     fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "abcdefghij" } });
     fireEvent.change(screen.getByLabelText("비밀번호 확인"), { target: { value: "abcdefghik" } });
@@ -82,7 +82,7 @@ describe("인증 화면의 상태 글 — 아이콘 + 글(QA-855)", () => {
     expect((screen.getByRole("button", { name: "가입하고 확인 메일 받기" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it.fails("재설정(링크로 연 새 비밀번호) — 비밀번호 불일치 글에 아이콘", async () => {
+  it("재설정(링크로 연 새 비밀번호) — 비밀번호 불일치 글에 아이콘", async () => {
     window.history.replaceState(null, "", "/reset?token=synthetic-token");
     render(<ResetPage />);
     fireEvent.change(await screen.findByLabelText("새 비밀번호"), { target: { value: "abcdefghij" } });
