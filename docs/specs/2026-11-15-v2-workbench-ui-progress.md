@@ -3034,3 +3034,12 @@ QA API GET). README·CLAUDE.md는 고치지 않았습니다.
 모두 통과), 코드 변경 없이 다시 돌려 통과.
 시험 수: `6ff1fb7e` 400 파일 4,601 사례 → 401 파일 4,608 사례(새 파일 `paperNotesArchiveRefusedFocusQa822`, 기존 파일에 QA-819·820·821 사례). QA 스택은 다시 빌드하지 않았습니다(위 값은 자기 빌드 +
 QA API GET + 합성 GET). README·CLAUDE.md는 고치지 않았습니다.
+
+## D5 배포 (2026-11-19 17:32~17:34 KST, Vultr `main@45149d7a` — main `5e25641b` → `45149d7a` fast-forward)
+- 담은 것: P6 모의매매 부분 재배치(QA-735~779), D5 전 QA 고침 두 회차(QA-810~822), 작업 2·3 브랜치의 고정본 오탐 지문(`.gitleaksignore` — `0d016ca1`·`45149d7a`, 코드 변경 없음).
+- 사용자 보고(배포 전, 2026-11-19 16시대): 명세 §7-1 글과 다르게 만든 넷(U1·U2·U3·U10)과 결정 거리(위 'D5 전 QA 스택 확인' 1~5, `kr-selection-narrow-name-wrap`, P8 문구 거리)를 보고하고 권장안(그대로)으로 배포했습니다.
+- 배포 전: 운영 DB `paper_job_runs`를 읽기만 함 — 수능일이라 한국 장 10:00~16:30, 17:00 한국 브리핑(SENT)·매시 `risk`·`exec-audit`(17:18 OK), 도는 작업 없음. 실제 매매 창(오늘 09:45~16:35)·22:45 미국 결정과 떨어진 시각.
+- `scripts/vultr/deploy.sh`: 이미지 넷을 하나씩 빌드, 화면 컨테이너를 다시 띄움(백엔드·수집기는 그대로). `postgres:16-alpine` 태그가 새 판(16.16)으로 받아져 postgres 컨테이너도 다시 만들어짐(같은 주 판 —
+  데이터 볼륨 그대로, 17:33:38 기동) — 백엔드 연결 풀이 닫힌 연결 열 개를 버리고 다시 붙음(WARN만, ERROR 0). 스키마 최신, 디스크 57%, 재부팅 필요 없음.
+- GET 확인: /·/paper/us·/paper/kr·모의매매 탭 여덟(미국·한국)·/info 8탭·/macro·/institutions·/more·/search·/status 200(/paper는 307), `/api/health`·`/api/status` 200, JS 빌드 표지 `main@45149d7a`.
+- 배포 뒤 5분(17:40): 서버 HEAD `45149d7a`, 백엔드 ERROR 0·수집기 오류 0·화면 오류 0. main CI 여섯 job 통과.
