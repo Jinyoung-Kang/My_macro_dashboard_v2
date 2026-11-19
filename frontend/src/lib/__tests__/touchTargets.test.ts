@@ -22,6 +22,7 @@ const {
   ROW_TRIGGER,
   segmentClasses,
   TEXT_TARGET,
+  TEXT_TARGET_SHORT,
   toggleClasses,
   underlineTabClasses,
 } = uiClasses;
@@ -39,6 +40,7 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
   TEXT_TARGET: () => [["", TEXT_TARGET]],
+  TEXT_TARGET_SHORT: () => [["", TEXT_TARGET_SHORT]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) =>
       (["md", "sm"] as const).flatMap((size) =>
@@ -149,5 +151,14 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
       "a「근거 출처 이름」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
       "a「합성 출처 사이트」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
     ]);
+  });
+
+  // 짧은 글 단추(P7 — '번역'·'원문'·'읽음' 등 3글자 안팎): TEXT_TARGET은 높이만 44px이라 두 글자 단추의 폭은 글 폭뿐입니다(D2 QA에서 '접기' 28px). 짧은 글 단추용
+  // 클래스는 좁은 화면에서 높이와 폭 모두 44px(글은 가운데 — 포커스 링이 글 양쪽으로 고르게), 넓은 화면은 높이·폭 모두 글 크기로 돌아갑니다.
+  it("짧은 글 단추(TEXT_TARGET_SHORT)는 lg 미만 높이·폭 44px, lg 이상은 글 크기 — 기존 TEXT_TARGET은 그대로", () => {
+    const words = TEXT_TARGET_SHORT.split(/\s+/);
+    expect(words).toEqual(expect.arrayContaining(["inline-flex", "min-h-11", "min-w-11", "items-center", "justify-center", "lg:min-h-0", "lg:min-w-0"]));
+    expect(belowLgTarget(TEXT_TARGET_SHORT)).toBeNull();
+    expect(TEXT_TARGET).toBe("inline-flex min-h-11 items-center lg:min-h-0");
   });
 });

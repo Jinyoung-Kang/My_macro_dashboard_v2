@@ -128,6 +128,18 @@ export function segmentClasses(checked: boolean): string {
 export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
 
 /**
+ * 짧은 글 단추·링크(3글자 안팎 — '번역'·'원문'·'읽음'·쪽 넘기기 옆 글 단추 등)의 누르는 자리 — 좁은 화면(lg 미만)은 높이와 폭 모두 44px(원칙 A8.
+ * TEXT_TARGET은 높이만이라 두 글자 단추는 폭이 글 폭뿐 — D2 QA에서 '접기' 28px), 글은 상자 가운데라 키보드 포커스 링이 글 양쪽으로 고르게 벌어집니다(D2 QA 'QA-610 뒤
+ * 접기 단추 링' — 글이 44px 상자 왼쪽에 붙어 링 안 오른쪽만 빔). 넓은 화면은 높이·폭 모두 글 크기 그대로(TEXT_TARGET과 같은 규칙 — 24px 하한은 기록된
+ * 결정 거리 lg-sort-header-summary-text-height). 색·밑줄·글자 크기·포커스 링은 부르는 쪽이 붙입니다.
+ *
+ * 고르는 규칙: 3글자 안팎의 홀로 선 글 단추·링크는 TEXT_TARGET_SHORT, 그보다 긴 글 링크는 TEXT_TARGET, 문장 안의 링크는 둘 다 쓰지 않습니다
+ * (WCAG 2.5.8 글 안 예외). 좁은 화면에서 글이 상자 가운데로 들어가 문단 시작선에서 (44 − 글 폭) / 2만큼 밀리므로, 문단 시작선에 맞춰야 하는 머리
+ * (상세 화면 '접기' 등)에는 쓰지 않습니다.
+ */
+export const TEXT_TARGET_SHORT = "inline-flex min-h-11 min-w-11 items-center justify-center lg:min-h-0 lg:min-w-0";
+
+/**
  * 표·목록 줄의 이름 단추(검사 칸 틀의 줄 단추 InspectorTrigger, COT 자산 고르기 단추 등) — 데이터 칸이라 강조 파랑이 아니라 중립 잉크(본문색), 마우스를
  * 올리면 밑줄, 포커스 링. 좁은 화면(lg 미만) 누르는 자리는 높이와 폭 모두 44px(한 글자 이름 '금'도 — TEXT_TARGET은 높이만), 넓은 화면은 높이와 폭 모두
  * 24px 이상(명세 §3-7 '작은 것 24px(표 안)' — WCAG 2.5.8 최소 크기. 글 높이 20px인 단추가 24px, 한 글자 '금'은 폭 14 → 24px — 2026-11-17 결정 8, 사용자
