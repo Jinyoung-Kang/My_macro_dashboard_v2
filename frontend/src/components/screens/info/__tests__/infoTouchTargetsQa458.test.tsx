@@ -19,6 +19,7 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import InfoHub from "@/components/screens/info/InfoHub";
 import { NewsSection } from "@/components/screens/info/NewsSection";
 import { SourceTable } from "@/components/screens/info/SourceTable";
 import { endpoints } from "@/lib/endpoints";
@@ -87,5 +88,29 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     const dialog = await screen.findByRole("dialog", { name: "합성 출처" });
     expect(screen.getByRole("link", { name: "자료 보기" })).toBeTruthy();
     expect(smallTargets(dialog)).toEqual([]);
+  });
+
+  // D1 touch-targets-lt-lg-missed-by-qa458의 정보 수집 몫(그때 16px): 국내 시장·수급의 KRX·네이버 출처 링크, 출처 상태 표의 출처 이름 링크.
+  // 작업대 P7 재배치(출처 링크에 공용 LINK_CLASSES — QA-836 고침과 함께, 출처 이름은 줄 단추 InspectorTrigger)로 없어졌는지 그린 DOM 전체로 셉니다 —
+  // 재배치 뒤 그냥 it으로 처음부터 통과해 결함 번호를 쓰지 않았습니다(작업대 P6 QA-751·758 선례).
+  it("정보 수집 국내 시장·수급·출처 상태 — 출처 링크·고르기·출처 이름·쪽 단추", async () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ rank: i + 1, code: `00000${i}`.slice(-6), name: `종목${i + 1}`, netAmountEok: 1, netVolume: 1, buyEok: 1, sellEok: 1 }));
+    reads = {
+      [endpoints.info.catalog]: { ...CATALOG, tabs: [{ key: "kr", label: "국내 시장·수급", sources: 12, tones: { ok: 12 } }],
+        sources: Array.from({ length: 12 }, (_, i) => ({ ...SOURCE, task: `kr_${i}`, key: `kr_${i}`, label: `국내 출처 ${i}`, tab: "kr" })) },
+      "/api/info/krx": { available: false, ranking: { market: "KOSPI", investor: "외국인", tradeType: "순매수", date: "2026-11-15", rows }, markets: ["KOSPI"], investors: ["외국인"] },
+      [endpoints.info.flows]: { available: true, collectedAtKst: "2026-11-15 10:00 KST", ageSeconds: 1, source: "네이버 증권", fetchTier: null, unit: "억원", failed: [],
+        sourceUrls: { trader: "https://n.example/t", foreigner: "https://n.example/f", organization: "https://n.example/o" }, trend: { KOSPI: { rows: [] } }, rankings: {} },
+    };
+    const { container, unmount } = render(<InfoHub tab="kr" />);
+    await screen.findByRole("link", { name: "매매동향" });
+    await screen.findByRole("button", { name: "국내 출처 0" });
+    expect(screen.getByRole("link", { name: "한국거래소 정보데이터시스템(계정 로그인) · 확정치" })).toBeTruthy();
+    expect(smallTargets(container)).toEqual([]);
+    unmount();
+
+    const status = render(<InfoHub tab="status" />);
+    await screen.findByRole("button", { name: "국내 출처 0" });
+    expect(smallTargets(status.container)).toEqual([]);
   });
 });
