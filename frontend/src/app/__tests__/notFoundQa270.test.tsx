@@ -27,14 +27,14 @@ async function loadPage(): Promise<ComponentType> {
 }
 
 describe("없는 주소의 화면(QA-270)", () => {
-  it.fails("루트 not-found는 서버 컴포넌트다 — \"use client\" 없음, 인증 카드 틀(AuthCard)을 씀", () => {
+  it("루트 not-found는 서버 컴포넌트다 — \"use client\" 없음, 인증 카드 틀(AuthCard)을 씀", () => {
     expect(existsSync(FILE), "app/not-found.tsx").toBe(true);
     const source = readFileSync(FILE, "utf8");
     expect(source).not.toMatch(/^\s*(?:\/\*[\s\S]*?\*\/\s*)?["']use client["']/);
     expect(source).toMatch(/from ["']@\/components\/auth\/AuthCard["']/);
   });
 
-  it.fails("한국어 제목 '찾을 수 없는 화면'과 홈('/')으로 가는 링크 하나 — 운영자 전용 화면 링크는 두지 않는다", async () => {
+  it("한국어 제목 '찾을 수 없는 화면'과 홈('/')으로 가는 링크 하나 — 운영자 전용 화면 링크는 두지 않는다", async () => {
     const NotFound = await loadPage();
     render(<NotFound />);
     expect(screen.getByRole("heading", { level: 1, name: "찾을 수 없는 화면" })).toBeTruthy();
