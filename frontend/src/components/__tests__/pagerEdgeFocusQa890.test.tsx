@@ -26,7 +26,7 @@ function Host({ start, pages }: { start: number; pages: number }) {
 const nav = () => screen.getByRole("navigation", { name: "출처 쪽" });
 
 describe("쪽 넘기기 끝 쪽 포커스(QA-890)", () => {
-  it.fails("'다음'으로 마지막 쪽에 닿으면 지금 쪽 번호로, 그 전 넘김은 '다음'에 그대로", () => {
+  it("'다음'으로 마지막 쪽에 닿으면 지금 쪽 번호로, 그 전 넘김은 '다음'에 그대로", () => {
     render(<Host start={1} pages={3} />);
     const next = within(nav()).getByRole("button", { name: "다음" });
     next.focus();
@@ -39,7 +39,7 @@ describe("쪽 넘기기 끝 쪽 포커스(QA-890)", () => {
     expect(document.activeElement?.getAttribute("aria-current")).toBe("page");
   });
 
-  it.fails("'이전'으로 첫 쪽에 닿으면 지금 쪽 번호 1로", () => {
+  it("'이전'으로 첫 쪽에 닿으면 지금 쪽 번호 1로", () => {
     render(<Host start={2} pages={2} />);
     const previous = within(nav()).getByRole("button", { name: "이전" });
     previous.focus();
