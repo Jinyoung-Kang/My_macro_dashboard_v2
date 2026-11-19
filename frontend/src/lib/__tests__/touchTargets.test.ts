@@ -4,7 +4,8 @@
  * components/ui/classes.ts와 정보 검색 조각(components/screens/search/parts.tsx)이 내보내는 것을 모두 '누르는 조각'과 '아닌 것'으로 나눠 둡니다.
  * 새로 내보낸 이름이 어느 쪽에도 없으면 실패합니다 — 새 조각을 만들 때 이 표에 넣으며 44px을 따지게 합니다. 누르는 조각은 받을 수 있는 인자를
  * 모두 넣어 본 클래스가 lg 미만 44px(`min-h-11`·`h-11`·`size-11` 등, lg: 이상 변형은 더 작아도 됨)을 갖는지 봅니다(touchTargetAudit).
- * 화면에서 그린 DOM의 누름 자리는 app/(dashboard)/__tests__/touchTargetsQa458.test.tsx가 봅니다.
+ * 화면에서 그린 DOM의 누름 자리는 app/(dashboard)/__tests__/touchTargetsQa458.test.tsx가 봅니다(정보 수집·수급 레이더 몫은 P7에서 화면별 파일로 나눔 —
+ * components/screens/info/__tests__/infoTouchTargetsQa458.test.tsx, app/(dashboard)/__tests__/radarTouchTargetsQa458.test.tsx).
  */
 import { describe, expect, it } from "vitest";
 
