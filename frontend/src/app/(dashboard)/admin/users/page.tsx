@@ -118,6 +118,7 @@ export default function AdminUsersPage() {
         <UsersTable
           users={users.data?.users ?? []}
           audit={audit.data?.entries ?? null}
+          auditLoading={audit.loading && !audit.data}
           savingId={savingId}
           onChange={(row, role, tier) => void change(row, role, tier)}
         />
@@ -207,11 +208,14 @@ export default function AdminUsersPage() {
 function UsersTable({
   users,
   audit,
+  auditLoading,
   savingId,
   onChange,
 }: {
   users: readonly AdminUser[];
   audit: readonly AuditEntry[] | null;
+  /** 감사 기록을 아직 읽는 중(받은 것 없음) — 검사 칸이 '받지 못함'과 가름(QA-874). */
+  auditLoading: boolean;
   savingId: number | null;
   onChange: (row: AdminUser, role: string, tier: string) => void;
 }) {
@@ -224,7 +228,7 @@ function UsersTable({
       inspectorHint="이메일을 고르면 이 칸에 그 사용자의 속성과 최근 감사 기록이 나옵니다."
       renderDetail={(key) => {
         const row = byKey.get(key);
-        return row ? <UserDetail row={row} audit={audit} /> : null;
+        return row ? <UserDetail row={row} audit={audit} auditLoading={auditLoading} /> : null;
       }}
     >
       {(inspector) => (
@@ -301,8 +305,11 @@ function Verified({ verified }: { verified: boolean }) {
   );
 }
 
-/** 사용자 검사 칸 — 속성 목록 + 그 사용자의 최근 감사 기록(이미 읽은 최근 100건 안에서, 최근 다섯 줄). */
-function UserDetail({ row, audit }: { row: AdminUser; audit: readonly AuditEntry[] | null }) {
+/**
+ * 사용자 검사 칸 — 속성 목록 + 그 사용자의 최근 감사 기록(이미 읽은 최근 100건 안에서, 최근 다섯 줄). 감사 기록이 아직 없으면 읽는 중('불러오는 중')과
+ * 실패('받지 못했습니다')를 가릅니다 — 예전에는 둘 다 '받지 못했습니다'였습니다(QA-874).
+ */
+function UserDetail({ row, audit, auditLoading }: { row: AdminUser; audit: readonly AuditEntry[] | null; auditLoading: boolean }) {
   const lines = (audit ?? []).filter((entry) => entry.userId === row.id).slice(0, AUDIT_LINES);
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -322,7 +329,7 @@ function UserDetail({ row, audit }: { row: AdminUser; audit: readonly AuditEntry
           최근 감사 기록
         </InspectorSubheading>
         {audit === null ? (
-          <p className="text-sm text-text-3">감사 기록을 받지 못했습니다.</p>
+          <p className="text-sm text-text-3">{auditLoading ? "감사 기록을 불러오는 중입니다." : "감사 기록을 받지 못했습니다."}</p>
         ) : lines.length === 0 ? (
           <p className="break-keep text-sm text-text-3">최근 100건 안에 이 사용자의 기록이 없습니다.</p>
         ) : (

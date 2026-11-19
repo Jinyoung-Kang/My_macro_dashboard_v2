@@ -6,7 +6,7 @@
  * (수급 레이더 검사 칸은 둘을 가름).
  *
  * 기대: 읽는 중이면 '감사 기록을 불러오는 중입니다.', 실패(오류)면 '감사 기록을 받지 못했습니다.'. 검사를 열어도 새 요청은 없습니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 'Unable to find an element with the text: 감사 기록을 불러오는 중입니다.'(보이는 글은 '받지 못했습니다'). 둘째 사례(실패)는 고치기 전에도 통과하는 고정 사례.
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 'Unable to find an element with the text: 감사 기록을 불러오는 중입니다.'(보이는 글은 '받지 못했습니다'). 둘째 사례(실패)는 고치기 전에도 통과하는 고정 사례.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +46,7 @@ async function openUser(): Promise<HTMLElement> {
 }
 
 describe("사용자 검사 칸 — 감사 기록 읽는 중과 실패(QA-874)", () => {
-  it.fails("감사 기록을 읽는 중이면 '불러오는 중' — '받지 못했습니다'가 아님", async () => {
+  it("감사 기록을 읽는 중이면 '불러오는 중' — '받지 못했습니다'가 아님", async () => {
     audit = () => new Promise(() => {});
     const dialog = await openUser();
     expect(within(dialog).getByText("감사 기록을 불러오는 중입니다.")).toBeTruthy();
