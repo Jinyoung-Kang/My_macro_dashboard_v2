@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe("정보 수집 위 패널이 답하지 않을 때 아래 패널(QA-897)", () => {
-  it.fails("국내 탭: KRX가 답하지 않아도 2초 뒤에는 네이버·출처 패널이 보인다(그 전에는 hidden)", async () => {
+  it("국내 탭: KRX가 답하지 않아도 2초 뒤에는 네이버·출처 패널이 보인다(그 전에는 hidden)", async () => {
     answer({ "/api/info/flows": FLOWS, "/api/info/catalog": CATALOG });
     render(<InfoHub tab="kr" />);
     await advance(1_999);
@@ -64,7 +64,7 @@ describe("정보 수집 위 패널이 답하지 않을 때 아래 패널(QA-897)
     expect(hiddenPanel("출처")).toBeNull();
   });
 
-  it.fails("뉴스 탭: catalog가 답하지 않아도 2초 뒤에는 출처 패널이 보인다(그 전에는 hidden)", async () => {
+  it("뉴스 탭: catalog가 답하지 않아도 2초 뒤에는 출처 패널이 보인다(그 전에는 hidden)", async () => {
     answer({ "/api/info/items?kind=blog": LIST });
     render(<InfoHub tab="news" />);
     await advance(1_999);
