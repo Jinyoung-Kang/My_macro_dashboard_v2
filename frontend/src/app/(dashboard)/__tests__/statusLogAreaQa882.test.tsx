@@ -47,17 +47,18 @@ afterEach(() => cleanup());
 
 const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
-/** 첫 읽기 동안의 로그 자리 막대 높이(px). */
+/** 첫 읽기 동안의 로그 자리표시 바깥 높이(px) — 자리 막대 + 공용 Skeleton 상자의 위아래 여백 py-1(8px — QA-885). */
 function pendingHeight(): number {
   const log = screen.getByRole("status", { name: "실행 기록을 모으는 중" });
-  return Number.parseFloat((log.querySelector("[style]") as HTMLElement | null)?.style.height ?? "0");
+  expect(tokens(log)).toContain("py-1");
+  return Number.parseFloat((log.querySelector("[style]") as HTMLElement | null)?.style.height ?? "0") + 8;
 }
 
 describe("저장소 상태 로그 절 — 응답 뒤에도 자리표시와 같은 높이(QA-882)", () => {
   it("오류·경고 없음(text '') — 안내 한 줄이 로그 상자 높이(30rem)만큼 자리를 둠", async () => {
     const { unmount } = render(<IssuesPanel />);
     await act(async () => {});
-    // 자리 막대는 로그 상자 높이 한도와 같은 480px(30rem).
+    // 자리표시(막대 + 상자 여백)는 로그 상자 높이 한도와 같은 480px(30rem).
     expect(pendingHeight()).toBe(480);
     unmount();
     response = issues({});

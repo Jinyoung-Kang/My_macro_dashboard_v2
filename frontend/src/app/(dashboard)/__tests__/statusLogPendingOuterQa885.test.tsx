@@ -40,7 +40,7 @@ function verticalPadding(element: Element): number {
 }
 
 describe("저장소 상태 로그 절 — 첫 읽기 자리표시의 바깥 높이(QA-885)", () => {
-  it.fails("자리표시(막대 + 상자 위아래 여백)가 응답 뒤 로그 자리와 같은 480px(30rem)", async () => {
+  it("자리표시(막대 + 상자 위아래 여백)가 응답 뒤 로그 자리와 같은 480px(30rem)", async () => {
     render(<IssuesPanel />);
     await act(async () => {});
     const status = screen.getByRole("status", { name: "실행 기록을 모으는 중" });
