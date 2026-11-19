@@ -122,7 +122,7 @@
       `reasons`의 G3 분포는 G3 완화 결정의 근거로 쓴다(`CORP_GUARD`는 감시 항목이 없을 때 `NO_R1`과 함께 붙으므로 따로 센다).
 11. **AI 입력과 글**(ON 판 — 끈 판(OFF)·대조 판(SHADOW)은 바이트 그대로): `StopWatch.rule`·`basis`·`hardRuleLine`에 장중 기록 판을 더해 한국 스탑 문장의 반영 시점 구절 하나만 바꾼다 —
     '금융위 확정가로 다시 판정하지 않고 그날 밤 장부에 반영' → '금융위 확정가로 다시 판정하지 않고, 그 분 봉에 거래가 있으면 기준 분 몇 분 뒤 장중에 장부에 반영(보유·현금이 바로 바뀜 — 종가 매도·그 분
-    거래 없음·자료 부족·앞 시각 대기 주문·기업행위 의심이면 그날 밤)'(감시 ON인 모든 한국 Claude 결정 패킷의 `12_hardRules` 스탑 줄·`1_basis.stopWatch.rule`, 자유 시점 판 장중 판단 패킷의 `1_basis.stopWatch.rule`).
+    거래 없음·자료 부족·앞 시각이나 같은 종목의 대기 주문·장부 밀림·기업행위 의심 등이면 그날 밤)'(감시 ON인 모든 한국 Claude 결정 패킷의 `12_hardRules` 스탑 줄·`1_basis.stopWatch.rule`, 자유 시점 판 장중 판단 패킷의 `1_basis.stopWatch.rule`).
     장중 판단·끈 판 장중 확인 패킷의 장부 글 `4_portfolio.ledger.note`는 ON이면 '…지난밤 관측치로 평가한 값에 오늘 장중에 적힌 감시 스탑 매도를 더한 값…'(표지는 `KrCheckpointPacket.Inputs.intradayFill` —
     두 작업이 함께 넘김). ON이 아니어도 그 장부에 밤 처리 전 장중 기록 스탑이 있으면(자료 — `Inputs.intradayRecorded`, `PaperKrCheckpointJob.intradayStopsRecorded` — 거울 보기가 되감는 행과
     같은 조건) 같은 글이다(QA-791 — 기록 뒤 같은 세션에 OFF로 바꿔도 현금·보유에는 이미 들어가 있음). 스탑 문장은 설정대로다. 시스템 프롬프트(`StopWatch.krPromptLine` — '곧바로 장중 시장가로 매도')는 그대로. 마감 브리핑의 한국 장부 안내는 **설정이 아니라 자료로** 고른다 — 그 세션 줄이 없는 계좌의
@@ -187,6 +187,7 @@
   2. 결정 패킷(`kr_claude`·`kr_claude2`, 감시 ON — 자유 시점 끈 판 포함): `12_hardRules` 스탑 줄(`StopWatch.hardRuleLine`)과 `1_basis.stopWatch.rule`의 반영 시점 구절만 바뀐다(결정 11).
      결정 패킷의 보유·현금은 결정이 그 세션 밤 처리 뒤에 돌므로(결정 관문 ①) 그대로.
   3. 장중 판단 패킷(자유 시점 판 + 감시 ON): `1_basis.stopWatch.rule`이 같은 구절로, `4_portfolio.ledger.note`가 ON 판 글로 바뀐다. `12_hardRules`는 그 세션 결정 패킷에서 복사된다(저장 시각 결정 12).
+     끈 판 장중 확인 패킷(계좌2 끈 판 + 감시 ON — 지금 쓰이지 않는 길)도 장부 글이 같은 ON 판 글이다(`1_basis.stopWatch`는 자유 시점 판에만 있음).
      현금·순자산·보유가 스탑 뒤 상태다. 대기 주문 목록·예상 장부의 대상 주문(출처 CLAUDE만)은 그대로이고 시작 현금·보유가 스탑 뒤 값이다. 판 종목은 5_feed 종목 범위(그 종목이 예약 watch에 없으면 빠짐)·
      `INTRADAY_CARRIED.holdingChecks`·전 거래일 종가·보유 행 `entry`(판단 이어받기 — `kr.continuity`)·`INTRADAY_EVENTS` 뉴스 대상에서 빠진다. 바뀌지 않는 '밤' 글: 예상 장부 메모('실제 체결은 그 밤 장부가' —
      CLAUDE 주문만 다루므로 1단계에서 참), 지시문 `REPLACE` 줄, 사건 줄의 '이미 대기 중인 스탑 매도는 코드가 집행한다'.
