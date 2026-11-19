@@ -32,7 +32,6 @@ import {
   sourceChoices,
   speedLabel,
   splitText,
-  stanceTone,
   statusLabel,
   statusTone,
   tabTone,
@@ -173,12 +172,13 @@ describe("네이버 수급", () => {
 });
 
 describe("거장", () => {
-  it("점수·나눔 글과 견해 색", () => {
+  // 작업대 P7: 견해는 색 글이 아니라 중립 태그(강세·약세는 등락이 아니라 색으로 나르지 않음) — 견해 색 함수(stanceTone)는 부르는 곳이 없어 지움.
+  it("점수·나눔 글", () => {
     expect(scoreText(95)).toBe("+95");
+    expect(scoreText(-60)).toBe("\u221260");
     expect(scoreText(null)).toBe("—");
     expect(splitText({ bull: 95, neutral: 5, bear: 0 })).toBe("강세 95 · 중립 5 · 약세 0");
     expect(splitText({ bull: 95, neutral: null, bear: 0 })).toBe("—");
-    expect([stanceTone("강세"), stanceTone("약세"), stanceTone("중립"), stanceTone(null)]).toEqual(["ok", "danger", "neutral", "neutral"]);
   });
 });
 

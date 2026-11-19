@@ -422,4 +422,43 @@ describe("정보 수집 화면", () => {
     expect(screen.getByRole("link", { name: "설정 탭" }).getAttribute("href")).toBe("/paper/us/settings");
     expect(screen.getByText("saveticker 뉴스(보류)")).toBeTruthy();
   });
+
+  it("정보(메커니즘): 상태 기록이 없는 호스트의 오늘 쓴 수는 0이 아니라 '—'(없는 숫자를 만들지 않음)", async () => {
+    const collector = { ...MECHANISM.collector, hosts: [...MECHANISM.collector.hosts, { host: "blog.example", tiers: ["plain"], dailyBudget: 10 }] };
+    routes({ "/api/info/mechanism": { ...MECHANISM, collector } });
+    render(<InfoHub tab="mechanism" />);
+
+    const hosts = await screen.findByRole("region", { name: /^호스트별 계층·하루 예산 / });
+    const row = within(hosts).getByText("blog.example").closest("tr") as HTMLElement;
+    expect(within(row).getByText("— / 10")).toBeTruthy();
+    expect(within(row).getByText("기록 없음")).toBeTruthy();
+    expect(within(hosts).getByText("3 / 40")).toBeTruthy();
+  });
+
+  // 작업대 P7: 견해는 색 글(강세 초록·약세 빨강) 대신 중립 태그 — 강세·약세는 오르내림이 아니라 색으로 나르지 않고, 글('강세 +95')이 뜻을 나름. 음수 점수는 U+2212.
+  it("뉴스·글 거장 견해: 견해는 중립 태그 '{견해} {점수}', 요약은 자르지 않음", async () => {
+    routes({
+      "/api/info/catalog": CATALOG,
+      "/api/info/items?kind=blog": { available: true, items: [], page: 1, size: 10, total: 0, pages: 1 },
+      "/api/info/gurus": {
+        available: true, collectedAtKst: "2026-11-11 18:00 KST", ageSeconds: 60, source: "WAEDGE NEWS 거장", sourceUrl: "https://waedge.example/", fetchTier: null,
+        asOf: "2026-11-11", counts: { total: 2, bull: 1, neutral: 0, bear: 1 },
+        gurus: [
+          { name: "합성 거장 A", stance: "강세", score: 95, bull: 95, neutral: 5, bear: 0, basisArticles: 3, summary: "합성 요약 A" },
+          { name: "합성 거장 B", stance: "약세", score: -60, bull: 10, neutral: 20, bear: 70, basisArticles: null, summary: null },
+        ],
+      },
+    });
+    render(<InfoHub tab="news" />);
+    fireEvent.click(await screen.findByRole("radio", { name: "거장 견해" }));
+
+    const table = await screen.findByRole("region", { name: /^거장 견해 / });
+    const bear = within(table).getByText("약세 \u221260");
+    expect(bear.className).toContain("bg-surface-2");
+    expect(bear.className).not.toMatch(/text-(danger|ok|up|down)/);
+    expect(within(table).getByText("강세 +95")).toBeTruthy();
+    const row = within(table).getByText("합성 거장 B").closest("tr") as HTMLElement;
+    expect(within(row).getAllByText("—")).toHaveLength(2);      // 기사 수·요약을 모름
+    expect(screen.getByRole("link", { name: "WAEDGE NEWS 거장 (비공식)" }).getAttribute("href")).toBe("https://waedge.example/");
+  });
 });

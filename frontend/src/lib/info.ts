@@ -4,7 +4,7 @@
  * 백엔드 `GET /api/info/*`가 수집기 저장본(글·네이버 매매동향·waedge 거장)과 출처 판정을 그대로 내려 줍니다. 비공식 출처를 차단 통과 수집으로
  * 받은 참고 자료라, 없는 값은 만들지 않고 '—'로 둡니다(0과 다름). 장중 추정 순위의 금액은 출처가 주지 않아 '—'입니다.
  */
-import { EMPTY, formatKst, formatNumber, formatSigned, formatSignedMinus } from "@/lib/format";
+import { EMPTY, formatKst, formatNumber, formatSignedMinus } from "@/lib/format";
 
 /** 상태 톤 — components/ui/icons의 StatusTone과 같은 네 값(lib는 화면 모듈을 가져오지 않음). */
 export type InfoTone = "ok" | "warn" | "danger" | "neutral";
@@ -723,16 +723,9 @@ export function rankingBasis(part: RankingPart | null | undefined): string {
 }
 
 // ------------------------------------------------------------------ 거장
-/** 견해의 색 — 강세 ok, 약세 danger, 중립·모름 neutral. */
-export function stanceTone(stance: Guru["stance"]): InfoTone {
-  if (stance === "강세") return "ok";
-  if (stance === "약세") return "danger";
-  return "neutral";
-}
-
-/** 점수 글(+95·−60). 모르면 '—'. */
+/** 점수 글(+95·−60 — 음수 부호는 U+2212). 모르면 '—'. */
 export function scoreText(score: number | null | undefined): string {
-  return score === null || score === undefined ? EMPTY : formatSigned(score, 0);
+  return score === null || score === undefined || !Number.isFinite(score) ? EMPTY : formatSignedMinus(score, 0).text;
 }
 
 /** 강세·중립·약세 나눔 한 줄("강세 95 · 중립 5 · 약세 0"). 하나라도 모르면 '—'. */
