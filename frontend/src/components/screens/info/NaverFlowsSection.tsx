@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Pager } from "@/components/Pager";
 import { ChangeCell, DataTable, StaleBadge } from "@/components/patterns";
-import { Callout, Card, ErrorState, Freshness, Loading, NativeSelect, SourceBadge } from "@/components/ui";
+import { Callout, Card, ErrorState, Freshness, LINK_CLASSES, Loading, NativeSelect, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
@@ -40,18 +40,21 @@ export function NaverFlowsSection() {
     <Card
       title="네이버 투자자별 매매동향·매매상위"
       source={
-        <span className="flex flex-wrap gap-x-2">
-          <span>{data?.source ?? "네이버 증권"} (비공식) ·</span>
-          <a href={data?.sourceUrls?.trader ?? "https://stock.naver.com/market/stock/kr/trend/trader"} target="_blank" rel="noopener noreferrer" className="hover:underline">
+        // 출처 글과 링크 셋을 '출처 ·' 뒤 한 글 흐름으로(QA-836 — 예전에는 블록 flex 상자라 '출처 ·'만 윗줄에 남았음). 링크는 공용 링크 모양(좁은 화면 44px).
+        <>
+          {data?.source ?? "네이버 증권"} (비공식) ·{" "}
+          <a href={data?.sourceUrls?.trader ?? "https://stock.naver.com/market/stock/kr/trend/trader"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
             매매동향
           </a>
-          <a href={data?.sourceUrls?.foreigner ?? "https://stock.naver.com/market/stock/kr/trend/foreigner"} target="_blank" rel="noopener noreferrer" className="hover:underline">
+          {" · "}
+          <a href={data?.sourceUrls?.foreigner ?? "https://stock.naver.com/market/stock/kr/trend/foreigner"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
             외국인
           </a>
-          <a href={data?.sourceUrls?.organization ?? "https://stock.naver.com/market/stock/kr/trend/organization"} target="_blank" rel="noopener noreferrer" className="hover:underline">
+          {" · "}
+          <a href={data?.sourceUrls?.organization ?? "https://stock.naver.com/market/stock/kr/trend/organization"} target="_blank" rel="noopener noreferrer" className={LINK_CLASSES}>
             기관
           </a>
-        </span>
+        </>
       }
       subtitle="정규장에는 40~90분, 장 밖에는 몇 시간에 한 번 불규칙하게 받습니다. 수급 레이더·모의매매 판단과는 따로 보는 참고 자료입니다."
       actions={
