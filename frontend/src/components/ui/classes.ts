@@ -1,7 +1,8 @@
 /*
  * 공용 조각의 클래스 문자열 — React를 모르는 순수 모듈이라 서버 컴포넌트(인증 화면 카드 등)도 부를 수 있습니다
  * ("use client"인 ui/index.tsx에서 내보낸 함수는 서버에서 부를 수 없습니다). ui/index.tsx가 그대로 다시 내보내므로
- * 클라이언트 쪽은 `@/components/ui`에서 가져와도 됩니다. 모양의 근거는 작업대 화면 언어 실행 명세
+ * 클라이언트 쪽은 `@/components/ui`에서 가져와도 됩니다 — 다만 작업대 P7의 TEXT_TARGET_SHORT는 다시 내보내지 않아(다음에 쓰는 화면이 정함) 이 모듈에서
+ * 가져옵니다. 모양의 근거는 작업대 화면 언어 실행 명세
  * docs/specs/2026-11-15-v2-workbench-ui.md §3-4·§3-7·§3-8·§6 — 모서리 4px, 넓은 화면(lg 이상) 조작 30px(작은 것 24·큰 것 40),
  * 좁은 화면(lg 미만) 누르는 자리 44px.
  */
@@ -135,7 +136,8 @@ export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
  *
  * 고르는 규칙: 3글자 안팎의 홀로 선 글 단추·링크는 TEXT_TARGET_SHORT, 그보다 긴 글 링크는 TEXT_TARGET, 문장 안의 링크는 둘 다 쓰지 않습니다
  * (WCAG 2.5.8 글 안 예외). 좁은 화면에서 글이 상자 가운데로 들어가 문단 시작선에서 (44 − 글 폭) / 2만큼 밀리므로, 문단 시작선에 맞춰야 하는 머리
- * (상세 화면 '접기' 등)에는 쓰지 않습니다.
+ * (상세 화면 '접기' 등)에는 쓰지 않습니다 — 그런 자리의 가로 하한은 TEXT_TARGET에 min-w-11 lg:min-w-0을 더해 글을 시작선에 둡니다(셸 안 없는 주소
+ * 화면의 '← 홈' — QA-864와 같은 꼴, 상세 화면 '접기'에 쓰는 일은 P8).
  */
 export const TEXT_TARGET_SHORT = "inline-flex min-h-11 min-w-11 items-center justify-center lg:min-h-0 lg:min-w-0";
 

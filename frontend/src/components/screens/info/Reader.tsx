@@ -8,8 +8,9 @@ import { endpoints } from "@/lib/endpoints";
 import { type InfoItemResponse, type ReaderEntry, offersTranslate, translatedBy } from "@/lib/info";
 
 /**
- * 원문 읽기(ADR 0037) — 받아 둔 원문(본문, 없으면 요약)과 번역 단추·원문/번역 바꾸기·원문 링크·안내 글. 원문 팝업(ReaderDialog — 정보 수집 뉴스·글과
- * 정보 검색 피드가 씀)의 내용입니다. 열어도 수집은 일어나지 않습니다 — 수집 글의 본문은 id로 저장본을 읽습니다.
+ * 원문 읽기(ADR 0037) — 받아 둔 원문(본문, 없으면 요약)과 번역 단추·원문/번역 바꾸기·원문 링크·안내 글. 정보 수집 뉴스·글의 원문 검사 칸
+ * (NewsSection — 옆 칸·좁은 배치 대화상자)과 정보 검색 피드의 원문 팝업(ReaderDialog)이 함께 쓰는 내용입니다. 열어도 수집은 일어나지 않습니다 — 수집 글의
+ * 본문은 id로 저장본을 읽습니다.
  */
 export function Reader({ entry }: { entry: ReaderEntry }) {
   // 수집 글의 본문은 열 때 id로 읽습니다(목록 응답에는 본문이 없음). 사건 뉴스는 목록이 준 요약이 전부입니다.
