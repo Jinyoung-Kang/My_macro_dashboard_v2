@@ -152,7 +152,7 @@ function Choice({ label, value, onChange, options }: { label: string; value: str
   );
 }
 
-/** 절 하나 — 제목(h3)·기준 줄(기준일 + 이어받았으면 '이전 값' 배지)·조밀 표(개수)·쪽 넘기기(10줄). */
+/** 절 하나 — 제목(h3)·기준 줄(기준일 + 이어받았으면 '이전 값' 배지)·조밀 표(개수)·쪽 넘기기(10줄), 행이 없으면 표 대신 빈 상태 한 줄(QA-877). */
 function Paged<T>({
   title,
   basis,
@@ -184,17 +184,24 @@ function Paged<T>({
         </span>
         <StaleBadge stale={part?.isStale} reason="이번에 받지 못함" />
       </p>
-      <DataTable<T>
-        dense
-        caption={`KRX ${title}`}
-        rows={slice.rows}
-        rowKey={(row) => `${title}-${slice.page}-${slice.rows.indexOf(row)}`}
-        emptyText="자료가 없습니다."
-        columns={columns}
-        count={() => `${rows.length.toLocaleString("ko-KR")}건`}
-        scrollHint="overflow"
-      />
-      <Pager page={slice.page} pages={slice.pages} onChange={setPage} label={`KRX ${title}`} />
+      {/* 행이 없으면 표 대신 빈 상태 한 줄 — 공용 표는 행이 있을 때만 최소 폭·넘김 안내를 두어, 빈 표의 머리 칸이 390에서 상자를 안내 없이 넘쳤습니다(QA-877). */}
+      {rows.length === 0 ? (
+        <p className="py-2 text-sm text-text-3">자료가 없습니다.</p>
+      ) : (
+        <>
+          <DataTable<T>
+            dense
+            caption={`KRX ${title}`}
+            rows={slice.rows}
+            rowKey={(row) => `${title}-${slice.page}-${slice.rows.indexOf(row)}`}
+            emptyText="자료가 없습니다."
+            columns={columns}
+            count={() => `${rows.length.toLocaleString("ko-KR")}건`}
+            scrollHint="overflow"
+          />
+          <Pager page={slice.page} pages={slice.pages} onChange={setPage} label={`KRX ${title}`} />
+        </>
+      )}
     </section>
   );
 }

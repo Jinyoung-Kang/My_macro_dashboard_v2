@@ -6,7 +6,7 @@
  * '매수'·'매도' 머리가 단서 없이 잘렸습니다(기준 빌드는 같은 자리에 넘침 없음).
  *
  * 기대: 행이 없으면 표(머리 줄) 대신 같은 문구의 빈 상태 한 줄 — 넘칠 머리가 없습니다. 행이 있으면 예전 그대로 조밀 표.
- * 수정 전(재현 커밋에서는 it.fails): 'expected <div …(4)>…(1)</div> to be null'(빈 순위의 머리 줄 표가 그려짐).
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 'expected <div …(4)>…(1)</div> to be null'(빈 순위의 머리 줄 표가 그려짐).
  */
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("KRX 절의 빈 표(QA-877)", () => {
-  it.fails("받은 순위가 없으면 머리 줄 표 대신 빈 상태 한 줄 — 넘칠 머리가 없음", async () => {
+  it("받은 순위가 없으면 머리 줄 표 대신 빈 상태 한 줄 — 넘칠 머리가 없음", async () => {
     render(<KrxSection />);
     await screen.findByText(/받은 순위 없음/);
     await act(async () => {});
