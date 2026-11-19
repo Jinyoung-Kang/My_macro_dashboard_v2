@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AuthCard, AuthField, AuthMessage, AuthSubmit } from "@/components/auth/AuthCard";
+import { AuthCard, AuthField, AuthFieldError, AuthMessage, AuthSubmit } from "@/components/auth/AuthCard";
 import { auth } from "@/lib/api";
 
 /**
@@ -52,7 +52,7 @@ export default function ResetPage() {
               <p className="mt-1 text-xs text-text-3">새 비밀번호를 정하세요(10자 이상). 링크는 한 번만 쓸 수 있습니다.</p>
               <AuthField label="새 비밀번호" type="password" value={password} onChange={setPassword} autoComplete="new-password" autoFocus />
               <AuthField label="새 비밀번호 확인" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
-              {mismatch && <p className="mt-2 text-xs text-danger">비밀번호가 서로 다릅니다.</p>}
+              {mismatch && <AuthFieldError>비밀번호가 서로 다릅니다.</AuthFieldError>}
             </>
           ) : (
             <>

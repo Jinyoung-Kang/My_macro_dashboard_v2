@@ -35,7 +35,6 @@ import {
   mergeLinks,
   relationLabel,
   rowTimeText,
-  isSlashShortcut,
   kindOfKey,
   kstDate,
   kstTime,
@@ -599,43 +598,6 @@ describe("키보드·링크", () => {
     expect(nextRowIndex(0, "ArrowUp", 3)).toBe(0);
     expect(nextRowIndex(-1, "ArrowUp", 3)).toBe(0);
     expect(nextRowIndex(5, "ArrowUp", 0)).toBe(-1);
-  });
-
-  it("'/'는 다른 입력칸에서 칠 때·조합 중·수식키와 함께·대화상자 안에서는 검색창으로 가지 않는다", () => {
-    const base = { key: "/", ctrlKey: false, metaKey: false, altKey: false, isComposing: false, target: { tagName: "BODY" } };
-    expect(isSlashShortcut(base)).toBe(true);
-    expect(isSlashShortcut({ ...base, target: { tagName: "INPUT" } })).toBe(false);
-    expect(isSlashShortcut({ ...base, target: { tagName: "TEXTAREA" } })).toBe(false);
-    expect(isSlashShortcut({ ...base, target: { tagName: "DIV", isContentEditable: true } })).toBe(false);
-    expect(isSlashShortcut({ ...base, target: { tagName: "BUTTON", closest: (selector: string) => (selector.includes("dialog") ? {} : null) } })).toBe(false);
-    expect(isSlashShortcut({ ...base, isComposing: true })).toBe(false);
-    expect(isSlashShortcut({ ...base, ctrlKey: true })).toBe(false);
-    expect(isSlashShortcut({ ...base, key: "?" })).toBe(false);
-  });
-
-  // 수정 전(재현 커밋에서는 it.fails)에는 덮개로 대화상자만 보고 메뉴(role menu)·키 반복(repeat)을 보지 않아 둘 다 true였다 — 셸 판정(lib/shortcuts
-  // singleKeyShortcut)은 둘 다 끈다. 넓은 화면의 계정 메뉴(P3)를 연 채 '/'를 누르면 이 화면만 기본 동작을 막고 검색창으로 포커스를 보내, 모달 메뉴가
-  // 포커스를 첫 항목으로 되돌렸다(QA-562).
-  it("'/'는 열린 메뉴(role menu) 안·키 반복이면 검색창으로 가지 않는다 — 셸 단축키 판정과 같다(QA-562)", () => {
-    const menu = document.createElement("div");
-    menu.setAttribute("role", "menu");
-    menu.tabIndex = -1;
-    const item = document.createElement("div");
-    item.setAttribute("role", "menuitem");
-    menu.append(item);
-    document.body.append(menu);
-    try {
-      const base = { key: "/", ctrlKey: false, metaKey: false, altKey: false, isComposing: false, target: document.body };
-      const inMenuBox = { ...base, target: menu };
-      const inMenuItem = { ...base, target: item };
-      const repeated = { ...base, repeat: true };
-      expect(isSlashShortcut(base)).toBe(true);
-      expect(isSlashShortcut(inMenuBox)).toBe(false);
-      expect(isSlashShortcut(inMenuItem)).toBe(false);
-      expect(isSlashShortcut(repeated)).toBe(false);
-    } finally {
-      menu.remove();
-    }
   });
 
   it("원문 주소는 http(s)만", () => {

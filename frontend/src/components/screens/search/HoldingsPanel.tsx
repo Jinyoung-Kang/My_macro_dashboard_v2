@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ErrorState, Loading } from "@/components/ui";
+import { LINK_CLASSES } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
@@ -9,7 +10,7 @@ import { endpoints } from "@/lib/endpoints";
 import { formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { holdersQuery, holdingsWindow, kstToday, type HoldersQuery } from "@/lib/infoSearch";
 import type { GuruHoldersResponse, PortfolioResponse, SearchEntity } from "@/lib/types";
-import { LINK, PaneHeading } from "./parts";
+import { PaneHeading } from "./parts";
 
 /** 기관 상세·13F 화면과 같은 값(캐시를 나눔 — InstitutionDetailScreen). */
 const QUARTERS = 8;
@@ -83,7 +84,7 @@ function CompanyHolders({ query, by }: HoldersQueryProps) {
               {/* 이름은 이 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 전체 이름이 보여 말줄임 없음). 겹침을 막는 것은 이름 글에
                   걸린 overflow-wrap:anywhere(wrap-anywhere)입니다 — 그래야 inline-flex 링크 상자의 최소 폭(min-content)이 띄어쓰기 없는 긴 이름의 폭보다
                   줄어 상자가 칸 폭에 맞춰집니다. 이 규칙이 없을 때 상자가 긴 이름의 폭보다 줄지 못해 숫자 칸과 겹쳤습니다(QA-432). */}
-              <Link href={institutionHref(row.cik)} className={LINK}>
+              <Link href={institutionHref(row.cik)} className={LINK_CLASSES}>
                 <span className="min-w-0 break-keep wrap-anywhere">{withoutLeadingIcon(row.institution)}</span>
               </Link>
               {/* 공시 이름은 다른 회사가 섞였는지 가를 근거라(잘린 공시 이름도 함께 찾음 — QA-436) 말줄임 없이 이 칸 안에서 줄바꿈하고, 보고일(2년 규칙의

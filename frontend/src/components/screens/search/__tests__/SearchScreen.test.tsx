@@ -1,6 +1,6 @@
 /**
  * 정보 검색 화면(/search — ADR 0041, 계약 §5). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
- *  - 첫 화면은 저장본만(관심 대상·최근 글 — 대상 풀기·결과·후보를 부르지 않음), 내용 영역은 늘 어두운 범위(data-scope="search")
+ *  - 첫 화면은 저장본만(관심 대상·최근 글 — 대상 풀기·결과·후보를 부르지 않음), 내용 영역은 바탕을 칠한 상자(bg-bg text-text — 범위 장치는 P7에서 걷음)
  *  - 후보: 치는 동안의 후보, Enter는 검색어로(자동으로 고르지 않음), 여럿이면 목록, 하나이고 이름이 같으면 바로 열기(그 자리를 바꿔 씀)
  *  - 빈 결과: 2년 안에 없음(+ 가장 최근 자료 날짜), 이 기간에 없음 + 더 넓은 기간 단추
  *  - 출처 상태 줄: 실패한 출처를 글로(색만이 아님)
@@ -100,16 +100,18 @@ afterEach(() => {
 });
 
 describe("첫 화면", () => {
-  it("대상을 고르기 전에는 저장본만(관심 대상·최근 글) — 대상 풀기·결과·후보를 부르지 않고, 내용 영역은 늘 어두운 범위", () => {
+  it("대상을 고르기 전에는 저장본만(관심 대상·최근 글) — 대상 풀기·결과·후보를 부르지 않고, 내용 영역은 바탕을 칠한 상자", () => {
     const { container } = renderScreen();
     expect(screen.getByRole("heading", { level: 1, name: "정보 검색" })).toBeTruthy();
     expect(screen.getAllByText(/최근 2년/).length).toBeGreaterThan(0);
-    expect(container.querySelector('[data-scope="search"]')).toBeTruthy();
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className.split(" ")).toEqual(expect.arrayContaining(["bg-bg", "text-text", "rounded-card", "border", "border-border"]));
+    expect(container.querySelector("[data-scope]")).toBeNull();
     expect(api.apiGet).not.toHaveBeenCalled();
     expect([...new Set(sharedCalls())].sort()).toEqual([endpoints.search.recent, endpoints.search.watch].sort());
   });
 
-  it("본문이 내려가면 TOP 단추가 어두운 범위 안에 나타나고, 휴대폰 미리보기 서랍(z-30)보다 아래 층(사용자 요청 2026-11-15)", () => {
+  it("본문이 내려가면 TOP 단추가 내용 상자 안에 나타나고, 휴대폰 미리보기 서랍(z-30)보다 아래 층(사용자 요청 2026-11-15)", () => {
     const main = document.createElement("main");
     main.id = "main";
     document.body.appendChild(main);
@@ -122,7 +124,7 @@ describe("첫 화면", () => {
       });
       const top = screen.getByRole("button", { name: "TOP 맨 위로" });
       expect(top.textContent).toContain("TOP");
-      expect(container.querySelector('[data-scope="search"]')?.contains(top)).toBe(true);
+      expect(container.firstElementChild?.contains(top)).toBe(true);
       expect(top.className).toContain("z-20");
     } finally {
       main.remove();
@@ -388,7 +390,7 @@ describe("대상 화면 — 결과", () => {
     expect(screen.queryByRole("button", { name: /본문 보기/ })).toBeNull();
   });
 
-  it("운영자 — 글·논평 탭이 있고, 수집 글은 원문 팝업(어두운 범위 표지)으로 연다", async () => {
+  it("운영자 — 글·논평 탭이 있고, 수집 글은 원문 팝업(공용 대화상자 — 범위 표지 없음)으로 연다", async () => {
     reads[endpoints.info.item("0123456789abcdef01234567")] = {
       available: true, item: { id: "0123456789abcdef01234567", body: "받아 둔 본문", summary: null },
     };
@@ -401,7 +403,8 @@ describe("대상 화면 — 결과", () => {
     fireEvent.click(await screen.findByRole("option", { name: /수집 글 하나/ }));
     fireEvent.click(screen.getByRole("button", { name: /본문 보기/ }));
     const dialog = await screen.findByRole("dialog", { name: "수집 글 하나" });
-    expect(dialog.getAttribute("data-scope")).toBe("search");
+    expect(dialog.hasAttribute("data-scope")).toBe(false);
+    expect(dialog.className.split(" ")).toEqual(expect.arrayContaining(["bg-surface-2", "border-border-overlay", "shadow-overlay", "text-text"]));
     expect(await within(dialog).findByText("받아 둔 본문")).toBeTruthy();
   });
 

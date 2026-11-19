@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { LINK_CLASSES } from "@/components/ui/classes";
 import {
   graphFocusScrollLeft,
   linkGraphLayout,
@@ -10,7 +11,6 @@ import {
   type LinkGroup,
   type SearchTarget,
 } from "@/lib/infoSearch";
-import { LINK } from "./parts";
 
 /** 그림 아래에 늘 적는 한 줄(계약 §9-3). */
 const GRAPH_NOTE = "받은 자료 기준 — 출처에 없는 관계는 그리지 않음";
@@ -194,7 +194,7 @@ export function LinksGraph({
       {layout.hidden > 0 ? (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-2">
           <span>그림에는 {layout.nodes.length}개만 그렸습니다(관계마다 돌아가며 고름).</span>
-          <button type="button" onClick={onShowList} className={LINK}>
+          <button type="button" onClick={onShowList} className={LINK_CLASSES}>
             목록에서 {layout.hidden}개 더
           </button>
         </p>

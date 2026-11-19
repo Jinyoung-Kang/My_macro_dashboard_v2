@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AUTH_NOTICE_CARD } from "@/components/auth/classes";
 import { Shell } from "@/components/shell/Shell";
 import { buttonClasses } from "@/components/ui/classes";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -206,7 +207,7 @@ function BackendUnavailable({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+      <div className={AUTH_NOTICE_CARD}>
         <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           백엔드 API에 연결하지 못했습니다
@@ -247,7 +248,7 @@ make logs S=backend  # 기동 실패 원인`}
 function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+      <div className={AUTH_NOTICE_CARD}>
         <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           운영자 계정이 아직 없습니다

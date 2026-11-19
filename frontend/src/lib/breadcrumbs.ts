@@ -64,8 +64,18 @@ type DetailCrumbs = { crumbs: Crumb[]; entityHref: string | null };
 
 const NO_DETAIL: DetailCrumbs = { crumbs: [], entityHref: null };
 
+/**
+ * 정보 검색 대상 화면이 넘기는 이름의 주소 — 대상은 주소 쿼리(?e=)에 있지만 빵부스러기는 경로만 보므로(셸이 쿼리를 읽으면 모든 화면의 정적 그리기가
+ * 바뀜) 대상 화면이 이름을 읽은 뒤 이 주소로 넘기고(hooks/useEntityCrumb), 떠나면 지웁니다(QA-861).
+ */
+export const SEARCH_ENTITY_HREF = "/search";
+
 /** 대상 칸(상세 세 종류·모의매매 탭) — 탭·하위 화면 칸 뒤에 붙입니다. */
 function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => string | null): DetailCrumbs {
+  if (tab.key === "search") {
+    // 정보 검색 — 대상 칸은 넘겨받은 이름이 있을 때만(이름 없이 보일 식별자 칸은 없음). allCrumbs·entityCrumbLabel이 이름으로 칸을 만듭니다.
+    return pathname.replace(/\/$/, "") === SEARCH_ENTITY_HREF ? { crumbs: [], entityHref: SEARCH_ENTITY_HREF } : NO_DETAIL;
+  }
   if (tab.key === "paper") {
     const match = PAPER_TAB_PATH.exec(pathname);
     if (!match) return NO_DETAIL;
@@ -118,7 +128,8 @@ function matchedEntityName(detail: DetailCrumbs, entity: { href: string; label: 
 /**
  * 지금 주소의 대상 칸 글 — 빵부스러기 마지막 칸과 같은 글(브라우저 탭 제목 앞에 붙임, QA-594 — app/(dashboard)/layout useDocumentTitle).
  * 상세 화면이 넘긴 이름의 주소가 대상 칸의 정규 주소와 같으면 그 이름, 아니면 대상 칸 글(지표 키·종목 코드·'CIK …'). 대상 칸이 없는 주소(모의매매 탭 —
- * 그 칸은 탭 이름이라 상세 대상이 아님, 목록 화면, 형식이 틀린 주소, 메뉴 밖)는 null입니다.
+ * 그 칸은 탭 이름이라 상세 대상이 아님, 목록 화면, 형식이 틀린 주소, 메뉴 밖)는 null입니다. 정보 검색(/search)은 대상 화면이 넘긴 이름이 있을 때만 그 이름
+ * (식별자 칸이 없음 — QA-861), 없으면 null입니다.
  * 예 — `/institutions/0001608046` + {href:'/institutions/0001608046', label:'국민연금 (National Pension Service)'} → 그 이름, 이름이 없으면 'CIK 0001608046'.
  */
 export function entityCrumbLabel(pathname: string, entity?: { href: string; label: string } | null): string | null {
@@ -162,16 +173,20 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
   }
   const detail = detailCrumbs(pathname, tab, visible);
   const named = matchedEntityName(detail, entity);
-  const tail = named
-    ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
-    : detail.crumbs;
+  // 이름이 있으면 대상 칸 글을 그 이름으로 — 식별자 칸이 없는 대상(정보 검색 — QA-861)은 이름 칸 하나를 더합니다(지금 화면이라 링크 없음).
+  const tail = !named
+    ? detail.crumbs
+    : detail.crumbs.length === 0
+      ? [{ label: named, href: null }]
+      : detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb));
   return { crumbs: [...crumbs, ...tail], group };
 }
 
 /**
  * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
  * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더,
- * `/info/kr` → 더보기 › 정보 수집(→ /info/overview) › 국내 시장·수급.
+ * `/info/kr` → 더보기 › 정보 수집(→ /info/overview) › 국내 시장·수급, `/search` + {href:'/search', label:'엔비디아'}(정보 검색 대상 화면이 넘긴 이름 —
+ * QA-861) → 정보 검색(→ /search) › 엔비디아(이름이 없으면 '정보 검색' 한 칸).
  * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
  * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
  * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
