@@ -84,6 +84,13 @@ export function SearchBox({
     }
   };
 
+  const emptyNote =
+    open && value.trim() && !suggest.loading && items.length === 0
+      ? suggest.message || suggest.error
+        ? `후보를 받지 못했습니다 — ${suggest.message ?? suggest.error}. Enter로 찾을 수는 있습니다.`
+        : "가진 색인에 맞는 후보가 없습니다 — Enter로 찾을 수는 있습니다."
+      : "";
+
   return (
     <form role="search" aria-label="정보 검색" onSubmit={submit} className="relative flex items-stretch gap-2">
       <div className="relative min-w-0 flex-1">
@@ -153,14 +160,12 @@ export function SearchBox({
             </div>
           ))}
         </div>
-        {open && value.trim() && !suggest.loading && items.length === 0 ? (
-          // 받지 못한 경우와 0건인 경우 모두 한 줄로 알립니다 — 0건에 아무 글이 없으면 낭독기 사용자에게 '결과 없음'이 전해지지 않았습니다(QA-860).
-          <p role="status" className="mt-1 text-xs text-text-3">
-            {suggest.message || suggest.error
-              ? `후보를 받지 못했습니다 — ${suggest.message ?? suggest.error}. Enter로 찾을 수는 있습니다.`
-              : "가진 색인에 맞는 후보가 없습니다 — Enter로 찾을 수는 있습니다."}
-          </p>
-        ) : null}
+        {/* 받지 못한 경우와 0건인 경우 모두 한 줄로 알립니다 — 0건에 아무 글이 없으면 낭독기 사용자에게 '결과 없음'이 전해지지 않았습니다(QA-860).
+            알림 영역은 늘 두고 글만 바꿉니다 — 조건이 참일 때 영역째 새로 붙이면 그 첫 글을 낭독기가 대체로 읽지 않았습니다(QA-870). 글이 없으면
+            눈에 보이지 않게(sr-only — 절대 위치라 자리를 차지하지 않음) 두어 보이는 자리는 QA-860 그대로입니다. */}
+        <p role="status" className={emptyNote ? "mt-1 text-xs text-text-3" : "sr-only"}>
+          {emptyNote}
+        </p>
       </div>
       <button type="submit" className={buttonClasses("primary")}>
         찾기

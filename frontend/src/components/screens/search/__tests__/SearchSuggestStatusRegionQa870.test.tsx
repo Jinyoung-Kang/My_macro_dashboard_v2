@@ -7,7 +7,7 @@
  *
  * 기대: 입력칸 아래 알림 영역(role=status)이 처음부터 있고(글 없음 — 눈에 보이지 않아 자리를 차지하지 않음), 0건 응답이 오면 같은 영역에 글이 들어갑니다.
  * 보이는 글·자리·요청은 QA-860 그대로입니다.
- * 수정 전(재현 커밋에서는 it.fails): 'expected null not to be null'(묻기 전에는 role=status 영역이 없음).
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 'expected null not to be null'(묻기 전에는 role=status 영역이 없음).
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe("입력 후보 안내의 알림 영역(QA-870)", () => {
-  it.fails("알림 영역은 처음부터 있고(글 없음), 0건 응답이 오면 같은 영역에 글이 들어간다", async () => {
+  it("알림 영역은 처음부터 있고(글 없음), 0건 응답이 오면 같은 영역에 글이 들어간다", async () => {
     const { container } = render(<SearchBox initial={null} onSubmit={() => {}} onChoose={() => {}} />);
     const form = container.querySelector("form") as HTMLFormElement;
     const before = form.querySelector('[role="status"]');
