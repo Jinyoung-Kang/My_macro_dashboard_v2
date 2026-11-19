@@ -14,7 +14,6 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -125,7 +124,7 @@ class KrIntradayFillParityTest {
     }
 
     @Test
-    @DisplayName("사후 정정 가상 사례 — 장중 기록(감시가 본 값)과 밤 체결(정정된 값)이 다르면 대조 칸이 PRICE_MISMATCH·match=false")
+    @DisplayName("사후 정정 가상 사례 — 장중 기록(감시가 본 값)과 밤 체결(정정된 값)이 다르면 대조 칸이 PRICE_MISMATCH·COST_MISMATCH(비용도 가격을 따름)·match=false")
     void correctedCaseIsCaughtByTheCheck() throws IOException {
         JsonNode c = null;
         for (JsonNode item : table().get("cases")) {
@@ -139,18 +138,24 @@ class KrIntradayFillParityTest {
         Order order = stop(c);
         KrIntradayFill.R1 b = KrIntradayFill.r1(order, c.get("watch"), session, calendar);
         KrTimedLadder.Result a = night(c, order, calendar);
+        PaperSettings settings = PaperSettings.from(PaperFixtures.settings(new FakePaperStore()).defaultsJson(), KrPaperMarket.INSTANCE);
+        FillTerms.Costs recorded = KrFills.termsFor(com.macrodash.analytics.PaperLedger.Side.SELL, order.ticker(), b.choice(), "KOSPI", settings,
+                KrPaperMarket.BENCHMARK_TICKERS).costs(10);
+        FillTerms.Costs corrected = KrFills.termsFor(com.macrodash.analytics.PaperLedger.Side.SELL, order.ticker(), a.choice(), "KOSPI", settings,
+                KrPaperMarket.BENCHMARK_TICKERS).costs(10);
         ObjectNode record = MAPPER.createObjectNode().put(KrIntradayFill.MODE, "SHADOW").put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD)
                 .put(KrIntradayFill.RAW_PRICE, b.choice().price()).put(KrIntradayFill.PRICE_SOURCE, b.choice().source())
                 .put(KrIntradayFill.QTY, 10).put(KrIntradayFill.TARGET_AT, KrTimedLadder.targetOn(order, session, calendar).toString())
-                .put(KrIntradayFill.SETTINGS_VERSION, 29);
+                .put(KrIntradayFill.SETTINGS_VERSION, 29).put(KrIntradayFill.FEE, recorded.fee()).put(KrIntradayFill.TAX, recorded.tax())
+                .put(KrIntradayFill.SLIPPAGE_COST, recorded.slippageCost());
         Order filled = new Order(order.id(), order.bookCode(), null, order.ticker(), order.side(), null, null, null, order.timing(), order.source(),
                 PaperBooks.ORDER_FILLED, null, order.reason(), order.asOfTradingDate(), order.createdAt(), order.expiresOn(), Instant.now());
         Fill nightFill = new Fill(9, 1, order.bookCode(), order.ticker(), PaperBooks.SELL, 10, a.choice().price().doubleValue(),
                 a.choice().price().doubleValue(), 5, a.choice().price().doubleValue() * 10, Instant.now(), session, a.choice().source(), false,
-                null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+                null, corrected.fee(), corrected.tax(), corrected.slippageCost());
         Map<String, Object> check = KrIntradayFill.check(record, filled, nightFill, 29, Instant.parse("2026-11-17T12:00:00Z"));
         assertThat(check.get("match")).isEqualTo(false);
         assertThat(check.get(KrIntradayFill.REASONS)).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
-                .containsExactly(KrIntradayFill.PRICE_MISMATCH);
+                .containsExactly(KrIntradayFill.PRICE_MISMATCH, KrIntradayFill.COST_MISMATCH);
     }
 }

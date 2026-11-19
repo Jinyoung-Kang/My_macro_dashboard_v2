@@ -17,7 +17,7 @@
 - 지키는 방법(시험):
   - 가격 동치(같은 함수, 두 길): `KrIntradayFillParityTest.bothPathsAgree`·`correctedCaseIsCaughtByTheCheck`와 수집기 `test_kr_intraday_fill_parity.py`(같은 표 `backend/src/test/resources/paper/kr-intraday-fill/cases.json`),
     `KrTimedLadderTest.extractedFunctionsGiveTheSameAnswers`(떼어 낸 Timed 판·`KrFills.termsFor`가 옛 함수와 같은 값), `KrIntradayFillTest.timedWindow`·`r1AndTheLookAheadTrap`(라벨 T 봉 반례).
-  - 대상·관문: `KrIntradayFillTest.candidates`·`gateAt`·`orderGateTable`(G3)·`corpGateFour`(G4)·`nightCheck`, `RealTradePlannerTest.paperStopGateMatchesStopWindow`(G5 — 실제 매매 창 식과 같은 표),
+  - 대상·관문: `KrIntradayFillTest.candidates`·`gateAt`·`orderGateTable`(G3)·`corpGateFour`(G4)·`nightCheck`·`nightCheckComparesCosts`(QA-792), `RealTradePlannerTest.paperStopGateMatchesStopWindow`(G5 — 실제 매매 창 식과 같은 표),
     `KrStopFillTest.effectiveTable`(유효 값 = 감시 ON일 때만 그 값 — G1과 글 스위치가 함께 씀).
   - 단계(가짜 저장소): `KrStopFillStepTest` — SHADOW `shadowRecordsOnce`·`gatesDefer`·`givesUpBeforeTheClose`·`decidedNoR1IsRecordedAtOnce`·`checksAfterTheNight`, 스위치 `switchOff`, 잠금 `readsOutsideTheLedgerLock`·
     `discardsWhenTheOrderMovedOn`, ON `onWritesTheLedger`·`onDefersUntilTheGateClears`·`onWritesTwoStopsInOneTransaction`(체결 알림 묶음 한 통 포함)·`onDiscardsWhenPendingOrdersChanged`·
@@ -106,11 +106,12 @@
     - 근거 `intradayFill` = `{mode, evaluatedAt, outcome: RECORD|DEFER, reasons[], snapshotFetchedAt, targetAt, barLabel, rawPrice, volume, priceSource, qty, cashDelta, fee, tax, slippageCost, settingsVersion, gateAt}`
       (ON은 `recordedAt`·`before`(보유 사본)·`fillRefVolume`·`cashBefore`·`cashAfter`를 더함). AI 입력에는 들어가지 않는다(패킷은 이 칸을 읽지 않음).
     - SHADOW 대조: 밤이 닫은 뒤 첫 주기에 `check = {checkedAt, nightStatus, nightRawPrice, nightSource, nightQty, nightDate, nightSettingsVersion, match, reasons}` — 판정이 RECORD인 기록만 견주고(가격·출처·
-      수량·날짜), 체결되지 않았으면 `NIGHT_NOT_FILLED`, 설정 판이 다르면 `SETTINGS_CHANGED`(match와 따로). 불일치는 운영 알림(작업 기록 `detail.alerts`와 경고 로그 — 건수·사유 코드만).
+      수량·날짜·비용 — 비용은 수수료·세금·슬리피지 세 칸, 다르면 `COST_MISMATCH`: 기록 때와 밤의 금융위 시장 구분·설정이 갈린 날 현금이 갈림, QA-792), 체결되지 않았으면 `NIGHT_NOT_FILLED`, 설정 판이 다르면
+      `SETTINGS_CHANGED`(match와 따로 — 비용까지 달라졌으면 `COST_MISMATCH`로 불일치). 불일치는 운영 알림(작업 기록 `detail.alerts`와 경고 로그 — 건수·사유 코드만).
     - ON 사후 점검: 그 세션 밤 처리 뒤 첫 주기에, 밤 일괄이었다면 그 STOP을 체결했을지를 밤과 같은 함수로 다시 본다 — 그 밤 관측치의 체결 봉 고르기·체결 조건(`MarketRun.fillBar`·`fill`),
       기업행위 판정(`KrIntradayFill.nightCorporate` — 결과는 `postCheck = {checkedAt, kind, details}`), 기록 뒤 일시정지(`pausedAt`), 그 세션 순자산 줄 없이 다음 세션으로 넘어감. 결과는 `check`
-      (`NIGHT_NOT_FILLED`·`CORP_ACTION`·가격·출처·날짜·수량 불일치, 그 밤 관측치가 이미 지나 다시 셀 수 없으면 `NIGHT_UNCHECKED`)와 운영 알림. 밤 사다리가 기다림이면 남기지 않고 다음 관측치까지 본다.
-    - ON으로 가는 기준(D11): ADR 0044 배포 뒤 SHADOW 10거래일 이상, RECORD이고 대조한 STOP 5건 이상, 가격·출처·수량 불일치 0, `NIGHT_NOT_FILLED` 0, 단계 오류 0. 넷 다 맞으면 사용자에게 다시 확인받아 저장한다.
+      (`NIGHT_NOT_FILLED`·`CORP_ACTION`·가격·출처·날짜·수량·비용 불일치, 그 밤 관측치가 이미 지나 다시 셀 수 없으면 `NIGHT_UNCHECKED`)와 운영 알림. 밤 사다리가 기다림이면 남기지 않고 다음 관측치까지 본다.
+    - ON으로 가는 기준(D11): ADR 0044 배포 뒤 SHADOW 10거래일 이상, RECORD이고 대조한 STOP 5건 이상, 가격·출처·수량 불일치 0(비용 불일치 `COST_MISMATCH`도 불일치로 셈 — QA-792), `NIGHT_NOT_FILLED` 0, 단계 오류 0. 넷 다 맞으면 사용자에게 다시 확인받아 저장한다.
       `reasons`의 G3 분포는 G3 완화 결정의 근거로 쓴다(`CORP_GUARD`는 감시 항목이 없을 때 `NO_R1`과 함께 붙으므로 따로 센다).
 11. **AI 입력과 글**(ON 판 — 끈 판(OFF)·대조 판(SHADOW)은 바이트 그대로): `StopWatch.rule`·`basis`·`hardRuleLine`에 장중 기록 판을 더해 한국 스탑 문장의 반영 시점 구절 하나만 바꾼다 —
     '금융위 확정가로 다시 판정하지 않고 그날 밤 장부에 반영' → '금융위 확정가로 다시 판정하지 않고, 그 분 봉에 거래가 있으면 기준 분 몇 분 뒤 장중에 장부에 반영(보유·현금이 바로 바뀜 — 종가 매도·그 분
@@ -147,7 +148,7 @@
   뜻이 반대쪽 경계)·`created_at`·번호 순서, 주문 `filled_at`, 근거 JSON의 `intradayFill` 키, 이미 체결된 STOP에는 확정 조정의 `confirmedHighWatermark`가 붙지 않음(재진입 금지 글은 `highWatermark`를 써서 같음),
   판 종목의 금융위 확정 조정 평단 이동이 그 보유에 없음(평단은 매도 뒤 쓰이지 않음).
 - **알려진 차이(경제적)**: 장중 기록은 기록 시각의 설정을, 밤은 처리 시각의 설정을 쓴다. 수수료·슬리피지·세율과 재진입 금지 일수가 여기서 나오므로 기록과 S 밤 사이에 그 키들을 저장하면 현금과
-  재진입 마감일이 달라진다. 장중 시장가 체결은 확정 조정 대상이 아니라(`KrConfirmations.finalAsFilled`) 이 차이는 **영구히 남는다**. 대조가 `SETTINGS_CHANGED`로 따로 가르고, D17로 장중 저장은 드물다.
+  재진입 마감일이 달라진다. 장중 시장가 체결은 확정 조정 대상이 아니라(`KrConfirmations.finalAsFilled`) 이 차이는 **영구히 남는다**. 대조가 `SETTINGS_CHANGED`로 따로 가르고(비용이 달라졌으면 `COST_MISMATCH` — 불일치·운영 알림), D17로 장중 저장은 드물다.
 - **알려진 차이(거울의 다른 입력)**: (a) 되감은 보유 사본은 기록 시점 값이라, 밤 일괄 세계에서 그 뒤 금융위 확정 조정의 평단 이동·낮 재처리의 평가 가격 갱신이 그 보유에 반영되는 것과 다를 수 있다
   (공개 창 가격은 마지막 평가 가격이 있으면 그것을 씀). (b) `weightAfter`의 가격 고르기는 `paper.watch.kr`(계좌2의 보유·대기 주문 범위)를 읽으므로 계좌2의 ON 기록이 같은 종목을 범위에서 빼면 규칙 계좌 STOP의
   그 종목 가격이 감시 봉에서 밤 종가로 바뀔 수 있다. (c) 감시 범위는 결정 9로 맞췄다.

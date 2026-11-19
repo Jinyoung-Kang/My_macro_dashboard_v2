@@ -434,8 +434,11 @@ class KrStopFillStepTest {
         // S 밤 처리(가짜) — A는 같은 값으로 체결, B는 만료.
         clock.now = kst("2026-11-17T21:05");
         store.dbNow = kst("2026-11-17T21:00");
+        FillTerms.Costs costs = KrFills.termsFor(com.macrodash.analytics.PaperLedger.Side.SELL, A, new KrQuotes.Choice(S, BigDecimal.valueOf(70_170),
+                KrTimedLadder.SOURCE_AT, null), "KOSPI", PaperSettings.from(store.settings.body(), KrPaperMarket.INSTANCE),
+                KrPaperMarket.BENCHMARK_TICKERS).costs(10);   // 밤도 같은 체결 조건(같은 설정·시장 구분)
         store.insertFill(new Fill(0, same, BOOK, A, PaperBooks.SELL, 10, 70_170, 70_170, 5, 701_700, kst("2026-11-17T20:55"), S,
-                KrTimedLadder.SOURCE_AT, false, kst("2026-11-17T21:00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+                KrTimedLadder.SOURCE_AT, false, kst("2026-11-17T21:00"), costs.fee(), costs.tax(), costs.slippageCost()));
         store.markOrderFilled(same, kst("2026-11-17T20:55"));
         store.markOrderStatus(expired, PaperBooks.ORDER_EXPIRED, "1분봉 없음");
         KrStopFillStep.Outcome outcome = step.run(KrPaperMarket.INSTANCE);

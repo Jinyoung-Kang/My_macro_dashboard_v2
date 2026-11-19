@@ -118,6 +118,11 @@ final class KrIntradayFill {
     static final String SOURCE_MISMATCH = "SOURCE_MISMATCH";
     static final String QTY_MISMATCH = "QTY_MISMATCH";
     static final String DATE_MISMATCH = "DATE_MISMATCH";
+    /**
+     * 대조 사유 — 비용(수수료·세금·슬리피지 — 원, 소수 넷째 자리)이 다름(QA-792): 장중 기록은 기록 때의 금융위 시장 구분·설정으로, 밤은 그때의 것으로 체결
+     * 조건을 세므로 둘이 갈리면 현금이 갈림. 불일치로 셉니다(설정 판이 다르면 {@value #SETTINGS_CHANGED}도 함께).
+     */
+    static final String COST_MISMATCH = "COST_MISMATCH";
     /** 사후 점검 사유(ON) — 밤 일괄이었다면 기업행위 판정이 그 STOP을 보류했음(밤이 체결하지 않음과 함께 씀). */
     static final String CORP_ACTION = "CORP_ACTION";
     /** 사후 점검 사유(ON) — 그 세션 밤 관측치가 이미 다음 세션 것이라 밤 일괄을 다시 셀 수 없음({@code match} null). */
@@ -330,7 +335,7 @@ final class KrIntradayFill {
 
     // ------------------------------------------------------------------ 밤 뒤 대조
     /**
-     * 밤 처리 뒤 대조 칸({@value #CHECK}) — 그 주문이 체결됐으면 밤 체결의 관측가·출처·수량·관측일·설정 판을 기록의 값과 견주고, 체결되지 않았으면
+     * 밤 처리 뒤 대조 칸({@value #CHECK}) — 그 주문이 체결됐으면 밤 체결의 관측가·출처·수량·관측일·비용·설정 판을 기록의 값과 견주고, 체결되지 않았으면
      * {@value #NIGHT_NOT_FILLED}. 판정이 {@value #RECORD}가 아닌 기록(밤에 맡김)은 견주지 않고({@code match} null) 밤 결과만 남깁니다.
      *
      * @param fill                밤 체결(없으면 null)
@@ -368,6 +373,9 @@ final class KrIntradayFill {
                 LocalDate session = targetAt == null ? null : targetAt.atZone(KrxCalendar.SEOUL).toLocalDate();
                 if (session == null || !session.equals(fill.observationDate())) {
                     reasons.add(DATE_MISMATCH);
+                }
+                if (!sameCosts(record, fill.fee(), fill.tax(), fill.slippageCost())) {
+                    reasons.add(COST_MISMATCH);
                 }
             }
             match = reasons.isEmpty();
@@ -423,10 +431,12 @@ final class KrIntradayFill {
     }
 
     /**
-     * 사후 점검의 값 비교(ON) — 밤 일괄이 그 STOP에 골랐을 체결(관측가·출처·체결일·수량)과 장중 기록의 값. 다르면 그 사유들({@value #PRICE_MISMATCH}·
-     * {@value #SOURCE_MISMATCH}·{@value #DATE_MISMATCH}·{@value #QTY_MISMATCH}), 같으면 빈 목록.
+     * 사후 점검의 값 비교(ON) — 밤 일괄이 그 STOP에 골랐을 체결(관측가·출처·체결일·수량·비용)과 장중 기록의 값. 다르면 그 사유들({@value #PRICE_MISMATCH}·
+     * {@value #SOURCE_MISMATCH}·{@value #DATE_MISMATCH}·{@value #QTY_MISMATCH}·{@value #COST_MISMATCH}), 같으면 빈 목록.
+     *
+     * @param nightCosts 밤 일괄이 그 체결에 셌을 비용(밤과 같은 체결 조건 — {@link FillTerms#costs})
      */
-    static List<String> compare(JsonNode record, double nightRaw, String nightSource, LocalDate nightDate, int nightQty) {
+    static List<String> compare(JsonNode record, double nightRaw, String nightSource, LocalDate nightDate, int nightQty, FillTerms.Costs nightCosts) {
         List<String> out = new ArrayList<>();
         Double price = Json.asDouble(record, RAW_PRICE);
         if (price == null || BigDecimal.valueOf(price).compareTo(BigDecimal.valueOf(nightRaw)) != 0) {
@@ -444,7 +454,20 @@ final class KrIntradayFill {
         if (qty == null || qty.intValue() != nightQty) {
             out.add(QTY_MISMATCH);
         }
+        if (nightCosts == null || !sameCosts(record, nightCosts.fee(), nightCosts.tax(), nightCosts.slippageCost())) {
+            out.add(COST_MISMATCH);
+        }
         return out;
+    }
+
+    /** 기록의 비용 세 칸({@value #FEE}·{@value #TAX}·{@value #SLIPPAGE_COST})이 밤 값과 모두 같은가(십진수로 — 자릿수는 보지 않음). 어느 쪽이든 없으면 다름. */
+    private static boolean sameCosts(JsonNode record, BigDecimal fee, BigDecimal tax, BigDecimal slippage) {
+        return sameAmount(Json.child(record, FEE), fee) && sameAmount(Json.child(record, TAX), tax)
+                && sameAmount(Json.child(record, SLIPPAGE_COST), slippage);
+    }
+
+    private static boolean sameAmount(JsonNode recorded, BigDecimal night) {
+        return recorded != null && recorded.isNumber() && night != null && recorded.decimalValue().compareTo(night) == 0;
     }
 
     // ------------------------------------------------------------------ 보유 사본·되감기(실제 계좌 공개 창의 거울 보기)

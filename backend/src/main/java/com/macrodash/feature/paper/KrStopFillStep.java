@@ -38,7 +38,7 @@ import java.util.TreeSet;
  *
  * <ul>
  *   <li><b>밤 뒤 대조</b>(시각과 상관없이): 근거 {@code intradayFill}(SHADOW)이 있고 아직 대조하지 않은 주문을 밤 장부가 닫았으면(체결·만료·취소) 밤 체결의
- *       관측가·출처·수량·관측일·설정 판과 견준 칸 {@code intradayFill.check}를 남깁니다({@link KrIntradayFill#check}). 장중에 적었을 것이 밤과 다르면(체결하지
+ *       관측가·출처·수량·관측일·비용·설정 판과 견준 칸 {@code intradayFill.check}를 남깁니다({@link KrIntradayFill#check}). 장중에 적었을 것이 밤과 다르면(체결하지
  *       않음 {@value KrIntradayFill#NIGHT_NOT_FILLED} 포함) 운영 알림(건수·사유 코드 — 작업 기록 {@code alerts}와 경고 로그)입니다.</li>
  *   <li><b>평가</b>(유효 스위치 {@link KrStopFill#effective}가 SHADOW·ON이고 세션 S의 [첫 판정 격자, 마감) 동안): 대상 STOP({@link KrIntradayFill#candidate})
  *       가운데 G5 시각({@link KrIntradayFill#gateAt})이 지난 것만. 대상이 없으면 저장본을 읽지 않습니다. 감시 저장본으로 R1({@link KrIntradayFill#r1})을 고르고
@@ -769,7 +769,8 @@ final class KrStopFillStep {
                             nightRaw = terms.rawPrice();
                             nightSource = terms.priceSource();
                             nightDate = choice.bar().date();
-                            reasons.addAll(KrIntradayFill.compare(record, terms.rawPrice(), terms.priceSource(), nightDate, before.qty()));
+                            reasons.addAll(KrIntradayFill.compare(record, terms.rawPrice(), terms.priceSource(), nightDate, before.qty(),
+                                    terms.costs(PaperLedger.sellQty(before.qty(), null))));
                         }
                     }
                 }

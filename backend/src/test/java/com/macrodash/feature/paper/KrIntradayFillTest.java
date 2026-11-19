@@ -245,10 +245,11 @@ class KrIntradayFillTest {
     void nightCheck() {
         ObjectNode record = MAPPER.createObjectNode().put(KrIntradayFill.MODE, "SHADOW").put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD)
                 .put(KrIntradayFill.RAW_PRICE, 70_170).put(KrIntradayFill.PRICE_SOURCE, KrTimedLadder.SOURCE_AT).put(KrIntradayFill.QTY, 10)
-                .put(KrIntradayFill.TARGET_AT, kst("2026-11-17T13:11").toString()).put(KrIntradayFill.SETTINGS_VERSION, 29);
+                .put(KrIntradayFill.TARGET_AT, kst("2026-11-17T13:11").toString()).put(KrIntradayFill.SETTINGS_VERSION, 29)
+                .put(KrIntradayFill.FEE, new BigDecimal("105.255")).put(KrIntradayFill.TAX, new BigDecimal("1403"))
+                .put(KrIntradayFill.SLIPPAGE_COST, new BigDecimal("350.85"));
         Order filled = filled(PaperBooks.ORDER_FILLED);
-        Fill fill = new Fill(9, 1, PaperBooks.KR_RULES, "005930", PaperBooks.SELL, 10, 70_170, 70_170, 5, 701_700, kst("2026-11-17T21:00"), S,
-                KrTimedLadder.SOURCE_AT, false, kst("2026-11-17T21:00:01"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        Fill fill = nightFill(new BigDecimal("105.255"), new BigDecimal("1403"), new BigDecimal("350.85"));
         Instant now = kst("2026-11-17T21:01");
         Map<String, Object> same = KrIntradayFill.check(record, filled, fill, 29, now);
         assertThat(same.get("match")).isEqualTo(true);
@@ -269,7 +270,8 @@ class KrIntradayFillTest {
                 LocalDate.of(2026, 11, 18), KrTimedLadder.SOURCE_NEXT, false, kst("2026-11-18T21:00:01"), BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO);
         assertThat(reasons(KrIntradayFill.check(record, filled, other, 29, now))).containsExactly(
-                KrIntradayFill.PRICE_MISMATCH, KrIntradayFill.SOURCE_MISMATCH, KrIntradayFill.QTY_MISMATCH, KrIntradayFill.DATE_MISMATCH);
+                KrIntradayFill.PRICE_MISMATCH, KrIntradayFill.SOURCE_MISMATCH, KrIntradayFill.QTY_MISMATCH, KrIntradayFill.DATE_MISMATCH,
+                KrIntradayFill.COST_MISMATCH);
 
         ObjectNode deferred = record.deepCopy().put(KrIntradayFill.OUTCOME, KrIntradayFill.DEFER);
         Map<String, Object> notCompared = KrIntradayFill.check(deferred, filled, fill, 29, now);
@@ -278,9 +280,8 @@ class KrIntradayFillTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-792 — 수정 전 실패: 세금만 다른 밤 체결의 대조가 match=true·reasons [] (기대 false·[COST_MISMATCH])")
     @DisplayName("QA-792: 밤 뒤 대조 — 관측가·출처·수량·관측일이 같아도 밤 체결의 비용(수수료·세금·슬리피지 — 기록 때와 밤의 금융위 시장 구분·설정이 갈린 날)이 "
-            + "기록과 다르면 COST_MISMATCH(불일치 — 현금이 갈림), 설정 판도 다르면 SETTINGS_CHANGED를 함께")
+            + "기록과 다르면 COST_MISMATCH(불일치 — 현금이 갈림), 설정 판도 다르면 SETTINGS_CHANGED를 함께. ON 사후 점검의 값 비교도 같은 비용 칸을 견줌")
     void nightCheckComparesCosts() {
         ObjectNode record = MAPPER.createObjectNode().put(KrIntradayFill.MODE, "SHADOW").put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD)
                 .put(KrIntradayFill.RAW_PRICE, 70_170).put(KrIntradayFill.PRICE_SOURCE, KrTimedLadder.SOURCE_AT).put(KrIntradayFill.QTY, 10)
@@ -297,10 +298,19 @@ class KrIntradayFillTest {
         Fill taxed = nightFill(new BigDecimal("105.255"), new BigDecimal("1052"), new BigDecimal("350.85"));
         Map<String, Object> differed = KrIntradayFill.check(record, filled, taxed, 29, now);
         assertThat(differed.get("match")).isEqualTo(false);
-        assertThat(reasons(differed)).containsExactly("COST_MISMATCH");
+        assertThat(reasons(differed)).containsExactly(KrIntradayFill.COST_MISMATCH);
         Map<String, Object> saved = KrIntradayFill.check(record, filled, taxed, 30, now);
         assertThat(saved.get("match")).as("설정 판이 달라도 비용이 다르면 불일치").isEqualTo(false);
-        assertThat(reasons(saved)).containsExactly("COST_MISMATCH", KrIntradayFill.SETTINGS_CHANGED);
+        assertThat(reasons(saved)).containsExactly(KrIntradayFill.COST_MISMATCH, KrIntradayFill.SETTINGS_CHANGED);
+        ObjectNode noCosts = record.deepCopy();
+        noCosts.remove(KrIntradayFill.TAX);
+        assertThat(reasons(KrIntradayFill.check(noCosts, filled, same, 29, now))).as("기록에 비용 칸이 없으면 다름").containsExactly(KrIntradayFill.COST_MISMATCH);
+
+        FillTerms.Costs night = new FillTerms.Costs(701_700, new BigDecimal("105.2550"), new BigDecimal("1403"), new BigDecimal("350.85"), 699_840.895);
+        assertThat(KrIntradayFill.compare(record, 70_170, KrTimedLadder.SOURCE_AT, S, 10, night)).as("ON 사후 점검 — 같은 값").isEmpty();
+        FillTerms.Costs other = new FillTerms.Costs(701_700, new BigDecimal("105.255"), new BigDecimal("1052"), new BigDecimal("350.85"), 700_191.895);
+        assertThat(KrIntradayFill.compare(record, 70_170, KrTimedLadder.SOURCE_AT, S, 10, other)).containsExactly(KrIntradayFill.COST_MISMATCH);
+        assertThat(KrIntradayFill.compare(record, 70_170, KrTimedLadder.SOURCE_AT, S, 10, null)).containsExactly(KrIntradayFill.COST_MISMATCH);
     }
 
     private static Fill nightFill(BigDecimal fee, BigDecimal tax, BigDecimal slippage) {
