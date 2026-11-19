@@ -7,7 +7,7 @@
  * (브라우저 확인은 진행 기록 §P7 '검토 반영').
  *
  * 기대: 모델 칸은 식별자 안 아무 데서나 꺾일 수 있고(wrap-anywhere — 줄바꿈 금지 없음), 엔진 이름 칸은 최소 폭(10rem)을 가져 눌리지 않음.
- * 수정 전(재현 커밋에서는 it.fails): "expected [ 'px-3', 'py-3', 'lg:py-1', …(4) ] to include 'wrap-anywhere'"(모델 칸 whitespace-nowrap).
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): "expected [ 'px-3', 'py-3', 'lg:py-1', …(4) ] to include 'wrap-anywhere'"(모델 칸 whitespace-nowrap).
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +39,7 @@ afterEach(() => cleanup());
 const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 describe("등록된 엔진 표의 열(QA-875)", () => {
-  it.fails("모델 칸은 식별자 안에서 꺾일 수 있고(줄바꿈 금지 없음), 엔진 이름 칸은 최소 폭 10rem", async () => {
+  it("모델 칸은 식별자 안에서 꺾일 수 있고(줄바꿈 금지 없음), 엔진 이름 칸은 최소 폭 10rem", async () => {
     render(<AiEngineSection />);
     const table = await screen.findByRole("region", { name: "등록된 엔진 (좌우 스크롤)" });
     const modelCell = within(table).getByText("@cf/meta/llama-3.3-70b-instruct-fp8-fast").closest("td") as HTMLElement;
