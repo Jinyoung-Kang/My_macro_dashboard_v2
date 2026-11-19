@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
@@ -79,21 +80,36 @@ def html_to_text(markup: str | None) -> str:
     return _node_text(BeautifulSoup(markup, "lxml"))
 
 
-def extract_article(markup: str | None) -> str:
+@dataclass(frozen=True)
+class Article:
+    """
+    글 페이지에서 고른 결과 — ``text``는 본문(MIN_BODY_CHARS 이상, 못 고르면 빈 문자열). ``region_chars``는 본문 자리에서 얻은 글자 수로,
+    짧아도 셉니다(앞의 본문 자리 가운데 글이 있는 첫 것, 없으면 문단이 가장 많이 모인 상자 — 그것도 없으면 0). 짧은 글(자리는 있고 글이
+    짧음)과 본문 자리를 못 찾은 페이지를 가르는 데 씁니다(QA-391 후속).
+    """
+
+    text: str
+    region_chars: int
+
+
+def read_article(markup: str | None) -> Article:
     """
     글 페이지 HTML에서 본문 글을 고릅니다. 흔한 본문 자리(_BODY_SELECTORS)에서 MIN_BODY_CHARS를 넘는 첫 것을 쓰고, 없으면 문단(<p>)이
-    가장 많이 모인 상자를 씁니다. 못 고르면 빈 문자열입니다(0으로 채우듯 엉뚱한 글을 본문으로 내지 않음).
+    가장 많이 모인 상자를 씁니다. 못 고르면 본문은 빈 문자열입니다(0으로 채우듯 엉뚱한 글을 본문으로 내지 않음).
     """
     if not markup:
-        return ""
+        return Article("", 0)
     soup = BeautifulSoup(markup, "lxml")
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
+    region_chars = None
     for selector in _BODY_SELECTORS:
         for node in soup.select(selector):
             text = _node_text(node)
             if len(text) >= MIN_BODY_CHARS:
-                return text
+                return Article(text, len(text))
+            if text and region_chars is None:
+                region_chars = len(text)
     scores: dict[int, tuple[object, int]] = {}
     for paragraph in soup.find_all("p"):
         parent = paragraph.parent
@@ -102,11 +118,17 @@ def extract_article(markup: str | None) -> str:
         node, score = scores.get(id(parent), (parent, 0))
         scores[id(parent)] = (node, score + len(paragraph.get_text(strip=True)))
     if not scores:
-        return ""
+        return Article("", region_chars or 0)
     node, score = max(scores.values(), key=lambda pair: pair[1])
+    text = _node_text(node)
     if score < MIN_BODY_CHARS:
-        return ""
-    return _node_text(node)
+        return Article("", region_chars if region_chars is not None else len(text))
+    return Article(text, len(text))
+
+
+def extract_article(markup: str | None) -> str:
+    """글 페이지 HTML의 본문 글(:func:`read_article`의 ``text``) — 못 고르면 빈 문자열."""
+    return read_article(markup).text
 
 
 def summarize(text: str, limit: int = SUMMARY_CHARS) -> str | None:

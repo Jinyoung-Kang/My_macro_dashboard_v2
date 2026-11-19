@@ -248,14 +248,14 @@ def test_QA393_실행의_마지막_자리에서_받지_못한_글도_시도로_�
 def test_QA393_글_하나의_페이지_처리_예외는_그_글만_일부로_둔다(store, example_host, monkeypatch):
     routes = {BLOG.feed: _feed(_item(1, content=None), _item(2, days_ago=0.5, content=None))}
     routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _page(n) for n in (1, 2)})
-    real = info_text.extract_article
+    real = info_text.read_article
 
     def breaks_on_first(markup):
         if "Post 1" in markup:
             raise ValueError("본문 고르기 실패")
         return real(markup)
 
-    monkeypatch.setattr(info_text, "extract_article", breaks_on_first)
+    monkeypatch.setattr(info_text, "read_article", breaks_on_first)
 
     info_blogs.collect(BLOG, fetch=FakeFetch(routes), now=NOW)
 
@@ -363,7 +363,6 @@ def _short_page(n: int, *, banner: bool = False, text: str = SHORT_POST) -> byte
             "<article><p>A comment.</p></article></footer></article></main></div></body></html>").encode("utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 짧은 글 세 편이 이어지면 본문 자리를 못 찾은 것으로 셈")
 def test_QA391_피드에_본문을_싣는_블로그의_짧은_글이_이어져도_형식_바뀜이_아니다(store, example_host, monkeypatch):
     # Marginal Revolution(2026-11-17~): 피드에 본문을 싣는 블로그의 짧은 글(한두 문장)은 글 페이지에서도 400자에 못 미칩니다.
     # 글 페이지에서 본문을 받은 적이 한 번이라도 있으면 짧은 글 세 편으로 '형식 바뀜'이 되던 거짓 경고.
@@ -378,7 +377,6 @@ def test_QA391_피드에_본문을_싣는_블로그의_짧은_글이_이어져�
     assert row["body_status"] == "partial" and row["body"].startswith("A two-sentence post"), "못 고른 글을 본문으로 저장하지 않습니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 본문 칸이 없던 옛 행의 '본문 못 얻음'을 실패로 셈")
 def test_QA391_본문_자리_칸이_없던_옛_행은_형식_바뀜_판정에서_뺀다(store, example_host, monkeypatch):
     # 배포 때의 Marginal Revolution — 글 페이지 full 뒤에 옛 행(짧은 글인지 자리를 못 찾은 것인지 모름) 세 편. 배포 뒤 다음 실행에서 풀려야 합니다.
     store.upsert_info_items([_page_tried(1, days_ago=6, status="full", old_meta=True)]
