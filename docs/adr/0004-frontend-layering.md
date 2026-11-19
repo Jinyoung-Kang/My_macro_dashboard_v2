@@ -20,7 +20,8 @@
     `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀), `components/patterns/__tests__/Timeline.test.tsx`(시각순 목록),
     `components/patterns/__tests__/ChangeChip.test.tsx`(표 칸 변화 ChangeCell),
     `components/ui/__tests__/ActionBar.test.tsx`(동작 영역), `components/ui/__tests__/Drawer.test.tsx`·`components/ui/__tests__/Dialog.test.tsx`(서랍·대화상자 배치),
-    `components/patterns/__tests__/ReadingGuide.test.tsx`('읽는 법' 접기), `hooks/__tests__/useHashAlign.test.tsx`(목차 해시 맞춤)
+    `components/patterns/__tests__/ReadingGuide.test.tsx`('읽는 법' 접기), `hooks/__tests__/useHashAlign.test.tsx`(목차 해시 맞춤),
+    `components/patterns/__tests__/LogPanel.test.tsx`(로그·원문 글 상자)
 
 ## 배경
 
@@ -202,3 +203,8 @@
   좁은 화면 44px 누름 자리(TEXT_TARGET), 본문 72ch 12px 보조 글). P5b /style 화면 부품으로 만들었다가 P6(패턴 단계)에서 글자 그대로 옮겼습니다(진행 기록 P5b 검토 '공용으로
   올리기'). 데이터를 그리지 않는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 /style 셋, P6 보유 탭(계좌 초기화·주문·체결 — 처음 적은 '보유·선정·결정 안내 글'은 틀림, 진행 기록 §P6 '바로잡음'), 지키는 시험은
   `components/patterns/__tests__/ReadingGuide.test.tsx`·`app/(dashboard)/__tests__/analysisScreenStates.test.tsx`.
+- 로그·원문 글 상자 `components/patterns/LogPanel.tsx` — 화면 패턴(받은 글을 그대로 — 공백·줄바꿈 유지, 고정폭 12/20, 화면 바탕 상자·1px 경계, 높이 한도 sm 20rem·md 30rem·lg 40rem 안에서
+  상자 스크롤, 글이 있으면 이름 있는 영역 '{label} (스크롤)'·Tab 정지점, 줄바꿈 anywhere(긴 낱말만 아무 데서나 — 예전 break-all 대신)·word(낱말 사이), 빈 글은 상자 없이 안내 한 줄,
+  모르면 공용 '—'(`Empty`) + 사유 — 0·빈 상자를 만들지 않음, 복사 단추는 부르는 쪽 패널 머리). 글을 그리는 데이터 영역이라 데이터 칸 강조색 금지 목록에 넣습니다.
+  P7(패턴 단계)에서 만들었고, 쓰는 곳은 저장소 상태의 수집 오류·경고 로그·AI 리포트 원문(Markdown)·AI 입력 원본·연결 테스트의 토스 조회 JSON(P7 더보기 — 네 곳이 따로 적던 `<pre>`).
+  지키는 시험은 `components/patterns/__tests__/LogPanel.test.tsx`(네 상태)·`lib/__tests__/accentInData.test.ts`·`components/patterns/__tests__/index.test.ts`.

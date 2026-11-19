@@ -26,6 +26,7 @@ export {
   type SubheadingTag,
 } from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
+export { LogPanel, type LogPanelHeight, type LogPanelTone, type LogPanelWrap } from "./LogPanel";
 export { MasterDetail, type MasterDetailGroup } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
