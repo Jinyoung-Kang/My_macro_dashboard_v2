@@ -276,7 +276,7 @@ app/(dashboard)/layout.tsx  세션·읽지 않은 알림 수를 한 번 읽어 �
 components/shell/           1024px 이상: 왼쪽 나무 메뉴(경계를 끌어 폭 206~320px — 계정 메뉴에서 세 단계로도, 접으면 아이콘 레일 — lib/navWidth)·48px 상단바(빵부스러기·명령 팔레트 ⌘K·새로고침 아이콘(운영자)·알림 벨·계정 메뉴)
                             그 아래: 상단바(통합 검색·알림 벨)·하위 메뉴 줄·하단 탭 — 메뉴 표는 lib/nav.ts 하나(빵부스러기 lib/breadcrumbs, ADR 0042 결정 5)
 components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자, 검색 상세 — 종목·지표·기관) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
-components/patterns/        자산 행·히어로·통계 타일·표·배지·KPI 띠·속성 목록·대상 머리·칸 틀·목록-검사·목차·검사 칸 틀·시각순 목록·거르기 목록·'읽는 법' 접기 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
+components/patterns/        자산 행·히어로·통계 타일·표·배지·KPI 띠·속성 목록·대상 머리·칸 틀·목록-검사·목차·검사 칸 틀·시각순 목록·거르기 목록·'읽는 법' 접기·로그 글 상자 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
 components/charts/ · ui/    Recharts 래퍼(축 규칙)·표 히트맵(순차 팔레트) · 기본 조각(Radix 대화상자·서랍·토스트·메뉴·툴팁·머리 동작 영역)
 lib/                        표시 규칙(서식·메뉴·검색·화면 모델) — React를 모르는 순수 함수
 ```
@@ -293,8 +293,8 @@ lib/                        표시 규칙(서식·메뉴·검색·화면 모델)
 - **정보 검색(`/search`, [ADR 0041](adr/0041-info-search-watch.md))**: 화면이 백엔드 `feature.search`(`/api/search/{suggest,resolve,entity,feed,links}` — 회원)를 부르면
   백엔드는 입력을 검사하고 `external`(데모·`store_only`면 false)·`owner`를 붙여 수집기 `/live/search/*`를 중계합니다. 대상 풀기(Wikidata·SEC·DART·13F)와 출처 호출
   (구글·Bing·Yahoo·네이버·연합인포맥스, 단계 4부터 SEC 공시·EDGAR 전문 검색·DART 공시·Yahoo 투자의견·내부자 명단·GLEIF)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
-  백엔드는 회원 응답에서 운영자 전용 출처(수집 글·거장 견해·속보)의 줄을 한 번 더 지웁니다. 화면은 2년 묶음을 한 번 받아 기간 단추로 자르고, 내용 영역만 늘 어두운
-  범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)). 단계 3부터 관심 대상(`/api/search/watch` — 등록·새 글 수,
+  백엔드는 회원 응답에서 운영자 전용 출처(수집 글·거장 견해·속보)의 줄을 한 번 더 지웁니다. 화면은 2년 묶음을 한 번 받아 기간 단추로 자릅니다([계약](specs/2026-11-14-info-search-contract.md)).
+  개편 전 이 화면만 늘 어둡게 그리던 범위 토큰(`[data-scope="search"]`)은 앱 전체가 같은 어두운 토큰이 된 뒤 작업대 P7(2026-11-19)에 걷어 냈습니다(겉모습 변화 0 — [ADR 0042](adr/0042-workbench-ui.md)). 단계 3부터 관심 대상(`/api/search/watch` — 등록·새 글 수,
   백엔드 표 `search_watches`)을 등록하면 운영 서버의 수집기 polite 태스크 `search_watch`가 대상마다 3~8시간에 한 번 새 글을 모아 `search_watch_items`에 넣고,
   flex 태스크 `search_feeds`가 보도자료·경제지 RSS 12개를 `search_feed_headline`에 받습니다(정보 검색의 저장본 출처·첫 화면 최근 글 — 모의 매매 입력 아님).
   본문 보기([ADR 0043](adr/0043-search-article-body.md) — 운영자): 결과 줄의 꼬리표(`bodyRef`)로 `POST /api/search/article`을 부르면 수집기가 자기 결과의 주소만

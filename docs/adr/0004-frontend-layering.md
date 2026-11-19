@@ -21,7 +21,7 @@
     `components/patterns/__tests__/ChangeChip.test.tsx`(표 칸 변화 ChangeCell),
     `components/ui/__tests__/ActionBar.test.tsx`(동작 영역), `components/ui/__tests__/Drawer.test.tsx`·`components/ui/__tests__/Dialog.test.tsx`(서랍·대화상자 배치),
     `components/patterns/__tests__/ReadingGuide.test.tsx`('읽는 법' 접기), `hooks/__tests__/useHashAlign.test.tsx`(목차 해시 맞춤),
-    `components/patterns/__tests__/LogPanel.test.tsx`(로그·원문 글 상자)
+    `components/patterns/__tests__/LogPanel.test.tsx`(로그·원문 글 상자), `lib/__tests__/touchTargets.test.ts`(짧은 글 단추 누름 자리 `TEXT_TARGET_SHORT` 포함 — 누르는 조각 표)
 
 ## 배경
 
@@ -114,7 +114,7 @@
 - 대상 머리 `components/patterns/EntityHeader.tsx` — 화면 패턴(종류 아이콘 칸(장식) + 종류 글 태그·이름 h1(말줄임 없음)·고정폭 식별자 태그·주 값 하나 28px·
   변화(KPI 띠와 같은 구조화된 꼴 — 변화 칩 + 캡션, 또는 그린 요소)·배지 줄(비면 접힘)·동작 영역, `placeholder`는 값·배지 자리만 바꿈 — 데이터 칸 강조색 금지 목록).
   공용 `Tag`(`@/components/ui`)와 대상 종류 아이콘(`ChartLineIcon`·`CandlestickIcon`·`LandmarkIcon` — 상세 셋의 종류)을 씁니다. 상세 셋 밖의 종류(정보 검색의 회사·인물·주제,
-  모의 계좌 등)는 부르는 쪽이 종류 글과 아이콘(`EntityKindSpec`)을 넘깁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7,
+  모의 계좌 등)는 부르는 쪽이 종류 글과 아이콘(`EntityKindSpec`)을 넘깁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7에서도 옮기지 않았습니다(P7은 겉모습 변화 0 정리 — 2026-11-19 결정 U2, P8 또는 따로 승인),
   지키는 시험은 `components/patterns/__tests__/EntityHeader.test.tsx`.
 - 칸 틀 `components/patterns/SplitPane.tsx` — 화면 패턴(틀 — 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, lg 두 칸·xl 세 칸·lg 미만 한 칸, 읽는 차례는 늘 왼쪽 → 가운데 → 오른쪽,
   새 랜드마크 없음, 선택 `collapseLeft`는 lg 미만에서 왼쪽 칸을 처음에 접고 44px 펼치기 단추 하나 — 2026-11-16 결정 2, 지금은 상세 3종이 씀, 선택 `leftWidth="wide"`는 왼쪽 15rem — 상관,
@@ -141,7 +141,7 @@
   P6(패턴 단계)에서 선택 `alignHashOnLoad`(기본 꺼짐 — 매크로 그대로)를 더했습니다 — 새로 고침·바로 연 주소의 #절로 닻이 생길 때 옮기고 위쪽 절이 자라면 다시 맞추며
   사용자 입력이나 10초 뒤 그칩니다(화면 층 훅 `hooks/useHashAlign` — MutationObserver·ResizeObserver). P6(설정 갈래)에서 선택 `columnScroll`(기본 꺼짐 — 매크로 그대로)을
   더했습니다 — 세로 목록에 높이 한도(창 − 5rem)를 두고 그 안에서 스크롤하며 지금 칸이 보이는 자리 밖이면 목록의 scrollTop만 옮깁니다(모의 설정 — 묶음 칸이 많아
-  1440×900에서 목록이 본문 스크롤 상자보다 길었음). P6에서 쓰는 곳은 모의 프레임(2xl·`alignHashOnLoad`)·설정(xl·`alignHashOnLoad`·`columnScroll`). 지키는 시험은
+  1440×900에서 목록이 본문 스크롤 상자보다 길었음). P6에서 쓰는 곳은 모의 프레임(2xl·`alignHashOnLoad`)·설정(xl·`alignHashOnLoad`·`columnScroll`), P7은 저장소 상태(2xl·`alignHashOnLoad`)·AI 리포트 결과 목차(xl — 해시 맞춤 끔). 지키는 시험은
   `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`·`hooks/__tests__/useHashAlign.test.tsx`.
 - 검사 칸 틀 `components/patterns/InspectorFrame.tsx` — 화면 패턴(줄 안에 조작이 있는 표·목록 + 고른 줄의 옆 검사 칸 또는 공용 `Dialog`(위쪽 고정) — 배치 md(틀 32rem부터 옆 15rem)·
   lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(공용 줄 단추 클래스 `ui/classes ROW_TRIGGER` — 중립 잉크·좁은 화면 높이·폭 44px·넓은 화면 높이·폭 24px, 옆 칸에 보이는 줄의 단추는
@@ -154,13 +154,14 @@
   검사 칸 안 절 머리 `InspectorSubheading`(`fallback`·`depth` — 칸 제목보다 depth 단계 아래 태그)와 그 범위 `InspectorHeadingScope`(DOM 없음 — 이 틀과 목록-검사가 `renderDetail`을 감쌈: 옆 칸은 제목
   `headingLevel`, 대화상자는 h2)를 더했습니다 — 같은 상세가 옆 칸과 대화상자 두 자리에 그려져도 절 머리가 제목 바로 아래 단계가 되게(검사 칸 밖은 fallback 그대로라 다른 화면 변화 없음).
   P7(패턴 단계)에서 선택 `dialogDescriptionOf`(키 → 대화상자 제목 아래 설명 줄 — ui/Dialog `description`·aria-describedby, 옆 검사 칸에는 그리지 않음, 주지 않으면 대화상자 DOM 그대로 — 고정 사례)를
-  더했습니다 — 쓰는 곳은 정보 수집 뉴스·글(좁은 배치의 원문 대화상자를 원문 팝업과 같은 꼴로).
+  더했습니다 — 쓰는 곳은 정보 수집 뉴스·글(좁은 배치의 원문 대화상자를 원문 팝업과 같은 꼴로). P7 화면에서 쓰는 곳은 정보 수집 출처 표(dialog — 화면 부품 `SourceTable`)·뉴스·글(wide)·
+  레이더 순위(lg)·사용자 관리(lg).
   지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.
 - 시각순 목록 `components/patterns/Timeline.tsx` — 화면 패턴(목록-검사 `MasterDetail` 위 — 줄마다 시각 열 `<time>`(5.5rem·tabular-nums)·종류 태그(공용 `Tag` —
   톤이면 아이콘 + 글, 주의·위험은 '주의:')·한 줄 요약(말줄임 없이 낱말 사이에서 꺾음, 좁은 틀은 둘째 줄)·추정/이전 값 배지, 고르면 검사 칸 제목 = 기록의 `title`,
   펼칠 때 읽는 자세한 값은 `renderDetail` 안의 자식이 읽음 — 데이터 칸 강조색 금지 목록). 명세 §8-2는 P6이었지만 처음 쓰는 곳이 국면 판정 기록(P5a)이라
   그 단계에서 만들었고, P6 결정 로그(W13 — 종류 태그 결정·장중 판단·복기)·P7 알림이 같은 API를 씁니다. 날짜 묶음 머리·넓은 검사 칸은 P6(패턴 단계)이 선택 prop으로
-  더했습니다 — `groupBy`·`groupHeadingLevel`·`inspectorWidth`·`dialogFocus`·`revealSelectedInDialog`를 목록-검사로 그대로 넘깁니다. P6에서 쓰는 곳은 모의 결정 기록(거래일 묶음·wide — W13 QA-747)·주간 복기(wide)·프레임 판 이력.
+  더했습니다 — `groupBy`·`groupHeadingLevel`·`inspectorWidth`·`dialogFocus`·`revealSelectedInDialog`를 목록-검사로 그대로 넘깁니다. P6에서 쓰는 곳은 모의 결정 기록(거래일 묶음·wide — W13 QA-747)·주간 복기(wide)·프레임 판 이력, P7은 알림함(wide — '읽음'·'정보 검색에서 보기'는 검사 칸, 2026-11-19 결정 U8).
   읽는 중 자리표시는 목록 꼴의 `TimelineSkeleton`(줄 수는 부르는 쪽이 요청 한도 안에서 — `placeholder`로 넘김, QA-651). 목록 꼴·표 꼴처럼 값이 온 뒤의 꼴을 흉내 낸
   자리표시는 처음 읽는 동안만 그리고(`hooks/useApi firstLoadPending`), 읽기가 실패한 뒤 다시 읽는 동안은 공용 `Loading` 한 줄입니다(오류 상자와 갱신마다 번갈아 그려지지 않게 — QA-655).
   지키는 시험은 `components/patterns/__tests__/Timeline.test.tsx`(키·검사 칸 동작은 `MasterDetail.test.tsx`).
@@ -177,7 +178,7 @@
   열 선택 칸 `nowrap`이면 줄바꿈 없음, 비중 히트맵 날짜), 빈 행·열이면 `emptyText` 한 줄.
   단계·팔레트·글자색은 React 없는 `lib/heatmap`(`heatmapStep`·`heatmapStepRange`·`SEQUENTIAL_STEPS`·`SEQUENTIAL_TEXT` — 명세 §3-5 순차 팔레트)이 정하고 표는 그리기만 합니다.
   데이터 칸 강조색 금지 목록(표·감싸개 두 파일)·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
-  비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/patterns/__tests__/HeatmapTable.test.tsx`(네 상태)·
+  비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)이 같은 표를 씁니다(P7 레이더에는 두지 않았습니다 — 순매수·순매도는 부호 있는 값이라 순차 팔레트가 음수를 칠하지 못하고 발산 팔레트는 미정, 2026-11-19 결정 U7). 지키는 시험은 `components/patterns/__tests__/HeatmapTable.test.tsx`(네 상태)·
   `components/charts/__tests__/HeatmapTable.test.tsx`·`components/charts/__tests__/weightHeatmapQa692.test.tsx`·`components/charts/__tests__/weightHeatmapQa713.test.tsx`·`lib/__tests__/heatmap.test.ts`.
 - 거르기 목록 `components/patterns/FilterList.tsx` — 화면 패턴(줄은 `<button>` — 이름은 항목 이름 그대로, 체크 표시는 장식, 보조 글은 설명(aria-describedby). 여럿 고름은 이름 있는 묶음
   role="group" 안의 토글 단추(`aria-pressed` — 켬·끔, 줄마다 Tab 정지점), 하나 고름은 라디오 묶음(role="radiogroup"·role="radio"·`aria-checked`, roving tabindex — 고른 줄만 Tab 정지점,
@@ -186,7 +187,7 @@
   고름 알림 영역(`status` — role="status")·빈 목록 글, 고대비에서 켠 줄 2px 테두리, 말줄임 없이 낱말 사이 줄바꿈). 값을 그리는 패턴이 아니라
   고르는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않지만(목차 `SectionIndex`와 같은 처리 — 까닭은 그 시험의 주석) 강조 파랑 없이 잉크·중립 바탕으로 고름을 보입니다(원칙 A1).
   처음 쓰는 곳은 교집합 화면의 분석 대상 기관(기관 칩 12개를 바꿈)·13F 포트폴리오 화면의 기관 목록(P5b), P6 체결·선정 거르기·P7 알림 거르기가 같은 패턴을 씁니다.
-  P6(패턴 단계)에서 선택 `wide="wrap"`(넓은 화면도 30px 태그 줄 — 표 위 한 줄 거르기, 기본 `list`는 그대로 — 고정 사례)을 더했습니다. P6에서 쓰는 곳은 모의 주문 상태·체결 방향·미국 후보 거르기(하나 고름 — 받은 줄만).
+  P6(패턴 단계)에서 선택 `wide="wrap"`(넓은 화면도 30px 태그 줄 — 표 위 한 줄 거르기, 기본 `list`는 그대로 — 고정 사례)을 더했습니다. P6에서 쓰는 곳은 모의 주문 상태·체결 방향·미국 후보 거르기(하나 고름 — 받은 줄만), P7은 정보 수집 출처 상태 '분류'·'상태'·뉴스 '글 종류'와 알림 '알림 종류'·읽음 상태(모두 하나 고름 `wide="wrap"`).
   지키는 시험은 `components/patterns/__tests__/FilterList.test.tsx`.
 - 동작 영역 `components/ui/ActionBar.tsx` — 화면 층의 공용 키트(명세 §6 ActionBar — 화면 머리의 '동작'). 동작 목록(이름·의도·막힘·대화상자를 여는가·확인 상자 aria·글자 찾기
   별칭·`pin`, P6 검토에서 설명 글 id `describedBy` — 늘 보이는 단추의 aria-describedby)을 받아 앞의 `maxInline`(기본 3)개는 공용 단추(buttonClasses — 좁은 화면 44px, `data-action`), 넘는 것만 '동작' 메뉴 항목(공용 DropdownMenu — 위험 의도는
@@ -208,3 +209,7 @@
   모르면 공용 '—'(`Empty`) + 사유 — 0·빈 상자를 만들지 않음, 복사 단추는 부르는 쪽 패널 머리). 글을 그리는 데이터 영역이라 데이터 칸 강조색 금지 목록에 넣습니다.
   P7(패턴 단계)에서 만들었고, 쓰는 곳은 저장소 상태의 수집 오류·경고 로그·AI 리포트 원문(Markdown)·AI 입력 원본·연결 테스트의 토스 조회 JSON(P7 더보기 — 네 곳이 따로 적던 `<pre>`).
   지키는 시험은 `components/patterns/__tests__/LogPanel.test.tsx`(네 상태)·`lib/__tests__/accentInData.test.ts`·`components/patterns/__tests__/index.test.ts`.
+- 짧은 글 단추 누름 자리 `components/ui/classes.ts` `TEXT_TARGET_SHORT` — 화면 층의 공용 키트 클래스(3글자 안팎의 홀로 선 글 단추·링크 — 좁은 화면 높이·폭 44px·글 가운데(포커스 링이 글 양쪽으로 고름),
+  넓은 화면은 글 크기 — 긴 글 링크는 `TEXT_TARGET`, 문장 안 링크는 둘 다 쓰지 않고, 문단 시작선에 맞출 머리에는 쓰지 않음 — 좁은 화면에서 글이 (44 − 글 폭)/2 밀림). 색·글자 크기는 부르는 쪽.
+  P7(패턴 단계)에서 만들었고 ui 배럴에는 다시 내보내지 않습니다(부르는 쪽은 `@/components/ui/classes`). 쓰는 곳은 정보 수집 '번역'·네이버 두세 글자 출처 링크, 없는 주소 화면의 '← 홈'(인증 클래스 `AUTH_LINK_SHORT` — QA-862).
+  지키는 시험은 `lib/__tests__/touchTargets.test.ts`(누르는 조각 표).
