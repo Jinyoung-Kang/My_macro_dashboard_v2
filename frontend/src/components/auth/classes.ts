@@ -26,6 +26,12 @@ export const AUTH_LINK = `${TEXT_TARGET} rounded-sm hover:text-accent ${FOCUS_RI
  */
 export const AUTH_MESSAGE = "mt-4 rounded-control border px-3 py-2.5 text-[13px]";
 
+/**
+ * 동의 체크 label(가입 — 체크 상자 + 글 두 줄) — 좁은 화면(lg 미만) 누르는 자리 44px(체크 상자 16px는 감싼 label이 누름 자리를 맡음 — QA-856), 넓은 화면은
+ * 글 높이 그대로. 체크 상자는 글 첫 줄에 맞춰 위에 둡니다(items-start — 남는 높이는 아래).
+ */
+export const AUTH_CHECK = "mt-4 flex min-h-11 items-start gap-2 text-xs text-text-2 lg:min-h-0";
+
 /** 결과 상자의 톤 — 오류는 위험 틴트, 성공은 정상 틴트(틴트 위 같은 톤 글자 4.54·6.9:1 — globals.css). */
 export const AUTH_MESSAGE_TONE = {
   error: "border-danger/30 bg-danger-tint text-danger",

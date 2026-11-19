@@ -19,7 +19,7 @@ import SignupPage from "../page";
 afterEach(() => cleanup());
 
 describe("가입 화면의 좁은 화면 누르는 자리(QA-856)", () => {
-  it.fails("동의 체크(감싼 label)까지 모든 누름 자리가 lg 미만 44px", () => {
+  it("동의 체크(감싼 label)까지 모든 누름 자리가 lg 미만 44px", () => {
     const { container } = render(<SignupPage />);
     expect(screen.getByRole("checkbox")).toBeTruthy();
     expect(smallTargets(container)).toEqual([]);
