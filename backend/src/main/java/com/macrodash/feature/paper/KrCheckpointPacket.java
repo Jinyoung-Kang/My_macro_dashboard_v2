@@ -133,10 +133,21 @@ final class KrCheckpointPacket {
      * @param calendar         한국 달력(그 실행)
      * @param assembledAt      조립 시각
      * @param free             자유 시점 판의 장중 판단이면 그 차이({@link Free}), 끈 판 장중 확인이면 null
+     * @param intradayFill     한국 장중 감시 스탑 체결을 장중에 장부에 적는 판인가({@link KrStopFill#effective}가 ON — ADR 0045): 장부 글
+     *                         ({@code 4_portfolio.ledger.note})과 자유 시점 판의 {@code 1_basis.stopWatch.rule} 반영 시점 구절이 그 판 글. 끈 판 장중 확인도
+     *                         같은 표지를 받습니다(두 작업이 함께 넘김)
      */
     record Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
                   List<Order> pending, Optional<Snapshot> watch, Optional<Quotes> quotes, Integer frameworkVersion,
-                  Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free) {
+                  Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free, boolean intradayFill) {
+
+        /** 장중 기록 판이 아닌 판(OFF·SHADOW — 예전 글 그대로). */
+        Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
+               List<Order> pending, Optional<Snapshot> watch, Optional<Quotes> quotes, Integer frameworkVersion,
+               Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free) {
+            this(checkpoint, asOf, night, state, positions, pending, watch, quotes, frameworkVersion, settingsVersion, calendar,
+                    assembledAt, free, false);
+        }
 
         /** 끈 판 장중 확인(한국 계좌2 단계 2b) — 자유 시점 판 칸({@code free}) 없이. */
         Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
@@ -302,7 +313,7 @@ final class KrCheckpointPacket {
         out.put("frameworkVersion", in.frameworkVersion());
         out.put("settingsVersion", in.settingsVersion());
         if (free != null && free.stopWatch()) {
-            out.put("stopWatch", StopWatch.basis(true));
+            out.put("stopWatch", StopWatch.basis(true, in.intradayFill()));
         }
         return out;
     }
@@ -443,6 +454,12 @@ final class KrCheckpointPacket {
         return out;
     }
 
+    /** {@code 4_portfolio.ledger.note} — 장부는 밤에 한 번 체결·평가(끈 판·대조 판 — 예전 글 그대로). */
+    static final String LEDGER_NOTE = "장부는 지난밤 관측치로 평가한 값이다(한국 장부는 밤에 한 번 체결·평가 — 오늘 시가 주문도 아직 대기)";
+    /** {@code 4_portfolio.ledger.note}의 장중 기록 판(ADR 0045) — 장중 감시 스탑 매도만 장중에 적힘. */
+    static final String LEDGER_NOTE_INTRADAY_FILL = "장부는 지난밤 관측치로 평가한 값에 오늘 장중에 적힌 감시 스탑 매도를 더한 값이다(장중 감시 스탑 "
+            + "매도는 기록되는 대로 현금·보유에 반영 — 그 밖의 체결·평가는 밤에 한 번, 오늘 시가 주문도 아직 대기)";
+
     private static Map<String, Object> portfolio(Inputs in, LocalDate session) {
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Object> ledger = new LinkedHashMap<>();
@@ -459,7 +476,7 @@ final class KrCheckpointPacket {
             held.add(row);
         }
         ledger.put("positions", held);
-        ledger.put("note", "장부는 지난밤 관측치로 평가한 값이다(한국 장부는 밤에 한 번 체결·평가 — 오늘 시가 주문도 아직 대기)");
+        ledger.put("note", in.intradayFill() ? LEDGER_NOTE_INTRADAY_FILL : LEDGER_NOTE);
         out.put("ledger", ledger);
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Order o : in.pending()) {

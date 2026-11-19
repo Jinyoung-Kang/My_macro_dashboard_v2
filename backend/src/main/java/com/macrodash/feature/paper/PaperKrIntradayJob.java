@@ -362,7 +362,8 @@ public class PaperKrIntradayJob {
         Continuity.Intraday extra = Continuity.on(row.body(), true) ? continuity(code, c, source, row.body(), calledAt) : null;
         Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,
-                row.version(), calendar, clock.instant(), free), mapper, extra), row, claudeSettings, today, scheduled);
+                row.version(), calendar, clock.instant(), free, KrStopFill.effective(row.body()).records()), mapper, extra), row, claudeSettings,
+                today, scheduled);
         if (attempt == null) {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }

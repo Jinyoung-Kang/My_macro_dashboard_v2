@@ -1431,6 +1431,37 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("고정본: 한국 자유 시점 판 장중 판단 패킷(감시 ON·장중 기록 kr.stopWatch.fill ON — ADR 0045) — 같은 장면에서 바뀐 것은 스탑 문장의 반영 시점 구절"
+            + "(12_hardRules·1_basis.stopWatch.rule)과 4_portfolio.ledger.note뿐(되돌리면 packet-kr-ft-intraday-stopwatch.json과 바이트까지 같음)")
+    void goldenKrFreeIntradayPacketWithStopFill() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("stopWatch")).put("mode", "ON").put("fill", "ON");
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "13:30")),
+                        "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        fake.answer(intradayReply("KEEP", null));
+
+        intradayJob().run();
+
+        String sent = fake.requests.get(calls).user();
+        com.macrodash.Golden.assertMatches("packet-kr-ft-intraday-stopwatch-fill.json", sent);
+        assertThat(sent.split(java.util.regex.Pattern.quote(StopWatch.KR_FILL_PHRASE), -1)).as("스탑 구절 두 번").hasSize(3);
+        assertThat(sent.split(java.util.regex.Pattern.quote(KrCheckpointPacket.LEDGER_NOTE_INTRADAY_FILL), -1)).as("장부 글 한 번").hasSize(2);
+        String off = new String(com.macrodash.Golden.resourceBytes("paper/golden/packet-kr-ft-intraday-stopwatch.json"),
+                java.nio.charset.StandardCharsets.UTF_8).stripTrailing();   // 고정본 파일 끝 줄바꿈
+        assertThat(sent.replace(StopWatch.KR_FILL_PHRASE, StopWatch.KR_NIGHT_PHRASE)
+                .replace(KrCheckpointPacket.LEDGER_NOTE_INTRADAY_FILL, KrCheckpointPacket.LEDGER_NOTE)).isEqualTo(off);
+    }
+
+    @Test
     @DisplayName("ADR 0044: 한국 자유 시점 판 장중 판단 패킷(감시 ON) 고정본에서 바뀐 것은 지시문의 MARKET 문장과 스탑 문장의 체결 시점 구절(12_hardRules·"
             + "1_basis.stopWatch.rule)뿐 — 되돌리면 ADR 0044 전 고정본(같은 시험이 지금 글로 처음 만든 것)과 바이트까지 같다")
     void onlyTheMarketAndStopSentencesChangedInTheKrIntradayPacket() {

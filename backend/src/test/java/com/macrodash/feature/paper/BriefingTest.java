@@ -133,6 +133,27 @@ class BriefingTest {
     }
 
     @Test
+    @DisplayName("ADR 0045 — 한국 장부 안내는 자료로 고름: 그 세션 줄이 없는 계좌의 체결에 장중 기록 스탑(근거 intradayFill.mode = ON)이 있을 때만 장중 반영 글, "
+            + "없으면 예전 글 그대로(설정을 저장한 날에도 엇갈리지 않음)")
+    void krLedgerNoteFollowsTheIntradayRecord() {
+        Book rules = new Book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, "한국 규칙 계좌", 100_000_000, SESSION, PaperBooks.ACTIVE, CLOSE,
+                Book.MARKET_KR, Book.CURRENCY_KRW);
+        Fill stop = new Fill(1, 7, PaperBooks.KR_RULES, "005930", "SELL", 10, 70_170, 70_170, 0, 701_700, CLOSE, SESSION, "TOSS_1M_AT", false,
+                CLOSE);
+        BookState state = new BookState(PaperBooks.KR_RULES, 5_700_000, 5_700_000, 0, 0, CLOSE, CLOSE, PREVIOUS, CLOSE);
+        List<NavRow> nav = List.of(new NavRow(PaperBooks.KR_RULES, PREVIOUS, 5_000_000, 4_300_000, 700_000, 14.0, true));
+        Briefing.BookData recorded = new Briefing.BookData(rules, state, nav, List.of(), List.of(stop), List.of(7L), List.of(), List.of(), List.of(),
+                List.of(7L));
+        Briefing.BookData night = new Briefing.BookData(rules, state, nav, List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        JsonNode on = MAPPER.valueToTree(Briefing.facts("KR", SESSION, PREVIOUS, CLOSE, NOW, List.of(), List.of(recorded), true));
+        JsonNode off = MAPPER.valueToTree(Briefing.facts("KR", SESSION, PREVIOUS, CLOSE, NOW, List.of(), List.of(night), true));
+        assertThat(on.get("notes")).extracting(JsonNode::asString).contains(Briefing.KR_LEDGER_NOTE_INTRADAY).doesNotContain(Briefing.KR_LEDGER_NOTE);
+        assertThat(on.get("books").get(0).get("fills").get(0).get("stop").asBoolean()).isTrue();
+        assertThat(on.get("books").get(0).get("navDate").asString()).as("표시 날짜는 직전 처리일(ADR 0045 알려진 차이)").isEqualTo(PREVIOUS.toString());
+        assertThat(off.get("notes")).extracting(JsonNode::asString).contains(Briefing.KR_LEDGER_NOTE).doesNotContain(Briefing.KR_LEDGER_NOTE_INTRADAY);
+    }
+
+    @Test
     @DisplayName("글: 제목·고지·한 줄·시장·계좌(체결·대기·조건)·참고 뒤에 의견 다섯 칸 — 값은 모두 MarkdownV2로 이스케이프하고 이모지가 없다. 의견이 없으면 "
             + "사실과 그 까닭만")
     void messageJoinsFactsAndOpinion() {

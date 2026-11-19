@@ -293,12 +293,18 @@ public class PaperBriefingJob {
             String code = book.code();
             List<Fill> fills = store.recentFills(code, LEDGER_SCAN).stream()
                     .filter(f -> session.equals(f.observationDate())).sorted(Comparator.comparingLong(Fill::id)).toList();
-            List<Long> stops = store.recentOrders(code, LEDGER_SCAN).stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source()))
+            List<Order> stopOrders = store.recentOrders(code, LEDGER_SCAN).stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source()))
+                    .toList();
+            List<Long> stops = stopOrders.stream().map(Order::id).toList();
+            // 장중에 장부에 적은 감시 스탑(ADR 0045 — 근거 intradayFill.mode = ON): 브리핑의 장부 안내 글을 자료로 고름.
+            List<Long> intradayStops = stopOrders.stream()
+                    .filter(o -> KrStopFill.ON.name().equals(com.macrodash.support.Json.asText(
+                            com.macrodash.support.Json.child(o.reason(), KrIntradayFill.FIELD), KrIntradayFill.MODE)))
                     .map(Order::id).toList();
             List<DecisionSummary> decisions = store.decisions(code, DECISION_SCAN).stream()
                     .filter(d -> previous.equals(d.asOfTradingDate())).sorted(Comparator.comparingLong(DecisionSummary::id)).toList();
             out.add(new Briefing.BookData(book, store.state(code).orElse(null), store.navSeries(code), store.positions(code), fills,
-                    stops, store.ordersByStatus(code, PaperBooks.ORDER_PENDING), decisions, conditions(code, decisions)));
+                    stops, store.ordersByStatus(code, PaperBooks.ORDER_PENDING), decisions, conditions(code, decisions), intradayStops));
         }
         return out;
     }

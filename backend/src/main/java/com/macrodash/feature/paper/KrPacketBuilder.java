@@ -692,7 +692,8 @@ final class KrPacketBuilder {
         out.put("regime", regime(asOf));
         if (StopWatchMode.of(run.settingsBody(), true).orders()) {
             // 장중 스탑 감시가 주문을 내는 판(kr.stopWatch.mode ON — ADR 0032) — 실험 경계. OFF·SHADOW는 칸 없음(예전 글자 그대로).
-            out.put("stopWatch", StopWatch.basis(true));
+            // 장중 기록 판(kr.stopWatch.fill ON — ADR 0045)이면 스탑 문장의 반영 시점 구절만 바뀜(OFF·SHADOW는 그대로).
+            out.put("stopWatch", StopWatch.basis(true, KrStopFill.effective(run.settingsBody()).records()));
         }
         List<String> notesOut = new ArrayList<>(extraNotes);
         notesOut.addAll(read.notes());
@@ -1498,7 +1499,8 @@ final class KrPacketBuilder {
                         + "매수를 목표 비중 큰 순) 넘치면 MONTHLY_CAP. ", limits.maxDiscretionaryOrdersPerMonth()))
                 + String.format(Locale.ROOT, "재량 매도는 보유 %d거래일 뒤부터.", limits.minHoldTradingDaysForSell()));
         lines.add(StopWatchMode.of(run.settingsBody(), true).orders()
-                ? StopWatch.hardRuleLine(true, plain(paper.trailingStopPct()), paper.lockoutTradingDays())
+                ? StopWatch.hardRuleLine(true, KrStopFill.effective(run.settingsBody()).records(), plain(paper.trailingStopPct()),
+                        paper.lockoutTradingDays())
                 : String.format(Locale.ROOT, "트레일링 스탑 −%s%%는 코드가 밤마다 잠정 종가로 감지해 다음 거래일 시가에 매도한다(체결 때 확정 "
                         + "종가로 다시 판정, 최고가는 KRX 기준 종가로만 오름). 스탑 뒤 %d거래일 재진입 금지.",
                 plain(paper.trailingStopPct()), paper.lockoutTradingDays()));

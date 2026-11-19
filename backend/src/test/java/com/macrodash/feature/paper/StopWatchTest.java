@@ -397,4 +397,22 @@ class StopWatchTest {
             assertThat(seen[2]).as("종가 갈래를 재 봄").isPositive();
         }
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("ADR 0045 — 한국 장중 기록 판(fill)의 스탑 문장은 반영 시점 구절 하나만 다름: rule·hardRuleLine·basis의 fill 거짓 판은 예전 바이트, "
+            + "미국은 fill과 상관없이 그대로, 시스템 프롬프트 줄은 바뀌지 않음")
+    void krFillPhraseIsTheOnlyChange() {
+        org.assertj.core.api.Assertions.assertThat(StopWatch.rule(true, false)).isEqualTo(StopWatch.rule(true));
+        org.assertj.core.api.Assertions.assertThat(StopWatch.rule(false, true)).isEqualTo(StopWatch.rule(false));
+        String on = StopWatch.rule(true, true);
+        org.assertj.core.api.Assertions.assertThat(StopWatch.rule(true).split(java.util.regex.Pattern.quote(StopWatch.KR_NIGHT_PHRASE), -1)).hasSize(2);
+        org.assertj.core.api.Assertions.assertThat(on).isEqualTo(StopWatch.rule(true).replace(StopWatch.KR_NIGHT_PHRASE, StopWatch.KR_FILL_PHRASE))
+                .contains("장중에 장부에 반영").contains("그날 밤)").doesNotContain("그날 밤 장부에 반영");
+        org.assertj.core.api.Assertions.assertThat(StopWatch.hardRuleLine(true, true, "8", 20))
+                .isEqualTo(StopWatch.hardRuleLine(true, "8", 20).replace(StopWatch.KR_NIGHT_PHRASE, StopWatch.KR_FILL_PHRASE));
+        org.assertj.core.api.Assertions.assertThat(StopWatch.hardRuleLine(true, false, "8", 20)).isEqualTo(StopWatch.hardRuleLine(true, "8", 20));
+        org.assertj.core.api.Assertions.assertThat(StopWatch.basis(true, true).get("rule")).isEqualTo(on);
+        org.assertj.core.api.Assertions.assertThat(StopWatch.basis(true, false)).isEqualTo(StopWatch.basis(true));
+        org.assertj.core.api.Assertions.assertThat(StopWatch.krPromptLine("8", 20)).contains("곧바로 장중 시장가로 매도");
+    }
 }

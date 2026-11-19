@@ -249,7 +249,8 @@ public class PaperKrCheckpointJob {
         Instant calledAt = clock.instant();
         Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
                 source, store.state(PaperBooks.KR_CLAUDE2).orElse(null), store.positions(PaperBooks.KR_CLAUDE2), pendingOrders(),
-                watch, quotes, version, row.version(), calendar, clock.instant()), mapper), row, claudeSettings, today);
+                watch, quotes, version, row.version(), calendar, clock.instant(), null, KrStopFill.effective(row.body()).records()), mapper), row,
+                claudeSettings, today);
         if (attempt == null) {
             return mark(c, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }

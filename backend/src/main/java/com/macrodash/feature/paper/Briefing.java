@@ -61,6 +61,12 @@ final class Briefing {
 
     static final String DISCLAIMER = "의견이며 주문이 아닙니다. 모의 매매의 실제 결정은 개장 전 정기 결정이 냅니다.";
     static final String KR_LEDGER_NOTE = "한국 장부는 밤 수집 뒤에 체결·평가합니다 — 오늘 체결·순자산·수급은 밤 장부 처리 뒤 확정됩니다.";
+    /**
+     * {@link #KR_LEDGER_NOTE}의 장중 기록 판(ADR 0045) — 그 세션 체결에 장중에 장부에 적은 감시 스탑 매도가 있을 때만(설정이 아니라 자료로 고름 — 저장한 날의
+     * 엇갈림이 없게). 그 매도는 순자산·현금에 먼저 들어가 있고 표시 날짜는 직전 처리일입니다.
+     */
+    static final String KR_LEDGER_NOTE_INTRADAY = "한국 장부는 장중 감시 스탑 매도를 기록되는 대로 반영했고(순자산·현금에 먼저 들어감 — 표시 날짜는 직전 "
+            + "장부 처리일), 그 밖의 체결·순자산·수급은 밤 장부 처리 뒤 확정됩니다.";
 
     /**
      * 브리핑의 시스템 지시문 — 이 뒤에 지금 프레임 판의 렌더링이 붙습니다(주간 복기와 같은 모양). 날짜·설정값이 없는 상수입니다. 길이·개수는
@@ -117,10 +123,17 @@ final class Briefing {
      * @param pending   대기 주문
      * @param decisions 그 세션을 목표로 한 결정(기준 거래일 = 그 세션 전 거래일 — 정기·수동·장중 판단), 낸 순
      * @param conditions 그 세션 결정이 남긴 조건(없으면 빈 목록 — Claude 계좌의 이어받기 판만)
+     * @param intradayStops 그 체결 가운데 장중에 장부에 적은 감시 스탑 주문의 id(ADR 0045 — 근거 {@code intradayFill.mode = ON}, 없으면 빈 목록)
      */
     record BookData(Book book, BookState state, List<NavRow> nav, List<Position> positions, List<Fill> fills,
                     List<Long> stopOrders, List<Order> pending, List<DecisionSummary> decisions,
-                    List<CarriedConditions.Condition> conditions) {
+                    List<CarriedConditions.Condition> conditions, List<Long> intradayStops) {
+
+        /** 장중 기록 스탑이 없는 계좌(예전 재료 그대로). */
+        BookData(Book book, BookState state, List<NavRow> nav, List<Position> positions, List<Fill> fills, List<Long> stopOrders,
+                 List<Order> pending, List<DecisionSummary> decisions, List<CarriedConditions.Condition> conditions) {
+            this(book, state, nav, positions, fills, stopOrders, pending, decisions, conditions, List.of());
+        }
     }
 
     /**
@@ -163,6 +176,7 @@ final class Briefing {
             notes.add("매크로 카드 저장본이 없어 시장 값을 싣지 못함");
         }
         boolean ledgerBehind = false;
+        boolean intraday = false;
         List<Map<String, Object>> rows = new ArrayList<>();
         for (BookData b : books) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -208,6 +222,9 @@ final class Briefing {
                 fill.put("price", round(f.price(), 4));
                 fill.put("stop", b.stopOrders().contains(f.orderId()));
                 fills.add(fill);
+                if (today == null && b.intradayStops().contains(f.orderId())) {
+                    intraday = true;
+                }
             }
             row.put("fills", fills);
             List<Map<String, Object>> pending = new ArrayList<>();
@@ -256,7 +273,8 @@ final class Briefing {
         }
         out.put("books", rows);
         if (ledgerBehind) {
-            notes.add(korea ? KR_LEDGER_NOTE : "장부가 이 세션을 아직 처리하지 않은 계좌가 있음 — 그 계좌의 순자산·체결은 직전 처리 기준");
+            notes.add(korea ? (intraday ? KR_LEDGER_NOTE_INTRADAY : KR_LEDGER_NOTE)
+                    : "장부가 이 세션을 아직 처리하지 않은 계좌가 있음 — 그 계좌의 순자산·체결은 직전 처리 기준");
         }
         out.put("notes", notes);
         return out;

@@ -478,7 +478,8 @@ final class PaperSettingKeys {
                             + "분 이상). 금요일·휴장 전날 세션의 결정이 다음 거래일 아침으로 옮겨짐"),
             of(Briefing.KR_ENABLED, Type.BOOLEAN, false,
                     "한국 마감 브리핑(ADR 0039, 기본 꺼짐) — 켜면 정규장 마감 kr.briefing.afterCloseMinutes분 뒤에 텔레그램 한 통. 한국 장부는 밤에 "
-                            + "체결·평가하므로 마감 직후 브리핑의 체결·순자산·수급은 '밤 장부 처리 뒤 확정'으로 적음"),
+                            + "체결·평가하므로 마감 직후 브리핑의 체결·순자산·수급은 '밤 장부 처리 뒤 확정'으로 적음(그날 장중에 기록한 감시 스탑 "
+                            + "매도가 있으면 그 반영을 함께 적음 — ADR 0045)"),
             integer(Briefing.KR_AFTER_CLOSE, 0, Briefing.MAX_AFTER_CLOSE, false,
                     "한국 마감 브리핑을 정규장 마감 몇 분 뒤에 보낼지(기본 30 — 장 시간 변경일은 그날 마감 기준, 밤 장부 뒤 값이 필요하면 330 등)"),
             of(IntradayPolicy.KR_EVENTS, Type.BOOLEAN, false,

@@ -343,14 +343,28 @@ final class StopWatch {
      * 시점({@link #target})·대체 경로·대기 STOP 종목의 새 매수 거절. 숫자는 이 클래스·{@link SessionWindows}의 상수입니다.
      */
     static String rule(boolean korea) {
+        return rule(korea, false);
+    }
+
+    /** 한국 장중 기록 판(ADR 0045 — {@link KrStopFill#effective}가 ON)에서 스탑 체결이 장부에 반영되는 시점 구절 — 그 판에서 바뀌는 것은 이 구절뿐입니다. */
+    static final String KR_FILL_PHRASE = "금융위 확정가로 다시 판정하지 않고, 그 분 봉에 거래가 있으면 기준 분 몇 분 뒤 장중에 장부에 반영(보유·현금이 바로 "
+            + "바뀜 — 종가 매도·그 분 거래 없음·자료 부족·앞 시각 대기 주문·기업행위 의심이면 그날 밤)";
+    /** 끈 판(OFF)·대조 판(SHADOW)의 같은 자리 구절 — 그날 밤 장부. */
+    static final String KR_NIGHT_PHRASE = "금융위 확정가로 다시 판정하지 않고 그날 밤 장부에 반영";
+
+    /**
+     * {@link #rule(boolean)}의 장중 기록 판 — {@code fill}이 참이고 한국이면 반영 시점 구절만 {@link #KR_FILL_PHRASE}로 바꿉니다(ADR 0045). 미국과
+     * {@code fill} 거짓은 예전 글 그대로(바이트까지).
+     */
+    static String rule(boolean korea, boolean fill) {
         long grid = GRID.toMinutes();
         long first = 2 * grid;
         long guard = Math.round((1 - GAP_GUARD) * 100);
         if (korea) {
             return "코드가 정규장 " + grid + "분마다 보유 종목의 토스 1분봉으로 스탑가(최고가는 KRX 기준 종가로만 오름)를 보고, 두 번 이어 스탑가 이하이면"
                     + "(가장 이른 판정은 개장 " + first + "분 뒤) 감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다 — 그 분이 종가 단일가(마감 "
-                    + SessionWindows.KR_CLOSING_AUCTION.toMinutes() + "분 전)부터면 그날 종가, 금융위 확정가로 다시 판정하지 않고 그날 밤 장부에 "
-                    + "반영. 감시가 덮지 못한 종목(감시 자료 없음, 그날 시가가 전일 원시 종가보다 " + guard + "% 이상 낮거나 원시·수정 종가가 달라 "
+                    + SessionWindows.KR_CLOSING_AUCTION.toMinutes() + "분 전)부터면 그날 종가, " + (fill ? KR_FILL_PHRASE : KR_NIGHT_PHRASE)
+                    + ". 감시가 덮지 못한 종목(감시 자료 없음, 그날 시가가 전일 원시 종가보다 " + guard + "% 이상 낮거나 원시·수정 종가가 달라 "
                     + "기업행위가 의심됨)은 밤에 잠정 종가로 감지해 다음 거래일 개장 " + SessionWindows.OPEN_OFFSET.toMinutes()
                     + "분 뒤 첫 분에 매도한다(체결 때 확정 종가로 다시 판정). 대기 중인 감시 스탑 매도가 있는 종목은 새 매수를 재진입 금지와 같게 "
                     + "거절한다(12_hardRules.lockedOut).";
@@ -364,7 +378,12 @@ final class StopWatch {
 
     /** 감시 ON 판의 결정 패킷 12_hardRules 스탑 줄(미국·한국 — 끈 판 줄과 같은 머리·꼬리). */
     static String hardRuleLine(boolean korea, String pct, int lockoutTradingDays) {
-        return "트레일링 스탑 −" + pct + "%는 " + rule(korea) + " 스탑 뒤 " + lockoutTradingDays + "거래일 재진입 금지.";
+        return hardRuleLine(korea, false, pct, lockoutTradingDays);
+    }
+
+    /** {@link #hardRuleLine(boolean, String, int)}의 장중 기록 판({@link #rule(boolean, boolean)} — ADR 0045). */
+    static String hardRuleLine(boolean korea, boolean fill, String pct, int lockoutTradingDays) {
+        return "트레일링 스탑 −" + pct + "%는 " + rule(korea, fill) + " 스탑 뒤 " + lockoutTradingDays + "거래일 재진입 금지.";
     }
 
     /** 감시 ON 판의 한국 시스템 프롬프트 하드 규칙 스탑 줄({@code FrameworkService.krHardRules} — 끈 판 줄과 같은 머리·꼬리). */
@@ -376,12 +395,17 @@ final class StopWatch {
 
     /** 감시 ON 판 패킷의 {@code 1_basis.stopWatch} — 실험 경계(감시가 주문을 내는 판)와 규칙. */
     static java.util.Map<String, Object> basis(boolean korea) {
+        return basis(korea, false);
+    }
+
+    /** {@link #basis(boolean)}의 장중 기록 판 — 칸은 같고 {@code rule}만 {@link #rule(boolean, boolean)}(ADR 0045). */
+    static java.util.Map<String, Object> basis(boolean korea, boolean fill) {
         java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
         out.put("mode", StopWatchMode.ON.name());
         out.put("intervalMinutes", GRID.toMinutes());
         out.put("consecutiveChecks", 2);
         out.put("firstJudgedAfterOpenMinutes", 2 * GRID.toMinutes());
-        out.put("rule", rule(korea));
+        out.put("rule", rule(korea, fill));
         return out;
     }
 
