@@ -63,9 +63,10 @@ export function Reader({ entry }: { entry: ReaderEntry }) {
       {loading && <Loading />}
       {stored.error && <ErrorState message={stored.error} onRetry={stored.reload} />}
       {shown ? (
+        // 본문 상자는 놓인 면과 다른 면(bg-bg — 페이지 바탕)과 1px 경계로 가릅니다 — 대화상자 덮개 면(surface-2) 위에서 예전 surface-2/60이 묻혔음(QA-838).
         <div
           lang={showKorean && translated?.textKo ? "ko" : undefined}
-          className="max-h-[60dvh] overflow-y-auto whitespace-pre-wrap rounded-control bg-surface-2/60 p-3 text-[13px] leading-6 text-text"
+          className="max-h-[60dvh] overflow-y-auto whitespace-pre-wrap rounded-control border border-border bg-bg p-3 text-[13px] leading-6 text-text"
         >
           {shown}
         </div>
