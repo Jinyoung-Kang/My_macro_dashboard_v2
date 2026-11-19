@@ -54,7 +54,7 @@ async function pressTitleTranslate(title: string) {
 }
 
 describe("목록 제목 '번역' 뒤 포커스(QA-888)", () => {
-  it.fails("요청 동안 단추는 aria-disabled(포커스 유지, 다시 눌러도 한 번) — 실패하면 그 단추에 포커스, 옆에 사유", async () => {
+  it("요청 동안 단추는 aria-disabled(포커스 유지, 다시 눌러도 한 번) — 실패하면 그 단추에 포커스, 옆에 사유", async () => {
     let fail: (error: Error) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((_, reject) => { fail = reject; }));
     const button = await pressTitleTranslate("Rates Spike");
@@ -71,7 +71,7 @@ describe("목록 제목 '번역' 뒤 포커스(QA-888)", () => {
     expect(document.activeElement).toBe(again);
   });
 
-  it.fails("성공하면 단추 자리의 한국어 제목 글로 포커스", async () => {
+  it("성공하면 단추 자리의 한국어 제목 글로 포커스", async () => {
     let finish: (value: unknown) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     await pressTitleTranslate("Yields Fall Again");

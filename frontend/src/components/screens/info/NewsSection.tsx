@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type MouseEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { Pager } from "@/components/Pager";
 import { FilterList, InspectorFrame, type InspectorContext, InspectorTrigger, type InspectorTriggerProps } from "@/components/patterns";
 import {
@@ -396,24 +396,54 @@ function HeadlineRow({ row, entry, inspector }: { row: Headline; entry: ReaderEn
 /**
  * 제목 하나의 번역 단추(2026-11-12 사용자 지시 — 미리 번역하지 않고 제목마다). 한글이 든 제목·출처가 한국어 제목을 붙인 글에는 내지 않습니다.
  * 누르면 그 제목만 서버에 묻고(같은 제목은 저장본에서 바로 옴) 아래에 한국어를 보입니다. 실패하면 사유를 아이콘 + 글로.
+ * 요청 동안 단추는 disabled가 아니라 aria-disabled(누른 단추가 disabled가 되면 크롬이 포커스를 body로 보냄 — QA-888, 누름은 여기서 한 번만), 성공해
+ * 단추가 한국어 제목으로 바뀌면 누를 때 단추에 있던 포커스를 그 글(tabIndex -1 — 낭독기가 번역을 읽음)로 옮깁니다.
  */
 function TitleTranslation({ title, titleKo }: { title: string | null; titleKo?: string | null }) {
   const { translate: request, busy, translated, response, error: requestError } = useTranslate();
-  if (!title || !titleNeedsTranslation(title, titleKo)) return null;
+  const inFlight = useRef(false);
+  const [refocus, setRefocus] = useState(false);
+  const koreanRef = useRef<HTMLParagraphElement>(null);
   const korean = translated?.titleKo ?? null;
+  useEffect(() => {
+    if (!refocus || !korean) return;
+    setRefocus(false);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    koreanRef.current?.focus();
+  }, [refocus, korean]);
+  if (!title || !titleNeedsTranslation(title, titleKo)) return null;
   // 응답은 왔는데 제목 번역이 없으면 그 사유(없으면 일반 문구)를 보입니다.
   const error = requestError ?? (response && !response.titleKo ? "번역하지 못했습니다." : null);
-  const translate = () => request({ title });
+  const translate = async (event: MouseEvent<HTMLButtonElement>) => {
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
+    const button = event.currentTarget;
+    const hadFocus = document.activeElement === button;
+    try {
+      const result = await request({ title });
+      const active = document.activeElement;
+      if (result?.titleKo && hadFocus && (active === button || active === document.body || active === null)) setRefocus(true);
+    } finally {
+      inFlight.current = false;
+    }
+  };
   if (korean) {
     return (
-      <p lang="ko" className="text-[13px] text-text-2">
+      <p ref={koreanRef} tabIndex={-1} lang="ko" className="text-[13px] text-text-2 outline-none">
         {korean}
       </p>
     );
   }
   return (
     <p className="flex flex-wrap items-center gap-x-2 text-xs">
-      <button type="button" onClick={translate} disabled={busy} className={`${SHORT_LINK} disabled:opacity-60`} aria-label={`제목 번역: ${title}`}>
+      <button
+        type="button"
+        onClick={(event) => void translate(event)}
+        aria-disabled={busy || undefined}
+        className={`${SHORT_LINK} aria-disabled:cursor-not-allowed aria-disabled:opacity-60`}
+        aria-label={`제목 번역: ${title}`}
+      >
         {busy ? "번역 중…" : "번역"}
       </button>
       {error && (
