@@ -45,4 +45,20 @@ describe("Pager", () => {
       expect(tokens(button).includes("forced-colors:border-2"), `${button.textContent}쪽`).toBe(current);
     }
   });
+
+  // QA-835(D1 pager-number-button-narrower, S4): lg 미만에서 쪽 번호 단추가 작은 단추(sm — 좌우 여백 px-2.5)의 글 폭뿐이라 높이만 44px이고 폭은 모자랐습니다
+  // (D1 기록 — 작업대 개편 전후 33.2 → 29.2px). 좁은 화면은 번호 단추 폭도 44px, 넓은 화면은 24px(작은 조작 — 명세 §3-7).
+  // 재현 커밋에서는 it.fails입니다(고치는 커밋에서 it으로).
+  it.fails("QA-835: 쪽 번호 단추는 lg 미만 폭 44px(min-w-11)·넓은 화면 24px(lg:min-w-6) — 지금 쪽·다른 쪽 모두", () => {
+    render(<Pager page={2} pages={3} onChange={() => {}} label="뉴스" />);
+    const nav = screen.getByRole("navigation", { name: "뉴스 쪽" });
+    const numbers = within(nav)
+      .getAllByRole("button")
+      .filter((button) => /^\d+$/.test(button.textContent ?? ""));
+    expect(numbers).toHaveLength(3);
+    for (const button of numbers) {
+      expect(tokens(button), `${button.textContent}쪽`).toContain("min-w-11");
+      expect(tokens(button), `${button.textContent}쪽`).toContain("lg:min-w-6");
+    }
+  });
 });
