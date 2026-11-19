@@ -80,3 +80,13 @@ a4e8018db27f1d6e9e3e4232742c04f75b177b73:backend/src/test/resources/paper/golden
 # 2026-11-16 바로 위 설명 줄의 첫 판(7ca800c9)이 시험 줄의 속성 꼴을 그대로 옮겨 적어 같은 규칙에 걸렸다 — 설명 줄은 키=값 꼴 없이 고쳐 썼고,
 # 이력에 남은 그 줄만 지문으로 둔다(값은 데이터셋 이름, .env 값과 일치 0건).
 7ca800c99a90f7d730e82d87dde2526d3c4e2a09:.gitleaksignore:generic-api-key:77
+
+# 2026-11-18 paper-fill-timing 브랜치(ADR 0044): 한국 켠 판 감시 고정본(packet-kr-ft-stopwatch-scheduled.json)을 스탑 문장으로 다시 만든 커밋 — 위
+# 135ddba7과 같은 매크로 카드 항목 키("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS)다(.env·.env.qa 값과 일치 0건). 병합 전에 이 브랜치를 다시
+# 쌓아 커밋 번호가 바뀌면 이 지문도 새 번호로 바꿔야 한다.
+68bce569908682a8bfdd0ec5744606d069a4056e:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-scheduled.json:generic-api-key:1
+
+# 2026-11-19 kr-intraday-stop-fill 브랜치(ADR 0045): 한국 장중 기록 판 결정 패킷 고정본(packet-kr-ft-stopwatch-fill-scheduled.json — 새 파일)의 매크로 카드
+# 항목 키("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS) — 위 135ddba7·68bce569와 같은 데이터셋 키 문자열이다(.env·.env.qa 값과 일치 0건). 병합 전에
+# 이 브랜치를 다시 쌓아 커밋 번호가 바뀌면 이 지문도 새 번호로 바꿔야 한다.
+c9998b69d37a3cf1d47c9ceb0dccd5d3c0e665c8:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-fill-scheduled.json:generic-api-key:1
