@@ -178,8 +178,9 @@ export default function StatusPage() {
       key: "age",
       header: "수집",
       align: "right",
+      // 나이와 '오래됨' 태그는 한 줄 — 꺾이면 390에서 '수집' 칸(106px) 안의 태그가 다음 줄로 가 101행이 33 → 69px가 됐습니다(QA-878, 표는 이미 가로 스크롤).
       cell: (row) => (
-        <span className="inline-flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-1">
+        <span className="inline-flex items-baseline justify-end gap-x-1.5">
           <span className="text-text-3">{formatAge(row.ageSeconds ?? null)}</span>
           {row.stale ? <Tag tone="warn">오래됨</Tag> : null}
         </span>
