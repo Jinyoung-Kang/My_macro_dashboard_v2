@@ -153,9 +153,12 @@ export function SearchBox({
             </div>
           ))}
         </div>
-        {open && value.trim() && !suggest.loading && items.length === 0 && (suggest.message || suggest.error) ? (
+        {open && value.trim() && !suggest.loading && items.length === 0 ? (
+          // 받지 못한 경우와 0건인 경우 모두 한 줄로 알립니다 — 0건에 아무 글이 없으면 낭독기 사용자에게 '결과 없음'이 전해지지 않았습니다(QA-860).
           <p role="status" className="mt-1 text-xs text-text-3">
-            후보를 받지 못했습니다 — {suggest.message ?? suggest.error}. Enter로 찾을 수는 있습니다.
+            {suggest.message || suggest.error
+              ? `후보를 받지 못했습니다 — ${suggest.message ?? suggest.error}. Enter로 찾을 수는 있습니다.`
+              : "가진 색인에 맞는 후보가 없습니다 — Enter로 찾을 수는 있습니다."}
           </p>
         ) : null}
       </div>

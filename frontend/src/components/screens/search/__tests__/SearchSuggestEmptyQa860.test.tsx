@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("입력 후보 0건 안내(QA-860)", () => {
-  it.fails("그 검색어의 응답이 0건이면 상태 글 한 줄(role=status) — 묻는 동안에는 없고, 요청은 한 번", async () => {
+  it("그 검색어의 응답이 0건이면 상태 글 한 줄(role=status) — 묻는 동안에는 없고, 요청은 한 번", async () => {
     render(<SearchBox initial={null} onSubmit={() => {}} onChoose={() => {}} />);
     const input = screen.getByRole("combobox", { name: "대상 검색" });
     fireEvent.focus(input);
