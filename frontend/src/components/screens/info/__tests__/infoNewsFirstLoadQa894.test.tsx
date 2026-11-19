@@ -55,7 +55,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 수집 뉴스 탭 첫 적재(QA-894)", () => {
-  it.fails("catalog 전에는 거르기 줄·목록 대신 읽는 중 — 목록이 먼저 와도 안내 상자와 목록이 함께 나타난다", async () => {
+  it("catalog 전에는 거르기 줄·목록 대신 읽는 중 — 목록이 먼저 와도 안내 상자와 목록이 함께 나타난다", async () => {
     const routes = deferredRoutes(["/api/info/catalog", "/api/info/items?kind=blog"]);
     render(<InfoHub tab="news" />);
     await act(async () => routes.get("/api/info/items?kind=blog")?.resolve({ available: true, items: [ITEM], page: 1, size: 10, total: 1, pages: 1 }));
@@ -66,7 +66,7 @@ describe("정보 수집 뉴스 탭 첫 적재(QA-894)", () => {
     expect(screen.getByText("보류한 출처")).toBeTruthy();
   });
 
-  it.fails("목록이 답하기 전에는 아래 출처 패널을 보이지 않게(요청은 처음부터), 답하면 나타난다", async () => {
+  it("목록이 답하기 전에는 아래 출처 패널을 보이지 않게(요청은 처음부터), 답하면 나타난다", async () => {
     const routes = deferredRoutes(["/api/info/catalog", "/api/info/items?kind=blog"]);
     render(<InfoHub tab="news" />);
     await act(async () => routes.get("/api/info/catalog")?.resolve(CATALOG));

@@ -80,7 +80,7 @@ const SHORT_LINK = `${TEXT_TARGET_SHORT} text-accent hover:underline`;
  * 검사 칸에서 한국어로 번역합니다(ADR 0037). 제목은 원문 그대로 보이고, 제목마다 번역 단추를 눌렀을 때만 번역합니다. 시각은 모두 한국 시각(KST)입니다.
  * 처음 열 때 원문을 저절로 고르지 않습니다 — 고를 때만 본문을 읽습니다(GET /api/info/items/{id}). 보기·출처·검색어·쪽이 바뀌면 고름을 풂니다.
  */
-export function NewsSection() {
+export function NewsSection({ onSettled }: { onSettled?: () => void } = {}) {
   const [view, setView] = useState<View>("blog");
   const [source, setSource] = useState("");
   const [draft, setDraft] = useState("");
@@ -89,6 +89,9 @@ export function NewsSection() {
   const [selected, setSelected] = useState<string | null>(null);
   const catalog = useApi<CatalogResponse>(endpoints.info.catalog, 300_000);
   const sources = useRemembered(catalog.data?.sources) ?? [];
+  // catalog를 처음 받기 전 — '보류한 출처' 안내 상자와 출처 고르기가 catalog로 정해지므로 그때까지 거르기 줄·목록 대신 읽는 중 한 줄을 둡니다. 예전에는
+  // 목록이 먼저 오면 그 위에 안내 상자가 뒤늦게 끼어 거르기 줄·목록을 밀었습니다(QA-894).
+  const catalogPending = catalog.loading && !catalog.data && !catalog.error;
   const choices = sourceChoices(sources, view);
   const deferred = sources.find((row) => row.access === "deferred");
   const set = headlineSet(view);
@@ -98,6 +101,12 @@ export function NewsSection() {
   );
   const headlines = useApi<HeadlinesResponse>(set !== null ? endpoints.info.headlines({ set, q: query, page, size: PAGE_SIZE }) : null);
   const active = set === null ? articles.data : headlines.data;
+  // 처음 그린 목록(catalog와 지금 보기의 목록 — 값이든 오류든)이 오면 알립니다 — 정보 수집 뉴스 탭이 그때까지 아래 출처 패널을 보이지 않게 둡니다(QA-894).
+  const listRead = set === null ? articles : headlines;
+  const settled = !catalogPending && (view === "gurus" || !!listRead.data || !!listRead.error);
+  useEffect(() => {
+    if (settled) onSettled?.();
+  }, [settled, onSettled]);
   const count = view !== "gurus" && active && active.items.length > 0 ? `모두 ${active.total ?? EMPTY}${set === null ? "편" : "건"}` : undefined;
 
   const reset = () => {
@@ -130,6 +139,8 @@ export function NewsSection() {
         )}
         {view === "gurus" ? (
           <GurusSection embedded />
+        ) : catalogPending ? (
+          <Loading />
         ) : (
           <>
             <form
