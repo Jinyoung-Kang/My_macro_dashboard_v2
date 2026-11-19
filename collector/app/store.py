@@ -652,6 +652,29 @@ def kr_market_orders(books) -> list[tuple[str, date, datetime]]:
     return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
 
 
+# 한국 장중 감시 STOP을 장중에 장부에 적은 주문(ADR 0045 — 백엔드 KrStopFillStep, 근거 intradayFill.mode = ON). 밤 일괄이면 그 STOP은 대기로 남아
+# kr_timed_orders·kr_market_orders가 그 기준 분 창을 받았을 것이라, 같은 창을 받도록 따로 읽습니다(D10 (b) — 읽기만, 호출 수는 밤 일괄 세계와 같음).
+INTRADAY_RECORDED_STOP = (
+    "source = 'STOP' AND status = 'FILLED' AND timing = 'MARKET' AND reason->'intradayFill'->>'mode' = 'ON'"
+)
+
+
+def kr_intraday_filled_stops(books, since: datetime) -> list[tuple[str, date, datetime]]:
+    """
+    한국 장중 감시 STOP 가운데 장중에 장부에 적은 것(ADR 0045 ON — 출처 STOP·체결·장중 시장가·근거 ``intradayFill.mode = ON``)의 (종목, 기준 거래일,
+    생성 시각), ``since`` 뒤에 만든 것만(기준일·종목·생성 순). 밤 1분봉(paper.kr.timed)이 그 STOP의 기준 분 창을 밤 일괄 세계처럼 받게 합니다 — 밤 체결
+    뒤 대조(백엔드 사후 점검)의 길 A 자료. 받는 기간은 태스크가 밤 일괄 세계의 대기 수명(목표 세션 다음 거래일까지)으로 다시 거릅니다. 백엔드 표
+    ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ticker, as_of_trading_date, created_at FROM paper_orders WHERE book_code = ANY(%s) AND " + INTRADAY_RECORDED_STOP
+            + " AND as_of_trading_date IS NOT NULL AND created_at >= %s ORDER BY 2, 1, 3",
+            (list(books), since),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
+
+
 def kr_minute_orders(books) -> list[tuple[str, date, time]]:
     """
     한국 분 단위 지정 시각(AT_MINUTE — ADR 0027) **대기** 주문의 (종목, 기준 거래일, 지정 시각 KST) — 시각 지정 1분봉(paper.kr.timed)에 그 주문의
@@ -779,19 +802,26 @@ STOPWATCH_MODE_PATHS = {"US": ("stopWatch", "mode"), "KR": ("kr", "stopWatch", "
 KR_OPEN_OVERRIDES_PATH = ("kr", "calendar", "openTimeOverrides")
 
 
-def stopwatch_scope(market: str) -> list[str]:
+def stopwatch_scope(market: str, session: date | None = None) -> list[str]:
     """
     장중 스탑 감시 범위 — 그 시장의 운용 중(ACTIVE)이고 벤치마크가 아닌 책(규칙·Claude 계좌1·2)의 보유 종목(중복 없음·정렬). 일시정지 책과
     벤치마크는 스탑이 없어 받지 않습니다(백엔드 장부와 같은 범위). 현금성 종목도 담습니다(백엔드가 거름 — 설정을 수집기가 다시 해석하지 않게).
+    ``session``을 주면(한국) 그 세션에 장중 감시 STOP을 장중에 장부에 적어 보유에서 빠진 종목도 담습니다(ADR 0045 ON — 밤 일괄이면 그날 밤까지 보유라
+    감시 범위·호출 수·저장본이 그 세계와 같게).
 
-    백엔드 표 ``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와 같은 교차 읽기).
+    백엔드 표 ``paper_positions``·``paper_books``·``paper_orders``·``paper_fills``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와
+    같은 교차 읽기).
     """
+    sql = ("SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
+           "WHERE b.market = %s AND b.status = %s AND b.kind <> %s AND p.qty > 0")
+    params: list = [market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND]
+    if session is not None:
+        sql += (" UNION SELECT DISTINCT f.ticker FROM paper_fills f JOIN paper_orders o ON o.id = f.order_id "
+                "JOIN paper_books b ON b.code = o.book_code WHERE b.market = %s AND b.status = %s AND b.kind <> %s "
+                "AND f.observation_date = %s AND o." + INTRADAY_RECORDED_STOP.replace(" AND ", " AND o."))
+        params += [market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND, session]
     with connection() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
-            "WHERE b.market = %s AND b.status = %s AND b.kind <> %s AND p.qty > 0 ORDER BY p.ticker",
-            (market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND),
-        ).fetchall()
+        rows = conn.execute(sql + " ORDER BY 1", tuple(params)).fetchall()
     return [row["ticker"] for row in rows]
 
 

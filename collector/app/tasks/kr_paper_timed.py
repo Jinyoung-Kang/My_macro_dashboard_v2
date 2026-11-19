@@ -37,7 +37,8 @@ app/tasks/kr_paper_timed.py
   그대로 둡니다(다음 slow 주기에 다시).
 - 세션은 최근 ``KR_TIMED_KEEP_SESSIONS``개만 남깁니다(늦게 푸는 장부·실행 감사가 볼 기간).
 
-범위는 백엔드 표 ``paper_orders``를 읽기만 합니다(store.kr_timed_orders·kr_market_orders·kr_minute_orders·kr_audit_orders — ADR 0008). 토스 차트 그룹(초당 20회)의 간격은 한국 관측치 태스크와 같습니다.
+범위는 백엔드 표 ``paper_orders``를 읽기만 합니다(store.kr_timed_orders·kr_market_orders·kr_intraday_filled_stops·kr_minute_orders·kr_audit_orders —
+ADR 0008). 장중에 장부에 적은 감시 STOP(ADR 0045 ON)은 대기가 아니어도 밤 일괄 세계처럼 그 기준 분 창을 받습니다(목표 세션 다음 거래일까지). 토스 차트 그룹(초당 20회)의 간격은 한국 관측치 태스크와 같습니다.
 """
 from __future__ import annotations
 
@@ -93,6 +94,8 @@ KR_TIMED_TIME_LIMIT_SECONDS = 300.0
 # 백엔드 PaperBooks와 같은 글자(test_kr_paper_timed가 파일로 대조). 계좌2는 지금도 이 시점들을 내고, 계좌1·규칙 계좌는 자유 시점 판을 켜거나 체결
 # 시각을 지정했을 때만 냅니다(ADR 0027) — 그 전에는 시가(NEXT_OPEN) 주문뿐이라 고르는 것이 없습니다(범위는 시점으로 갈림).
 KR_TIMED_BOOKS = ("kr_claude2", "kr_claude", "kr_rules")
+# 장중에 장부에 적은 감시 STOP(ADR 0045 ON)을 DB에서 찾는 기간(생성 시각 — 그 뒤 대기 수명으로 다시 거름, 긴 연휴에도 목표 세션 다음 거래일을 덮게).
+KR_INTRADAY_STOP_LOOKBACK = timedelta(days=14)
 KR_TIMED_TIMINGS = ("AT_1000", "AT_1100", "AT_1200", "AT_1300", "AT_1400", "AT_1500", "NEXT_CLOSE", "MARKET")
 # 실행 감사(단계 2c) 범위 — 한국 Claude 계좌1·2(백엔드 PaperBooks.KR_CLAUDE·KR_CLAUDE2)의 최근 이 일수(달력일, DB 시각)에 만든 결정 주문(백엔드
 # PaperKrExecutionAuditJob.WINDOW_DAYS와 같은 폭).
@@ -248,6 +251,14 @@ def task_kr_paper_timed() -> str:
     targets: dict[tuple[str, str], set[str]] = {}
     for code, as_of, created_at in store.kr_market_orders(KR_TIMED_BOOKS):
         targets.setdefault((code, next_trading_day(as_of).isoformat()), set()).add(market_target(created_at))
+    # 장중에 장부에 적은 감시 STOP(ADR 0045 ON — 대기가 아니어서 위 두 읽기에 들지 않음)도 밤 일괄 세계처럼 그 기준 분 창을 받습니다(D10 (b)). 받는
+    # 기간은 그 세계의 대기 수명 — 목표 세션 다음 거래일까지(그 뒤에는 밤 장부가 만료로 닫아 범위에서 빠짐)라 호출 수가 같습니다.
+    today = now.astimezone(KST).date()
+    recorded = [(code, as_of, created_at)
+                for code, as_of, created_at in store.kr_intraday_filled_stops(KR_TIMED_BOOKS, now - KR_INTRADAY_STOP_LOOKBACK)
+                if today <= next_trading_day(next_trading_day(as_of))]
+    for code, as_of, created_at in recorded:
+        targets.setdefault((code, next_trading_day(as_of).isoformat()), set()).add(market_target(created_at))
     # 분 단위 지정 시각(AT_MINUTE — ADR 0027) 대기 주문의 지정 시각 창. 장부는 그 창이 저장본에 있어야 체결합니다(없으면 기다림).
     minute = store.kr_minute_orders(KR_TIMED_BOOKS)
     for code, as_of, at in minute:
@@ -261,7 +272,8 @@ def task_kr_paper_timed() -> str:
             # 체결·취소된 지정 시각 주문도(대기 목록에서 빠짐 — 장중 판단이 대신해 취소한 주문은 장부 몫으로 받은 적도 없음) 감사가 그 시각 창을 봄(QA-301).
             targets.setdefault((code, next_trading_day(as_of).isoformat()), set()).add(_label(at.hour, at.minute))
     # 장부 몫(계좌2 대기 주문 — 그 밤 체결에 필요)을 먼저, 그 뒤 실행 감사 몫 — 예산이 모자라면 뒤쪽이 다음 주기로 밀림.
-    wanted = (list(store.kr_timed_orders(KR_TIMED_BOOKS, KR_TIMED_TIMINGS)) + [(code, as_of) for code, as_of, _ in minute]
+    wanted = (list(store.kr_timed_orders(KR_TIMED_BOOKS, KR_TIMED_TIMINGS)) + [(code, as_of) for code, as_of, _ in recorded]
+              + [(code, as_of) for code, as_of, _ in minute]
               + [(code, as_of) for code, as_of, _, _, _ in audit])
     for code, as_of in wanted:
         for session in target_sessions(code, as_of, sessions):

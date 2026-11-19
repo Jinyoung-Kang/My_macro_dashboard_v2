@@ -131,6 +131,30 @@ def test_범위는_운용_중이고_벤치마크가_아닌_책의_보유를_시�
     assert store.stopwatch_scope("KR") == ["005930"]
 
 
+def test_한국_범위는_그_세션에_장중_기록으로_판_종목도_담는다(store, monkeypatch):
+    # ADR 0045 ON — 장중 감시 STOP을 장중에 장부에 적으면 보유에서 빠지지만, 밤 일괄 세계에서는 그날 밤까지 보유라 감시 범위가 같게 그날은 담는다.
+    _book(store, "kr_rules", "KR", kind="RULES")
+    _book(store, "kr_claude", "KR", status="PAUSED")
+    _hold(store, "kr_rules", "005930")
+    session = date(2026, 11, 17)
+    with store.connection() as conn:
+        for book, ticker, day, mode in (("kr_rules", "000660", session, "ON"),          # 그 세션 ON 기록 → 담음
+                                        ("kr_rules", "035720", date(2026, 11, 16), "ON"),  # 지난 세션 → 뺌
+                                        ("kr_rules", "051910", session, "SHADOW"),      # SHADOW(밤 체결) → 뺌
+                                        ("kr_claude", "066570", session, "ON")):        # 일시정지 책 → 뺌
+            order = conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, reason) "
+                "VALUES (%s, %s, 'SELL', 'MARKET', 'STOP', 'FILLED', %s, %s::jsonb) RETURNING id",
+                (book, ticker, day, '{"intradayFill": {"mode": "%s"}}' % mode)).fetchone()["id"]
+            conn.execute(
+                "INSERT INTO paper_fills (order_id, book_code, ticker, side, qty, price, raw_price, slippage_bp, gross, observed_at, "
+                "observation_date, price_source) VALUES (%s, %s, %s, 'SELL', 10, 100, 100, 0, 1000, now(), %s, 'TOSS_1M_AT')",
+                (order, book, ticker, day))
+    _read_only(store, monkeypatch)
+    assert store.stopwatch_scope("KR", session) == ["000660", "005930"]
+    assert store.stopwatch_scope("KR") == ["005930"], "세션을 주지 않으면 보유만(미국과 같은 읽기)"
+
+
 def test_설정은_세_값만_받고_그_밖은_OFF(store, monkeypatch):
     assert store.stopwatch_settings() == {"US": "OFF", "KR": "OFF", "krOpenOverrides": {}}, "설정 행 없음"
     _settings(store, {"stopWatch": {"mode": "ON"}, "kr": {"stopWatch": {"mode": "on"},

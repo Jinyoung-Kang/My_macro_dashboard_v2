@@ -9,7 +9,8 @@ app/tasks/paper_stopwatch.py
 [스위치] 설정 ``stopWatch.mode``(미국)·``kr.stopWatch.mode``(한국)가 SHADOW·ON일 때만 받습니다(백엔드 표 ``paper_settings``를 읽기만 —
   store.stopwatch_settings). OFF(기본 — 키가 없는 행도)면 외부 호출 0회로 정상 끝. 로컬 스택(복원 데이터)이 장중에 외부를 부르지 않게(통합 검토 R8).
 [범위] store.stopwatch_scope(시장) — 운용 중이고 벤치마크가 아닌 책의 보유 종목(백엔드 표를 읽기만) + 기준 종목(미국 SPY·한국 069500 — 지연과
-  지수 사건의 입력). 보유가 없으면 호출 0회.
+  지수 사건의 입력). 한국은 그 세션에 장중 감시 STOP을 장중에 장부에 적어 보유에서 빠진 종목도 그날 담습니다(ADR 0045 ON — 밤 일괄 세계와 같은 범위).
+  보유가 없으면 호출 0회.
 [창] 그 세션의 개장 + 4분 ~ 장 끝 여유 앞 + 1분(미국 09:34~15:56 ET — 격자 끝 15:55, 한국 09:04~15:21 KST — 격자 끝 15:20, 수능일 등 장 시간 변경일은
   설정 ``kr.calendar.openTimeOverrides``의 그날 개장·마감에서). 미국 휴장·조기 폐장은 수집기가 모르므로 응답의 SPY로 배웁니다 — 그날 세션 봉이
   없으면(휴장) 그날 남은 회차는 묻지 않고, 정규장 끝(Yahoo currentTradingPeriod)을 그날의 창 끝으로 씁니다. 그날 세션 봉을 한 번 본 뒤에는 휴장으로
@@ -431,7 +432,7 @@ def task_paper_stopwatch_kr() -> str:
     end = datetime.combine(today, closes, tzinfo=KST) - KR_TAIL + WINDOW_TAIL
     if not start <= now <= end:
         return f"정규장 감시 창({start:%H:%M}~{end:%H:%M} KST) 밖 — 호출 0회"
-    scope = store.stopwatch_scope("KR")
+    scope = store.stopwatch_scope("KR", today)
     if not scope:
         return "감시할 보유 없음 — 호출 0회"
     tickers = [KR_REFERENCE] + [code for code in scope if code != KR_REFERENCE]
