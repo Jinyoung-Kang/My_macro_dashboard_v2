@@ -19,7 +19,7 @@ afterEach(() => cleanup());
 const tokens = (value: string) => value.split(/\s+/).filter(Boolean);
 
 describe("인증·안내 카드의 낱말 줄바꿈(QA-891)", () => {
-  it.fails("인증 카드·안내 카드는 break-keep + wrap-break-word, 카드 틀(AuthCard)의 제목·안내 글이 그 안에 있다", () => {
+  it("인증 카드·안내 카드는 break-keep + wrap-break-word, 카드 틀(AuthCard)의 제목·안내 글이 그 안에 있다", () => {
     for (const card of [AUTH_CARD, AUTH_NOTICE_CARD]) {
       expect(tokens(card)).toContain("break-keep");
       expect(tokens(card)).toContain("wrap-break-word");

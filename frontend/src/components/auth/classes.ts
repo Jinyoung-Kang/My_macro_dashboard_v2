@@ -5,14 +5,18 @@
  */
 import { buttonClasses, FOCUS_RING, TEXT_TARGET, TEXT_TARGET_SHORT } from "@/components/ui/classes";
 
-/** 화면 가운데 카드 — 4px 모서리(rounded-card), 안쪽 24px. */
-export const AUTH_CARD = "w-full max-w-sm rounded-card border border-border bg-surface p-6";
+/**
+ * 화면 가운데 카드 — 4px 모서리(rounded-card), 안쪽 24px. 카드 안 한국어 글(제목·안내·처리방침 dd·동의 글)은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴
+ * 토큰만 칸 안에서 꺾습니다(break-keep wrap-break-word — 상속, 공용 글 부품 규약 QA-568과 같은 짝). 예전에는 '저장하지 않|음'·'동|의합니다'처럼
+ * 음절 사이가 갈렸습니다(QA-891 — not-found 카드는 이미 낱말 사이).
+ */
+export const AUTH_CARD = "w-full max-w-sm rounded-card border border-border bg-surface p-6 break-keep wrap-break-word";
 
 /**
  * 대시보드 레이아웃의 안내 카드(백엔드에 연결하지 못함·운영자 계정 없음 — app/(dashboard)/layout.tsx) — 인증 카드와 같은 4px 모서리·안쪽 24px(모든 폭),
- * 안내 글이 길어 폭은 max-w-lg, 주의 톤 경계. 처음에는 넓은 화면 안쪽이 32px(sm:p-8)이라 인증 카드와 달랐습니다(공용 키트 단계가 이 단계로 넘김).
+ * 안내 글이 길어 폭은 max-w-lg, 주의 톤 경계, 글은 인증 카드처럼 낱말 사이에서만 줄바꿈(QA-891). 처음에는 넓은 화면 안쪽이 32px(sm:p-8)이라 인증 카드와 달랐습니다(공용 키트 단계가 이 단계로 넘김).
  */
-export const AUTH_NOTICE_CARD = "w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm";
+export const AUTH_NOTICE_CARD = "w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm break-keep wrap-break-word";
 
 /** 카드 제목(h1) — 글자 단계 heading(20px 굵게). */
 export const AUTH_TITLE = "text-heading text-text";
