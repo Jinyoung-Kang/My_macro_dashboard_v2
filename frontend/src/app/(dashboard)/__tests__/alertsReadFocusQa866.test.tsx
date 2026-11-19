@@ -7,7 +7,7 @@
  *
  * 기대: 넓은 화면은 그 알림의 줄 단추로(목록에서 j/k를 이어 감), 거르기로 줄이 빠지면 다음 줄 단추(없으면 앞 줄)로 — 대화상자는 닫히며 남은 줄로 돌아감.
  * 쓰기(POST {ids:[id]})·켜짐 조건은 그대로입니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 'expected <body><div>…(1)</div></body> to be <button type="button" …(5)>…(2)</button>'(넓은 화면 —
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 'expected <body><div>…(1)</div></body> to be <button type="button" …(5)>…(2)</button>'(넓은 화면 —
  * activeElement BODY), 둘째 사례 'expected <body style><div>…(1)</div></body> to be <button type="button" …(5)>…(1)</button>'(좁은 화면 + 거르기 — 대화상자
  * 닫힘, activeElement BODY).
  */
@@ -75,7 +75,7 @@ async function settle() {
 const rowButton = (key: string) => document.querySelector<HTMLButtonElement>(`[data-item-key="${key}"]`);
 
 describe("알림 검사 칸 '읽음' 뒤의 포커스(QA-866)", () => {
-  it.fails("넓은 화면: 단추가 사라지면 그 알림의 줄 단추로 — <body>가 아님", async () => {
+  it("넓은 화면: 단추가 사라지면 그 알림의 줄 단추로 — <body>가 아님", async () => {
     stubWide(true);
     render(<SessionUserProvider user={MEMBER}><AlertsPage /></SessionUserProvider>);
     await screen.findAllByText("첫째 알림");
@@ -91,7 +91,7 @@ describe("알림 검사 칸 '읽음' 뒤의 포커스(QA-866)", () => {
     expect(document.activeElement).toBe(rowButton("1"));
   });
 
-  it.fails("좁은 화면 + '읽지 않음' 거르기: 대화상자가 닫히면 남은 다음 줄 단추로 — <body>가 아님", async () => {
+  it("좁은 화면 + '읽지 않음' 거르기: 대화상자가 닫히면 남은 다음 줄 단추로 — <body>가 아님", async () => {
     stubWide(false);
     render(<SessionUserProvider user={MEMBER}><AlertsPage /></SessionUserProvider>);
     await screen.findAllByText("첫째 알림");

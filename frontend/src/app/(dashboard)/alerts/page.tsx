@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -240,6 +240,40 @@ function InboxTimeline({
     (item) => (kindShown === ALL || item.kind === kindShown) && (readFilter === ALL || !item.read),
   );
   const byKey = new Map(items.map((item) => [String(item.id), item]));
+  const shownKeys = shown.map((item) => String(item.id));
+
+  // '읽음' 뒤 포커스(QA-866) — 누른 알림이 다시 읽은 알림함에서 읽음이 되면 그 단추가 사라집니다(읽지 않은 알림에만 그림). 포커스가 <body>로 떨어졌으면
+  // 그 알림의 줄 단추로(넓은 화면 옆 검사 칸 — 목록에서 이어 감), 거르기('읽지 않음')로 줄이 빠졌으면 누를 때의 다음 줄(없으면 앞 줄) 단추로 옮깁니다 —
+  // 좁은 화면 대화상자는 그 줄이 빠지면 닫히고, 되돌아갈 줄 단추가 없어 공용 대화상자의 되돌리기가 하지 못합니다(그래서 그 뒤 차례에 옮김). 줄이 하나도
+  // 남지 않으면 '읽음 상태' 거르기의 고른 줄로. 포커스가 다른 곳(대화상자 안 — 거르기 없음)에 있으면 건드리지 않습니다. 쓰기·켜짐 조건은 그대로입니다.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pendingRead = useRef<{ key: string; next: string | null } | null>(null);
+  const shownList = shownKeys.join("\n");
+  useEffect(() => {
+    const pending = pendingRead.current;
+    if (pending === null) return;
+    const item = items.find((entry) => String(entry.id) === pending.key);
+    if (item !== undefined && !item.read) return;
+    pendingRead.current = null;
+    const keys = shownList === "" ? [] : shownList.split("\n");
+    const target = keys.includes(pending.key) ? pending.key : pending.next !== null && keys.includes(pending.next) ? pending.next : null;
+    const timer = window.setTimeout(() => {
+      const active = document.activeElement;
+      if (active !== null && active !== document.body) return;
+      const root = rootRef.current;
+      if (root === null) return;
+      const row = target === null ? null : root.querySelector<HTMLElement>(`[data-item-key="${target}"]`);
+      (row ?? root.querySelector<HTMLElement>('[role="radiogroup"][aria-label="읽음 상태"] [aria-checked="true"]'))?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [items, shownList]);
+  const readOne = async (id: number) => {
+    const key = String(id);
+    const index = shownKeys.indexOf(key);
+    pendingRead.current = { key, next: shownKeys[index + 1] ?? shownKeys[index - 1] ?? null };
+    await onRead(id);
+  };
+
   const entries: TimelineEntry[] = shown.map((item) => {
     const fresh = !item.read && !item.late;
     return {
@@ -259,7 +293,7 @@ function InboxTimeline({
   });
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div ref={rootRef} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-2">
         <FilterList label="알림 종류" selection="single" wide="wrap" items={kindItems} selected={[kindShown]} onToggle={setKindFilter} />
         <FilterList
@@ -282,7 +316,7 @@ function InboxTimeline({
         inspectorHint="알림을 고르면 이 칸에 본문이 나옵니다."
         renderDetail={(entry) => {
           const item = byKey.get(entry.key);
-          return item ? <InboxDetail item={item} demo={demo} readError={readError} onRead={onRead} /> : null;
+          return item ? <InboxDetail item={item} demo={demo} readError={readError} onRead={readOne} /> : null;
         }}
       />
     </div>
