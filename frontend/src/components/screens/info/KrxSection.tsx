@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Pager } from "@/components/Pager";
 import { ChangeCell, type Column, DataTable, StaleBadge } from "@/components/patterns";
 import { Card, ErrorState, Freshness, LINK_CLASSES, Loading, NativeSelect, Tag } from "@/components/ui";
@@ -36,11 +36,16 @@ const pct = (value: number | null) => (value === null ? null : `${formatNumber(v
  * 표는 공용 조밀 표(DataTable dense — 넓은 화면 28px 행)이고, 순매수 금액·수량은 부호 있는 값이라 본문 잉크 + 부호(−는 U+2212 — 오르내림이 아님),
  * 등락률만 오르내림 칩(▲▼·색 + 부호). 이번에 받지 못해 이어받은 부분은 공용 '이전 값' 배지.
  */
-export function KrxSection() {
+export function KrxSection({ onSettled }: { onSettled?: () => void } = {}) {
   const [market, setMarket] = useState<NaverMarket>("KOSPI");
   const [investor, setInvestor] = useState("외국인");
   const [tradeType, setTradeType] = useState<"순매수" | "순매도">("순매수");
   const { data, loading, error, reload, refreshError } = useApi<KrxResponse>(endpoints.info.krx(market, investor, tradeType), 600_000);
+  // 첫 응답(값이든 오류든)이 오면 알립니다 — 정보 수집 국내 탭이 그때까지 아래 패널을 보이지 않게 둡니다(QA-893).
+  const settled = !!data || !!error;
+  useEffect(() => {
+    if (settled) onSettled?.();
+  }, [settled, onSettled]);
   const marketName = market === "KOSPI" ? "코스피" : "코스닥";
   return (
     <Card

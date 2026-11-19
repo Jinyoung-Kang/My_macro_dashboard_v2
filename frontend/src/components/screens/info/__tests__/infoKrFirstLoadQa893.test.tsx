@@ -53,7 +53,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 수집 국내 탭 첫 적재(QA-893)", () => {
-  it.fails("KRX가 답하기 전에는 네이버·출처 패널을 보이지 않게(요청은 처음부터), KRX가 답하면(오류여도) 나타난다", async () => {
+  it("KRX가 답하기 전에는 네이버·출처 패널을 보이지 않게(요청은 처음부터), KRX가 답하면(오류여도) 나타난다", async () => {
     const routes = deferredRoutes(["/api/info/krx", "/api/info/flows", "/api/info/catalog"]);
     render(<InfoHub tab="kr" />);
     await act(async () => {

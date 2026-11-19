@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState, type ReactNode } from "react";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { PageHeader } from "@/components/ui";
 import type { InfoTab } from "@/lib/info";
@@ -69,13 +70,7 @@ export default function InfoHub({ tab }: { tab: InfoTab }) {
           <CatalogSection tab="news" />
         </>
       )}
-      {tab === "kr" && (
-        <>
-          <KrxSection />
-          <NaverFlowsSection />
-          <CatalogSection tab="kr" />
-        </>
-      )}
+      {tab === "kr" && <KrTab />}
       {tab === "global" && <CatalogSection tab="global" />}
       {tab === "filings" && <CatalogSection tab="filings" />}
       {tab === "paper" && <CatalogSection tab="paper" />}
@@ -83,5 +78,33 @@ export default function InfoHub({ tab }: { tab: InfoTab }) {
       {tab === "mechanism" && <MechanismSection />}
       <ScrollTopButton />
     </div>
+  );
+}
+
+/**
+ * 위 패널이 처음 답할 때까지 아래 패널을 그리되 보이지 않게(hidden — 요청은 처음부터 함께 시작, 횟수·경로 그대로) 둡니다. 위 패널의 응답 뒤 높이는
+ * 받은 자료에 따라 크게 갈려(국내 KRX: 받은 날 표 다섯 약 2,000px · 저장본 없음 약 230px) 읽는 중 자리로는 한쪽만 맞출 수 있었습니다 — 보이던 아래
+ * 패널이 응답 뒤 첫 화면 밖으로 밀리거나(받은 날) 화면 밖에서 올라왔습니다(없는 날). 아래 패널은 위 패널이 답한 뒤 처음 나타나므로 밀리지 않습니다
+ * (QA-893). 위 패널이 오류여도 답한 것으로 봅니다.
+ */
+function AfterSettled({ top, children }: { top: (settle: () => void) => ReactNode; children: ReactNode }) {
+  const [settled, setSettled] = useState(false);
+  const settle = useCallback(() => setSettled(true), []);
+  return (
+    <>
+      {top(settle)}
+      <div hidden={!settled} className="space-y-6">
+        {children}
+      </div>
+    </>
+  );
+}
+
+function KrTab() {
+  return (
+    <AfterSettled top={(settle) => <KrxSection onSettled={settle} />}>
+      <NaverFlowsSection />
+      <CatalogSection tab="kr" />
+    </AfterSettled>
   );
 }
