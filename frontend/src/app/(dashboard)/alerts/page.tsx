@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type FocusEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -247,27 +247,60 @@ function InboxTimeline({
   // 좁은 화면 대화상자는 그 줄이 빠지면 닫히고, 되돌아갈 줄 단추가 없어 공용 대화상자의 되돌리기가 하지 못합니다(그래서 그 뒤 차례에 옮김). 넓은 화면에서
   // 줄이 빠져 검사 칸이 다음 알림으로 바뀌어도 검사 칸 내용은 알림마다 새로 그려(InboxDetail의 key) 누른 단추가 사라지므로 같은 길입니다(QA-881). 줄이 하나도
   // 남지 않으면 '읽음 상태' 거르기의 고른 줄로. 포커스가 다른 곳(대화상자 안 — 거르기 없음)에 있으면 건드리지 않습니다. 쓰기·켜짐 조건은 그대로입니다.
+  // '읽음'을 누르지 않았는데 알림함을 다시 읽어(5분 자동 갱신·탭 복귀) 넓은 화면 검사 칸 안의 포커스 요소가 사라져도(새 알림이 맨 위에 와 저절로 고른
+  // 줄이 바뀜 · 다른 곳에서 읽어 거르기에서 빠지거나 '읽음'만 사라짐) <body>로 떨어졌습니다(QA-884). 그래서 검사 칸 안에서 마지막으로 포커스를 받은 요소를
+  // 적어 두고(detailFocus — 대화상자는 DOM이 이 틀 밖이라 적지 않음), 다시 읽은 뒤 그 요소가 사라지고 포커스가 <body>면 지금 고른 줄 단추로(없으면 앞
+  // 대상의 줄, 그것도 없으면 '읽음 상태' 고른 줄) 옮깁니다. 다른 요소로 옮겼거나 빈 곳을 눌러 떠났으면 지웁니다(창 전환은 포커스 요소가 그대로라 남김).
   const rootRef = useRef<HTMLDivElement>(null);
   const pendingRead = useRef<{ key: string; next: string | null } | null>(null);
+  const detailFocus = useRef<{ element: Element; key: string | null } | null>(null);
   const shownList = shownKeys.join("\n");
   useEffect(() => {
     const pending = pendingRead.current;
-    if (pending === null) return;
-    const item = items.find((entry) => String(entry.id) === pending.key);
-    if (item !== undefined && !item.read) return;
-    pendingRead.current = null;
-    const keys = shownList === "" ? [] : shownList.split("\n");
-    const target = keys.includes(pending.key) ? pending.key : pending.next !== null && keys.includes(pending.next) ? pending.next : null;
+    let pick: (root: HTMLElement) => HTMLElement | null;
+    let options: FocusOptions | undefined;
+    if (pending !== null) {
+      const item = items.find((entry) => String(entry.id) === pending.key);
+      if (item !== undefined && !item.read) return;
+      pendingRead.current = null;
+      const keys = shownList === "" ? [] : shownList.split("\n");
+      const target = keys.includes(pending.key) ? pending.key : pending.next !== null && keys.includes(pending.next) ? pending.next : null;
+      pick = (root) => (target === null ? null : root.querySelector<HTMLElement>(`[data-item-key="${target}"]`));
+    } else {
+      const lost = detailFocus.current;
+      if (lost === null || lost.element.isConnected) return;
+      pick = (root) =>
+        root.querySelector<HTMLElement>('[data-item-key][aria-current="true"]') ??
+        (lost.key === null ? null : root.querySelector<HTMLElement>(`[data-item-key="${lost.key}"]`));
+      // 사용자가 누른 뒤가 아니라 읽기가 바꾼 것이라 화면을 굴리지 않습니다(다른 곳을 보고 있었을 수 있음).
+      options = { preventScroll: true };
+    }
+    detailFocus.current = null;
     const timer = window.setTimeout(() => {
       const active = document.activeElement;
       if (active !== null && active !== document.body) return;
       const root = rootRef.current;
       if (root === null) return;
-      const row = target === null ? null : root.querySelector<HTMLElement>(`[data-item-key="${target}"]`);
-      (row ?? root.querySelector<HTMLElement>('[role="radiogroup"][aria-label="읽음 상태"] [aria-checked="true"]'))?.focus();
+      (pick(root) ?? root.querySelector<HTMLElement>('[role="radiogroup"][aria-label="읽음 상태"] [aria-checked="true"]'))?.focus(options);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [items, shownList]);
+  const onFocusIn = (event: FocusEvent<HTMLDivElement>) => {
+    const target: EventTarget = event.target;
+    const detail = target instanceof Element && event.currentTarget.contains(target) ? target.closest("[data-inbox-detail]") : null;
+    detailFocus.current = detail === null ? null : { element: target as Element, key: detail.getAttribute("data-inbox-detail") };
+  };
+  const onFocusOut = (event: FocusEvent<HTMLDivElement>) => {
+    const record = detailFocus.current;
+    if (record === null || record.element !== event.target) return;
+    if (event.relatedTarget !== null) {
+      detailFocus.current = null;
+      return;
+    }
+    window.setTimeout(() => {
+      if (detailFocus.current === record && record.element.isConnected && document.activeElement !== record.element) detailFocus.current = null;
+    }, 0);
+  };
   const readOne = async (id: number) => {
     const key = String(id);
     const index = shownKeys.indexOf(key);
@@ -294,7 +327,7 @@ function InboxTimeline({
   });
 
   return (
-    <div ref={rootRef} className="flex min-w-0 flex-col gap-3">
+    <div ref={rootRef} onFocus={onFocusIn} onBlur={onFocusOut} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-2">
         <FilterList label="알림 종류" selection="single" wide="wrap" items={kindItems} selected={[kindShown]} onToggle={setKindFilter} />
         {/* 거른 뒤의 개수를 낭독기에 알립니다(공용 거르기 목록의 알림 영역 — QA-879). 거르기가 둘이라 같은 글을 두 번 읽지 않게 영역은 이 하나에만 둡니다. */}
@@ -347,7 +380,7 @@ function InboxDetail({
 }) {
   const href = searchWatchInboxHref(item);
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div data-inbox-detail={item.id} className="flex min-w-0 flex-col gap-3">
       <PropertyList
         dense
         items={[

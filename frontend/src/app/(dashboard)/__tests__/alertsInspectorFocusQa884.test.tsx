@@ -103,7 +103,7 @@ async function openWide(unreadOnly: boolean) {
 }
 
 describe("알림 검사 칸 안의 포커스 — 누르지 않았는데 대상이 바뀜(QA-884)", () => {
-  it.fails("새 알림이 맨 위에 와 저절로 고른 줄이 바뀌면 포커스는 지금 고른 줄(새 알림) 단추로 — <body>가 아님", async () => {
+  it("새 알림이 맨 위에 와 저절로 고른 줄이 바뀌면 포커스는 지금 고른 줄(새 알림) 단추로 — <body>가 아님", async () => {
     await openWide(false);
     serverItems = [item(9000, "새 알림 영"), ...serverItems];
     await returnToTab();
@@ -113,7 +113,7 @@ describe("알림 검사 칸 안의 포커스 — 누르지 않았는데 대상�
     expect(document.activeElement).toBe(rowButton("9000"));
   });
 
-  it.fails("'읽지 않음' 거르기에서 다른 곳에서 읽은 알림이 빠지면 포커스는 지금 고른 줄(다음 알림) 단추로", async () => {
+  it("'읽지 않음' 거르기에서 다른 곳에서 읽은 알림이 빠지면 포커스는 지금 고른 줄(다음 알림) 단추로", async () => {
     await openWide(true);
     readIds.add(9001);
     await returnToTab();
@@ -123,7 +123,7 @@ describe("알림 검사 칸 안의 포커스 — 누르지 않았는데 대상�
     expect(document.activeElement).toBe(rowButton("9002"));
   });
 
-  it.fails("거르기 없이 같은 알림이 다른 곳에서 읽음이 되어 '읽음'만 사라지면 포커스는 그 알림의 줄 단추로", async () => {
+  it("거르기 없이 같은 알림이 다른 곳에서 읽음이 되어 '읽음'만 사라지면 포커스는 그 알림의 줄 단추로", async () => {
     await openWide(false);
     readIds.add(9001);
     await returnToTab();
