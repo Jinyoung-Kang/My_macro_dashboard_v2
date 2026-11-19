@@ -39,7 +39,7 @@ def fakes(tmp_path):
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
                        "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL,
-                       "canonical-livepatch": tools._FAKE_LIVEPATCH}.items():
+                       "canonical-livepatch": tools._FAKE_LIVEPATCH, "sudo": tools._FAKE_SUDO}.items():
         tools._write_exec(bin_dir / name, text)
     log.touch()
     return bin_dir, log
@@ -1412,6 +1412,35 @@ def test_QA417_reboot_check는_Livepatch를_끝내_못_읽으면_마지막_오�
     result = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_FAIL_TIMES="9")
     assert result.returncode == 0
     assert "Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패: error: daemon busy (call 3)" in result.stdout
+
+
+@pytest.mark.xfail(strict=True, reason="QA-417 후속 — 고치기 전: root가 아니면 그냥 불러 cron 자리에서 늘 실패")
+@pytest.mark.parametrize("args", [(), ("--summary",), ("--summary-if-server",)], ids=["cron", "deploy_요약", "make_status"])
+def test_QA417_reboot_check는_root가_아니면_Livepatch_상태를_sudo_n으로_읽는다(reboot_root, fakes, args):
+    # 2026-11-13~18 cron(16:10 KST)에서 늘 'is not a snap cgroup'으로 실패 — 사용자 세션 버스가 없는 cron 자리에서는 root가 아닌 사용자의
+    # snap 실행이 실패하고, root(sudo)로는 읽힘(2026-11-20 서버 재현). 세 경로가 같은 판정이어야 합니다.
+    result = _reboot_check(reboot_root, fakes, *args, FAKE_LP_NEEDS_ROOT="1")
+    assert result.returncode == 0, result.stderr
+    out = result.stdout + "\n".join(c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-reboot-check"))
+    assert "Livepatch 정상(커널 6.8.0-149.149-generic" in out and "읽지 못함" not in out
+    assert _curls(fakes) == []
+
+
+def test_QA417_reboot_check는_sudo_n이_안_되면_지금처럼_그냥_부른다(reboot_root, fakes):
+    result = _reboot_check(reboot_root, fakes, "--summary", FAKE_SUDO="no")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().startswith("재부팅 필요 없음 · Livepatch 정상(")
+
+
+def test_QA417_reboot_check는_끝내_못_읽으면_지금과_같은_경고를_알린다(reboot_root, fakes):
+    result = _reboot_check(reboot_root, fakes, FAKE_SUDO="no", FAKE_LP_NEEDS_ROOT="1")
+    assert result.returncode == 0, result.stderr
+    sent = _curls(fakes)
+    assert len(sent) == 1
+    assert "Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패: /system.slice/cron.service is not a snap cgroup" in \
+        "\n".join(tools._calls(fakes))
+    summary = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_RC="1")
+    assert summary.stdout.strip().startswith("경고: Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패: error: fake livepatch rc=1")
 
 
 def test_reboot_check_알림은_재부팅이면_따라_할_실행_단계를_함께_보낸다(reboot_root, fakes, tmp_path):

@@ -72,7 +72,12 @@ exit "${FAKE_CURL_RC:-0}"
 
 # Livepatch 상태(scripts/vultr/reboot-check.sh) — 기본은 정상(지원됨·점검함·적용할 것 없음·먼 기한·방금 점검). FAKE_LP_JSON이면 그 글을,
 # FAKE_LP_RC가 0이 아니면 그 값으로 끝납니다(stderr에 한 줄). 부른 기록은 남기지 않습니다(배포 시험의 호출 목록을 바꾸지 않게).
+# FAKE_LP_NEEDS_ROOT가 있으면 서버의 cron 자리처럼 root가 아닌 사용자가 그냥 부를 때 실패합니다(QA-417 후속 — 사용자 세션 버스가 없으면
+# snap이 자기 프로세스를 추적용 scope로 옮기지 못함). 가짜 sudo를 거쳐(FAKE_AS_ROOT=1) 부르거나 정말 root면 읽힙니다.
 _FAKE_LIVEPATCH = """#!/usr/bin/env bash
+if [ -n "${FAKE_LP_NEEDS_ROOT:-}" ] && [ "${FAKE_AS_ROOT:-}" != 1 ] && [ "$(id -u)" != 0 ]; then
+    echo "/system.slice/cron.service is not a snap cgroup for tag snap.canonical-livepatch.canonical-livepatch" >&2; exit 1
+fi
 [ "${FAKE_LP_RC:-0}" = 0 ] || { echo "error: fake livepatch rc=$FAKE_LP_RC" >&2; exit "$FAKE_LP_RC"; }
 # FAKE_LP_FAIL_TIMES=n이면 처음 n번은 실패합니다(QA-417 — 한 번 실패를 '읽지 못함'으로 알림). 부른 횟수는 <기록>.lpcount에.
 if [ -n "${FAKE_LP_FAIL_TIMES:-}" ]; then
@@ -81,6 +86,18 @@ if [ -n "${FAKE_LP_FAIL_TIMES:-}" ]; then
 fi
 if [ -n "${FAKE_LP_JSON:-}" ]; then printf '%s\\n' "$FAKE_LP_JSON"; exit 0; fi
 printf '{"Last-Check": "%s", "Status": [{"Kernel": "6.8.0-149.149-generic", "Running": true, "Livepatch": {"CheckState": "checked", "State": "nothing-to-apply"}, "Supported": "supported", "UpgradeRequiredDate": "2099-01-01"}]}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+"""
+
+# 가짜 sudo — 시험이 진짜 sudo를 부르지 않게 합니다(CI 러너에는 비밀번호 없는 진짜 sudo가 있어, 그것이 PATH를 바꾸거나 러너에서 실제 명령을
+# 돌림). -n만 받고, FAKE_SUDO=no면 비밀번호가 필요한 것처럼 실패합니다. -l(허용 확인)은 바로 끝나고, 그 밖에는 환경을 그대로 둔 채
+# FAKE_AS_ROOT=1로 명령을 부릅니다. 부른 인자는 <기록>.sudo에 따로 남깁니다(배포 시험의 호출 목록을 바꾸지 않게).
+_FAKE_SUDO = """#!/usr/bin/env bash
+echo "sudo $*" >> "$FAKE_LOG.sudo"
+[ "${1:-}" = -n ] || { echo "sudo: fake sudo takes -n only" >&2; exit 1; }
+shift
+[ "${FAKE_SUDO:-ok}" = ok ] || { echo "sudo: a password is required" >&2; exit 1; }
+[ "${1:-}" != -l ] || exit 0
+FAKE_AS_ROOT=1 exec "$@"
 """
 
 
