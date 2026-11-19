@@ -6,8 +6,8 @@ import { entityKindLabel, itemKindLabel, sourceStatusView } from "@/lib/infoSear
 import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
 
 /*
- * 정보 검색 화면(늘 어두운 범위 — globals.css의 [data-scope="search"])의 조각. 조밀한 겉모습: 넓은 화면(lg)에서 글자 14px·보조 12px,
- * 단추·입력 30px, 표 행 28~32px, 모서리 4px(rounded-control — 범위가 4px로 다시 정함), 1px 경계. lg 미만은 누르는 자리 44px.
+ * 정보 검색 화면의 조각. 조밀한 겉모습: 넓은 화면(lg)에서 글자 14px·보조 12px, 단추·입력 30px, 표 행 28~32px, 모서리 4px(rounded-control —
+ * 앱 전체와 같은 토큰), 1px 경계. lg 미만은 누르는 자리 44px.
  * 강조 파랑(accent)은 누를 수 있는 것(링크·주 단추·지금 탭)에만 씁니다(명세 원칙 A1).
  */
 

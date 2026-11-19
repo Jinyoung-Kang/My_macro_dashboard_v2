@@ -8,13 +8,14 @@
  *  - Trigger 없이 연 창도 닫으면 연 단추로 포커스가 돌아간다
  *  - 움직임은 motion-safe: 안에만(움직임 줄이기면 없음)
  *  - 모양은 덮개 3층(작업대 명세 §3-3): 바탕 surface-2·안쪽 밝은 경계(border-overlay)·그림자, 닫기 단추의 덮개 안 hover는 surface-3(그 위 text-3 금지)
- *  - 범위 표지(scope): 기본은 없고(앱 테마 그대로), scope나 DialogScope로 주면 대화상자 상자에 data-scope가 붙는다(포털이라 화면의 범위 토큰이 닿지 않음)
+ *  - 범위 표지 없음: 정보 검색의 범위 장치(scope prop·DialogScope)를 P7에서 걷어 대화상자 상자에 data-scope를 붙이지 않는다(토큰은 :root 한 벌)
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Dialog, DialogScope } from "../Dialog";
+import * as DialogModule from "../Dialog";
+import { Dialog } from "../Dialog";
 
 afterEach(() => cleanup());
 
@@ -170,24 +171,17 @@ describe("움직임 줄이기", () => {
   });
 });
 
-describe("범위 표지(scope)", () => {
-  it("기본은 data-scope가 없다 — 기존 대화상자는 앱 테마 그대로", () => {
+describe("data-scope를 붙이지 않음(정보 검색 범위 장치를 P7에서 걷어 냄)", () => {
+  it("대화상자 상자에 data-scope가 없다 — 덮개 표지(data-overlay)만", () => {
     render(<Dialog open onOpenChange={() => {}} title="확인">내용</Dialog>);
-    expect(screen.getByRole("dialog").hasAttribute("data-scope")).toBe(false);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.hasAttribute("data-scope")).toBe(false);
+    expect(dialog.hasAttribute("data-overlay")).toBe(true);
+    expect(document.querySelector("[data-scope]")).toBeNull();
   });
 
-  it("scope를 주면 대화상자 상자에 data-scope — 정보 검색 화면의 어두운 토큰이 포털에도 닿는다", () => {
-    render(<Dialog open onOpenChange={() => {}} title="원문" scope="search">내용</Dialog>);
-    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
-  });
-
-  it("DialogScope 안에서 연 대화상자는 그 표지를 이어받는다 — 대화상자를 감싼 부품(원문 팝업)을 고치지 않고", () => {
-    render(
-      <DialogScope value="search">
-        <Dialog open onOpenChange={() => {}} title="원문">내용</Dialog>
-      </DialogScope>,
-    );
-    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
+  it("범위 문맥(DialogScope)을 내보내지 않는다 — 대화상자 모듈의 내보낸 이름은 Dialog 하나", () => {
+    expect(Object.keys(DialogModule).sort()).toEqual(["Dialog"]);
   });
 });
 
