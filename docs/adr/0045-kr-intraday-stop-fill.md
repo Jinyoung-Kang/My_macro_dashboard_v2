@@ -37,7 +37,7 @@
     `test_paper_stopwatch.py::test_한국_범위는_그_세션에_장중_기록으로_판_종목도_담는다`.
   - 글·고정본: `StopWatchTest.krFillPhraseIsTheOnlyChange`(끈 판·대조 판 규칙 글 = ADR 0045 전 고정본의 `1_basis.stopWatch.rule`), `KrPacketBuilderTest.stopWatchFillOnPacket`(새 고정본 `packet-kr-ft-stopwatch-fill-scheduled.json` — 그 구절만 되돌리면 감시 ON 고정본, SHADOW는 그 고정본 그대로),
     `KrStartTest.goldenKrFreeIntradayPacketWithStopFill`(새 고정본 `packet-kr-ft-intraday-stopwatch-fill.json` — 구절과 장부 글만 되돌리면 `packet-kr-ft-intraday-stopwatch.json`),
-    `KrStartTest.ledgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(QA-791 — 기록 뒤 OFF여도 장부 글은 자료로), `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF(키 없음)의 기존 고정본
+    `KrStartTest.ledgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(QA-791 — 기록 뒤 OFF여도 장부 글은 자료로)·`krClaude2CheckpointLedgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(같은 것의 끈 판 장중 확인 쪽), `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF(키 없음)의 기존 고정본
     (`packet-kr-ft-stopwatch-scheduled.json`·`packet-kr-ft-intraday-stopwatch.json`·`packet-kr-claude2-checkpoint.json`·`render-kr-ft-claude-v0-stopwatch.txt` 등)은 기존 고정본 시험이 바이트로 지키고,
     SHADOW는 `KrPacketBuilderTest.stopWatchFillOnPacket`(결정 패킷)·`KrStartTest.shadowKeepsTheKrFreeIntradayPacketBytes`(장중 판단 패킷)·`krClaude2CheckpointPacketWithStopFill`(끈 판 장중 확인 패킷 —
     SHADOW는 바이트 그대로, ON은 장부 글만)·`PaperBriefingJobTest.krLedgerNoteReadsTheIntradayRecordMode`(마감 브리핑 — 근거 mode가 SHADOW면 예전 안내 글)가 지킨다.

@@ -1541,6 +1541,38 @@ class KrStartTest {
                 .isEqualTo(goldenText("packet-kr-claude2-checkpoint.json"));
     }
 
+    @Test
+    @DisplayName("ADR 0045·QA-791 끈 판 장중 확인 쪽: 그 세션에 장중 기록 판(ON)이 계좌2의 감시 스탑 매도를 장부에 적은 뒤 같은 세션에 kr.stopWatch.fill을 "
+            + "OFF로 바꿔도 끈 판 장중 확인 패킷의 장부 글은 자료로 골라 장중 기록 판 글 — 장부 글만 되돌리면 packet-kr-claude2-checkpoint.json과 바이트까지 같음")
+    void krClaude2CheckpointLedgerNoteFollowsTheIntradayRecordAfterSwitchingOff() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("stopWatch")).put("mode", "ON").put("fill", "OFF");
+        // 그 세션(E) 아침에 장중 기록 판이 계좌2의 감시 스탑 매도를 적고 OFF로 바꾼 장면 — 이 시험은 장부 글 고르기만 보므로 주문·체결 행만 넣음(보유·현금은 그대로).
+        tools.jackson.databind.node.ObjectNode reason = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        reason.putObject(KrIntradayFill.FIELD).put(KrIntradayFill.MODE, "ON").put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD);
+        long stop = store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE2, null, "000660", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, reason, NEXT, kst("2026-12-02T09:00:40"), E, null));
+        store.insertFill(new com.macrodash.store.PaperStore.Fill(0, stop, PaperBooks.KR_CLAUDE2, "000660", PaperBooks.SELL, 1, 200_000, 200_000, 0,
+                200_000, kst("2026-12-02T09:13:20"), E, KrTimedLadder.SOURCE_AT, false, kst("2026-12-02T09:13:21"), java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO));
+        store.markOrderFilled(stop, kst("2026-12-02T09:13:20"));
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        int calls = fake.requests.size();
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer(KEEP);
+        clock.set(kst("2026-12-02T11:04"));
+
+        assertThat(checkpoint.run().changes()).containsKey(E.toString());
+
+        String sent = fake.requests.get(calls).user();
+        assertThat(sent.split(java.util.regex.Pattern.quote(KrCheckpointPacket.LEDGER_NOTE_INTRADAY_FILL), -1)).as("장부에 장중 기록 스탑이 있음 — 자료로 고름")
+                .hasSize(2);
+        assertThat(sent).as("스탑 문장은 설정(OFF)대로 밤 판").doesNotContain(StopWatch.KR_FILL_PHRASE);
+        assertThat(sent.replace(KrCheckpointPacket.LEDGER_NOTE_INTRADAY_FILL, KrCheckpointPacket.LEDGER_NOTE))
+                .isEqualTo(goldenText("packet-kr-claude2-checkpoint.json"));
+    }
+
     /** {@link #goldenKrClaude2CheckpointPacket}의 장면을 장중 확인 때 감시 ON·기록 {@code fill}로 돌려 보낸 패킷 글자. */
     private String claude2CheckpointPacket(String fill) {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
