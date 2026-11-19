@@ -2,7 +2,8 @@
 app/services/info_text.py
 정보 수집(ADR 0035)의 글자 다루기 — HTML을 글로, 글 페이지에서 본문 고르기, 원문 주소 정규화와 글 id. 네트워크를 모릅니다.
 
-  - 본문은 글자만 남깁니다(문단 사이는 빈 줄 하나). 스크립트·스타일·그림·양식·내비게이션·머리말·꼬리말·옆 칸은 버립니다.
+  - 본문은 글자만 남깁니다(문단 사이는 빈 줄 하나). 스크립트·스타일·그림·양식·내비게이션·머리말·꼬리말·옆 칸은 버리고, 같은 역할(ARIA)의
+    요소와 화면에 보이지 않는 요소도 버립니다.
   - 워드프레스 피드가 끝에 붙이는 "The post … appeared first on …" 줄은 본문이 아니라 지웁니다.
   - 글 id는 정규화한 주소(https·소문자 호스트·앞의 www. 없음·추적 인자와 조각 없음·끝의 / 없음)의 해시 앞 24자입니다 — waedge 해외 블로그 목록과
     원문 피드가 같은 글을 같은 행으로 모읍니다.
@@ -27,6 +28,10 @@ SUMMARY_CHARS = 300
 
 _DROP_TAGS = ("script", "style", "noscript", "svg", "form", "nav", "header", "footer", "aside", "iframe", "button",
               "figure", "template", "select", "input", "textarea", "picture", "video", "audio", "canvas", "object")
+# 태그로 버리는 것(_DROP_TAGS)과 같은 자리를 역할(ARIA)로 표시한 요소와 화면에 보이지 않는 요소도 버립니다(QA-391 후속 — Marginal Revolution
+# 글 페이지의 구독 완료 안내 상자 <section role="banner">가 짧은 글 앞에 붙어 본문 기준을 넘김, 2026-11).
+_DROP_ROLES = frozenset({"banner", "navigation", "complementary", "contentinfo", "dialog", "alertdialog"})
+_HIDDEN_STYLE = re.compile(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", re.IGNORECASE)
 _BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre", "tr", "dd", "dt", "figcaption", "div")
 # 글 페이지에서 본문을 담는 자리로 흔한 것(앞의 것부터). 글자가 MIN_BODY_CHARS 넘는 첫 자리를 씁니다.
 _BODY_SELECTORS = ("[itemprop=articleBody]", ".entry-content", ".post-content", ".article-content", ".post-body",
@@ -60,9 +65,24 @@ def _clean_lines(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-def _node_text(node) -> str:
+def _is_noise(tag) -> bool:
+    """역할이 머리말·내비게이션·옆 칸·꼬리말·대화상자이거나, 화면에 보이지 않는(hidden·aria-hidden·display:none) 요소."""
+    if tag.has_attr("hidden") or str(tag.get("aria-hidden") or "").strip().lower() == "true":
+        return True
+    if _DROP_ROLES.intersection(str(tag.get("role") or "").lower().split()):
+        return True
+    return bool(_HIDDEN_STYLE.search(str(tag.get("style") or "")))
+
+
+def _drop_noise(node) -> None:
     for tag in node.find_all(_DROP_TAGS):
         tag.decompose()
+    for tag in node.find_all(_is_noise):
+        tag.decompose()
+
+
+def _node_text(node) -> str:
+    _drop_noise(node)
     for br in node.find_all("br"):
         br.replace_with("\n")
     for block in node.find_all(_BLOCK_TAGS):
@@ -100,8 +120,7 @@ def read_article(markup: str | None) -> Article:
     if not markup:
         return Article("", 0)
     soup = BeautifulSoup(markup, "lxml")
-    for tag in soup.find_all(_DROP_TAGS):
-        tag.decompose()
+    _drop_noise(soup)
     region_chars = None
     for selector in _BODY_SELECTORS:
         for node in soup.select(selector):

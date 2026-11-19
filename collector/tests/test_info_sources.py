@@ -388,7 +388,6 @@ def test_QA391_본문_자리_칸이_없던_옛_행은_형식_바뀜_판정에서
     assert store.source_state(BLOG.task)["status"] == "ok"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 본문 자리가 짧으면 main 전체(구독 안내 상자 포함)를 본문으로 고름")
 def test_QA391_글_페이지의_구독_안내_상자는_본문에_섞이지_않는다():
     # 본문 자리의 글은 400자에 못 미치고, 안내 상자를 더하면 넘는 길이(실제 페이지의 비율 — 본문 약 280자 + 안내 약 90자).
     page = _short_page(1, banner=True, text=" ".join([SHORT_POST] * 3)).decode()
@@ -399,7 +398,6 @@ def test_QA391_글_페이지의_구독_안내_상자는_본문에_섞이지_않�
     assert text == "", "짧은 글은 본문 기준(400자)에 못 미칩니다 — 안내 상자로 400자를 넘겨 본문이 되면 안 됩니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 보이지 않는 요소의 글이 본문에 섞임")
 @pytest.mark.parametrize("hidden", ["<div hidden>", "<div aria-hidden='true'>", "<div style='display: none'>"],
                          ids=["hidden", "aria_hidden", "display_none"])
 def test_QA391_화면에_보이지_않는_요소는_본문에서_뺀다(hidden):
