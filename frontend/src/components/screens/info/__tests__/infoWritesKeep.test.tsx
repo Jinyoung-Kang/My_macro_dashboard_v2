@@ -243,12 +243,14 @@ describe("정보 수집 — 쪽 나누기·자르지 않음·KST", () => {
     expect(screen.getByRole("navigation", { name: /쪽$/ })).toBeTruthy();
   });
 
+  // 작업대 P7: 분류 탭의 출처 카드가 출처 표가 되어 사유·기록은 출처 이름으로 여는 검사 칸(좁은 화면 대화상자)에 있습니다 — 자르지 않음은 그대로.
   it("해외 분류: 출처는 쪽을 나누고(13곳 → 두 쪽), 사유·기록은 자르지 않는다", async () => {
     routes({ "/api/info/catalog": CATALOG });
     render(<InfoHub tab="global" />);
-    const text = await screen.findByText(LONG);
-    expect(text.className).not.toMatch(/line-clamp|truncate/);
-    const pager = screen.getByRole("navigation", { name: /쪽$/ });
+    const pager = await screen.findByRole("navigation", { name: /쪽$/ });
     expect(within(pager).getByText("1/2쪽")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "출처 1" }));
+    const text = await within(await screen.findByRole("dialog", { name: "출처 1" })).findByText(LONG);
+    expect(`${text.className} ${text.closest("dd")?.className ?? ""}`).not.toMatch(/line-clamp|truncate/);
   });
 });

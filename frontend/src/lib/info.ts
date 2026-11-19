@@ -157,9 +157,8 @@ export function parseInfoTab(value: string | null | undefined): InfoTab | null {
   return INFO_TAB_SLUGS.includes(value as InfoTab) ? (value as InfoTab) : null;
 }
 
-/** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 카드는 그보다 적게. */
+/** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 분류 탭의 출처도 작업대 P7부터 카드(8장) 대신 표 10줄. */
 export const PAGE_SIZE = 10;
-export const CARD_PAGE_SIZE = 8;
 
 // ------------------------------------------------------------------ 쪽 나누기
 export type Paged = { page?: number; size?: number; total?: number; pages?: number };

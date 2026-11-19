@@ -24,7 +24,7 @@ const TITLES: Record<InfoTab, { title: string; description: string }> = {
 
 /**
  * 정보 수집 화면(메뉴 더보기 › '정보 수집' 묶음, 운영자 전용 — ADR 0035·0036). 백엔드는 저장본과 수집기 상태 응답만 읽어 화면을 열어도 수집이 일어나지
- * 않습니다. 긴 목록은 10줄(카드는 8장)씩 나눠 쪽을 옮기고, 아래로 내려가면 '맨 위로' 단추가 뜹니다.
+ * 않습니다. 긴 목록은 10줄씩 나눠 쪽을 옮기고, 아래로 내려가면 '맨 위로' 단추가 뜹니다.
  */
 export default function InfoHub({ tab }: { tab: InfoTab }) {
   const head = TITLES[tab];

@@ -1,6 +1,6 @@
 /**
- * 정보 수집 출처 표(components/screens/info/SourceTable — 작업대 P7): 출처 = 열 수 있는 대상. 이름(줄 단추)을 누르면 검사 칸(좁은 화면은 위쪽 대화상자,
- * 넓은 화면·틀 52rem 이상은 옆 칸)에 catalog 응답의 값만 나옵니다(새 요청 없음).
+ * 정보 수집 출처 표(components/screens/info/SourceTable — 작업대 P7): 출처 = 열 수 있는 대상. 이름(줄 단추)을 누르면 검사 대화상자(모든 폭 — 사유 칸이 있는
+ * 넓은 표라 옆 칸을 두지 않음)에 catalog 응답의 값만 나옵니다(새 요청 없음).
  * 네 상태: 값 있음(속성·링크) / 모르는 값('—'와 '기록 없음' — 0이나 빈 칸을 만들지 않음) / 끊김(종류·시작 시각) / 기록 없음(상태 글).
  * 넓은 화면은 matchMedia 대역(WIDE_SHELL_MEDIA)과 틀 폭 대역(getBoundingClientRect·ResizeObserver)으로 흉내 냅니다(InspectorFrame.test와 같음).
  * 응답은 모두 합성 값입니다.
@@ -76,7 +76,7 @@ function property(scope: HTMLElement, label: string): string {
 }
 
 describe("출처 표 — 값 있음", () => {
-  it("표 줄: 이름 단추·상태(연속 n회는 정상 판정이면 없음)·접근 태그·주기·실행 시각(KST 그대로); 분류 탭은 받은 글·기관 칸", () => {
+  it("표 줄: 이름 단추·상태(연속 n회는 정상 판정이면 없음)·접근 태그·주기·실행 시각(KST 그대로)·사유; 분류 탭은 글 수를 아는 출처가 있으면 받은 글 칸", () => {
     render(<SourceTable sources={[FULL]} variant="tab" caption="출처" pagerLabel="출처" emptyText="없음" />);
     const table = screen.getByRole("region", { name: "출처 (좌우 스크롤)" });
     const row = within(table).getAllByRole("row")[1];
@@ -87,9 +87,17 @@ describe("출처 표 — 값 있음", () => {
     expect(within(row).getByText("2026-11-11 16:41 KST")).toBeTruthy();
     expect(within(row).getByText("2026-11-11 19:12 KST")).toBeTruthy();
     expect(within(row).getByText("1,234편")).toBeTruthy();
-    expect(within(row).getByText("합성 기관")).toBeTruthy();
-    expect(within(table).queryByText("새 글 3편 · 본문 2편")).toBeNull();      // 분류 탭의 사유는 검사 칸에
+    expect(within(row).getByText("새 글 3편 · 본문 2편")).toBeTruthy();
+    expect(within(table).queryByText("합성 기관")).toBeNull();                 // 기관은 검사 칸에
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(
+      ["출처", "상태", "접근", "주기", "마지막 실행", "다음 실행", "받은 글", "사유·기록"]);
     expect(screen.getByText("1곳")).toBeTruthy();
+  });
+
+  it("분류 탭에 글 수를 아는 출처가 없으면 받은 글 칸을 두지 않는다(데이터 출처뿐인 탭)", () => {
+    render(<SourceTable sources={[UNKNOWN]} variant="tab" caption="출처" pagerLabel="출처" emptyText="없음" />);
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(
+      ["출처", "상태", "접근", "주기", "마지막 실행", "다음 실행", "사유·기록"]);
   });
 
   it("이름을 누르면(좁은 화면) 대화상자에 catalog 값 — 상태·접근·기관·주기·수집 태스크(고정폭)·실행 시각 차례·받은 글·사유 전체·링크", async () => {
@@ -161,35 +169,42 @@ describe("출처 표 — 끊김·기록 없음", () => {
 });
 
 describe("출처 표 — 배치·쪽·누름 자리", () => {
-  it("짧은 칸(상태·접근·실행 시각)은 꺾지 않고, 주기는 낱말 사이에서만, 사유·기록은 20rem 이상·자르지 않음", () => {
+  it("짧은 칸(상태·접근)은 꺾지 않고, 주기는 낱말 사이에서만, 실행 시각은 날짜와 시각 사이에서만('KST' 앞 줄바꿈 없는 빈칸), 사유·기록은 18rem 이상·자르지 않음", () => {
     render(<SourceTable sources={[BROKEN]} variant="status" caption="출처 상태" pagerLabel="출처 상태" emptyText="없음" />);
-    const headers = screen.getAllByRole("columnheader");
-    const cls = (name: string) => headers.find((header) => header.textContent === name)?.className ?? "";
-    for (const name of ["상태", "접근", "마지막 실행", "다음 실행"]) expect(cls(name), name).toContain("whitespace-nowrap");
-    expect(cls("주기")).toContain("break-keep");
-    expect(cls("사유·기록")).toContain("min-w-[20rem]");
+    const row = screen.getAllByRole("row")[1];
+    const cells = [...row.children] as HTMLElement[];
+    const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
+    const cell = (name: string) => cells[headers.indexOf(name)];
+    for (const name of ["상태", "접근"]) expect(cell(name).className, name).toContain("whitespace-nowrap");
+    expect(cell("주기").className).toContain("break-keep");
+    expect(cell("마지막 실행").className).not.toContain("whitespace-nowrap");
+    expect(cell("마지막 실행").textContent).toBe("2026-11-11 17:00\u00a0KST");
+    expect(cell("사유·기록").className).toContain("min-w-[18rem]");
     const reason = screen.getByText("403 Forbidden");
     expect(reason.className).not.toMatch(/line-clamp|truncate/);
     expect(reason.className).toContain("wrap-anywhere");
   });
 
-  it("넓은 화면·넓은 틀: 옆 검사 칸에 고른 출처, 고른 행 표시 — 쪽을 옮기면 고름을 푼다", () => {
+  it("넓은 화면·넓은 틀에서도 옆 칸 없이 대화상자로 연다(이름 단추는 aria-haspopup=dialog) — 쪽은 10줄씩", async () => {
     stubWide();
     stubFrameWidth(1200);
     const many = Array.from({ length: 12 }, (_, i) => source(i + 10));
     render(<SourceTable sources={many} variant="status" caption="출처 상태" pagerLabel="출처 상태" emptyText="없음" />);
-    expect(screen.getByRole("region", { name: "출처 상세 — 고른 줄 없음" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "출처 12" }));
-    const side = screen.getByRole("region", { name: "출처 상세 — 출처 12" });
-    expect(property(side, "수집 태스크")).toBe("task_12");
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("button", { name: "출처 12" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.queryByRole("region", { name: /^출처 상세/ })).toBeNull();
+    const trigger = screen.getByRole("button", { name: "출처 12" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "출처 12" });
+    expect(property(dialog, "수집 태스크")).toBe("task_12");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "출처 12" })));
 
+    expect(within(screen.getByRole("region", { name: "출처 상태 (좌우 스크롤)" })).getAllByRole("row")).toHaveLength(11);
     act(() => {
       fireEvent.click(within(screen.getByRole("navigation", { name: "출처 상태 쪽" })).getByRole("button", { name: "2" }));
     });
-    expect(screen.getByRole("region", { name: "출처 상세 — 고른 줄 없음" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "출처 20" })).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "출처 상태 (좌우 스크롤)" })).getAllByRole("row")).toHaveLength(3);
   });
 
   it("좁은 화면: 이름 단추·링크·쪽 단추 모두 44px 누름 자리(클래스로 셈)", async () => {

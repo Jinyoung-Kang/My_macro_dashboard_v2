@@ -19,8 +19,8 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
-import { SourceCard } from "@/components/screens/info/CatalogSection";
 import { NewsSection } from "@/components/screens/info/NewsSection";
+import { SourceTable } from "@/components/screens/info/SourceTable";
 import { endpoints } from "@/lib/endpoints";
 import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
 import type { CatalogSource } from "@/lib/info";
@@ -78,9 +78,14 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 해외·공시·모의매매 입력 출처 카드: '출처 사이트', '자료 보기'
-  it("정보 수집 출처 카드 — '출처 사이트·자료 보기'", () => {
-    const { container } = render(<ul><SourceCard source={SOURCE} /></ul>);
-    expect(screen.getByRole("link", { name: "자료 보기" })).toBeTruthy();
+  // 작업대 P7부터 분류 탭의 출처 카드는 출처 표(SourceTable)이고, 두 링크는 출처 이름(줄 단추)으로 여는 검사 칸(좁은 화면 대화상자)에 있습니다 —
+  // 줄 단추와 두 링크 모두 같은 규칙(lg 미만 44px)으로 셉니다.
+  it("정보 수집 출처 카드 — '출처 사이트·자료 보기'", async () => {
+    const { container } = render(<SourceTable sources={[SOURCE]} variant="tab" caption="출처" pagerLabel="출처" emptyText="없음" />);
     expect(smallTargets(container)).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "합성 출처" }));
+    const dialog = await screen.findByRole("dialog", { name: "합성 출처" });
+    expect(screen.getByRole("link", { name: "자료 보기" })).toBeTruthy();
+    expect(smallTargets(dialog)).toEqual([]);
   });
 });
