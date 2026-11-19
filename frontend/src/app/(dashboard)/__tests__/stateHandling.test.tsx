@@ -175,7 +175,10 @@ describe("알림함의 서버 글 — 예전 알림의 그림 문자", () => {
     render(<AlertsPage />);
 
     expect(await screen.findByText("[국면 전환] 후퇴 경계 → 확장 (시장 국면)")).toBeTruthy();
-    expect(screen.getByText((_, element) => element?.textContent === "판정이 3일 이어졌습니다.\n버크셔 해서웨이가 편입")).toBeTruthy();
+    // P7: 본문은 알림을 고른 검사 칸(좁은 화면 대화상자)에 있습니다.
+    fireEvent.click(screen.getByText("[국면 전환] 후퇴 경계 → 확장 (시장 국면)"));
+    const dialog = await screen.findByRole("dialog", { name: "[국면 전환] 후퇴 경계 → 확장 (시장 국면)" });
+    expect(within(dialog).getByText((_, element) => element?.textContent === "판정이 3일 이어졌습니다.\n버크셔 해서웨이가 편입")).toBeTruthy();
     expect(await screen.findByText("13F 신규 편입 — 버크셔 해서웨이 (Berkshire Hathaway)")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}|\p{Regional_Indicator}/u);
   });
