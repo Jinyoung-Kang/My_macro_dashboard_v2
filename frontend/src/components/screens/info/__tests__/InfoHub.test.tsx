@@ -212,7 +212,7 @@ describe("정보 수집 화면", () => {
     });
     render(<InfoHub tab="news" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "속보(Financial Juice)" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "속보(Financial Juice)" }));
     await screen.findByRole("button", { name: "Fed's Waller: rates are restrictive" });
     expect(api.apiPost).not.toHaveBeenCalled();
     api.apiPost.mockResolvedValueOnce({ ok: true, titleKo: "월러 연준 이사: 금리는 제약적", textKo: null, alreadyKorean: false, cached: true,
@@ -222,7 +222,7 @@ describe("정보 수집 화면", () => {
     expect(api.apiPost).toHaveBeenCalledWith("/api/info/translate", { title: "Fed's Waller: rates are restrictive" });
     expect(screen.getByRole("button", { name: "Fed's Waller: rates are restrictive" })).toBeTruthy();      // 원문 제목은 그대로
 
-    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "사건 뉴스(미국)" }));
     await screen.findByRole("button", { name: "Fed issues FOMC statement" });
     expect(screen.getByText("2026-11-11 04:00 KST")).toBeTruthy();
     api.apiPost.mockResolvedValueOnce({ ok: false, titleKo: null, textKo: null, alreadyKorean: false, cached: true, truncated: false,
@@ -334,7 +334,7 @@ describe("정보 수집 화면", () => {
     expect(options).toEqual(["전체", "Wolf Street", "waedge 해외 블로그"]);
     expect(screen.getByLabelText("검색(제목·요약)")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "사건 뉴스(미국)" }));
     expect(await screen.findByLabelText("검색(제목)")).toBeTruthy();
   });
 

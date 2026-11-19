@@ -72,7 +72,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     await screen.findByRole("button", { name: "Synthetic rates outlook" });
     expect(screen.getByRole("link", { name: "원문 열기" })).toBeTruthy();
     const blog = smallTargets(container);
-    fireEvent.click(screen.getByRole("button", { name: "보도자료·경제지" }));
+    fireEvent.click(screen.getByRole("radio", { name: "보도자료·경제지" }));
     await screen.findByRole("button", { name: "Synthetic press release" });
     expect([...blog, ...smallTargets(container)]).toEqual([]);
   });
