@@ -18,7 +18,7 @@ import {
 } from "@/components/ui";
 import { TEXT_TARGET_SHORT } from "@/components/ui/classes";
 import { StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useTranslate } from "@/hooks/useTranslate";
 import { bypassBadge } from "@/lib/econCalendar";
@@ -90,8 +90,10 @@ export function NewsSection({ onSettled }: { onSettled?: () => void } = {}) {
   const catalog = useApi<CatalogResponse>(endpoints.info.catalog, 300_000);
   const sources = useRemembered(catalog.data?.sources) ?? [];
   // catalog를 처음 받기 전 — '보류한 출처' 안내 상자와 출처 고르기가 catalog로 정해지므로 그때까지 거르기 줄·목록 대신 읽는 중 한 줄을 둡니다. 예전에는
-  // 목록이 먼저 오면 그 위에 안내 상자가 뒤늦게 끼어 거르기 줄·목록을 밀었습니다(QA-894).
-  const catalogPending = catalog.loading && !catalog.data && !catalog.error;
+  // 목록이 먼저 오면 그 위에 안내 상자가 뒤늦게 끼어 거르기 줄·목록을 밀었습니다(QA-894). 처음 읽는 동안만입니다(hooks/useApi firstLoadPending) — catalog가
+  // 실패한 뒤 다시 읽는 동안(300초 자동 갱신·탭 복귀)도 참이던 식(`!catalog.error` — 다시 읽을 때 error가 비워짐)이라, 다시 읽을 때마다 거르기 줄·목록·
+  // 원문 칸이 통째로 내려갔다 다시 그려져 검색 칸 포커스와 번역해 둔 원문을 잃었습니다(QA-896).
+  const catalogPending = firstLoadPending(catalog);
   const choices = sourceChoices(sources, view);
   const deferred = sources.find((row) => row.access === "deferred");
   const set = headlineSet(view);

@@ -47,7 +47,7 @@ async function settle() {
 }
 
 describe("정보 수집 뉴스 탭 catalog 실패 뒤 다시 읽기(QA-896)", () => {
-  it.fails("탭 복귀로 catalog를 다시 읽는 동안 거르기 줄·목록이 그대로이고 검색 칸의 포커스·입력이 남는다", async () => {
+  it("탭 복귀로 catalog를 다시 읽는 동안 거르기 줄·목록이 그대로이고 검색 칸의 포커스·입력이 남는다", async () => {
     render(<InfoHub tab="news" />);
     await settle();
     // catalog가 실패한 뒤 — 거르기 줄(검색 칸)과 목록이 보임.
