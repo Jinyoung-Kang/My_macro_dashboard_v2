@@ -75,7 +75,7 @@ async function settle() {
 const rowButton = (key: string) => document.querySelector<HTMLButtonElement>(`[data-item-key="${key}"]`);
 
 describe("알림 검사 칸 '읽음' 뒤의 포커스 — 넓은 화면 + '읽지 않음' 거르기(QA-881)", () => {
-  it.fails("읽은 알림이 거르기로 빠져 검사 칸이 다음 알림으로 바뀌면 포커스는 다음 줄 단추로 — 다음 알림의 '읽음'에 남지 않음", async () => {
+  it("읽은 알림이 거르기로 빠져 검사 칸이 다음 알림으로 바뀌면 포커스는 다음 줄 단추로 — 다음 알림의 '읽음'에 남지 않음", async () => {
     stubWide();
     render(<SessionUserProvider user={MEMBER}><AlertsPage /></SessionUserProvider>);
     await screen.findAllByText("첫째 알림");

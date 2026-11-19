@@ -244,7 +244,8 @@ function InboxTimeline({
 
   // '읽음' 뒤 포커스(QA-866) — 누른 알림이 다시 읽은 알림함에서 읽음이 되면 그 단추가 사라집니다(읽지 않은 알림에만 그림). 포커스가 <body>로 떨어졌으면
   // 그 알림의 줄 단추로(넓은 화면 옆 검사 칸 — 목록에서 이어 감), 거르기('읽지 않음')로 줄이 빠졌으면 누를 때의 다음 줄(없으면 앞 줄) 단추로 옮깁니다 —
-  // 좁은 화면 대화상자는 그 줄이 빠지면 닫히고, 되돌아갈 줄 단추가 없어 공용 대화상자의 되돌리기가 하지 못합니다(그래서 그 뒤 차례에 옮김). 줄이 하나도
+  // 좁은 화면 대화상자는 그 줄이 빠지면 닫히고, 되돌아갈 줄 단추가 없어 공용 대화상자의 되돌리기가 하지 못합니다(그래서 그 뒤 차례에 옮김). 넓은 화면에서
+  // 줄이 빠져 검사 칸이 다음 알림으로 바뀌어도 검사 칸 내용은 알림마다 새로 그려(InboxDetail의 key) 누른 단추가 사라지므로 같은 길입니다(QA-881). 줄이 하나도
   // 남지 않으면 '읽음 상태' 거르기의 고른 줄로. 포커스가 다른 곳(대화상자 안 — 거르기 없음)에 있으면 건드리지 않습니다. 쓰기·켜짐 조건은 그대로입니다.
   const rootRef = useRef<HTMLDivElement>(null);
   const pendingRead = useRef<{ key: string; next: string | null } | null>(null);
@@ -318,7 +319,10 @@ function InboxTimeline({
         inspectorHint="알림을 고르면 이 칸에 본문이 나옵니다."
         renderDetail={(entry) => {
           const item = byKey.get(entry.key);
-          return item ? <InboxDetail item={item} demo={demo} readError={readError} onRead={readOne} /> : null;
+          // 알림마다 새로 그립니다(key) — 넓은 화면에서 '읽지 않음' 거르기로 읽은 알림이 빠져 검사 칸이 다음 알림으로 바뀌면, 같은 자리의 '읽음' 단추가
+          // 이어 쓰여 포커스가 다음 알림의 쓰기 단추에 안내 없이 남았습니다(Enter 한 번이 다음 알림을 읽음 처리 — QA-881). 새로 그리면 그 단추가 사라져
+          // 위 '읽음' 뒤 포커스 규칙이 남은 다음 줄 단추로 옮깁니다.
+          return item ? <InboxDetail key={item.id} item={item} demo={demo} readError={readError} onRead={readOne} /> : null;
         }}
       />
     </div>
