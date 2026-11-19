@@ -183,6 +183,7 @@ export default function KrxPage() {
             <div className="mt-4">
               <DataTable
                 dense
+                scrollHint="overflow"
                 caption="투자주체별 선물 수급"
                 rows={trend.data.rows}
                 rowKey={(row) => row.investor}

@@ -133,6 +133,7 @@ export default function AlertsPage() {
         <DataTable<AlertRule>
           dense
           count
+          scrollHint="overflow"
           caption="알림 규칙"
           rows={rules.data?.rules ?? []}
           rowKey={(row) => String(row.id)}

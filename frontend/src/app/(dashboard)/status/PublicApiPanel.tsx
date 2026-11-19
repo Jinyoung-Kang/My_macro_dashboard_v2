@@ -43,6 +43,7 @@ export function PublicApiPanel() {
         <DataTable
           dense
           count
+          scrollHint="overflow"
           caption="국내 공공 API 연결 진단"
           rows={data.apis}
           rowKey={(row) => row.label}

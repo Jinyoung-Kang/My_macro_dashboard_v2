@@ -76,6 +76,7 @@ export function MarketFlowsPanel({ market }: { market: string }) {
         <div className="flex flex-col gap-4">
           <DataTable<FlowRow>
             dense
+            scrollHint="overflow"
             caption={`${marketName} 투자자별 순매수`}
             rows={summary.investors ?? []}
             rowKey={(row) => row.key}

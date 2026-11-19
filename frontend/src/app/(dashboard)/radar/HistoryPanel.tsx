@@ -61,6 +61,7 @@ export function HistoryPanel({
         <DataTable
           dense
           count
+          scrollHint="overflow"
           caption="누적 수급 이력"
           // 같은 종목이 한 날에 두 번 와도 갈리게 차례를 붙입니다(예전 표의 '{코드}-{차례}' 키와 같음).
           rows={rows.map((row, index) => ({ ...row, key: `${row.code}-${index}` }))}

@@ -260,6 +260,7 @@ export default function StatusPage() {
             <DataTable
               dense
               count
+              scrollHint="overflow"
               caption="스냅샷 신선도"
               rows={snapshots}
               rowKey={(row) => row.name}
