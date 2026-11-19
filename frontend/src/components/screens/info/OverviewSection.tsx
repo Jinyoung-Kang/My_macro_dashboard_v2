@@ -100,6 +100,9 @@ export function OverviewSection() {
           count={latest.data && items.length > 0 ? `${items.length.toLocaleString("ko-KR")}편` : undefined}
           subtitle="모든 글 출처에서 최근 다섯 편 — 전체는 '뉴스·글'."
         >
+          {/* 읽는 중·실패도 그립니다 — 예전에는 실패해도 빈 목록과 아래 링크만 남았습니다(QA-873, 분류 띠와 같은 정직한 상태). */}
+          {latest.loading && !latest.data && <Loading />}
+          {latest.error && <ErrorState message={latest.error} onRetry={latest.reload} />}
           {latest.data?.items.length === 0 && <p className="text-sm text-text-2">아직 받은 글이 없습니다.</p>}
           <ul className="divide-y divide-border">
             {items.map((item) => (

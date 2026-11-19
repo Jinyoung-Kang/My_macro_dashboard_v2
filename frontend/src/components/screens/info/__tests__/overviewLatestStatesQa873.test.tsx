@@ -5,7 +5,7 @@
  * 링크만 남고(오류·다시 시도 없음) 읽는 동안에는 아무것도 없었습니다. 같은 화면의 분류 띠는 읽는 중(Loading)과 오류(ErrorState)를 그립니다(정직한 상태 원칙).
  *
  * 기대: 읽는 동안 '불러오는 중…', 실패하면 오류 상자 + '다시 시도'(다시 읽음). 요청 경로·간격은 그대로입니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 'Unable to find an element with the text: 불러오는 중…', 둘째 사례 'Unable to find an element with the text: 합성 실패'.
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 'Unable to find an element with the text: 불러오는 중…', 둘째 사례 'Unable to find an element with the text: 합성 실패'.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,14 +39,14 @@ const latestCard = () => screen.getByRole("heading", { name: "최근 받은 글"
 const latestCalls = () => api.apiGetShared.mock.calls.filter(([path]) => path === LATEST).length;
 
 describe("개요 '최근 받은 글'의 읽는 중·실패(QA-873)", () => {
-  it.fails("읽는 동안 '불러오는 중…'", async () => {
+  it("읽는 동안 '불러오는 중…'", async () => {
     latest = () => new Promise(() => {});
     render(<OverviewSection />);
     await act(async () => {});
     expect(within(latestCard()).getByText("불러오는 중…")).toBeTruthy();
   });
 
-  it.fails("실패하면 오류 상자 + '다시 시도' — 누르면 같은 경로를 다시 읽음", async () => {
+  it("실패하면 오류 상자 + '다시 시도' — 누르면 같은 경로를 다시 읽음", async () => {
     latest = () => Promise.reject(new Error("합성 실패"));
     render(<OverviewSection />);
     for (let round = 0; round < 4; round += 1) await act(async () => {});
