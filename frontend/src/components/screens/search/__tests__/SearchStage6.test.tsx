@@ -220,7 +220,8 @@ describe("기간 막대(계약 §9-1)", () => {
 
     const select = screen.getByRole("combobox", { name: "날로 좁히기" });
     expect(select.className).toContain("min-h-11");
-    expect(select.closest(".lg\\:hidden")).toBeTruthy();
+    // 같은 고르기 상자는 넓은 화면에도 있습니다(막대의 대체 조작 — QA-859). 전에는 lg:hidden 안이었습니다.
+    expect(select.closest(".lg\\:hidden")).toBeNull();
     // 건수가 있는 날만, 최근 날부터.
     expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
       "좁히지 않음",

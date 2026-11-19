@@ -20,6 +20,7 @@ import * as Hero from "../Hero";
 import * as patterns from "../index";
 import * as InspectorFrame from "../InspectorFrame";
 import * as KpiStrip from "../KpiStrip";
+import * as LogPanel from "../LogPanel";
 import * as MasterDetail from "../MasterDetail";
 import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
@@ -44,6 +45,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   Hero,
   InspectorFrame,
   KpiStrip,
+  LogPanel,
   MasterDetail,
   PropertyList,
   RangeTabs,
@@ -96,6 +98,7 @@ describe("components/patterns 배럴", () => {
         "InspectorSubheading",
         "InspectorTrigger",
         "KpiStrip",
+        "LogPanel",
         "MasterDetail",
         "PropertyList",
         "ProvenanceBadge",

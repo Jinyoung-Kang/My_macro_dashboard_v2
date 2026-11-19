@@ -2,13 +2,14 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { inputClasses } from "@/components/ui";
+import { buttonClasses } from "@/components/ui/classes";
 import { StatusText, XIcon } from "@/components/ui/icons";
 import type { InfoSearchWatch } from "@/hooks/useInfoSearchWatch";
 import { DEMO_READ_ONLY } from "@/lib/access";
 import { EMPTY } from "@/lib/format";
 import { ALIAS_MERGE_NOTE, ALIAS_SHORT_NOTE, WATCH_ALIAS_MAX, aliasDraft, aliasesForSave, sameAliases, watchAliasesOf } from "@/lib/infoSearch";
 import type { SearchWatchItem } from "@/lib/types";
-import { BUTTON, BUTTON_PRIMARY, PaneHeading } from "./parts";
+import { PaneHeading } from "./parts";
 
 /** 입력칸 — 공용 모양(테두리 3:1·포커스 링 2px·lg 미만 44px), 칸 폭을 다 씀. */
 const FIELD = `${inputClasses("md")} min-w-0 flex-1`;
@@ -178,7 +179,7 @@ export function AliasEditor({
           {demo ? (
             <p className="text-xs text-text-3">{DEMO_READ_ONLY}</p>
           ) : (
-            <button ref={editRef} type="button" className={`${BUTTON} self-start`} onClick={start} aria-describedby={noteId}>
+            <button ref={editRef} type="button" className={`${buttonClasses("default")} self-start`} onClick={start} aria-describedby={noteId}>
               별칭 편집
             </button>
           )}
@@ -215,7 +216,7 @@ export function AliasEditor({
                 aria-describedby={error ? `${errorId} ${noteId}` : noteId}
                 className={FIELD}
               />
-              <button type="submit" className={BUTTON}>
+              <button type="submit" className={buttonClasses("default")}>
                 더하기
               </button>
             </div>
@@ -224,7 +225,7 @@ export function AliasEditor({
             {/* 저장하는 동안 disabled로 바꾸지 않습니다(포커스가 body로 떨어짐) — aria-disabled로 알리고 누름은 한 번만 보냅니다. 취소도 같습니다. */}
             <button
               type="button"
-              className={`${BUTTON_PRIMARY} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+              className={`${buttonClasses("primary")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
               aria-disabled={aliasBusy || undefined}
               onClick={() => void save()}
             >
@@ -232,7 +233,7 @@ export function AliasEditor({
             </button>
             <button
               type="button"
-              className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+              className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
               aria-disabled={aliasBusy || undefined}
               onClick={cancel}
             >

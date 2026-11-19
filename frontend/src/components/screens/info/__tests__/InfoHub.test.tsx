@@ -107,14 +107,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 수집 화면", () => {
-  it("개요: 분류 카드가 그 분류 탭으로 가고, 위험이 있는 분류는 그 수를 보인다", async () => {
+  // 작업대 P7: 분류 카드는 공용 KPI 띠(KpiStrip '분류별 상태')의 링크 타일 — 값은 출처 수('곳'), 상태는 색별 수(아이콘 + 글).
+  it("개요: 분류 타일이 그 분류 탭으로 가고, 출처 수와 위험이 있는 분류는 그 수를 보인다", async () => {
     routes({ "/api/info/catalog": CATALOG, "/api/info/mechanism": MECHANISM, "/api/info/items": { available: true, items: [], page: 1, pages: 0, total: 0 } });
     render(<InfoHub tab="overview" />);
 
     const card = await screen.findByRole("link", { name: /해외 시장·거시/ });
     expect(card.getAttribute("href")).toBe("/info/global");
     expect(within(card).getByText(/위험 1/)).toBeTruthy();
+    expect(card.textContent).toMatch(/11\s*곳/);
+    expect(within(screen.getByRole("region", { name: "분류별 상태" })).getAllByRole("link")).toHaveLength(2);
     expect(screen.getByText(/차단 통과 수집이 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.getByText("지금 끊긴 출처가 없습니다.")).toBeTruthy();
   });
 
   it("QA-410 개요: 수집기에 닿지 못했으면 상태 확인 줄에 그 사실을 적는다", async () => {
@@ -212,7 +216,7 @@ describe("정보 수집 화면", () => {
     });
     render(<InfoHub tab="news" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "속보(Financial Juice)" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "속보(Financial Juice)" }));
     await screen.findByRole("button", { name: "Fed's Waller: rates are restrictive" });
     expect(api.apiPost).not.toHaveBeenCalled();
     api.apiPost.mockResolvedValueOnce({ ok: true, titleKo: "월러 연준 이사: 금리는 제약적", textKo: null, alreadyKorean: false, cached: true,
@@ -222,7 +226,7 @@ describe("정보 수집 화면", () => {
     expect(api.apiPost).toHaveBeenCalledWith("/api/info/translate", { title: "Fed's Waller: rates are restrictive" });
     expect(screen.getByRole("button", { name: "Fed's Waller: rates are restrictive" })).toBeTruthy();      // 원문 제목은 그대로
 
-    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "사건 뉴스(미국)" }));
     await screen.findByRole("button", { name: "Fed issues FOMC statement" });
     expect(screen.getByText("2026-11-11 04:00 KST")).toBeTruthy();
     api.apiPost.mockResolvedValueOnce({ ok: false, titleKo: null, textKo: null, alreadyKorean: false, cached: true, truncated: false,
@@ -334,7 +338,7 @@ describe("정보 수집 화면", () => {
     expect(options).toEqual(["전체", "Wolf Street", "waedge 해외 블로그"]);
     expect(screen.getByLabelText("검색(제목·요약)")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    fireEvent.click(screen.getByRole("radio", { name: "사건 뉴스(미국)" }));
     expect(await screen.findByLabelText("검색(제목)")).toBeTruthy();
   });
 
@@ -346,7 +350,11 @@ describe("정보 수집 화면", () => {
     expect(within(ranking).getAllByRole("row")).toHaveLength(11);
     const first = within(ranking).getByText("종목1 (000000)").closest("tr") as HTMLElement;
     expect(within(first).getByText("—")).toBeTruthy();
-    expect(screen.getByText(/기준일 2026-11-07 · 이번에 받지 못해 이전 값/)).toBeTruthy();
+    // 이어받은 부분은 기준일 옆 공용 '이전 값' 배지(작업대 P7 — 예전에는 기준 글 꼬리 '· 이번에 받지 못해 이전 값').
+    const balances = screen.getByRole("heading", { name: "공매도 잔고 상위 · 코스피" }).closest("section") as HTMLElement;
+    expect(within(balances).getByText(/기준일 2026-11-07/)).toBeTruthy();
+    expect(within(balances).getByText("이전 값")).toBeTruthy();
+    expect(within(balances).getByText(/이번에 받지 못함/)).toBeTruthy();
     fireEvent.click(within(screen.getByRole("navigation", { name: "KRX 외국인 순매수 상위 · 코스피 쪽" })).getByRole("button", { name: "2" }));
     expect(within(ranking).getByText("종목11 (000010)")).toBeTruthy();
 
@@ -367,8 +375,10 @@ describe("정보 수집 화면", () => {
     expect(within(rows[0]).getByText("끊긴 출처")).toBeTruthy();
     expect(within(rows[0]).getByText("차단됨 — 잠시 멈춤")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "위험" }));
-    expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1);
+    // 상태 거르기는 하나만 고르는 라디오 묶음(공용 FilterList — 예전 aria-pressed 칩과 같은 뜻: 고른 거르기). 거르면 표를 새로 그립니다.
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "상태" })).getByRole("radio", { name: "위험" }));
+    expect(screen.getByRole("radio", { name: "위험" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(screen.getByRole("region", { name: /^출처 상태 / })).getAllByRole("row").slice(1)).toHaveLength(1);
     expect(screen.queryByRole("navigation", { name: /출처 상태 쪽/ })).toBeNull();
   });
 
@@ -382,19 +392,22 @@ describe("정보 수집 화면", () => {
     const table = await screen.findByRole("region", { name: /^출처 상태 / });
     const cell = within(table).getByText(long);
     expect(cell.className).not.toMatch(/line-clamp|truncate/);
-    expect(cell.className).toMatch(/break-words/);
+    expect(cell.className).toMatch(/wrap-anywhere/);
   });
 
   // 출처 상태 표(위)와 같은 글이 출처 목록 카드에서는 여전히 두 줄에서 잘렸다(2026-11-12 사용자 결정 — 카드도 전체를 보임).
-  it("출처 목록 카드: '사유·기록'은 길어도 자르지 않고 전체를 줄을 바꿔 보인다", async () => {
+  // 작업대 P7부터 분류 탭의 출처는 카드가 아니라 출처 표이고, 사유·기록은 출처 이름을 누르면 여는 검사 칸(좁은 화면 대화상자)의 속성으로 전체를 보입니다.
+  it("분류 탭 출처: '사유·기록'은 길어도 자르지 않고 검사 칸에 전체를 줄을 바꿔 보인다", async () => {
     const long = "KRX 기준일 2026-11-11 · 순매수 상위 10/12 · 시장 합계·외국인 보유·공매도 거래 5/6 · 공매도 잔고 1/2 · 못 받음 4 · "
       + "일부 받지 못함(받지 못함: rank.KOSPI.연기금 등, rank.KOSDAQ.연기금 등, shortBalances.KOSDAQ 외 1) · 다음 2026-11-11 21:40 KST";
     routes({ "/api/info/catalog": { ...CATALOG, sources: [source(1, { label: "긴 기록 출처", lastDetail: long })] } });
     render(<InfoHub tab="global" />);
 
-    const text = await screen.findByText(long);
-    expect(text.className).not.toMatch(/line-clamp|truncate/);
-    expect(text.className).toMatch(/break-words/);
+    fireEvent.click(await screen.findByRole("button", { name: "긴 기록 출처" }));
+    const dialog = await screen.findByRole("dialog", { name: "긴 기록 출처" });
+    const value = within(dialog).getByText(long).closest("dd") as HTMLElement;
+    expect(value.className).not.toMatch(/line-clamp|truncate/);
+    expect(value.className).toMatch(/wrap-anywhere/);
   });
 
   it("정보(메커니즘): 수집기의 실제 값(스위치·간격·예산)과 패킷 스위치·보류 출처를 보인다", async () => {
@@ -408,5 +421,59 @@ describe("정보 수집 화면", () => {
     expect(screen.getByText("info.packet")).toBeTruthy();
     expect(screen.getByRole("link", { name: "설정 탭" }).getAttribute("href")).toBe("/paper/us/settings");
     expect(screen.getByText("saveticker 뉴스(보류)")).toBeTruthy();
+  });
+
+  it("정보(메커니즘): 상태 기록이 없는 호스트의 오늘 쓴 수는 0이 아니라 '—'(없는 숫자를 만들지 않음)", async () => {
+    const collector = { ...MECHANISM.collector, hosts: [...MECHANISM.collector.hosts, { host: "blog.example", tiers: ["plain"], dailyBudget: 10 }] };
+    routes({ "/api/info/mechanism": { ...MECHANISM, collector } });
+    render(<InfoHub tab="mechanism" />);
+
+    const hosts = await screen.findByRole("region", { name: /^호스트별 계층·하루 예산 / });
+    const row = within(hosts).getByText("blog.example").closest("tr") as HTMLElement;
+    expect(within(row).getByText("— / 10")).toBeTruthy();
+    expect(within(row).getByText("기록 없음")).toBeTruthy();
+    expect(within(hosts).getByText("3 / 40")).toBeTruthy();
+  });
+
+  // 작업대 P7: 견해는 색 글(강세 초록·약세 빨강) 대신 중립 태그 — 강세·약세는 오르내림이 아니라 색으로 나르지 않고, 글('강세 +95')이 뜻을 나름. 음수 점수는 U+2212.
+  it("뉴스·글 거장 견해: 견해는 중립 태그 '{견해} {점수}', 요약은 자르지 않음", async () => {
+    routes({
+      "/api/info/catalog": CATALOG,
+      "/api/info/items?kind=blog": { available: true, items: [], page: 1, size: 10, total: 0, pages: 1 },
+      "/api/info/gurus": {
+        available: true, collectedAtKst: "2026-11-11 18:00 KST", ageSeconds: 60, source: "WAEDGE NEWS 거장", sourceUrl: "https://waedge.example/", fetchTier: null,
+        asOf: "2026-11-11", counts: { total: 2, bull: 1, neutral: 0, bear: 1 },
+        gurus: [
+          { name: "합성 거장 A", stance: "강세", score: 95, bull: 95, neutral: 5, bear: 0, basisArticles: 3, summary: "합성 요약 A" },
+          { name: "합성 거장 B", stance: "약세", score: -60, bull: 10, neutral: 20, bear: 70, basisArticles: null, summary: null },
+        ],
+      },
+    });
+    render(<InfoHub tab="news" />);
+    fireEvent.click(await screen.findByRole("radio", { name: "거장 견해" }));
+
+    const table = await screen.findByRole("region", { name: /^거장 견해 / });
+    const bear = within(table).getByText("약세 \u221260");
+    expect(bear.className).toContain("bg-surface-2");
+    expect(bear.className).not.toMatch(/text-(danger|ok|up|down)/);
+    expect(within(table).getByText("강세 +95")).toBeTruthy();
+    const row = within(table).getByText("합성 거장 B").closest("tr") as HTMLElement;
+    expect(within(row).getAllByText("—")).toHaveLength(2);      // 기사 수·요약을 모름
+    expect(screen.getByRole("link", { name: "WAEDGE NEWS 거장 (비공식)" }).getAttribute("href")).toBe("https://waedge.example/");
+  });
+
+  // 작업대 P7: 머리는 설명 한 줄 + '자세히' 접기(예전 긴 설명의 나머지와 화면 바닥 12px 문단 — 문구는 지우지 않음).
+  it("머리: 설명 한 줄, 긴 설명과 차단 통과 수집 안내는 '자세히' 안(처음에는 접힘)", async () => {
+    routes({ "/api/info/catalog": CATALOG });
+    render(<InfoHub tab="status" />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "출처 상태" })).toBeTruthy();
+    // 설명 한 줄은 낱말 사이에서만 꺾음(390에서 '…봅|니다.' — P7 검토).
+    expect(screen.getByText("모든 출처의 마지막 실행·판정·다음 실행을 한 표에서 봅니다.").className).toContain("break-keep");
+    const details = screen.getByText("자세히").closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText("끊긴 출처는 텔레그램과 화면 위 안내로도 알립니다.")).toBeTruthy();
+    expect(within(details).getByText(/차단 통과 수집\(블로그·waedge·네이버·KRX·TradingView 캘린더\)은 운영 서버에서만/)).toBeTruthy();
+    await screen.findByRole("region", { name: /^출처 상태 / });
   });
 });

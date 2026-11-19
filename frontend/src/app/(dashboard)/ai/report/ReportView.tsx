@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useMemo } from "react";
+import { DataTable, SectionIndex, type Column, type SectionIndexItem } from "@/components/patterns";
 import { AlertTriangleIcon, CheckCircleIcon, MinusIcon, XCircleIcon } from "@/components/ui/icons";
 import {
   type Block,
@@ -14,7 +15,6 @@ import {
   type Verdict,
   VERDICT_LABEL,
 } from "@/lib/markdown";
-import { followHashLink } from "@/lib/hashLink";
 
 /**
  * AI 리포트 본문 — Markdown을 절 단위 카드로 그립니다.
@@ -23,86 +23,83 @@ import { followHashLink } from "@/lib/hashLink";
  * 해석은 lib/markdown(순수 함수)이 하고, 여기서는 React 요소만 만듭니다 — innerHTML을 쓰지 않으므로
  * 모델이 HTML을 출력해도 글자로 보일 뿐 실행되지 않습니다.
  *
- * - 맨 위: 절 목차(앵커) — 누르면 기본 해시 이동 대신 기록 하나(history.pushState)와 절 이동·포커스(lib/hashLink — 기본 해시 이동의 상태 없는 기록은
- *   다른 화면으로 갔다가 뒤로 가기로 돌아올 때 Next 라우터가 무시해 화면이 남았음, QA-680). 포커스는 절 제목(h3)에 갑니다 — 이름 없는 절(section)에
- *   두면 크롬이 절 내용 전체를 접근 이름으로 읽었음(QA-680 보강). 절은 제목이 포커스를 받지 못할 때만 그때 tabindex -1을 받습니다(lib/hashLink — 바깥선은
- *   outline-none). 늘 두면 크롬이 뒤로·앞으로 가기의 조각 처리에서 절에 포커스를 두어 절 전체를 읽었습니다(QA-688).
+ * - 목차(작업대 P7 — 긴 글 문법): 제목 있는 절이 셋 이상이면 공용 긴 화면 목차(SectionIndex '리포트 목차' — xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위에 붙는
+ *   가로 줄, 지금 절 표시). 칸을 누르면 기본 해시 이동 대신 기록 하나(history.pushState)와 절 이동·절 제목(h3) 포커스(lib/hashLink — QA-680·688, 예전 버튼 줄과
+ *   같은 기제), 뒤로·앞으로 가기(hashchange)도 그 절로 맞춥니다(D3b 넘김 '해시 기록 앞으로·뒤로 본문 스크롤' — SectionIndex의 hashchange 처리). 리포트는
+ *   저장되지 않아 새로 고친 주소의 절 해시 맞춤(alignHashOnLoad)은 켜지 않습니다. 절은 목차의 절 닻과 같은 위쪽 여백(scroll-margin)을 둔 section입니다.
+ * - 글: 문단·목록·인용은 긴 글 단계(15/24)·한 줄 72자 폭, 절 제목은 heading-sm(16/24). 칸 글은 낱말 사이 줄바꿈.
  * - "핵심 요약" 절: 강조 패널
  * - "데이터 신뢰도" 절: 주의 패널
- * - 표: 앱의 다른 표와 같은 모양, 숫자 열은 오른쪽 정렬
+ * - 표: 공용 표(DataTable — 앱의 다른 표와 같은 모양, 최소 640px·넘김 안내 scrollHint="overflow"), 첫 열은 행 머리, 숫자 열은 오른쪽 정렬, 빈 칸은 '—'.
+ *   표 이름(caption·넘김 영역 이름)은 '{절 제목} 표'(한 절에 둘 이상이면 '표 n') — 예전 손으로 만든 표는 넘김 안내 없이 390에서 칸 대부분이 상자 밖에 숨었고
+ *   모든 표가 같은 영역 이름 '리포트 표'였습니다(QA-869).
  */
 export function ReportView({ markdown }: { markdown: string }) {
   // 같은 본문을 렌더마다 다시 해석하지 않습니다 — 생성 중에는 경과 초 표시가 1초마다, '추가 지시' 입력은 글자마다
   // 페이지를 다시 그리는데, 그때마다 이전 리포트 전체를 다시 해석했습니다(QA-100).
   const sections = useMemo(() => splitSections(parseMarkdown(markdown)), [markdown]);
   const titled = sections.filter((section) => section.title);
+  // 제목 있는 절이 셋 이상일 때만 목차(예전 버튼 줄과 같은 조건).
+  const index: SectionIndexItem[] = titled.length > 2 ? titled.map((section) => ({ id: section.id, label: section.title ?? "" })) : [];
 
   return (
-    <div className="flex flex-col gap-4">
-      {titled.length > 2 && (
-        <nav aria-label="리포트 목차" className="flex flex-wrap gap-1.5">
-          {titled.map((section) => (
-            <a
-              key={section.id}
-              href={`#${section.id}`}
-              onClick={(event) => followHashLink(event, section.id)}
-              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 기본 조작 30px — 표 밖의 따로 선 링크라 작은 조작(24px, 표 안)이
-              // 아닙니다(상세 화면 '다른 곳에서 보기'와 같은 값). 모서리 4px(작업대 실행 명세 §3-7·§3-8).
-              className="inline-flex min-h-11 items-center rounded-control border border-border px-3 text-xs text-text-3 hover:border-accent/60 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-[30px] lg:px-2.5"
-            >
-              {section.title}
-            </a>
-          ))}
-        </nav>
-      )}
+    <SectionIndex label="리포트 목차" items={index} columnFrom="xl">
       {sections.map((section) => (
         <ReportSection key={section.id} section={section} />
       ))}
-    </div>
+    </SectionIndex>
   );
 }
 
 function ReportSection({ section }: { section: Section }) {
   const kind = sectionKind(section.name);
+  // 표 이름 — '{절 제목} 표', 한 절에 표가 둘 이상이면 '표 1'·'표 2'(QA-869). 블록 차례 → 이름.
+  const tableIndexes = section.blocks.flatMap((block, index) => (block.type === "table" ? [index] : []));
+  const tableNames = new Map(
+    tableIndexes.map((blockIndex, order) => [
+      blockIndex,
+      `${section.title ?? "리포트"} 표${tableIndexes.length > 1 ? ` ${order + 1}` : ""}`,
+    ]),
+  );
   const frame =
-    // 결론은 진한 테두리(중립 — 강조 파랑은 누를 수 있는 것에만, 명세 A1), 신뢰도 주의는 경고 틴트, 나머지는 카드 바탕 그대로.
+    // 결론은 진한 테두리(중립 — 강조 파랑은 누를 수 있는 것에만, 명세 A1), 신뢰도 주의는 경고 틴트(주의 안내 상자 꼴 — 아이콘 + 제목), 나머지는 카드 바탕 그대로.
     kind === "summary"
       ? "border-border-strong bg-surface"
       : kind === "reliability"
         ? "border-warn/30 bg-warn-tint"
         : "border-border bg-surface";
 
+  // 위쪽 여백(scroll-margin)은 목차의 절 닻(SectionAnchor — xl)과 같은 값: 가로 줄이 보이는 폭은 줄 높이(스크롤 상자 위쪽 여백) 위에 12px, 세로 목록 폭은 16px.
   return (
-    <section id={section.id} className={`scroll-mt-4 rounded-control border p-3 outline-none lg:p-4 ${frame}`}>
+    <section id={section.id} className={`min-w-0 scroll-mt-3 rounded-control border p-3 outline-none lg:p-4 xl:scroll-mt-4 ${frame}`}>
       {section.title && (
-        <h3
-          className={`mb-3 flex items-center gap-2 font-semibold ${
-            kind === "summary" ? "text-base text-text" : "text-sm text-text"
-          }`}
-        >
+        <h3 className="mb-3 flex items-center gap-2 break-keep text-heading-sm text-text">
           {kind === "reliability" && <AlertTriangleIcon size={16} className="text-warn" />}
           {section.title}
         </h3>
       )}
-      <div className={`flex flex-col gap-3 ${kind === "summary" ? "text-[15px]" : "text-sm"} leading-relaxed text-text-2`}>
+      <div className="flex min-w-0 flex-col gap-3 text-running text-text-2">
         {section.blocks.map((block, index) => (
-          <BlockView key={index} block={block} emphasize={kind === "summary"} />
+          <BlockView key={index} block={block} emphasize={kind === "summary"} tableName={tableNames.get(index)} />
         ))}
       </div>
     </section>
   );
 }
 
-function BlockView({ block, emphasize }: { block: Block; emphasize: boolean }) {
+/** 긴 글 한 덩어리 — 한 줄 72자 폭, 한국어는 낱말 사이에서만 줄바꿈(공백 없는 긴 토큰만 꺾음). 글자 단계(15/24)는 절 본문이 줍니다. */
+const PROSE = "max-w-[72ch] break-keep wrap-break-word";
+
+function BlockView({ block, emphasize, tableName }: { block: Block; emphasize: boolean; tableName?: string }) {
   switch (block.type) {
     case "heading":
-      return <h4 className="mt-1 text-[13px] font-semibold text-text">{renderInline(block.text)}</h4>;
+      return <h4 className="mt-1 max-w-[72ch] break-keep text-body font-semibold text-text">{renderInline(block.text)}</h4>;
     case "paragraph":
-      return <p>{renderInline(block.text)}</p>;
+      return <p className={PROSE}>{renderInline(block.text)}</p>;
     case "list": {
       const Tag = block.ordered ? "ol" : "ul";
       return (
-        <Tag className={`${block.ordered ? "list-decimal" : "list-disc"} flex flex-col ${emphasize ? "gap-2" : "gap-1"} pl-5 marker:text-text-3`}>
+        <Tag className={`${PROSE} ${block.ordered ? "list-decimal" : "list-disc"} flex flex-col ${emphasize ? "gap-2" : "gap-1"} pl-5 marker:text-text-3`}>
           {block.items.map((item, index) => (
             <li key={index}>{renderInline(item)}</li>
           ))}
@@ -110,46 +107,39 @@ function BlockView({ block, emphasize }: { block: Block; emphasize: boolean }) {
       );
     }
     case "table":
-      return <ReportTable header={block.header} rows={block.rows} />;
+      return <ReportTable header={block.header} rows={block.rows} name={tableName ?? "리포트 표"} />;
     case "quote":
-      return <blockquote className="border-l-2 border-border pl-3 text-text-3">{renderInline(block.text)}</blockquote>;
+      return <blockquote className={`${PROSE} border-l-2 border-border pl-3 text-text-3`}>{renderInline(block.text)}</blockquote>;
     case "hr":
       return <hr className="border-border" />;
   }
 }
 
-function ReportTable({ header, rows }: { header: string[]; rows: string[][] }) {
+/** 표 줄 — 차례(rowKey)와 칸 글. */
+type ReportRow = { key: string; cells: string[] };
+
+function ReportTable({ header, rows, name }: { header: string[]; rows: string[][]; name: string }) {
   // 비어 있지 않은 칸이 모두 숫자인 열만 오른쪽 정렬합니다(첫 열은 항목 이름이라 제외).
   const numeric = numericColumns(header, rows);
+  const columns: Column<ReportRow>[] = header.map((cell, index) => ({
+    key: String(index),
+    header: renderInline(cell),
+    align: numeric[index] ? "right" : "left",
+    // 첫 열은 그 줄의 항목 이름(행 머리) — 낭독기가 칸을 옮길 때 항목 이름도 읽습니다. 글 칸은 낱말 사이에서만 줄을 바꿉니다.
+    rowHeader: index === 0,
+    className: numeric[index] ? undefined : "break-keep",
+    // 빈 칸은 null — 공용 표가 '—'(값 없음)로 그립니다(0·빈칸으로 채우지 않음).
+    cell: (row) => (row.cells[index]?.trim() ? renderInline(row.cells[index]) : null),
+  }));
   return (
-    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="리포트 표 (좌우 스크롤)">
-      <table className="w-full min-w-[520px] border-collapse text-[13px]">
-        <thead>
-          <tr className="border-b border-border text-xs text-text-3">
-            {header.map((cell, index) => (
-              <th key={index} className={`px-3 py-2 font-medium ${numeric[index] ? "text-right" : "text-left"}`}>
-                {renderInline(cell)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-b border-border/50 align-top last:border-0">
-              {row.map((cell, index) => (
-                <td
-                  key={index}
-                  className={`px-3 py-2 ${numeric[index] ? "whitespace-nowrap text-right tabular-nums" : "text-left"} ${
-                    index === 0 ? "font-medium text-text" : ""
-                  }`}
-                >
-                  {renderInline(cell)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="min-w-0">
+      <DataTable<ReportRow>
+        caption={name}
+        scrollHint="overflow"
+        rows={rows.map((cells, index) => ({ key: String(index), cells }))}
+        rowKey={(row) => row.key}
+        columns={columns}
+      />
     </div>
   );
 }

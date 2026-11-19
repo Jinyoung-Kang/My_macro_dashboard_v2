@@ -2,7 +2,7 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { createContext, useContext, useRef, type ReactElement, type ReactNode } from "react";
+import { useRef, type ReactElement, type ReactNode } from "react";
 import { XIcon } from "@/components/ui/icons";
 
 /** 폭 — 확인 창은 sm, 보통은 md, 검색처럼 목록이 긴 것은 lg. 좁은 화면에서는 양옆 16px만 남기고 다 씁니다. */
@@ -15,17 +15,6 @@ const END_WIDTH = { sm: "sm:max-w-sm", md: "sm:max-w-md", lg: "sm:max-w-2xl" } a
 
 /** 대화상자 자리 — 가운데(기본)·위쪽 고정·오른쪽 끝에 붙은 세로 패널(서랍 — ui/Drawer). */
 export type DialogPlacement = "center" | "top" | "end";
-
-/**
- * 범위 표지(data-scope)를 이어받는 자리 — 대화상자는 body 끝으로 옮겨 그려(portal) 화면의 범위 토큰(globals.css의 [data-scope="…"])이
- * 닿지 않습니다. 정보 검색 화면처럼 늘 어두운 화면은 이것으로 감싸 그 안에서 연 대화상자(원문 팝업 등 대화상자를 감싼 부품 포함)에 같은 표지를
- * 붙입니다. 밖에서는 값이 없어 지금처럼 앱 테마 그대로입니다.
- */
-const DialogScopeContext = createContext<string | undefined>(undefined);
-
-export function DialogScope({ value, children }: { value: string; children: ReactNode }) {
-  return <DialogScopeContext.Provider value={value}>{children}</DialogScopeContext.Provider>;
-}
 
 /*
  * 움직임은 나타날 때의 짧은 흐려짐(150ms) 하나뿐이고, 움직임 줄이기(prefers-reduced-motion)면 없습니다 — motion-safe: 안에만 둡니다.
@@ -67,7 +56,6 @@ export function Dialog({
   showClose = true,
   placement = "center",
   initialFocus = "content",
-  scope,
   children,
 }: {
   open: boolean;
@@ -91,12 +79,8 @@ export function Dialog({
   placement?: DialogPlacement;
   /** 열 때 첫 포커스 — 내용의 첫 조작(기본 content) 또는 제목(title). */
   initialFocus?: "content" | "title";
-  /** 범위 표지 — 주면 대화상자 상자에 data-scope를 붙여 그 범위의 토큰으로 그립니다. 없으면 둘러싼 DialogScope, 그것도 없으면 앱 테마. */
-  scope?: string;
   children?: ReactNode;
 }) {
-  const inherited = useContext(DialogScopeContext);
-  const scopeValue = scope ?? inherited;
   // 열기 직전에 포커스가 있던 요소. 이벤트 처리기에서만 읽고 씁니다.
   const opener = useRef<HTMLElement | null>(null);
   // 제목 — 첫 포커스를 제목에 둘 때(initialFocus="title")만 씁니다.
@@ -126,7 +110,6 @@ export function Dialog({
         {/* 덮개 뒤 가림은 토큰 scrim(바탕색 70% — 원색 클래스 없이, 실행 명세 §3-2)입니다. */}
         <DialogPrimitive.Overlay className={`fixed inset-0 z-50 bg-scrim ${FADE_IN}`} />
         <DialogPrimitive.Content
-          data-scope={scopeValue}
           data-overlay=""
           onOpenAutoFocus={(event) => {
             // 이 시점에는 아직 포커스가 옮겨지기 전입니다(Radix FocusScope가 옮기기 직전에 부름).

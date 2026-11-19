@@ -1,11 +1,12 @@
-import { PANEL, PaneHeading } from "./parts";
+import { PANEL_CLASSES } from "@/components/ui/classes";
+import { PaneHeading } from "./parts";
 
 /**
  * 첫 화면의 설명 — 무엇을 어디서 얼마나 찾는지(외부 호출 없음). 관심 대상 목록·최근 글은 SearchHome이 옆에 그립니다.
  */
 export function SearchIntro({ owner, demo }: { owner: boolean; demo: boolean }) {
   return (
-    <section aria-labelledby="search-intro" className={`${PANEL} flex flex-col gap-3 p-4 text-sm leading-6 text-text-2`}>
+    <section aria-labelledby="search-intro" className={`${PANEL_CLASSES} flex flex-col gap-3 p-4 text-sm leading-6 text-text-2`}>
       <PaneHeading id="search-intro">이 화면에서 찾는 것</PaneHeading>
       <p>
         기업·기관·사람 이름이나 티커·종목코드를 넣으면 먼저 <strong className="font-semibold text-text">대상</strong>으로 풀고(한글·영문 이름,

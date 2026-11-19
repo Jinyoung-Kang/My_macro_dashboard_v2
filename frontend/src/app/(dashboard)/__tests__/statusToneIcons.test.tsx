@@ -4,8 +4,9 @@
  *
  *  - 국면(/regime) 판정 근거: 속성 줄의 상태 글(정상·완화적·축소…)에 정상·주의 아이콘, 주의 줄은 읽어 주는 '주의:' 머리말
  *    (P5a — 지표 칸(Metric) 넷이 속성 목록(PropertyList) 줄 넷으로 바뀜. 아이콘 자리·'주의:'·값 톤은 같음)
- *  - 상태(/status) 수집 오류·경고 로그: '현재 오류'·'현재 경고' 수가 0보다 크면 값 옆에 위험·주의 아이콘(새 낱말 없이), 0이면 아이콘 없음
- *  - 상태(/status) '최근 수집 상태'가 중단이면 값 옆 주의 아이콘과 '주의:' — 값 줄 안의 상태 글은 위에 맞춤(align-top)
+ *  - 상태(/status) 수집 오류·경고 로그: '현재 오류'·'현재 경고' 수가 0보다 크면 위험·주의 아이콘 + 글(읽어 주는 머리말 없이), 0이면 아이콘 없음
+ *  - 상태(/status) '최근 수집 상태'가 중단이면 주의 아이콘과 '주의:' + 까닭 글
+ *    (P7 — 지표 칸(Metric)이 KPI 띠(KpiStrip) 타일로 바뀜. 값은 본문 잉크 숫자이고 아이콘·톤 색은 타일 아래 상태 줄로 — 아이콘 + 글·머리말 규칙은 같음)
  *
  * 홈 저장소 상태 줄은 HomeScreen.test.tsx가 봅니다.
  */
@@ -42,9 +43,9 @@ async function cardTitled(name: string): Promise<HTMLElement> {
   return (await screen.findByRole("heading", { name })).closest("section") as HTMLElement;
 }
 
-/** Metric 한 칸 — 이름(label) 글의 부모. */
-function metricOf(card: HTMLElement, label: string): HTMLElement {
-  return within(card).getByText(label).parentElement as HTMLElement;
+/** KPI 띠의 타일 하나 — 이름 있는 묶음(role=group, 이름 = 타일 이름). */
+function tileOf(card: HTMLElement, label: string): HTMLElement {
+  return within(card).getByRole("group", { name: label });
 }
 
 /** 속성 목록 한 줄 — 이름(dt) 옆 값 칸(dd)의 두 줄: 값 줄(값·배지)과 보조 글 줄(상태 글 + 해석). */
@@ -100,24 +101,26 @@ function issuesResponse(errors: number, warnings: number): StatusIssuesResponse 
 
 describe("상태 화면 수집 오류·경고 로그 — 현재 오류·경고 수는 아이콘과 함께(QA-505)", () => {
   // 수정 전에는 '현재 오류 3건'을 위험색, '현재 경고 19건'을 주의색 글로만 그렸습니다(홈 저장소 상태 줄과 쌍둥이).
-  // 이름에 이미 '오류'·'경고'가 있어 새 낱말(읽어 주는 머리말)은 더하지 않고 아이콘만 붙입니다. 0건은 상태가 아니라 아이콘이 없습니다.
-  it("QA-505: 수가 0보다 크면 값 옆에 위험·주의 아이콘(톤 색 유지, 글은 그대로), 0이면 아이콘 없음", async () => {
+  // 이름에 이미 '오류'·'경고'가 있어 읽어 주는 머리말은 더하지 않습니다. 0건은 상태가 아니라 아이콘이 없습니다.
+  // P7: 타일 값은 본문 잉크 숫자, 아이콘은 타일 아래 상태 줄(톤 색 아이콘 + 글)에 섭니다.
+  it("QA-505: 수가 0보다 크면 위험·주의 아이콘 + 글(톤 색, 머리말 없음), 0이면 아이콘 없음", async () => {
     reads["/api/status"] = { readMode: "auto", collectorReachable: true };
     reads[endpoints.status.issues] = issuesResponse(3, 19);
     const { unmount } = render(<StatusPage />);
     let card = await cardTitled("수집 오류·경고 로그");
     await within(card).findByText("현재 오류");
-    for (const [label, value, tone] of [["현재 오류", "3건", "text-danger"], ["현재 경고", "19건", "text-warn"]] as const) {
-      const metric = metricOf(card, label);
-      // 글은 그대로(이름 + 값) — 읽어 주는 머리말도 더하지 않습니다.
-      expect(metric.textContent).toBe(`${label}${value}`);
-      const valueBox = within(metric).getByText(value).closest(`.${tone}`);
-      expect(valueBox, `${label} 값의 톤 색`).not.toBeNull();
-      const icons = Array.from(metric.querySelectorAll("svg"));
+    for (const [label, value, tone, text] of [
+      ["현재 오류", "3건", "text-danger", "지금 실패 중인 태스크"],
+      ["현재 경고", "19건", "text-warn", "지금 경고인 태스크"],
+    ] as const) {
+      const tile = tileOf(card, label);
+      // 이름 + 값 + 상태 글 — 읽어 주는 머리말('오류:'·'주의:')은 더하지 않습니다.
+      expect(tile.textContent).toBe(`${label}${value}${text}`);
+      const status = within(tile).getByText(text).closest(`.${tone}`);
+      expect(status, `${label} 상태 줄의 톤 색`).not.toBeNull();
+      const icons = Array.from(tile.querySelectorAll("svg"));
       expect(icons.map((icon) => icon.getAttribute("aria-hidden")), `${label} 아이콘`).toEqual(["true"]);
-      expect(valueBox?.contains(icons[0]), `${label} 아이콘이 값 옆`).toBe(true);
-      // 값 줄 안의 상태 글(inline-flex)은 위에 맞춰 값 줄이 기준선 때문에 높아지지 않습니다(QA 스택 실측 32px → 34px을 막음).
-      expect(icons[0].closest(".inline-flex")?.className, `${label} 상태 글 세로 맞춤`).toContain("align-top");
+      expect(status?.contains(icons[0]), `${label} 아이콘이 상태 글 옆`).toBe(true);
     }
     unmount();
 
@@ -126,25 +129,24 @@ describe("상태 화면 수집 오류·경고 로그 — 현재 오류·경고 �
     card = await cardTitled("수집 오류·경고 로그");
     await within(card).findByText("현재 오류");
     for (const label of ["현재 오류", "현재 경고"]) {
-      const metric = metricOf(card, label);
-      expect(metric.textContent).toBe(`${label}0건`);
-      expect(metric.querySelectorAll("svg"), `${label} 0건 아이콘`).toHaveLength(0);
+      const tile = tileOf(card, label);
+      expect(tile.textContent).toBe(`${label}0건`);
+      expect(tile.querySelectorAll("svg"), `${label} 0건 아이콘`).toHaveLength(0);
     }
   });
 });
 
-describe("상태 화면 최근 수집 상태 — 중단은 주의 아이콘 + 글, 값 줄 높이는 이웃 칸과 같게", () => {
-  // 값 줄(text-xl·lg:text-2xl) 안의 상태 글(inline-flex)이 기준선에 앉으면 글이 한 줄일 때 값 줄이 2~3px 높아집니다(QA 스택 실측 — 짧은 글로
-  // 1440px 32 → 34·390px 28 → 31, align-top이면 32·28). 지금의 중단 글은 늘 두 줄 넘게 접혀 차이가 없지만, 같은 화면의 오류·경고 수와 같이 위에 맞춥니다.
-  it("중단이면 값 옆 주의 아이콘 하나·읽어 주는 '주의:', 상태 글은 align-top", async () => {
+describe("상태 화면 최근 수집 상태 — 중단은 주의 아이콘 + 글", () => {
+  // P7: 값은 판정 라벨('비정상 종료'), 까닭은 타일 아래 상태 줄(주의 아이콘 + '주의:' + 글).
+  it("중단이면 주의 아이콘 하나·읽어 주는 '주의:'와 까닭 글", async () => {
     reads["/api/status"] = { readMode: "auto", collectorReachable: true, lastRunStatus: "interrupted" };
     render(<StatusPage />);
-    const metric = (await screen.findByText("최근 수집 상태")).parentElement as HTMLElement;
-    expect(within(metric).getByText(/^비정상 종료/)).toBeTruthy();
-    const icons = Array.from(metric.querySelectorAll("svg"));
+    const tile = await screen.findByRole("group", { name: "최근 수집 상태" });
+    expect(within(tile).getByText(/^비정상 종료/)).toBeTruthy();
+    const icons = Array.from(tile.querySelectorAll("svg"));
     expect(icons.map((icon) => icon.getAttribute("aria-hidden"))).toEqual(["true"]);
     expect(icons[0].closest(".text-warn"), "아이콘 톤").not.toBeNull();
-    expect(icons[0].closest(".inline-flex")?.className, "상태 글 세로 맞춤").toContain("align-top");
-    expect(within(metric).getByText("주의:")).toBeTruthy();
+    expect(within(tile).getByText("주의:")).toBeTruthy();
+    expect(within(tile).getByText("프로세스가 사라졌거나 신호가 끊겼습니다")).toBeTruthy();
   });
 });

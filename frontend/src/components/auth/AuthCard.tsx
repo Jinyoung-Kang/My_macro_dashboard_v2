@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AUTH_CARD, AUTH_LINK, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
+import { AUTH_CARD, AUTH_LINK, AUTH_MESSAGE, AUTH_MESSAGE_TONE, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui/classes";
+import { StatusText } from "@/components/ui/icons";
 
 /**
  * 로그인 밖 화면(로그인·가입·인증·재설정·처리방침)의 공통 틀 — 화면 가운데 카드 하나(4px 모서리, 안쪽 24px), 제목 20px,
@@ -48,11 +49,27 @@ export function AuthField({
   );
 }
 
+/**
+ * 결과 상자(오류·성공) — 공용 상태 글(StatusText)이라 오류는 위험 톤 아이콘과 낭독기 머리말 '오류: ', 성공은 정상 톤 체크 아이콘이 글 앞에 붙습니다
+ * (색만으로 가르지 않음 — QA-855). 아이콘은 순수 SVG(components/ui/icons)라 서버 컴포넌트에서도 그릴 수 있습니다.
+ */
 export function AuthMessage({ tone, children }: { tone: "error" | "ok"; children: ReactNode }) {
-  const style = tone === "error"
-    ? "border-danger/30 bg-danger-tint text-danger"
-    : "border-ok/30 bg-ok-tint text-ok";
-  return <p className={`mt-4 rounded-control border px-3 py-2.5 text-[13px] ${style}`}>{children}</p>;
+  return (
+    <p className={`${AUTH_MESSAGE} ${AUTH_MESSAGE_TONE[tone]}`}>
+      <StatusText tone={tone === "error" ? "danger" : "ok"}>{children}</StatusText>
+    </p>
+  );
+}
+
+/** 입력 칸 아래의 오류 글(비밀번호 불일치) — 12px, 위험 톤 아이콘 + 낭독기 머리말 + 글(QA-855). */
+export function AuthFieldError({ children }: { children: ReactNode }) {
+  return (
+    <p className="mt-2 text-xs">
+      <StatusText tone="danger" iconSize={12}>
+        {children}
+      </StatusText>
+    </p>
+  );
 }
 
 export function AuthSubmit({ busy, disabled, children }: { busy: boolean; disabled?: boolean; children: ReactNode }) {

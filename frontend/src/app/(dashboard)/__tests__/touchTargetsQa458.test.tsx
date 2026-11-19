@@ -8,6 +8,9 @@
  * AI 요약의 '요약 근거' 목록(조사 때 요약을 열지 않아 재지 않음). 그린 DOM의 누름 자리마다 클래스로 lg 미만 44px을 따집니다
  * (lib/__tests__/touchTargetAudit — 문장 안의 링크는 WCAG 2.5.8 글 안 예외로 셈에서 뺌). 정보 검색(/search)은 행 전체가 min-h-11이라
  * 조사의 안쪽 링크 숫자(51개)는 과대 계산이었습니다 — 여기서 보지 않습니다.
+ *
+ * 정보 수집(뉴스·글, 출처 카드)과 수급 레이더(재무 표 '원문') 사례는 화면별 파일로 글자 그대로 옮겼습니다(작업대 화면 언어 P7 — 화면을 고치는
+ * 갈래가 자기 파일만 고치게): components/screens/info/__tests__/infoTouchTargetsQa458.test.tsx, app/(dashboard)/__tests__/radarTouchTargetsQa458.test.tsx.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -35,8 +38,6 @@ vi.mock("@/components/charts", () => ({
 
 import { DataTable } from "@/components/patterns";
 import { AiSummaryCard } from "@/components/screens/detail/DetailParts";
-import { SourceCard } from "@/components/screens/info/CatalogSection";
-import { NewsSection } from "@/components/screens/info/NewsSection";
 import { IndicatorDetailScreen } from "@/components/screens/detail/IndicatorDetailScreen";
 import { InstitutionDetailScreen } from "@/components/screens/detail/InstitutionDetailScreen";
 import { StockDetailScreen } from "@/components/screens/detail/StockDetailScreen";
@@ -45,9 +46,7 @@ import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
 import { macroOverview } from "@/lib/__tests__/homeFixtures";
 import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
-import type { CatalogSource } from "@/lib/info";
 import type { DetailQuote, SessionUser } from "@/lib/types";
-import RadarPage from "../radar/page";
 import GuruPage from "../style/page";
 
 const PRO: SessionUser = { email: "p@test.local", role: "MEMBER", tier: "PRO" };
@@ -67,21 +66,6 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const renderAs = (page: ReactElement) => render(<SessionUserProvider user={PRO}>{page}</SessionUserProvider>);
-
-const CATALOG = { checkedAt: "2026-11-15 10:00 KST", collectorReachable: true, tabs: [], sources: [], incidents: [] };
-
-const ARTICLE = {
-  id: "0123456789abcdef01234567", source: "blog.synthetic", sourceLabel: "Synthetic Blog", kind: "article",
-  url: "https://blog.example/2026/11/15/rates/", title: "Synthetic rates outlook", titleKo: null, author: "A. Writer",
-  publishedAt: "2026-11-15 09:00 KST", firstSeenAt: "2026-11-15 09:30 KST", summary: "합성 요약", bodyStatus: "full",
-  fetchTier: null, category: null,
-};
-
-const SOURCE: CatalogSource = {
-  task: "global_synthetic", key: "synthetic", label: "합성 출처", tab: "global", kind: "feed", siteUrl: "https://source.example/",
-  origin: "합성 기관", access: "official", screen: "/macro", speed: "slow", lastStatus: "ok", lastRunAt: "2026-11-15 09:00 KST",
-  lastDetail: null, politeStatus: null, streak: null, lastOkAt: "2026-11-15 09:00 KST", nextDueAt: null, items: null, incident: null, tone: "ok",
-};
 
 function quote(): DetailQuote {
   return {
@@ -109,54 +93,6 @@ const NEWS = {
 describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458)", () => {
   // 수정 전에는 아래 누름 자리가 모두 걸렸다(재현 커밋에서는 it.fails). 지금은 따로 선 글 링크·단추에 TEXT_TARGET(ui/classes —
   // 좁은 화면 min-h-11, lg 이상 글 높이), 체크 상자는 감싼 label, 표 머리·레이더 '원문'·'다른 곳에서 보기'·summary는 각자 min-h-11과 lg 변형.
-  //  - 정보 수집 뉴스·글: 제목 단추, '번역', '본문 보기', '원문 열기'(블로그 글·헤드라인 모두)
-  it("정보 수집 뉴스·글 — 제목 단추와 '번역·본문 보기·원문 열기'", async () => {
-    reads = {
-      [endpoints.info.catalog]: CATALOG,
-      "/api/info/items?kind=blog": { available: true, items: [ARTICLE], page: 1, size: 10, total: 11, pages: 2 },
-      "/api/info/headlines?set=world": {
-        available: true, page: 1, size: 10, total: 1, pages: 1,
-        items: [{ set: "world", title: "Synthetic press release", summary: null, link: "https://press.example/1", source: "Synthetic Wire",
-          feed: "synthetic", publishedAt: "2026-11-15 09:00:00 KST", fetchedAt: "2026-11-15T00:10:00+00:00", timeBasis: "published" }],
-      },
-    };
-    const { container } = render(<NewsSection />);
-    await screen.findByRole("button", { name: "Synthetic rates outlook" });
-    expect(screen.getByRole("link", { name: "원문 열기" })).toBeTruthy();
-    const blog = smallTargets(container);
-    fireEvent.click(screen.getByRole("button", { name: "보도자료·경제지" }));
-    await screen.findByRole("button", { name: "Synthetic press release" });
-    expect([...blog, ...smallTargets(container)]).toEqual([]);
-  });
-
-  //  - 해외·공시·모의매매 입력 출처 카드: '출처 사이트', '자료 보기'
-  it("정보 수집 출처 카드 — '출처 사이트·자료 보기'", () => {
-    const { container } = render(<ul><SourceCard source={SOURCE} /></ul>);
-    expect(screen.getByRole("link", { name: "자료 보기" })).toBeTruthy();
-    expect(smallTargets(container)).toEqual([]);
-  });
-
-  //  - 수급 레이더 재무 표: '원문'(클래스 min-h-6 = 24px, 조사 측정 40px)
-  it("수급 레이더 재무 표 — '원문'", async () => {
-    reads = {
-      "/api/radar/ranking": {
-        available: true, market: "KOSPI", investor: "외국인", tradeType: "순매수", readMode: "auto", source: "합성 순위", sourceKind: "krx",
-        isHistorical: false, historyDate: null, intervalType: "TODAY", dataDate: "2026-11-14",
-        rows: [{ rank: 1, code: "000001", name: "합성전자", price: 1000, changePct: 1.2, netAmountEok: 10 }],
-      },
-      [endpoints.publicData.fundamentals("000001")]: {
-        available: true, priceDate: "2026-11-14", companies: [
-          { code: "000001", available: true, name: "합성전자", bsnsYear: "2025", fsLabel: "연결", dartUrl: "https://dart.example/1", debtRatio: 50,
-            roe: 10, operatingMargin: 5, revenueGrowth: 3, operatingIncomeGrowth: 4, marketCap: 1e12, per: 10, pbr: 1 },
-        ],
-      },
-    };
-    renderAs(<RadarPage />);
-    const link = await screen.findByRole("link", { name: "원문" });
-    const card = link.closest("section") as HTMLElement;
-    expect(smallTargets(card)).toEqual([]);
-  });
-
   //  - 종목 상세: '출처 보기', '정보 검색', 뉴스 제목, 리서치·회사 개요 출처·홈페이지 링크, 13F 보유 기관 이름, '다른 곳에서 보기'(min-h-9)
   it("종목 상세 — 출처·뉴스·리서치·개요·보유 기관·다른 곳에서 보기 링크", async () => {
     reads = {
