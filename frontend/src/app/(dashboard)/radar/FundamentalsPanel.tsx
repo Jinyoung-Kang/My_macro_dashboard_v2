@@ -3,9 +3,9 @@
 import { ChangeCell, DataTable } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { splitFundamentals } from "@/lib/radar";
+import { ratioText, splitFundamentals } from "@/lib/radar";
 import { stableCodesKey } from "@/lib/transforms";
-import { formatKrw, formatNumber } from "@/lib/format";
+import { formatKrw } from "@/lib/format";
 import type { KrFundamentalsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
@@ -32,11 +32,9 @@ export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fu
   const { data, loading, error, reload } = fundamentals;
   const { all, rows, empty, covered } = splitFundamentals(codes, data?.companies ?? []);
 
-  // 모르면 null — 공용 표가 '—'(읽기 '값 없음')를 그립니다.
-  const percent = (value: number | null | undefined) =>
-    value === null || value === undefined ? null : `${formatNumber(value, 1)}%`;
-  const multiple = (value: number | null | undefined) =>
-    value === null || value === undefined ? null : `${formatNumber(value, 1)}배`;
+  // 비율·배수는 음수 부호 −(U+2212 — QA-889), 모르면 null — 공용 표가 '—'(읽기 '값 없음')를 그립니다.
+  const percent = (value: number | null | undefined) => ratioText(value, "%");
+  const multiple = (value: number | null | undefined) => ratioText(value, "배");
 
   return (
     <Panel

@@ -38,7 +38,7 @@ function property(scope: HTMLElement, label: string): string {
 }
 
 describe("수급 레이더 재무 비율·배수의 음수 부호(QA-889)", () => {
-  it.fails("검사 칸 '재무': ROE·PER 음수는 −(U+2212), 양수(PBR·부채비율)는 부호 없이", () => {
+  it("검사 칸 '재무': ROE·PER 음수는 −(U+2212), 양수(PBR·부채비율)는 부호 없이", () => {
     const { container } = render(
       <RankingDetail
         row={ROW}
@@ -55,7 +55,7 @@ describe("수급 레이더 재무 비율·배수의 음수 부호(QA-889)", () =
     expect(container.textContent).not.toMatch(/(^|[^\d])-\d/);
   });
 
-  it.fails("재무 표: 영업이익률·ROE·PER 음수는 −(U+2212)", () => {
+  it("재무 표: 영업이익률·ROE·PER 음수는 −(U+2212)", () => {
     render(<FundamentalsPanel codes={["000001"]} fundamentals={read<FundamentalsRead>(FUNDAMENTALS)} />);
     const table = screen.getByRole("table");
     const headers = within(table).getAllByRole("columnheader").map((cell) => cell.textContent);

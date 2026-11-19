@@ -5,6 +5,7 @@ import { ChangeChip, InspectorSubheading, PropertyList, type PropertyItem } from
 import { LINK_CLASSES, Tag } from "@/components/ui";
 import { ExternalLinkIcon } from "@/components/ui/icons";
 import { streakText } from "@/lib/flows";
+import { ratioText } from "@/lib/radar";
 import { formatNumber, formatShares, formatSignedMinus, withMinusSign } from "@/lib/format";
 import type { FlowWindow, KrFundamentalsCompany, RadarConsensusRow, RadarRow, StockFlowsResponse } from "@/lib/types";
 import type { ConsensusRead } from "./ConsensusPanel";
@@ -25,8 +26,6 @@ function windowShares(value: FlowWindow | undefined): string | null {
   return value.days < value.window ? `${text} (${value.days}일)` : text;
 }
 
-const percent = (value: number | null | undefined) => (value === null || value === undefined ? null : `${formatNumber(value, 1)}%`);
-const multiple = (value: number | null | undefined) => (value === null || value === undefined ? null : `${formatNumber(value, 1)}배`);
 
 /** 검사 칸의 절 — 절 머리(검사 칸 제목 바로 아래 단계 — 옆 칸 h4·대화상자 h3) + 속성 목록. */
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -80,7 +79,7 @@ function fundamentalsItems(company: KrFundamentalsCompany): PropertyItem[] {
   return [
     {
       label: "부채비율",
-      value: company.capitalImpaired ? <Tag tone="warn">자본잠식</Tag> : percent(company.debtRatio),
+      value: company.capitalImpaired ? <Tag tone="warn">자본잠식</Tag> : ratioText(company.debtRatio, "%"),
     },
     {
       label: "매출 증가",
@@ -94,9 +93,9 @@ function fundamentalsItems(company: KrFundamentalsCompany): PropertyItem[] {
           ? null
           : <ChangeChip size="sm" changePct={company.operatingIncomeGrowth} pctDigits={1} />,
     },
-    { label: "ROE", value: percent(company.roe) },
-    { label: "PER", value: multiple(company.per) },
-    { label: "PBR", value: multiple(company.pbr) },
+    { label: "ROE", value: ratioText(company.roe, "%") },
+    { label: "PER", value: ratioText(company.per, "배") },
+    { label: "PBR", value: ratioText(company.pbr, "배") },
   ];
 }
 
