@@ -263,6 +263,15 @@ export function catalogStatus(source: Pick<CatalogSource, "access" | "incident" 
   return "기록 없음";
 }
 
+/**
+ * 출처 표·검사 칸의 상태 글 — 상태 글({@link catalogStatus})에, 차단 통과 수집 출처가 정상이 아닌 판정을 두 번 넘게 이어 받았으면 '(연속 n회)'.
+ * 예전 출처 카드가 상태 줄에 붙이던 꼬리와 같은 조건입니다.
+ */
+export function catalogStatusText(source: Pick<CatalogSource, "access" | "incident" | "politeStatus" | "lastStatus" | "streak">): string {
+  const streak = source.streak && source.streak > 1 && source.politeStatus !== "ok" ? ` (연속 ${source.streak}회)` : "";
+  return `${catalogStatus(source)}${streak}`;
+}
+
 /** 그 탭의 색별 수를 한 줄로("정상 12 · 주의 1 · 위험 0 · 기록 없음 2"). */
 export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
   return `정상 ${tones.ok ?? 0} · 주의 ${tones.warn ?? 0} · 위험 ${tones.danger ?? 0} · 기록 없음 ${tones.neutral ?? 0}`;

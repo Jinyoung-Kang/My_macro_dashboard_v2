@@ -8,6 +8,7 @@ import {
   bannerText,
   bodyLabel,
   canTranslate,
+  catalogStatusText,
   eokText,
   hasHangul,
   headlineLink,
@@ -88,6 +89,16 @@ describe("출처 상태", () => {
     expect(statusTone({ status: "format", incident: null })).toBe("warn");
     expect(statusTone({ status: "ok", incident: null })).toBe("ok");
     expect(statusTone({ status: null, incident: null })).toBe("neutral");
+  });
+});
+
+describe("출처 표의 상태 글", () => {
+  const row = { access: "bypass" as const, incident: null, politeStatus: "failed", lastStatus: "fail", streak: 3 };
+  it("정상이 아닌 판정을 두 번 넘게 이어 받았으면 '(연속 n회)', 한 번이거나 정상·모름이면 꼬리 없음", () => {
+    expect(catalogStatusText(row)).toBe("받지 못함 (연속 3회)");
+    expect(catalogStatusText({ ...row, streak: 1 })).toBe("받지 못함");
+    expect(catalogStatusText({ ...row, politeStatus: "ok", streak: 5 })).toBe("정상");
+    expect(catalogStatusText({ ...row, politeStatus: null, lastStatus: null, streak: null })).toBe("기록 없음");
   });
 });
 

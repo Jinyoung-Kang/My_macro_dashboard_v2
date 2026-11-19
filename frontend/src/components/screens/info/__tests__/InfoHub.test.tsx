@@ -367,8 +367,10 @@ describe("정보 수집 화면", () => {
     expect(within(rows[0]).getByText("끊긴 출처")).toBeTruthy();
     expect(within(rows[0]).getByText("차단됨 — 잠시 멈춤")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "위험" }));
-    expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1);
+    // 상태 거르기는 하나만 고르는 라디오 묶음(공용 FilterList — 예전 aria-pressed 칩과 같은 뜻: 고른 거르기). 거르면 표를 새로 그립니다.
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "상태" })).getByRole("radio", { name: "위험" }));
+    expect(screen.getByRole("radio", { name: "위험" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(screen.getByRole("region", { name: /^출처 상태 / })).getAllByRole("row").slice(1)).toHaveLength(1);
     expect(screen.queryByRole("navigation", { name: /출처 상태 쪽/ })).toBeNull();
   });
 
@@ -382,7 +384,7 @@ describe("정보 수집 화면", () => {
     const table = await screen.findByRole("region", { name: /^출처 상태 / });
     const cell = within(table).getByText(long);
     expect(cell.className).not.toMatch(/line-clamp|truncate/);
-    expect(cell.className).toMatch(/break-words/);
+    expect(cell.className).toMatch(/wrap-anywhere/);
   });
 
   // 출처 상태 표(위)와 같은 글이 출처 목록 카드에서는 여전히 두 줄에서 잘렸다(2026-11-12 사용자 결정 — 카드도 전체를 보임).
