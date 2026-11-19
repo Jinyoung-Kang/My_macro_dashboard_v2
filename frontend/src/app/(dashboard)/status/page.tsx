@@ -1,12 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { CopyButton } from "@/components/CopyButton";
 import {
   Banner,
   Button,
   Card,
-  EmptyState,
   ErrorState,
   Freshness,
   Loading,
@@ -15,22 +12,18 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
-import { AlertTriangleIcon, CheckCircleIcon, ClockIcon, SkipIcon, StatusIcon, StatusText, XCircleIcon } from "@/components/ui/icons";
+import { ClockIcon, StatusIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
-import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
-import { apiPost } from "@/lib/api";
-import { EMPTY, formatAge, formatKst, formatNumber, formatWithUnit, withoutLeadingIcon } from "@/lib/format";
-import type {
-  PublicApiDiagnosticsResponse,
-  StatusIssuesResponse,
-  StatusResponse,
-  VerificationResponse,
-} from "@/lib/types";
+import { EMPTY, formatAge, formatKst, formatNumber, withoutLeadingIcon } from "@/lib/format";
+import type { StatusResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { taskStatusView } from "@/lib/taskRun";
 import { endpoints } from "@/lib/endpoints";
+import { IssuesPanel } from "./IssuesPanel";
+import { PublicApiPanel } from "./PublicApiPanel";
+import { VerificationPanel } from "./VerificationPanel";
 
 const RUN_STATUS_LABEL: Record<string, string> = {
   ok: "정상 종료",
@@ -286,237 +279,8 @@ export default function StatusPage() {
   );
 }
 
-/**
- * 국내 공공 API 연결 진단.
- *
- * 공공데이터포털은 키 하나로 여러 서비스를 쓰지만 활용신청·승인은 서비스마다
- * 따로입니다. 키는 맞는데 한 서비스만 승인 전인 경우가 흔해서, 어느 것이 되는지
- * 한 번에 봅니다. 누를 때마다 실제로 API당 1회씩 호출하므로 자동으로 돌리지 않습니다.
- */
-function PublicApiPanel() {
-  const [runId, setRunId] = useState<number | null>(null);
-  const { data, loading, error } = useApi<PublicApiDiagnosticsResponse>(
-    runId === null ? null : endpoints.publicData.apiStatus(runId),
-  );
-
-  return (
-    <Card
-      title="국내 공공 API 연결 진단" source="공공데이터포털(천문연·금융위) · 금융감독원 Open DART — 실제 호출"
-      subtitle="공공데이터포털(특일정보·주식시세) · Open DART — 누를 때마다 API당 1회 호출"
-      actions={
-        <Button onClick={() => setRunId(Date.now())} disabled={loading}>
-          {loading ? "확인 중…" : "진단 실행"}
-        </Button>
-      }
-    >
-      {runId === null && (
-        <p className="text-sm text-text-3">
-          .env에 키를 넣고 수집기를 다시 띄운 뒤 눌러 보세요. 결과에 키 값은 표시되지 않습니다.
-        </p>
-      )}
-      {error && <ErrorState message={error} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
-      {data?.available && data.apis && (
-        <Table
-          rows={data.apis}
-          rowKey={(row) => row.label}
-          columns={[
-            { key: "label", header: "API", render: (row) => row.label },
-            {
-              key: "state",
-              header: "상태",
-              render: (row) =>
-                row.ok ? (
-                  <StatusText tone="ok">정상</StatusText>
-                ) : row.configured ? (
-                  <StatusText tone="danger">실패</StatusText>
-                ) : (
-                  <StatusText tone="neutral">키 없음</StatusText>
-                ),
-            },
-            { key: "detail", header: "내용", render: (row) => <span className="text-xs">{row.detail ?? EMPTY}</span> },
-            {
-              key: "ms",
-              header: "응답",
-              align: "right",
-              render: (row) => (row.elapsedMs === null ? EMPTY : `${formatNumber(row.elapsedMs, 0)}ms`),
-            },
-          ]}
-        />
-      )}
-    </Card>
-  );
-}
-
-const VERDICT_STYLE: Record<string, string> = {
-  match: "text-ok",
-  mismatch: "text-danger",
-  skipped: "text-text-3",
-  error: "text-warn",
-};
-
-/** 판정 아이콘 — 장식입니다. 뜻은 바로 옆에 보이는 판정 글(entry.label)이 나릅니다. */
-const VERDICT_ICON: Record<string, typeof CheckCircleIcon> = {
-  match: CheckCircleIcon,
-  mismatch: XCircleIcon,
-  skipped: SkipIcon,
-  error: AlertTriangleIcon,
-};
-
 /** 태스크 결과 아이콘(표 칸) — 모르는 상태는 '알 수 없음'(lib/taskRun.taskStatusView). */
 function TaskStatusIcon({ status }: { status: string | null | undefined }) {
   const view = taskStatusView(status);
   return <StatusIcon tone={view.tone} label={view.label} />;
-}
-
-function VerdictIcon({ verdict }: { verdict: string }) {
-  const Icon = VERDICT_ICON[verdict];
-  return Icon ? <Icon size={14} className={VERDICT_STYLE[verdict]} /> : null;
-}
-
-function VerificationPanel() {
-  const verification = useAsyncAction(
-    () => apiPost<VerificationResponse>(endpoints.status.verification),
-    "검증에 실패했습니다.",
-  );
-  const { result, error, busy: running } = verification;
-  const run = () => verification.run();
-
-  return (
-    <Card
-      title="데이터 교차 검증 (KRX · KIS · 토스)" source="KRX Open API · 한국투자증권(KIS) Open API · 토스증권 Open API · Yahoo Finance (항목별 출처는 표 안에)"
-      subtitle="같은 수치를 서로 다른 출처가 같게 말하는지 대조합니다. '확인 못 함'과 '일치'는 절대 섞지 않습니다."
-      actions={
-        <Button variant="primary" onClick={run} disabled={running}>
-          {running ? "검증 중…" : "지금 교차 검증 실행"}
-        </Button>
-      }
-    >
-      {error && <ErrorState message={error} />}
-      {!result && !error && (
-        <EmptyState message="아직 실행하지 않았습니다. 시세 대조는 장 마감 후, 수급 대조는 정규장 중에만 가능합니다." />
-      )}
-
-      {result && !result.available && <Banner tone="warn">{result.message}</Banner>}
-
-      {result?.available && (
-        <>
-          <p className="mb-3 text-sm text-text-2">
-            {result.headline} · 검증 시각 {formatKst(result.checkedAt)}
-          </p>
-          <div className="flex flex-col gap-3">
-            {result.results?.map((entry) => (
-              <div key={entry.name} className="rounded-control border border-border bg-surface p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm text-text">
-                    <VerdictIcon verdict={entry.verdict} />
-                    {entry.name}
-                  </span>
-                  <span className={`text-xs font-semibold ${VERDICT_STYLE[entry.verdict]}`}>
-                    {entry.label}
-                    {entry.diffPct !== null && ` · 차이 ${entry.diffPct.toFixed(3)}%`}
-                  </span>
-                </div>
-                {entry.readings.length > 0 && (
-                  <ul className="mt-2 flex flex-col gap-1 text-xs text-text-3">
-                    {entry.readings.map((reading) => (
-                      <li key={reading.source} className="flex justify-between gap-3">
-                        <span>{reading.source}</span>
-                        <span className="tabular-nums">
-                          {reading.ok
-                            ? `${formatNumber(reading.value, 2)}${
-                                reading.detail ? ` (${reading.detail})` : ""
-                              }`
-                            : `실패: ${reading.detail ?? EMPTY}`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {entry.note && <p className="mt-2 text-xs text-text-3">{entry.note}</p>}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
-/**
- * 수집 오류·경고 로그 — 문제만 모아 한 덩어리 텍스트로.
- *
- * 표는 태스크별 "최근 결과"만 보여 주고 긴 사유는 잘립니다. 문제를 누군가에게 보여
- * 주려면 스크린샷 여러 장이 필요했습니다. 여기서는 백엔드가 만든 텍스트를 그대로
- * 보여 주고 한 번에 복사합니다(비밀값은 백엔드에서 가려져 옵니다).
- */
-function IssuesPanel() {
-  const { data, loading, error, reload, refreshError } = useApi<StatusIssuesResponse>(endpoints.status.issues, 60_000);
-  const counts = data?.counts;
-  const hasIssues =
-    !!counts && counts.errors + counts.warnings + counts.recentGroups + (counts.missingDatasets ?? 0) > 0;
-  // 수집기에 닿지 못하면 누락 데이터셋 수는 모릅니다(null). '0개'·초록 '오류·경고가 없습니다'로 보이면 모름이
-  // 정상처럼 읽혔습니다(QA-102). 예전 백엔드는 이때도 0을 보냈으므로 연결 여부도 함께 봅니다.
-  const missingUnknown = !!data && (!data.collectorReachable || counts?.missingDatasets == null);
-
-  return (
-    <Card
-      title="수집 오류·경고 로그" source={SOURCES.collectorRuns}
-      subtitle={`지금 실패 중인 태스크 · 최근 ${data?.lookbackHours ?? 24}시간 실패 이력(같은 사유는 묶음) · 누락 데이터셋`}
-      actions={
-        <div className="flex items-center gap-2">
-          <Freshness refreshError={refreshError} />
-          <Button onClick={reload} disabled={loading}>
-            새로고침
-          </Button>
-          <CopyButton text={data?.text} label="로그 복사" variant="primary" disabled={!data?.text} />
-        </div>
-      }
-    >
-      {loading && !data && <Loading label="실행 기록을 모으는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
-      {data && (
-        <>
-          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {/* 오류·경고 수는 글 색만으로 전하지 않고 아이콘을 붙입니다(위험색은 상승 빨강과 거의 같은 색 — W4, QA-505). 이름에 이미
-                '오류'·'경고'가 있어 읽어 주는 머리말은 더하지 않습니다. 0건은 상태가 아니라 아이콘이 없습니다. align-top은 값 줄 안의
-                inline-flex가 기준선에 앉아 줄이 2~3px 높아지지 않게 합니다. */}
-            <Metric
-              label="현재 오류"
-              value={counts?.errors ? (
-                <StatusText tone="danger" srPrefix="" iconSize={20} className="align-top">{`${counts.errors}건`}</StatusText>
-              ) : `${counts?.errors ?? 0}건`}
-              tone={counts?.errors ? "text-danger" : undefined}
-            />
-            <Metric
-              label="현재 경고"
-              value={counts?.warnings ? (
-                <StatusText tone="warn" srPrefix="" iconSize={20} className="align-top">{`${counts.warnings}건`}</StatusText>
-              ) : `${counts?.warnings ?? 0}건`}
-              tone={counts?.warnings ? "text-warn" : undefined}
-            />
-            <Metric label="최근 실패 유형" value={`${counts?.recentGroups ?? 0}개`} />
-            <Metric label="누락 데이터셋" value={missingUnknown ? EMPTY : formatWithUnit(counts?.missingDatasets, 0, "개")} />
-          </div>
-          {!data.collectorReachable && (
-            <Banner tone="warn">수집기에 연결하지 못해 DB 기록만으로 만들었습니다(누락 데이터셋·없앤 태스크 거르기 제외).</Banner>
-          )}
-          {hasIssues ? (
-            <pre tabIndex={0} className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-bg p-3 text-xs leading-relaxed text-text-2">
-              {data.text}
-            </pre>
-          ) : missingUnknown ? (
-            <p className="text-sm text-text-3">
-              실행 기록에는 최근 {data.lookbackHours}시간 동안 오류·경고가 없지만, 수집기에 연결하지 못해 누락 데이터셋은
-              확인하지 못했습니다.
-            </p>
-          ) : (
-            <p className="text-sm">
-              <StatusText tone="ok">최근 {data.lookbackHours}시간 동안 오류·경고가 없습니다.</StatusText>
-            </p>
-          )}
-        </>
-      )}
-    </Card>
-  );
 }
