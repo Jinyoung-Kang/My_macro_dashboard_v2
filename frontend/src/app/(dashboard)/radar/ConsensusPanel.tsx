@@ -10,6 +10,21 @@ import { endpoints } from "@/lib/endpoints";
 import { OmittedNote } from "./OmittedNote";
 
 /**
+ * 외국인·기관 공통 순위(60초) — 위 조건(시장·매매 구분·기간·표시 종목 수)을 그대로 따릅니다. null이면 읽지 않습니다. 순위 검사 칸이 같은 응답을 쓰도록
+ * 화면이 한 번 읽어 패널에 넘깁니다.
+ */
+export function useConsensus(params: { market: string; tradeType: string; interval: string; topN: string } | null) {
+  return useApi<RadarConsensusResponse>(
+    params
+      ? endpoints.positioning.radarConsensus({ market: params.market, tradeType: params.tradeType, intervalType: params.interval, topN: params.topN })
+      : null,
+    60_000,
+  );
+}
+
+export type ConsensusRead = ReturnType<typeof useConsensus>;
+
+/**
  * 외국인·기관이 <b>같은 방향</b>으로 움직인 종목.
  *
  * <p>한쪽만 사는 종목과 둘이 함께 사는 종목은 뜻이 다릅니다. 예전에는 투자
@@ -19,22 +34,24 @@ import { OmittedNote } from "./OmittedNote";
  * 소스(Daum)가 상위 목록만 주고 전체 종목의 수급은 주지 않기 때문에, 외국인
  * 상위 N 밖에서 사들인 종목은 기관이 1위로 샀더라도 여기 나오지 않습니다.
  * 표시 종목 수를 늘리면 그만큼 넓게 봅니다. 이 한계는 카드에도 적습니다.
+ *
+ * `consensus`(화면이 useConsensus로 이미 읽은 것)를 주면 스스로 읽지 않습니다.
  */
 export function ConsensusPanel({
   market,
   tradeType,
   interval,
   topN,
+  consensus,
 }: {
   market: string;
   tradeType: string;
   interval: string;
   topN: string;
+  consensus?: ConsensusRead;
 }) {
-  const { data, loading, error, reload, refreshError } = useApi<RadarConsensusResponse>(
-    endpoints.positioning.radarConsensus({ market, tradeType, intervalType: interval, topN }),
-    60_000,
-  );
+  const own = useConsensus(consensus ? null : { market, tradeType, interval, topN });
+  const { data, loading, error, reload, refreshError } = consensus ?? own;
 
   const buying = tradeType === "순매수";
   const rows = data?.rows ?? [];

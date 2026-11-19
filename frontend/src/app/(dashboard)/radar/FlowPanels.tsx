@@ -101,12 +101,21 @@ export function MarketFlowsPanel({ market }: { market: string }) {
 }
 
 // ------------------------------------------------------------------ 종목 지속성
-export function StockFlowsPanel({ rows }: { rows: { code: string; name: string }[] }) {
-  const codes = stableCodesKey(rows.map((row) => row.code));
-  const { data, loading, error, refreshError } = useApi<StockFlowsResponse>(
-    codes ? endpoints.positioning.stockFlows(codes) : null,
-    300_000,
-  );
+/** 종목들의 투자자별 매매동향(토스 공식, 300초) — 코드가 없으면 읽지 않습니다. 순위 검사 칸이 같은 응답을 쓰도록 화면이 한 번 읽어 패널에 넘깁니다. */
+export function useStockFlows(codes: readonly string[]) {
+  const key = stableCodesKey([...codes]);
+  return useApi<StockFlowsResponse>(key ? endpoints.positioning.stockFlows(key) : null, 300_000);
+}
+
+export type StockFlowsRead = ReturnType<typeof useStockFlows>;
+
+/**
+ * 수급 지속성 패널. `flows`(화면이 useStockFlows로 이미 읽은 것)를 주면 그것을 그리고 스스로 읽지 않습니다 — 순위 검사 칸과 같은 응답 하나(요청 그대로).
+ * 주지 않으면(패널만 쓰는 곳) 스스로 읽습니다.
+ */
+export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: string }[]; flows?: StockFlowsRead }) {
+  const own = useStockFlows(flows ? [] : rows.map((row) => row.code));
+  const { data, loading, error, refreshError } = flows ?? own;
   const names = new Map(rows.map((row) => [row.code, row.name]));
   const stocks = (data?.stocks ?? []).filter((stock) => stock.available);
   const investor = (stock: StockFlowsResponse["stocks"][number], key: string) =>

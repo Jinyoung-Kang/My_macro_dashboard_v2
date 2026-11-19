@@ -9,18 +9,27 @@ import type { KrFundamentalsResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
 /**
+ * 종목들의 공시 재무(DART)·공식 시세 — 코드가 없으면 읽지 않습니다(자동 갱신 없음). 순서를 정렬해 키를 고정합니다 — 랭킹 순서만 바뀌어도 다시 요청하지 않게.
+ * 순위 검사 칸이 같은 응답을 쓰도록 화면이 한 번 읽어 패널에 넘깁니다.
+ */
+export function useFundamentals(codes: readonly string[]) {
+  const key = stableCodesKey([...codes]);
+  return useApi<KrFundamentalsResponse>(key ? endpoints.publicData.fundamentals(key) : null);
+}
+
+export type FundamentalsRead = ReturnType<typeof useFundamentals>;
+
+/**
  * 순매수 종목의 재무 체크 (DART 사업보고서).
  *
  * 수급은 "누가 샀나"만 말합니다. 같은 순매수라도 부채가 많거나 이익이 줄고
  * 있는 회사라면 해석이 달라지므로 공시 재무를 옆에 둡니다. 비율은 백엔드가
  * 계산하고(analytics/KrFundamentals), 화면은 그대로 보여 주기만 합니다.
+ * `fundamentals`(화면이 useFundamentals로 이미 읽은 것)를 주면 스스로 읽지 않습니다.
  */
-export function FundamentalsPanel({ codes }: { codes: string[] }) {
-  // 순서를 정렬해 키를 고정합니다. 랭킹 순서만 바뀌어도 다시 요청하지 않게.
-  const key = stableCodesKey(codes);
-  const { data, loading, error, reload } = useApi<KrFundamentalsResponse>(
-    key ? endpoints.publicData.fundamentals(key) : null,
-  );
+export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fundamentals?: FundamentalsRead }) {
+  const own = useFundamentals(fundamentals ? [] : codes);
+  const { data, loading, error, reload } = fundamentals ?? own;
   const { all, rows, empty, covered } = splitFundamentals(codes, data?.companies ?? []);
 
   const percent = (value: number | null | undefined) =>
