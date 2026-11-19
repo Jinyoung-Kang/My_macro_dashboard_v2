@@ -7,7 +7,7 @@
  *
  * 기대(문구·요청·켜짐 조건·확인 창 그대로): 불일치면 확인 입력칸 aria-invalid="true" + aria-describedby → 불일치 글. 서버 오류는 role="alert" 안.
  * 성공 결과는 늘 있는 조용한 알림 영역(role="status")이 같은 글로 읽고, 계정 지우기 성공은 결과 상자로 포커스를 옮김.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 "expected null to be 'true'"(확인 입력칸 aria-invalid 없음), 둘째 사례 'expected null not to be null'
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 "expected null to be 'true'"(확인 입력칸 aria-invalid 없음), 둘째 사례 'expected null not to be null'
  * (오류 상자를 감싼 role=alert 없음), 셋째 사례 'Unable to find an accessible element with the role "status"'(알림 영역 없음), 넷째 사례
  * 'expected <body><div>…(1)</div></body> to be null'(계정 지우기 뒤 activeElement BODY, 포커스 받을 결과 상자 없음).
  */
@@ -58,7 +58,7 @@ async function submitPassword() {
 }
 
 describe("내 계정 — 오류·결과 글의 낭독과 입력칸 연결(QA-867)", () => {
-  it.fails("불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 aria-describedby — 고치면 둘 다 풀림", async () => {
+  it("불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 aria-describedby — 고치면 둘 다 풀림", async () => {
     await rendered();
     fireEvent.change(screen.getByLabelText("새 비밀번호"), { target: { value: "first pass word" } });
     const confirm = screen.getByLabelText("새 비밀번호 확인");
@@ -71,7 +71,7 @@ describe("내 계정 — 오류·결과 글의 낭독과 입력칸 연결(QA-867
     expect(confirm.getAttribute("aria-describedby")).toBeNull();
   });
 
-  it.fails("서버 오류(비밀번호 변경)는 role=alert 안 — 문구 그대로", async () => {
+  it("서버 오류(비밀번호 변경)는 role=alert 안 — 문구 그대로", async () => {
     api.auth.changePassword.mockRejectedValue(new Error("지금 비밀번호가 맞지 않습니다."));
     await rendered();
     await submitPassword();
@@ -80,7 +80,7 @@ describe("내 계정 — 오류·결과 글의 낭독과 입력칸 연결(QA-867
     expect(message.closest('[role="alert"]')).not.toBeNull();
   });
 
-  it.fails("성공 결과는 늘 있는 조용한 알림 영역(role=status)이 같은 글로 읽는다 — 비밀번호 변경·다른 기기 로그아웃", async () => {
+  it("성공 결과는 늘 있는 조용한 알림 영역(role=status)이 같은 글로 읽는다 — 비밀번호 변경·다른 기기 로그아웃", async () => {
     api.auth.changePassword.mockResolvedValue({ ok: true, message: "비밀번호를 바꿨습니다." });
     api.auth.logoutOthers.mockResolvedValue({ ok: true, revoked: 2 });
     await rendered();
@@ -98,7 +98,7 @@ describe("내 계정 — 오류·결과 글의 낭독과 입력칸 연결(QA-867
     expect(within(devicesPanel).getByRole("status").textContent).toBe("다른 기기 2곳의 로그인을 끊었습니다.");
   });
 
-  it.fails("계정 지우기 성공: 폼이 결과 상자로 바뀌면 포커스가 결과 상자로 — 확인 창 문구 그대로", async () => {
+  it("계정 지우기 성공: 폼이 결과 상자로 바뀌면 포커스가 결과 상자로 — 확인 창 문구 그대로", async () => {
     const confirmSpy = vi.fn(() => true);
     vi.stubGlobal("confirm", confirmSpy);
     api.auth.deleteAccount.mockResolvedValue({ ok: true, message: "계정을 지웠습니다." });
