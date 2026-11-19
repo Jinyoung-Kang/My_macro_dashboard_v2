@@ -40,11 +40,14 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-/** 이미 읽은 응답이 아직 오지 않았거나 실패했으면 그 사실(새로 읽지 않음), 왔으면 null. */
-function readState(read: { data: unknown; loading: boolean; error: string | null }, label: string): string | null {
+/**
+ * 이미 읽은 응답이 아직 오지 않았거나 실패했으면 그 사실(새로 읽지 않음), 왔으면 null. `object`는 목적격 조사까지 붙인 이름('수급 지속성을'·'재무를') —
+ * 받침에 따라 을/를이 갈려 부르는 쪽이 붙입니다(QA-865 — 예전 `${label}를`은 '수급 지속성를'·'공통 목록를').
+ */
+function readState(read: { data: unknown; loading: boolean; error: string | null }, object: string): string | null {
   if (read.data) return null;
-  if (read.error) return `${label}를 받지 못했습니다(아래 패널의 오류 참고).`;
-  return read.loading ? `${label}를 불러오는 중입니다.` : `${label}를 받지 못했습니다.`;
+  if (read.error) return `${object} 받지 못했습니다(아래 패널의 오류 참고).`;
+  return read.loading ? `${object} 불러오는 중입니다.` : `${object} 받지 못했습니다.`;
 }
 
 function flowItems(stock: StockFlow): PropertyItem[] {
@@ -128,9 +131,9 @@ export function RankingDetail({
   const stock = flows.data?.stocks.find((entry) => entry.code === row.code && entry.available);
   const company = fundamentals.data?.companies.find((entry) => entry.code === row.code);
   const common = consensus.data?.rows.find((entry) => entry.code === row.code);
-  const flowsWait = readState(flows, "수급 지속성");
-  const fundamentalsWait = readState(fundamentals, "재무");
-  const consensusWait = readState(consensus, "공통 목록");
+  const flowsWait = readState(flows, "수급 지속성을");
+  const fundamentalsWait = readState(fundamentals, "재무를");
+  const consensusWait = readState(consensus, "공통 목록을");
 
   return (
     <div className="flex min-w-0 flex-col gap-4">

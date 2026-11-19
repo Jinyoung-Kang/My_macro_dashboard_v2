@@ -6,7 +6,7 @@
  * (받침 있는 낱말 둘 — 지속성·목록). radarInspector 시험은 이 글을 보지 않았습니다.
  *
  * 기대: 받침이 있으면 '을', 없으면 '를' — '수급 지속성을'·'재무를'·'공통 목록을'. 읽는 중·실패(오류)·응답 없음 세 꼴.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 "Unable to find an element with the text: 수급 지속성을 불러오는 중입니다.", 둘째 사례 "… 수급 지속성을 받지
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 "Unable to find an element with the text: 수급 지속성을 불러오는 중입니다.", 둘째 사례 "… 수급 지속성을 받지
  * 못했습니다(아래 패널의 오류 참고)."(보이는 글은 '수급 지속성를 …').
  */
 import { cleanup, render, screen } from "@testing-library/react";
@@ -40,7 +40,7 @@ function renderWith(state: { loading: boolean; error: string | null }) {
 }
 
 describe("수급 레이더 검사 칸 — 받침에 맞는 조사(QA-865)", () => {
-  it.fails("읽는 중: '수급 지속성을'·'재무를'·'공통 목록을 불러오는 중입니다.'", () => {
+  it("읽는 중: '수급 지속성을'·'재무를'·'공통 목록을 불러오는 중입니다.'", () => {
     renderWith({ loading: true, error: null });
     for (const text of ["수급 지속성을 불러오는 중입니다.", "재무를 불러오는 중입니다.", "공통 목록을 불러오는 중입니다."]) {
       expect(screen.getByText(text)).toBeTruthy();
@@ -48,7 +48,7 @@ describe("수급 레이더 검사 칸 — 받침에 맞는 조사(QA-865)", () =
     expect(document.body.textContent).not.toMatch(/지속성를|목록를/);
   });
 
-  it.fails("실패: '…을/를 받지 못했습니다(아래 패널의 오류 참고).', 응답 없음: '…을/를 받지 못했습니다.'", () => {
+  it("실패: '…을/를 받지 못했습니다(아래 패널의 오류 참고).', 응답 없음: '…을/를 받지 못했습니다.'", () => {
     renderWith({ loading: false, error: "실패" });
     for (const text of ["수급 지속성을", "재무를", "공통 목록을"]) {
       expect(screen.getByText(`${text} 받지 못했습니다(아래 패널의 오류 참고).`)).toBeTruthy();
