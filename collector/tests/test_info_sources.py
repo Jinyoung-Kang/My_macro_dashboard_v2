@@ -273,13 +273,21 @@ def test_피드가_HTML이면_형식_바뀜(store, example_host):
 # ==============================================================================
 # 4-2. 글 페이지에 본문을 기대는 블로그의 페이지 구조가 바뀜 (QA-391)
 # ==============================================================================
-def _page_tried(n: int, *, days_ago: float, status: str, got: bool = True) -> dict:
-    """전에 글 페이지를 열어 본 글 한 행(저장본) — status full이면 그 페이지에서 본문을 받은 글. got이 거짓이면 글 페이지를 받지 못한 글(404·5xx)."""
+def _page_tried(n: int, *, days_ago: float, status: str, got: bool = True, old_meta: bool = False) -> dict:
+    """
+    전에 글 페이지를 열어 본 글 한 행(저장본) — status full이면 그 페이지에서 본문을 받은 글. got이 거짓이면 글 페이지를 받지 못한 글(404·5xx).
+    받았지만 본문을 얻지 못한 글은 글 페이지의 본문 자리에서 얻은 글자가 0(pageChars — 자리를 못 찾음)이고 피드 글은 요약(feedChars)입니다.
+    old_meta면 그 두 칸이 없던 때(QA-391 후속 전)의 행입니다.
+    """
     url = f"https://blog.example.com/2026/11/old-{n}/"
+    meta = {"pageTries": 1 if status == "full" else 2}
+    if got:
+        meta["pageGot"] = True
+        if not old_meta:
+            meta.update(pageChars=len(LONG) if status == "full" else 0, feedChars=len("Short teaser."))
     return {"id": info_text.item_id(url), "source": BLOG.key, "kind": "article", "url": url, "title": f"Old {n}",
             "published_at": NOW - timedelta(days=days_ago), "body": LONG if status == "full" else "Short teaser.",
-            "body_status": status, "fetch_tier": "impersonate",
-            "meta": {"pageTries": 1 if status == "full" else 2, **({"pageGot": True} if got else {})}}
+            "body_status": status, "fetch_tier": "impersonate", "meta": meta}
 
 
 def _run_blog_task(monkeypatch, routes: dict[str, bytes]) -> str:
@@ -330,6 +338,56 @@ def test_QA391_글_페이지를_받지_못한_글은_형식_바뀜_판정에서_
     _run_blog_task(monkeypatch, routes)
 
     assert store.source_state(BLOG.task)["status"] != "format", "받지 못한 글 페이지는 구조 변경의 근거가 아닙니다"
+
+
+def test_QA391_글_페이지에_기대는_블로그의_새_글_세_편이_모두_본문_자리를_못_찾으면_형식_바뀜(store, example_host, monkeypatch):
+    # 피드가 요약만 주고 글 페이지에서 본문을 받던 블로그(wolfstreet 꼴)의 본문 자리가 사라짐 — 판정을 고친 뒤에도 그대로 잡아야 합니다.
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full")])
+    routes = {BLOG.feed: _feed(*[_item(n, days_ago=n * 0.1, content=None) for n in (4, 5, 6)])}
+    routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": EMPTY_PAGE for n in (4, 5, 6)})
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] == "format"
+
+
+SHORT_POST = "A two-sentence post that is short on purpose. It links to a paper and adds one line of comment, nothing more."
+
+
+def _short_page(n: int, *, banner: bool = False, text: str = SHORT_POST) -> bytes:
+    """짧은 글의 글 페이지 — 본문 자리(.entry-content)는 있고 글이 짧음. banner면 그 앞에 구독 완료 안내 상자(role=banner)가 있습니다."""
+    pop = ("<section class='pop-up_banner' role='banner'><p>Thank-you! You've been successfully added to the Example "
+           "email subscription list.</p></section>") if banner else ""
+    return (f"<html><body><div class='page-content'><main class='site-main' role='main'>{pop}<article><header class='entry-header'>"
+            f"<h1>Post {n}</h1></header><div class='entry-content'><p>{text}</p></div><footer class='entry-footer'>"
+            "<article><p>A comment.</p></article></footer></article></main></div></body></html>").encode("utf-8")
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 짧은 글 세 편이 이어지면 본문 자리를 못 찾은 것으로 셈")
+def test_QA391_피드에_본문을_싣는_블로그의_짧은_글이_이어져도_형식_바뀜이_아니다(store, example_host, monkeypatch):
+    # Marginal Revolution(2026-11-17~): 피드에 본문을 싣는 블로그의 짧은 글(한두 문장)은 글 페이지에서도 400자에 못 미칩니다.
+    # 글 페이지에서 본문을 받은 적이 한 번이라도 있으면 짧은 글 세 편으로 '형식 바뀜'이 되던 거짓 경고.
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full")])
+    routes = {BLOG.feed: _feed(*[_item(n, days_ago=n * 0.1, content=SHORT_POST) for n in (4, 5, 6)])}
+    routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _short_page(n) for n in (4, 5, 6)})
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] == "ok"
+    row = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-4/"))
+    assert row["body_status"] == "partial" and row["body"].startswith("A two-sentence post"), "못 고른 글을 본문으로 저장하지 않습니다"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391 후속 — 고치기 전: 본문 칸이 없던 옛 행의 '본문 못 얻음'을 실패로 셈")
+def test_QA391_본문_자리_칸이_없던_옛_행은_형식_바뀜_판정에서_뺀다(store, example_host, monkeypatch):
+    # 배포 때의 Marginal Revolution — 글 페이지 full 뒤에 옛 행(짧은 글인지 자리를 못 찾은 것인지 모름) 세 편. 배포 뒤 다음 실행에서 풀려야 합니다.
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full", old_meta=True)]
+                            + [_page_tried(n, days_ago=3 - n * 0.1, status="partial", old_meta=True) for n in (2, 3, 5)])
+    routes = {BLOG.feed: _feed(_item(4))}                                     # 새 글은 피드 본문
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] == "ok"
 
 
 def test_QA393_닫힌_호스트라_보내지_않은_글_페이지는_시도로_세지_않는다(store, example_host):
