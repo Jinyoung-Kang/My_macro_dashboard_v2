@@ -176,6 +176,12 @@ describe("별칭 편집(계약 §9-4)", () => {
     });
     renderScreen();
     const section = await aliasSection();
+    // 처음 읽기가 다 끝나 화면이 자리 잡은 뒤에 누릅니다(QA-880). 편집 칸이 처음 그려진 커밋의 효과(useEffect)가 아직 돌지 않았을 때 누르면, 그 늦은
+    // 마운트 효과가 '더할 칸으로' 표지를 먼저 가져가(칸이 아직 없어 옮기지 못함) 편집을 연 뒤 포커스가 body에 남았습니다 — 그려진 커밋과 그 효과
+    // 사이에 스케줄러가 양보할 때(부하)만 생기는 시험의 경합이고, 사람은 방금 나타난 단추를 그 사이에 누를 수 없습니다. '봤음'(POST seen)은 같은
+    // 커밋이나 그 뒤의 효과이므로 이것과 그 뒤의 목록 다시 읽기를 기다리면 마운트 효과는 이미 돌았습니다.
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith(endpoints.search.watchSeen(7)));
+    await waitFor(() => expect(countReads(endpoints.search.watch)).toBeGreaterThanOrEqual(2));
     fireEvent.click(within(section).getByRole("button", { name: "별칭 편집" }));
     const input = within(section).getByRole("textbox", { name: /더할 별칭/ });
     await waitFor(() => expect(document.activeElement).toBe(input));
