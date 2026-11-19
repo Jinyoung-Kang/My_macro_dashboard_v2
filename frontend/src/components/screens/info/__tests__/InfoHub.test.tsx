@@ -107,14 +107,18 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 수집 화면", () => {
-  it("개요: 분류 카드가 그 분류 탭으로 가고, 위험이 있는 분류는 그 수를 보인다", async () => {
+  // 작업대 P7: 분류 카드는 공용 KPI 띠(KpiStrip '분류별 상태')의 링크 타일 — 값은 출처 수('곳'), 상태는 색별 수(아이콘 + 글).
+  it("개요: 분류 타일이 그 분류 탭으로 가고, 출처 수와 위험이 있는 분류는 그 수를 보인다", async () => {
     routes({ "/api/info/catalog": CATALOG, "/api/info/mechanism": MECHANISM, "/api/info/items": { available: true, items: [], page: 1, pages: 0, total: 0 } });
     render(<InfoHub tab="overview" />);
 
     const card = await screen.findByRole("link", { name: /해외 시장·거시/ });
     expect(card.getAttribute("href")).toBe("/info/global");
     expect(within(card).getByText(/위험 1/)).toBeTruthy();
+    expect(card.textContent).toMatch(/11\s*곳/);
+    expect(within(screen.getByRole("region", { name: "분류별 상태" })).getAllByRole("link")).toHaveLength(2);
     expect(screen.getByText(/차단 통과 수집이 꺼져 있습니다/)).toBeTruthy();
+    expect(screen.getByText("지금 끊긴 출처가 없습니다.")).toBeTruthy();
   });
 
   it("QA-410 개요: 수집기에 닿지 못했으면 상태 확인 줄에 그 사실을 적는다", async () => {
