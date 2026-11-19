@@ -21,19 +21,26 @@
     `KrStopFillTest.effectiveTable`(유효 값 = 감시 ON일 때만 그 값 — G1과 글 스위치가 함께 씀).
   - 단계(가짜 저장소): `KrStopFillStepTest` — SHADOW `shadowRecordsOnce`·`gatesDefer`·`givesUpBeforeTheClose`·`decidedNoR1IsRecordedAtOnce`·`checksAfterTheNight`, 스위치 `switchOff`, 잠금 `readsOutsideTheLedgerLock`·
     `discardsWhenTheOrderMovedOn`, ON `onWritesTheLedger`·`onDefersUntilTheGateClears`·`onWritesTwoStopsInOneTransaction`(체결 알림 묶음 한 통 포함)·`onDiscardsWhenPendingOrdersChanged`·
-    `onDiscardsWhenTheLedgerProcessedDuringTheEvaluation`(QA-790), 작업 `jobCallsTheStepEveryCycle`.
+    `onDiscardsWhenTheLedgerProcessedDuringTheEvaluation`(QA-790), ON 실제 쓰기 → 거울 보기 `onWriteIsRewoundByTheMirror`(공개 창 여덟 값이 기록 전과 같음 — 뒤 주기의 다른 트랜잭션까지,
+    S 밤 처리 뒤에는 되감지 않음), 작업 `jobCallsTheStepEveryCycle`.
   - 동치와 그 전제(실제 저장소·실제 밤 장부 — macrodash_test): `KrIntradayStopFillDbTest.intradayThenNightEqualsNightOnly`(장중 기록 → 금융위 D 도착·확정 조정 → S 밤 처리 = 밤 일괄, 뒤 시각 규칙 매수 포함, 사후 점검 일치)·
-    `d12ProvisionalWithoutTheRow`·`nightWithoutTheTickerBreaksEquivalence`(동치가 깨지는 길 1 — S+1 시가 목표가 갈리는 범위 표시)·`nightCorporateActionBreaksEquivalence`(길 5)·`rollsBackWhenTheOrderIsNoLongerPending`(조건부 갱신 0행 → 그 책 되돌림).
+    `twoStopsInOneTransactionEqualNightOnly`(같은 분 STOP 둘 한 트랜잭션)·`oneOfTwoStopsDeferredEqualsNightOnly`(둘 가운데 하나만 G4로 밤 — 보유 레코드 밖 칸 `fill_ref_volume`·`corp_action_hold`와
+    확정 조정 행 수도 견줌)·`d12ProvisionalWithoutTheRow`·`nightWithoutTheTickerBreaksEquivalence`(동치가 깨지는 길 1 — S+1 시가 목표가 갈리는 범위 표시)·`nightStaleTickerBreaksEquivalence`(길 1 이어받음)·
+    `pauseBetweenRecordAndNightBreaksEquivalence`(길 4 — ON 사후 점검·SHADOW 대조 모두)·`nightCorporateActionBreaksEquivalence`(길 5)·`costSaveBetweenRecordAndNightIsCaught`(알려진 차이(경제적) — 비용 키 저장, ON·SHADOW 모두
+    `COST_MISMATCH`·`SETTINGS_CHANGED`)·`rollsBackWhenTheOrderIsNoLongerPending`(조건부 갱신 0행 → 그 책 되돌림). 이 시험의 밤 세계 1분봉은 장중 길 함수(`KrIntradayFill.timed`)로 만든다 — 두 길의
+    가격이 같은지는 위 '가격 동치'가 따로 지킨다. 길 2(1분봉 `FAILED` — 밤 사다리 기다림 뒤 다음 세션 관측치)·길 6은 사후 점검(`KrStopFillStep.night`)의 갈래로 다루고, 그 갈래를 거치는 시험은 아직 없다.
   - 거울 보기: `PaperMirrorServiceTest.mirrorRewindsIntradayRecordedStop`·`mirrorStopsAfterTheNight`·`mirrorWhenTheNightIsLate`·`mirrorAfterPause`·`mirrorRewindsByTheProcessedSession`·`mirrorCashIsExactAfterAConfirmationShift`·
     `mirrorDoesNotUndoLaterOrders`(Claude 계좌를 따를 때의 범위 표시), `PaperMirrorIntradayDbTest.mirrorIsTheSameWithTheRealStore`(대기 STOP 종목과 시각 목표를 한 주기에 함께 읽음),
     `PaperStoreDbTest.intradayRecordedStopReadsAndWrites`(jsonb 조건 SQL).
   - D12: `KrConfirmationsTest.d12RewindsIntradayStopForTheConfirmedLine`·`d12RewoundLineStaysProvisionalWithoutTheRow`·`d12DoesNotRewindOtherFills`, DB 쪽 `KrIntradayStopFillDbTest`의 P 줄 비교.
   - 밤 대조 자료·감시 범위(수집기): `test_kr_paper_timed.py::test_장중에_장부에_적은_감시_STOP은_대기가_아니어도_그_기준_분_창을_받는다`(실제로 그 종목·세션을 받음, 수명 밖은 받지 않음),
     `test_paper_stopwatch.py::test_한국_범위는_그_세션에_장중_기록으로_판_종목도_담는다`.
-  - 글·고정본: `StopWatchTest.krFillPhraseIsTheOnlyChange`, `KrPacketBuilderTest.stopWatchFillOnPacket`(새 고정본 `packet-kr-ft-stopwatch-fill-scheduled.json` — 그 구절만 되돌리면 감시 ON 고정본, SHADOW는 그 고정본 그대로),
+  - 글·고정본: `StopWatchTest.krFillPhraseIsTheOnlyChange`(끈 판·대조 판 규칙 글 = ADR 0045 전 고정본의 `1_basis.stopWatch.rule`), `KrPacketBuilderTest.stopWatchFillOnPacket`(새 고정본 `packet-kr-ft-stopwatch-fill-scheduled.json` — 그 구절만 되돌리면 감시 ON 고정본, SHADOW는 그 고정본 그대로),
     `KrStartTest.goldenKrFreeIntradayPacketWithStopFill`(새 고정본 `packet-kr-ft-intraday-stopwatch-fill.json` — 구절과 장부 글만 되돌리면 `packet-kr-ft-intraday-stopwatch.json`),
-    `KrStartTest.ledgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(QA-791 — 기록 뒤 OFF여도 장부 글은 자료로), `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF·SHADOW의 기존 고정본(`packet-kr-ft-stopwatch-scheduled.json`·`packet-kr-ft-intraday-stopwatch.json`·`packet-kr-claude2-checkpoint.json`·
-    `render-kr-ft-claude-v0-stopwatch.txt` 등)은 바이트 그대로다(기존 고정본 시험).
+    `KrStartTest.ledgerNoteFollowsTheIntradayRecordAfterSwitchingOff`(QA-791 — 기록 뒤 OFF여도 장부 글은 자료로), `BriefingTest.krLedgerNoteFollowsTheIntradayRecord`. OFF(키 없음)의 기존 고정본
+    (`packet-kr-ft-stopwatch-scheduled.json`·`packet-kr-ft-intraday-stopwatch.json`·`packet-kr-claude2-checkpoint.json`·`render-kr-ft-claude-v0-stopwatch.txt` 등)은 기존 고정본 시험이 바이트로 지키고,
+    SHADOW는 `KrPacketBuilderTest.stopWatchFillOnPacket`(결정 패킷)·`KrStartTest.shadowKeepsTheKrFreeIntradayPacketBytes`(장중 판단 패킷)·`krClaude2CheckpointPacketWithStopFill`(끈 판 장중 확인 패킷 —
+    SHADOW는 바이트 그대로, ON은 장부 글만)·`PaperBriefingJobTest.krLedgerNoteReadsTheIntradayRecordMode`(마감 브리핑 — 근거 mode가 SHADOW면 예전 안내 글)가 지킨다.
   - 설정·화면: `PaperSettingsServiceTest.krStopFillKey`, `KrRuleBookServiceTest`(규칙 계좌 영향 키), `frontend/src/lib/__tests__/paperStopWatch.test.ts`(세 프로필 키·이름표·스탑 문장).
   - 고치지 않고 통과하는 경계: `ArchitectureRulesTest.realtradeIsIsolated`, 수집기 `test_toss_trade.py` 쓰기 금지·`test_table_ownership.py`, `isaBoundary.test.ts`·`realtradeBoundary.test.ts`, `RealTradeJobDbTest`·`ManualAccountJobDbTest`.
 

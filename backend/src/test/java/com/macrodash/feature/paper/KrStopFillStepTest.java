@@ -366,6 +366,59 @@ class KrStopFillStepTest {
     }
 
     @Test
+    @DisplayName("ON 실제 쓰기 → 거울 보기(ADR 0045 결정 7): 장중 단계가 장부에 적은 뒤에도 실제 계좌·ISA 공개 창(openTargets·targetsAt·dueOrders·pendingStopSymbols·"
+            + "weightAfter·orderStatus·claim·ledgerCaughtUp)은 기록 전과 같음 — 뒤 주기의 다른 트랜잭션 STOP까지, 마지막 처리 저장본이 S 밤으로 옮겨지면 되감지 않음")
+    void onWriteIsRewoundByTheMirror() {
+        settings("ON", "ON");
+        long a = stop(A, "2026-11-17T13:10:42");
+        PaperMirrorService mirror = new PaperMirrorService(store, reader, marketData, new PaperMarkets(store, reader, List.of(KrPaperMarket.INSTANCE)),
+                ledger, clock);
+
+        List<Object> before = mirrorView(mirror, a);
+        assertThat(step.run(KrPaperMarket.INSTANCE).recorded()).singleElement().satisfies(r -> assertThat(r.get("orderId")).isEqualTo(a));
+        assertThat(store.orders.get(a).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        assertThat(mirrorView(mirror, a)).as("첫 기록 뒤 — 기록 전과 같음").isEqualTo(before);
+        assertThat(mirror.pendingStopSymbols(BOOK, S)).containsExactly(A);
+        assertThat(mirror.openTargets(BOOK, S)).isPresent();
+        assertThat(mirror.claim(BOOK, a, clock.instant(), () -> "claimed")).as("되감은 STOP은 선점 가능(대기로 봄)").contains("claimed");
+
+        clock.now = kst("2026-11-17T13:16:10");
+        long b = stop(B, "2026-11-17T13:16:10");   // T 13:17 — 창 끝 13:20, 13:21 뒤 기록
+        clock.now = kst("2026-11-17T13:21:20");
+        snapshot(kst("2026-11-17T13:21:20"));
+        tickers.set(A, entry(S, kst("2026-11-17T13:21:20"), minutes("13:00", "13:21", 70_000), List.of()));
+        tickers.set(B, entry(S, kst("2026-11-17T13:21:20"), minutes("13:00", "13:21", 140_000), List.of()));
+        List<Object> later = mirrorView(mirror, a, b);
+        assertThat(step.run(KrPaperMarket.INSTANCE).recorded()).as("두 번째 트랜잭션").singleElement()
+                .satisfies(r -> assertThat(r.get("orderId")).isEqualTo(b));
+        assertThat(store.positions.get(BOOK)).isEmpty();
+        assertThat(mirrorView(mirror, a, b)).as("두 트랜잭션을 뒤에서부터 되감음").isEqualTo(later);
+
+        BookState state = store.states.get(BOOK);
+        store.states.put(BOOK, new BookState(BOOK, state.cash(), state.nav(), state.equityValue(), state.exposurePct(), kst("2026-11-17T20:40"),
+                kst("2026-11-17T20:40"), state.lastNavTradingDate(), state.updatedAt()));
+        assertThat(mirror.pendingStopSymbols(BOOK, S)).as("S 밤 처리 뒤 — 되감지 않음").isEmpty();
+        assertThat(mirror.orderStatus(BOOK, a)).contains(PaperBooks.ORDER_FILLED);
+    }
+
+    /** 실제 계좌·ISA가 읽는 공개 창 값(지금 시각 — 단계와 같은 시계). */
+    private List<Object> mirrorView(PaperMirrorService mirror, long... orderIds) {
+        java.time.Instant now = clock.instant();
+        List<Object> out = new java.util.ArrayList<>();
+        out.add(mirror.openTargets(BOOK, S));
+        out.add(mirror.targetsAt(BOOK, S, now));
+        out.add(mirror.dueOrders(BOOK, S, now));
+        out.add(mirror.pendingStopSymbols(BOOK, S));
+        for (long id : orderIds) {
+            out.add(mirror.weightAfter(BOOK, id, now));
+            out.add(mirror.orderStatus(BOOK, id));
+            out.add(mirror.claim(BOOK, id, now, () -> "claimed"));
+        }
+        out.add(mirror.ledgerCaughtUp(BOOK, S));
+        return out;
+    }
+
+    @Test
     @DisplayName("ON — 잠금 안 다시 확인: 판정 뒤 쓰기 전에 그 책의 대기 주문이 바뀌면(새 주문) 그 책 기록을 버림(다음 주기에 다시 판정)")
     void onDiscardsWhenPendingOrdersChanged() {
         settings("ON", "ON");

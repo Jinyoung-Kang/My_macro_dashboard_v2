@@ -402,7 +402,10 @@ class StopWatchTest {
     @org.junit.jupiter.api.DisplayName("ADR 0045 — 한국 장중 기록 판(fill)의 스탑 문장은 반영 시점 구절 하나만 다름: rule·hardRuleLine·basis의 fill 거짓 판은 예전 바이트, "
             + "미국은 fill과 상관없이 그대로, 시스템 프롬프트 줄은 바뀌지 않음")
     void krFillPhraseIsTheOnlyChange() {
-        org.assertj.core.api.Assertions.assertThat(StopWatch.rule(true, false)).isEqualTo(StopWatch.rule(true));
+        // 끈 판·대조 판 글은 ADR 0045 전 고정본(작업 2가 만든 감시 ON 결정 패킷)의 1_basis.stopWatch.rule과 바이트까지 같음.
+        org.assertj.core.api.Assertions.assertThat(StopWatch.rule(true, false)).isEqualTo(PaperFixtures.MAPPER.readTree(new String(
+                com.macrodash.Golden.resourceBytes("paper/golden/packet-kr-ft-stopwatch-scheduled.json"), java.nio.charset.StandardCharsets.UTF_8))
+                .path("1_basis").path("stopWatch").path("rule").asString());
         org.assertj.core.api.Assertions.assertThat(StopWatch.rule(false, true)).isEqualTo(StopWatch.rule(false));
         String on = StopWatch.rule(true, true);
         org.assertj.core.api.Assertions.assertThat(StopWatch.rule(true).split(java.util.regex.Pattern.quote(StopWatch.KR_NIGHT_PHRASE), -1)).hasSize(2);

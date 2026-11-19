@@ -932,6 +932,9 @@ class PaperMirrorServiceTest {
         assertThat(off.stops()).containsExactlyInAnyOrder(A, C);
         assertThat(KrIntradayFill.rewindCash(1_000.1, 900.3, 1_000.1)).isEqualTo(900.3);
         assertThat(KrIntradayFill.rewindCash(988.2, 900.3, 1_000.1)).isEqualTo(888.4);
+        // 배정밀도 뺄셈('지금 − (직후 − 직전)')이면 끝자리가 갈리는 값 — 십진수 되감기만 상태 현금 열 자리(소수 넷째)의 값과 비트까지 같음.
+        assertThat(21_998_903.7737 - (21_998_851.0188 - 13_522_987.9868)).as("배정밀도 뺄셈은 어긋남").isEqualTo(13_523_040.741699997);
+        assertThat(KrIntradayFill.rewindCash(21_998_903.7737, 13_522_987.9868, 21_998_851.0188)).isEqualTo(13_523_040.7417);
     }
 
     private long[] twoStopWorld(boolean recorded) {

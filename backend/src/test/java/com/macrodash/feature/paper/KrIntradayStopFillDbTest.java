@@ -74,7 +74,11 @@ class KrIntradayStopFillDbTest {
     private static final String B = "000660";
     private static final String C = "035420";
 
-    private enum Night { SAME, A_MISSING, A_CORP_SIGNAL }
+    /**
+     * S 밤 쪽 장면 — 그대로, 판 종목이 밤 관측치에 없음·이어받음, 기업행위 신호, 기록과 밤 사이 일시정지(운영자 — 대기 주문 취소·장중 기록 STOP에 pausedAt),
+     * 기록과 밤 사이 비용 키 저장(kr.commissionBp — 밤은 새 판으로 체결 조건을 셈).
+     */
+    private enum Night { SAME, A_MISSING, A_CORP_SIGNAL, A_STALE, PAUSED, COST_SAVED }
 
     private JdbcTemplate jdbc;
     private PaperStore store;
@@ -106,17 +110,17 @@ class KrIntradayStopFillDbTest {
         }
     }
 
-    /** 설정 행을 이 시험 값으로, 책 목록을 시험 책으로 좁힌 실제 저장소(나머지 읽기·쓰기는 실제 SQL). */
-    private PaperStore scoped(SettingsRow row) {
+    /** 설정 행을 이 시험 값({@link #settings} — 그때그때 읽음, 기록과 밤 사이 저장 장면)으로, 책 목록을 시험 책으로 좁힌 실제 저장소(나머지 읽기·쓰기는 실제 SQL). */
+    private PaperStore scoped() {
         return new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)) {
             @Override
             public Optional<SettingsRow> settings() {
-                return Optional.of(row);
+                return Optional.of(settings);
             }
 
             @Override
             public Optional<SettingsRow> settingsInForceAt(Instant at) {
-                return Optional.of(row);
+                return Optional.of(settings);
             }
 
             @Override
@@ -168,9 +172,19 @@ class KrIntradayStopFillDbTest {
 
     /** 한 세계를 S 밤 처리까지 돌림(클래스 설명) — 장중 기록이면 S 09:15:20 단계, 그 뒤 금융위 P 도착·확정 조정, S 밤 처리(그리고 사후 점검). */
     private World world(boolean intraday, Night night) {
+        return world(intraday ? "ON" : "OFF", night, false, false);
+    }
+
+    /**
+     * {@link #world(boolean, Night)}의 본체 — 기록 스위치 {@code fill}(OFF는 밤 일괄, SHADOW는 S 09:15:20 단계가 근거만·S 밤 뒤 대조, ON은 장중 기록·사후 점검),
+     * {@code twoStops}면 B의 감시 STOP을 같은 분(T 09:11)에 더 두고, {@code holdB}면 장중 단계 전에 B에 미처리 기업행위 표시를 겁니다(그 STOP은 두 세계 모두 밤에 보류).
+     */
+    private World world(String fill, Night night, boolean twoStops, boolean holdB) {
+        boolean intraday = !"OFF".equals(fill);
+        boolean on = "ON".equals(fill);
         cleanUp();
-        settings = settingsRow(intraday ? "ON" : "OFF");
-        store = scoped(settings);
+        settings = settingsRow(fill);
+        store = scoped();
         reader = PaperFixtures.quietReader();
         KrFixtures.stubHolidays(reader, KrFixtures.holidays(2026, 2027));
         marketData = mock(PaperMarketData.class);
@@ -181,15 +195,22 @@ class KrIntradayStopFillDbTest {
         when(marketData.quotes(any())).thenReturn(Optional.empty());
         when(marketData.watchKr()).thenReturn(Optional.empty());
         ObjectNode entryA = watchEntry("09:00", "09:15", 69_000, kst("2026-11-17T09:15:20"));
+        ObjectNode entryB = watchEntry("09:00", "09:15", 139_000, kst("2026-11-17T09:15:20"));
         ObjectNode entryC = watchEntry("12:50", "13:10", 50_100, kst("2026-11-17T13:10:20"));
         ObjectNode tickers = MAPPER.createObjectNode();
         tickers.set(A, entryA);
+        if (twoStops) {
+            tickers.set(B, entryB);
+        }
         ObjectNode payload = MAPPER.createObjectNode().put("fetchedAt", kst("2026-11-17T09:15:20").toString()).put("mode", "ON");
         payload.set("tickers", tickers);
         when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok", null,
                 kst("2026-11-17T09:15:21"))));
         Map<String, Map<LocalDate, KrQuotes.Timed>> timed = new TreeMap<>();
         timed.put(A, Map.of(S, KrIntradayFill.timed(entryA, LocalTime.of(9, 11))));
+        if (twoStops) {
+            timed.put(B, Map.of(S, KrIntradayFill.timed(entryB, LocalTime.of(9, 11))));
+        }
         timed.put(C, Map.of(S, KrIntradayFill.timed(entryC, LocalTime.of(13, 0))));
         when(marketData.krTimed()).thenReturn(timed);
         clock = new PaperCheckpointJobTest.MovableClock(kst("2026-11-17T09:15:20"));
@@ -211,17 +232,37 @@ class KrIntradayStopFillDbTest {
                 .put("stopPrice", 69_000);
         long stop = store.insertOrder(new Order(0, BOOK, null, A, PaperBooks.SELL, null, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP,
                 PaperBooks.ORDER_PENDING, null, reason, P, kst("2026-11-17T09:10:42"), S, null));
+        long stopB = !twoStops ? 0 : store.insertOrder(new Order(0, BOOK, null, B, PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, reason.deepCopy().put("highWatermark", 150_000).put("stopPrice", 138_000), P,
+                kst("2026-11-17T09:10:50"), S, null));
         store.insertOrder(new Order(0, BOOK, null, C, PaperBooks.BUY, null, 25.0, null, PaperBooks.AT_MINUTE, RuleBookService.SOURCE_RULE,
                 PaperBooks.ORDER_PENDING, null, null, P, kst("2026-11-16T22:40"), S.plusDays(5), null, LocalTime.of(13, 0)));
+        if (holdB) {
+            store.holdForCorpAction(BOOK, B, "2026-11-16 기업행위 확인 필요 — 시험");
+        }
 
         World out = new World();
         if (intraday) {
             KrStopFillStep.Outcome first = step.run(KR);
             assertThat(first.error()).isNull();
-            assertThat(first.recorded()).as("ON 장중 기록").singleElement().satisfies(r -> assertThat(r.get("orderId")).isEqualTo(stop));
+            int expected = on && holdB ? 1 : twoStops ? 2 : 1;   // ON은 장부에 적은 주문만, SHADOW는 근거를 남긴 주문 모두
+            assertThat(first.recorded()).as(fill + " 장중 단계").hasSize(expected).anySatisfy(r -> assertThat(r.get("orderId")).isEqualTo(stop));
+            out.first = first;
             clock.now = kst("2026-11-17T09:15:40");
             assertThat(step.run(KR).recorded()).as("멱등 — 두 번째 주기는 쓰지 않음").isEmpty();
-            assertThat(store.recentFills(BOOK, 10)).as("체결 하나").hasSize(1);
+            assertThat(store.recentFills(BOOK, 10)).as("체결 — ON은 적은 수만큼, SHADOW는 없음").hasSize(on ? expected : 0);
+        }
+        if (night == Night.PAUSED) {
+            // 기록 뒤 그 밤 전에 운영자가 책을 일시정지 — 대기 주문 취소, 장중 기록 STOP에 pausedAt(PaperAdminService.setStatus 그대로).
+            clock.now = kst("2026-11-17T11:00");
+            new PaperAdminService(store, marketData, reader, new PaperSettingsService(store, MAPPER), ledger, PaperFixtures.config(), MAPPER, clock)
+                    .setStatus(BOOK, PaperBooks.PAUSED);
+        }
+        if (night == Night.COST_SAVED) {
+            // 기록과 밤 사이에 비용 키 저장(설정 v8 — kr.commissionBp 1.5 → 3) — 밤은 새 판으로 체결 조건을 셈(ADR 0045 알려진 차이(경제적)).
+            ObjectNode body = (ObjectNode) settings.body().deepCopy();
+            ((ObjectNode) body.get("kr")).put("commissionBp", 3.0);
+            settings = new SettingsRow(8, body, kst("2026-11-17T11:00"));
         }
         // S 13시대 — 금융위 P 도착, 리스크 점검의 확정 조정.
         fscP = true;
@@ -231,7 +272,11 @@ class KrIntradayStopFillDbTest {
         // S 밤 처리.
         KrFixtures.Payload quotes = new KrFixtures.Payload(S);
         if (night != Night.A_MISSING) {
-            quotes.code(A, kst("2026-11-17T20:30")).bar(P, 70_000, 70_000, 900_000).bar(S, 69_500, 68_800, 800_000).minute("OK", "09:01", 69_500, 30_000);
+            KrFixtures.Entry a = quotes.code(A, kst("2026-11-17T20:30")).bar(P, 70_000, 70_000, 900_000).bar(S, 69_500, 68_800, 800_000)
+                    .minute("OK", "09:01", 69_500, 30_000);
+            if (night == Night.A_STALE) {
+                a.stale();
+            }
         }
         quotes.code(B, kst("2026-11-17T20:30")).bar(P, 140_000, 140_000, 900_000).bar(S, 141_000, 141_500, 800_000).minute("OK", "09:01", 141_000, 30_000);
         quotes.code(C, kst("2026-11-17T20:30")).bar(P, 50_000, 50_000, 900_000).bar(S, 50_050, 50_300, 800_000).minute("OK", "09:01", 50_050, 30_000);
@@ -244,7 +289,8 @@ class KrIntradayStopFillDbTest {
             out.postCheck = step.run(KR);
         }
         out.stopId = stop;
-        out.capture(store);
+        out.stopBId = stopB;
+        out.capture(store, jdbc);
         out.next = new PaperMirrorService(store, reader, marketData, new PaperMarkets(store, reader, List.of(KR)), ledger,
                 java.time.Clock.fixed(kst("2026-11-18T08:30"), java.time.ZoneOffset.UTC)).openTargets(BOOK, S.plusDays(1));
         return out;
@@ -272,9 +318,15 @@ class KrIntradayStopFillDbTest {
         KrStopFillStep.Outcome postCheck;
         Optional<PaperMirrorService.OpenTargets> next;
         long stopId;
+        long stopBId;
         JsonNode stopRecord;
+        JsonNode stopBRecord;
+        KrStopFillStep.Outcome first;
+        Map<String, Long> refVolumes;
+        List<PaperStore.CorpActionHold> holds;
+        long confirmations;
 
-        void capture(PaperStore store) {
+        void capture(PaperStore store, JdbcTemplate jdbc) {
             BookState s = store.state(BOOK).orElseThrow();
             state = new BookState(s.bookCode(), s.cash(), s.nav(), s.equityValue(), s.exposurePct(), s.lastObservedAt(), s.lastProcessedCollectedAt(),
                     s.lastNavTradingDate(), null);
@@ -289,8 +341,10 @@ class KrIntradayStopFillDbTest {
             orders = new TreeMap<>();
             for (Order o : store.recentOrders(BOOK, 50)) {
                 ObjectNode reason = o.reason() instanceof ObjectNode r ? r.deepCopy() : MAPPER.createObjectNode();
-                if (o.id() == stopId || reason.has(KrIntradayFill.FIELD)) {
+                if (o.id() == stopId) {
                     stopRecord = reason.get(KrIntradayFill.FIELD);
+                } else if (o.id() == stopBId) {
+                    stopBRecord = reason.get(KrIntradayFill.FIELD);
                 }
                 reason.remove(KrIntradayFill.FIELD);
                 reason.remove(PaperLedgerService.STOP_CONFIRMED_WATERMARK);
@@ -302,6 +356,9 @@ class KrIntradayStopFillDbTest {
             }
             lockouts = store.lockouts(BOOK);
             navs = store.navSeries(BOOK);
+            refVolumes = new TreeMap<>(store.fillRefVolumes(BOOK));
+            holds = store.corpActionHolds(BOOK);
+            confirmations = jdbc.queryForObject("SELECT count(*) FROM paper_fill_confirmations WHERE book_code = ?", Long.class, BOOK);
         }
     }
 
@@ -326,6 +383,54 @@ class KrIntradayStopFillDbTest {
         assertThat(on.stopRecord.path(KrIntradayFill.POST_CHECK).path("kind").asString()).isEqualTo("NONE");
         assertThat(on.postCheck.alerts()).isEmpty();
         assertThat(on.next).isEqualTo(off.next);
+        assertThat(on.refVolumes).as("보유 레코드 밖 — since 봉 거래량").isEqualTo(off.refVolumes);
+        assertThat(on.holds).as("보유 레코드 밖 — 미처리 기업행위 표시").isEqualTo(off.holds);
+        assertThat(on.confirmations).as("확정 조정 행 수").isEqualTo(off.confirmations);
+    }
+
+    @Test
+    @DisplayName("동치 — 같은 분(T 09:11)의 다른 종목 STOP 둘을 한 트랜잭션에 적어도 S 밤 처리 뒤 밤 일괄과 같음(체결 셋·보유·현금·순자산 줄·보유 레코드 밖 칸), "
+            + "두 기록의 직전·직후 현금이 같은 한 기록")
+    void twoStopsInOneTransactionEqualNightOnly() {
+        World off = world("OFF", Night.SAME, true, false);
+        World on = world("ON", Night.SAME, true, false);
+
+        assertThat(off.fills).as("밤 일괄 — STOP 매도 둘과 규칙 매수").hasSize(3);
+        assertThat(on.fills).isEqualTo(off.fills);
+        assertThat(on.positions).isEqualTo(off.positions);
+        assertThat(on.state).isEqualTo(off.state);
+        assertThat(on.orders).isEqualTo(off.orders);
+        assertThat(on.lockouts).isEqualTo(off.lockouts);
+        assertThat(on.navs).isEqualTo(off.navs);
+        assertThat(on.refVolumes).isEqualTo(off.refVolumes);
+        assertThat(on.confirmations).isEqualTo(off.confirmations);
+        assertThat(on.stopBRecord.path(KrIntradayFill.CASH_BEFORE).asDouble()).isEqualTo(on.stopRecord.path(KrIntradayFill.CASH_BEFORE).asDouble());
+        assertThat(on.stopBRecord.path(KrIntradayFill.CASH_AFTER).asDouble()).isEqualTo(on.stopRecord.path(KrIntradayFill.CASH_AFTER).asDouble());
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean()).isTrue();
+        assertThat(on.stopBRecord.path(KrIntradayFill.CHECK).path("match").asBoolean()).isTrue();
+        assertThat(on.postCheck.alerts()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("동치 — 같은 분의 STOP 둘 가운데 하나(B)만 미처리 기업행위 표시(G4 CORP_HOLD)로 밤에 맡기면 A만 장중에 적고, S 밤 처리 뒤 밤 일괄과 같음"
+            + "(B는 두 세계 모두 밤이 보류 — 보유·표시 그대로)")
+    void oneOfTwoStopsDeferredEqualsNightOnly() {
+        World off = world("OFF", Night.SAME, true, true);
+        World on = world("ON", Night.SAME, true, true);
+
+        assertThat(on.first.deferred()).singleElement().satisfies(d -> assertThat(d.get(KrIntradayFill.REASONS))
+                .isEqualTo(List.of(KrIntradayFill.CORP_HOLD)));
+        assertThat(off.positions).extracting(Position::ticker).contains(B).doesNotContain(A);
+        assertThat(on.fills).isEqualTo(off.fills);
+        assertThat(on.positions).isEqualTo(off.positions);
+        assertThat(on.state).isEqualTo(off.state);
+        assertThat(on.orders).isEqualTo(off.orders);
+        assertThat(on.lockouts).isEqualTo(off.lockouts);
+        assertThat(on.navs).isEqualTo(off.navs);
+        assertThat(on.refVolumes).isEqualTo(off.refVolumes);
+        assertThat(on.holds).isEqualTo(off.holds).extracting(PaperStore.CorpActionHold::ticker).containsExactly(B);
+        assertThat(on.stopBRecord).as("ON은 미룬 판정을 근거에 쓰지 않음").isNull();
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean()).isTrue();
     }
 
     @Test
@@ -371,10 +476,70 @@ class KrIntradayStopFillDbTest {
     }
 
     @Test
+    @DisplayName("동치가 깨지는 경우 ① 이어받음 — S 밤 관측치의 판 종목 항목이 이어받은 값이면 밤 일괄은 체결하지 않고(보유 남음) ON은 이미 팜: 사후 점검이 "
+            + "NIGHT_NOT_FILLED·운영 알림")
+    void nightStaleTickerBreaksEquivalence() {
+        World off = world(false, Night.A_STALE);
+        World on = world(true, Night.A_STALE);
+
+        assertThat(off.positions).extracting(Position::ticker).contains(A);
+        assertThat(on.positions).extracting(Position::ticker).doesNotContain(A);
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean(true)).isFalse();
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString)
+                .containsExactly(KrIntradayFill.NIGHT_NOT_FILLED);
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("note").asString()).contains("이어받은");
+        assertThat(on.postCheck.alerts()).singleElement().satisfies(text -> assertThat(text).contains("NIGHT_NOT_FILLED=1"));
+    }
+
+    @Test
+    @DisplayName("동치가 깨지는 경우 ④ 일시정지 — 기록과 S 밤 사이에 운영자가 책을 일시정지하면 밤 일괄은 그 STOP을 취소(보유 남음)하고 ON은 이미 팜: "
+            + "ON 사후 점검은 pausedAt으로 NIGHT_NOT_FILLED·운영 알림, SHADOW 대조도 NIGHT_NOT_FILLED")
+    void pauseBetweenRecordAndNightBreaksEquivalence() {
+        World off = world(false, Night.PAUSED);
+        World on = world(true, Night.PAUSED);
+        World shadow = world("SHADOW", Night.PAUSED, false, false);
+
+        assertThat(off.positions).extracting(Position::ticker).contains(A);
+        assertThat(on.positions).extracting(Position::ticker).doesNotContain(A);
+        assertThat(on.stopRecord.path(KrIntradayFill.PAUSED_AT).isMissingNode()).as("일시정지 트랜잭션이 남김").isFalse();
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean(true)).isFalse();
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString)
+                .containsExactly(KrIntradayFill.NIGHT_NOT_FILLED);
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("note").asString()).contains("일시정지");
+        assertThat(on.postCheck.alerts()).singleElement().satisfies(text -> assertThat(text).contains("NIGHT_NOT_FILLED=1"));
+        assertThat(shadow.positions).isEqualTo(off.positions);
+        assertThat(shadow.stopRecord.path(KrIntradayFill.CHECK).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString)
+                .containsExactly(KrIntradayFill.NIGHT_NOT_FILLED);
+        assertThat(shadow.stopRecord.path(KrIntradayFill.CHECK).path("nightStatus").asString()).isEqualTo(PaperBooks.ORDER_CANCELLED);
+    }
+
+    @Test
+    @DisplayName("알려진 차이(경제적) — 기록과 S 밤 사이에 비용 키(kr.commissionBp)를 저장하면 체결가·수량은 같고 수수료·현금이 갈림: ON 사후 점검과 SHADOW 대조가 "
+            + "COST_MISMATCH(불일치)·SETTINGS_CHANGED, ON은 운영 알림")
+    void costSaveBetweenRecordAndNightIsCaught() {
+        World off = world(false, Night.COST_SAVED);
+        World on = world(true, Night.COST_SAVED);
+        World shadow = world("SHADOW", Night.COST_SAVED, false, false);
+
+        assertThat(on.fills).as("비용 칸이 갈림").isNotEqualTo(off.fills);
+        assertThat(on.fills.get(0).subList(0, 9)).as("A 매도 — 종목·방향·수량·가격·체결일·출처는 같음").isEqualTo(off.fills.get(0).subList(0, 9));
+        assertThat(on.state.cash()).isNotEqualTo(off.state.cash());
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean(true)).isFalse();
+        assertThat(on.stopRecord.path(KrIntradayFill.CHECK).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString)
+                .containsExactly(KrIntradayFill.COST_MISMATCH, KrIntradayFill.SETTINGS_CHANGED);
+        assertThat(on.postCheck.alerts()).singleElement().satisfies(text -> assertThat(text).contains("COST_MISMATCH=1"));
+        assertThat(shadow.fills).as("SHADOW는 장부 그대로 — 밤 일괄과 같음").isEqualTo(off.fills);
+        assertThat(shadow.stopRecord.path(KrIntradayFill.CHECK).path("match").asBoolean(true)).isFalse();
+        assertThat(shadow.stopRecord.path(KrIntradayFill.CHECK).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString)
+                .containsExactly(KrIntradayFill.COST_MISMATCH, KrIntradayFill.SETTINGS_CHANGED);
+        assertThat(shadow.postCheck.alerts()).singleElement().satisfies(text -> assertThat(text).contains("COST_MISMATCH=1"));
+    }
+
+    @Test
     @DisplayName("멱등·예외 — 대기일 때만 바꾸는 갱신이 0행이면 그 책 기록 전체를 되돌려 대기 그대로(체결 행·보유·현금·근거 무변경), 밤이 같은 값으로 체결")
     void rollsBackWhenTheOrderIsNoLongerPending() {
         settings = settingsRow("ON");
-        PaperStore real = scoped(settings);
+        PaperStore real = scoped();
         store = new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)) {
             @Override
             public Optional<SettingsRow> settings() {

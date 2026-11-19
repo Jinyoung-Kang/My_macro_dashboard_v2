@@ -105,6 +105,10 @@ class KrIntradayFillTest {
         Order claude = new Order(9, PaperBooks.KR_CLAUDE, null, "005930", PaperBooks.SELL, null, null, 1.0, PaperBooks.MARKET,
                 PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_PENDING, null, null, PREV, kst("2026-11-17T13:10:42"), S, null);
         assertThat(KrIntradayFill.candidate(claude, S, CALENDAR)).as("Claude 장중 시장가(2단계)").isFalse();
+        Order longer = new Order(10, PaperBooks.KR_RULES, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, stop.reason(), PREV, kst("2026-11-17T13:10:42"), S.plusDays(1), null);
+        assertThat(ExecutionAudit.targetSession(longer, CALENDAR)).as("목표 세션은 S").isEqualTo(S);
+        assertThat(KrIntradayFill.candidate(longer, S, CALENDAR)).as("목표 세션은 S이고 만료일만 S+1 — 감시 STOP의 수명(만료일 = S)이 아님").isFalse();
     }
 
     @Test
