@@ -1414,7 +1414,6 @@ def test_QA417_reboot_check는_Livepatch를_끝내_못_읽으면_마지막_오�
     assert "Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패: error: daemon busy (call 3)" in result.stdout
 
 
-@pytest.mark.xfail(strict=True, reason="QA-417 후속 — 고치기 전: root가 아니면 그냥 불러 cron 자리에서 늘 실패")
 @pytest.mark.parametrize("args", [(), ("--summary",), ("--summary-if-server",)], ids=["cron", "deploy_요약", "make_status"])
 def test_QA417_reboot_check는_root가_아니면_Livepatch_상태를_sudo_n으로_읽는다(reboot_root, fakes, args):
     # 2026-11-13~18 cron(16:10 KST)에서 늘 'is not a snap cgroup'으로 실패 — 사용자 세션 버스가 없는 cron 자리에서는 root가 아닌 사용자의
