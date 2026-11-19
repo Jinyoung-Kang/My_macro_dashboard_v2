@@ -7,7 +7,7 @@
  * 이 차이를 잡지 못했습니다.
  *
  * 기대(개편 전과 같음): POST가 끝나지 않은 동안에도 '읽음'은 켜져 있고, 한 번 더 누르면 같은 POST가 한 번 더 갑니다. '모두 읽음' 요청 중에도 켜져 있습니다.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 'expected true to be false'(한 번 누른 뒤 disabled), 둘째 사례 'expected true to be false'('모두 읽음' 요청 중
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 'expected true to be false'(한 번 누른 뒤 disabled), 둘째 사례 'expected true to be false'('모두 읽음' 요청 중
  * disabled).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -62,7 +62,7 @@ async function openPanel(): Promise<HTMLElement> {
 }
 
 describe("알림 한 건 '읽음'의 켜짐 조건(QA-863)", () => {
-  it.fails("POST가 끝나지 않은 동안에도 켜져 있고, 한 번 더 누르면 같은 POST가 한 번 더 간다(개편 전과 같음)", async () => {
+  it("POST가 끝나지 않은 동안에도 켜져 있고, 한 번 더 누르면 같은 POST가 한 번 더 간다(개편 전과 같음)", async () => {
     const panel = await openPanel();
     fireEvent.click(within(panel).getByRole("button", { name: "읽음" }));
     await act(async () => {});
@@ -76,7 +76,7 @@ describe("알림 한 건 '읽음'의 켜짐 조건(QA-863)", () => {
     ]);
   });
 
-  it.fails("'모두 읽음' 요청 중에도 켜져 있다", async () => {
+  it("'모두 읽음' 요청 중에도 켜져 있다", async () => {
     const panel = await openPanel();
     fireEvent.click(screen.getByRole("button", { name: "모두 읽음" }));
     await act(async () => {});

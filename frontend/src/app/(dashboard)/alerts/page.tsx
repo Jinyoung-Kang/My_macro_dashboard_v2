@@ -114,7 +114,6 @@ export default function AlertsPage() {
           <InboxTimeline
             items={items}
             demo={demo}
-            readBusy={read.busy}
             readError={read.error}
             onRead={async (id) => { await read.run([id]); void inbox.reload(); notifyAlertsRead(); }}
           />
@@ -223,13 +222,11 @@ const UNREAD = "unread";
 function InboxTimeline({
   items,
   demo,
-  readBusy,
   readError,
   onRead,
 }: {
   items: readonly InboxItem[];
   demo: boolean;
-  readBusy: boolean;
   readError: string | null;
   onRead: (id: number) => Promise<void>;
 }) {
@@ -285,7 +282,7 @@ function InboxTimeline({
         inspectorHint="알림을 고르면 이 칸에 본문이 나옵니다."
         renderDetail={(entry) => {
           const item = byKey.get(entry.key);
-          return item ? <InboxDetail item={item} demo={demo} readBusy={readBusy} readError={readError} onRead={onRead} /> : null;
+          return item ? <InboxDetail item={item} demo={demo} readError={readError} onRead={onRead} /> : null;
         }}
       />
     </div>
@@ -300,13 +297,11 @@ function InboxTimeline({
 function InboxDetail({
   item,
   demo,
-  readBusy,
   readError,
   onRead,
 }: {
   item: InboxItem;
   demo: boolean;
-  readBusy: boolean;
   readError: string | null;
   onRead: (id: number) => Promise<void>;
 }) {
@@ -331,7 +326,8 @@ function InboxDetail({
             </Link>
           ) : null}
           {!item.read && !demo ? (
-            <Button size="sm" disabled={readBusy} onClick={() => void onRead(item.id)}>
+            // 켜짐 조건은 개편 전 줄 안 '읽음'과 같습니다 — 보이는 조건(읽지 않음·데모 아님)만, 요청 중에도 꺼지지 않음(QA-863).
+            <Button size="sm" onClick={() => void onRead(item.id)}>
               읽음
             </Button>
           ) : null}
