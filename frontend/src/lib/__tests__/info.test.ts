@@ -155,8 +155,10 @@ describe("네이버 수급", () => {
   it("금액이 없으면 '—'(0원이 아님), 있으면 부호와 억", () => {
     expect(eokText(null)).toBe("—");
     expect(eokText(1661.6)).toBe("+1,661.6억");
-    expect(eokText(-500)).toBe("-500.0억");
-    expect(sharesText(-873324)).toBe("-873,324주");
+    // 음수는 −(U+2212 — 작업대 P7, 부호 있는 비등락 값), 0은 부호 없이
+    expect(eokText(-500)).toBe("\u2212500.0억");
+    expect(eokText(0)).toBe("0.0억");
+    expect(sharesText(-873324)).toBe("\u2212873,324주");
     expect(sharesText(null)).toBe("—");
   });
 

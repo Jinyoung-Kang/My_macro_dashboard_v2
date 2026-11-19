@@ -346,7 +346,11 @@ describe("정보 수집 화면", () => {
     expect(within(ranking).getAllByRole("row")).toHaveLength(11);
     const first = within(ranking).getByText("종목1 (000000)").closest("tr") as HTMLElement;
     expect(within(first).getByText("—")).toBeTruthy();
-    expect(screen.getByText(/기준일 2026-11-07 · 이번에 받지 못해 이전 값/)).toBeTruthy();
+    // 이어받은 부분은 기준일 옆 공용 '이전 값' 배지(작업대 P7 — 예전에는 기준 글 꼬리 '· 이번에 받지 못해 이전 값').
+    const balances = screen.getByRole("heading", { name: "공매도 잔고 상위 · 코스피" }).closest("section") as HTMLElement;
+    expect(within(balances).getByText(/기준일 2026-11-07/)).toBeTruthy();
+    expect(within(balances).getByText("이전 값")).toBeTruthy();
+    expect(within(balances).getByText(/이번에 받지 못함/)).toBeTruthy();
     fireEvent.click(within(screen.getByRole("navigation", { name: "KRX 외국인 순매수 상위 · 코스피 쪽" })).getByRole("button", { name: "2" }));
     expect(within(ranking).getByText("종목11 (000010)")).toBeTruthy();
 

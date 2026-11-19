@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { Pager } from "@/components/Pager";
-import { Banner, Card, ErrorState, Freshness, Loading, NativeSelect, SourceBadge, Table } from "@/components/ui";
+import { ChangeCell, DataTable, StaleBadge } from "@/components/patterns";
+import { Callout, Card, ErrorState, Freshness, Loading, NativeSelect, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
+import { EMPTY, formatNumber, formatSignedMinus } from "@/lib/format";
 import {
   NAVER_INVESTORS,
   NAVER_MARKETS,
@@ -26,6 +27,7 @@ import {
 /**
  * 네이버 투자자별 매매동향(코스피·코스닥 최근 10거래일, 억 원)과 외국인·기관 순매수·순매도 상위(당일). 장중 순위는 네이버의 추정이라 금액이 없고
  * 주식 수만 보입니다('—'는 0이 아니라 출처가 주지 않은 값). 시장·투자주체를 골라 한 쌍씩 보이고 순위는 10줄씩 넘깁니다.
+ * 표는 공용 조밀 표(DataTable dense)이고, 순매수 금액·수량은 부호 있는 값이라 본문 잉크 + 부호(−는 U+2212 — 오르내림이 아님), 등락률만 오르내림 칩(▲▼).
  */
 export function NaverFlowsSection() {
   const { data, loading, error, reload, refreshError } = useApi<NaverFlowsResponse>(endpoints.info.flows, 300_000);
@@ -65,12 +67,15 @@ export function NaverFlowsSection() {
       {data?.available && (
         <div className="space-y-6">
           {(data.failed?.length ?? 0) > 0 && (
-            <Banner tone="warn">이번 수집에서 {data.failed?.length}개 부분을 받지 못해 이전 값을 보입니다: {data.failed?.join(", ")}</Banner>
+            <Callout tone="warn" title="일부를 받지 못함">
+              이번 수집에서 {data.failed?.length}개 부분을 받지 못해 이전 값을 보입니다: {data.failed?.join(", ")}
+            </Callout>
           )}
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-text-2">
+          {/* 고르기 둘 — 공용 기본 조작 크기(md — 넓은 화면 30px, 좁은 화면 44px), 이름표 13px 보조 글. 좁은 화면은 한 칸씩. */}
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-end">
+            <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
               시장
-              <NativeSelect inputSize="sm" value={market} onChange={(event) => setMarket(event.target.value as NaverMarket)}>
+              <NativeSelect value={market} onChange={(event) => setMarket(event.target.value as NaverMarket)}>
                 {NAVER_MARKETS.map((entry) => (
                   <option key={entry.key} value={entry.key}>
                     {entry.label}
@@ -78,9 +83,9 @@ export function NaverFlowsSection() {
                 ))}
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-text-2">
+            <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
               매매상위 투자주체
-              <NativeSelect inputSize="sm" value={investor} onChange={(event) => setInvestor(event.target.value as NaverInvestor)}>
+              <NativeSelect value={investor} onChange={(event) => setInvestor(event.target.value as NaverInvestor)}>
                 {NAVER_INVESTORS.map((entry) => (
                   <option key={entry.key} value={entry.key}>
                     {entry.label}
@@ -90,21 +95,27 @@ export function NaverFlowsSection() {
             </label>
           </div>
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-text">
-              {marketLabel} 투자자별 순매수(억 원){data.trend?.[market]?.isStale ? " · 이전 값" : ""}
+            <h3 className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-text">
+              {marketLabel} 투자자별 순매수(억 원)
+              <StaleBadge stale={data.trend?.[market]?.isStale} reason="이번에 받지 못함" />
             </h3>
-            <Table<TrendRow>
-              label={`${marketLabel} 투자자별 순매수`}
+            <DataTable<TrendRow>
+              dense
+              caption={`${marketLabel} 투자자별 순매수`}
               rows={data.trend?.[market]?.rows ?? []}
               rowKey={(row) => row.date}
-              emptyMessage="받은 날짜가 없습니다."
+              emptyText="받은 날짜가 없습니다."
+              scrollHint="overflow"
               columns={[
-                { key: "date", header: "날짜", render: (row) => <span className="tabular-nums">{row.date}</span> },
+                { key: "date", header: "날짜", className: "whitespace-nowrap", cell: (row) => row.date },
                 ...TREND_COLUMNS.map((column) => ({
                   key: column.key,
                   header: column.label,
                   align: "right" as const,
-                  render: (row: TrendRow) => <span className="tabular-nums">{row[column.key] === null ? EMPTY : formatSigned(row[column.key], 1)}</span>,
+                  cell: (row: TrendRow) => {
+                    const value = row[column.key];
+                    return value === null ? null : formatSignedMinus(value, 1).text;
+                  },
                 })),
               ]}
             />
@@ -114,7 +125,8 @@ export function NaverFlowsSection() {
               {investorLabel} 매매상위 · {marketLabel}
             </h3>
             <p className="mb-2 text-xs text-text-2">{rankingBasis(data.rankings?.[investor]?.[market])}</p>
-            <div className="grid gap-4 lg:grid-cols-2">
+            {/* 순매수·순매도 두 표는 위아래로 — 나란히 두면 1440에서도 칸이 553px라 여섯 칸 표(최소 640px)가 넘쳤음(머리 없는 크롬으로 잼). */}
+            <div className="grid gap-4">
               <RankTable key={`${investor}-${market}-buy`} title={`${investorLabel} 순매수 상위 · ${marketLabel}`} rows={data.rankings?.[investor]?.[market]?.buy ?? []} />
               <RankTable key={`${investor}-${market}-sell`} title={`${investorLabel} 순매도 상위 · ${marketLabel}`} rows={data.rankings?.[investor]?.[market]?.sell ?? []} />
             </div>
@@ -129,20 +141,22 @@ function RankTable({ title, rows }: { title: string; rows: RankRow[] }) {
   const [page, setPage] = useState(1);
   const slice = pageSlice(rows, page, PAGE_SIZE);
   return (
-    <div>
+    <div className="min-w-0">
       <h4 className="mb-1 text-xs font-semibold text-text-2">{title.split(" · ")[0].replace(/^(외국인|기관) /, "")}</h4>
-      <Table<RankRow>
-        label={title}
+      <DataTable<RankRow>
+        dense
+        caption={title}
         rows={slice.rows}
-        rowKey={(row, index) => `${row.code ?? "?"}-${index}`}
-        emptyMessage="순위가 없습니다."
+        rowKey={(row) => `${row.code ?? "?"}-${row.rank}`}
+        emptyText="순위가 없습니다."
+        scrollHint="overflow"
         columns={[
-          { key: "rank", header: "순위", align: "right", render: (row) => row.rank },
-          { key: "name", header: "종목", render: (row) => row.name ?? EMPTY },
-          { key: "price", header: "현재가", align: "right", render: (row) => <span className="tabular-nums">{formatNumber(row.price, 0)}</span> },
-          { key: "change", header: "등락률", align: "right", render: (row) => <span className="tabular-nums">{row.changePct === null ? EMPTY : formatSigned(row.changePct, 2, "%")}</span> },
-          { key: "amount", header: "순매수 금액", align: "right", render: (row) => <span className="tabular-nums">{eokText(row.netAmountEok)}</span> },
-          { key: "volume", header: "순매수 수량", align: "right", render: (row) => <span className="tabular-nums">{sharesText(row.netVolume)}</span> },
+          { key: "rank", header: "순위", align: "right", cell: (row) => row.rank },
+          { key: "name", header: "종목", className: "min-w-[6rem] break-keep", cell: (row) => row.name ?? EMPTY },
+          { key: "price", header: "현재가", align: "right", cell: (row) => (row.price === null ? null : formatNumber(row.price, 0)) },
+          { key: "change", header: "등락률", align: "right", cell: (row) => <ChangeCell changePct={row.changePct} /> },
+          { key: "amount", header: "순매수 금액", align: "right", cell: (row) => eokText(row.netAmountEok) },
+          { key: "volume", header: "순매수 수량", align: "right", cell: (row) => sharesText(row.netVolume) },
         ]}
       />
       <Pager page={slice.page} pages={slice.pages} onChange={setPage} label={title} />
