@@ -386,6 +386,43 @@ class KrStopFillStepTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-790 — 수정 전 실패: 첫 주기 recorded 1건(주문 FILLED·체결 1행·보유 A 삭제), 기대 0건")
+    @DisplayName("QA-790: ON 잠금 안 다시 확인 — 판정 입력(보유·기업행위 표시·since 거래량)을 읽은 뒤 마지막 처리 저장본을 읽기 전에 밤 장부 처리(S−1 재저장본)가 "
+            + "대기 주문·보유 수량은 그대로 두고 기업행위 표시만 걸면, 그 책 기록을 버리고(대기 그대로) 다음 주기에 CORP_HOLD로 밤에 맡김")
+    void onDiscardsWhenTheLedgerProcessedDuringTheEvaluation() {
+        settings("ON", "ON");
+        long id = stop(A, "2026-11-17T13:10:42");
+        java.util.concurrent.atomic.AtomicBoolean processed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(marketData.krConfirmed(any(), any(), any())).thenAnswer(invocation -> {
+            if (processed.compareAndSet(false, true)) {
+                // 판정 입력을 읽은 뒤 확정 시세를 읽는 사이에 리스크 점검이 낮에 다시 저장된 S−1 관측치를 처리(잠금 밖 판정과 겹침) — 표시만 걸고 마지막 처리
+                // 저장본을 옮김(S 13:15 수집 — 세션 S−1이라 장부 밀림은 아님).
+                store.corpHolds.computeIfAbsent(BOOK, k -> new TreeMap<>()).put(A, "2026-11-17 기업행위 확인 필요 — 시험");
+                BookState s = store.states.get(BOOK);
+                store.states.put(BOOK, new BookState(BOOK, s.cash(), s.nav(), s.equityValue(), s.exposurePct(), s.lastObservedAt(),
+                        kst("2026-11-17T13:15:00"), s.lastNavTradingDate(), s.updatedAt()));
+            }
+            return new KrConfirmed(Map.of(A, listed(), B, listed()));
+        });
+
+        KrStopFillStep.Outcome first = step.run(KrPaperMarket.INSTANCE);
+
+        assertThat(first.error()).isNull();
+        assertThat(first.recorded()).as("판정 뒤 처리가 끼면 버림").isEmpty();
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.fills).isEmpty();
+        assertThat(store.positions.get(BOOK)).containsKey(A);
+
+        clock.now = kst("2026-11-17T13:15:40");
+        KrStopFillStep.Outcome second = step.run(KrPaperMarket.INSTANCE);
+        assertThat(second.recorded()).isEmpty();
+        assertThat(second.deferred()).singleElement().satisfies(d -> assertThat(d.get(KrIntradayFill.REASONS))
+                .isEqualTo(List.of(KrIntradayFill.CORP_HOLD)));
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.fills).isEmpty();
+    }
+
+    @Test
     @DisplayName("밤 뒤 대조 — 밤이 같은 값으로 체결하면 check.match=true, 만료로 닫히면 NIGHT_NOT_FILLED와 운영 알림(건수·사유 코드), 대조는 한 번만")
     void checksAfterTheNight() {
         long same = stop(A, "2026-11-17T13:10:42");
