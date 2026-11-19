@@ -54,7 +54,7 @@ function pendingHeight(): number {
 }
 
 describe("저장소 상태 로그 절 — 응답 뒤에도 자리표시와 같은 높이(QA-882)", () => {
-  it.fails("오류·경고 없음(text '') — 안내 한 줄이 로그 상자 높이(30rem)만큼 자리를 둠", async () => {
+  it("오류·경고 없음(text '') — 안내 한 줄이 로그 상자 높이(30rem)만큼 자리를 둠", async () => {
     const { unmount } = render(<IssuesPanel />);
     await act(async () => {});
     // 자리 막대는 로그 상자 높이 한도와 같은 480px(30rem).
@@ -66,7 +66,7 @@ describe("저장소 상태 로그 절 — 응답 뒤에도 자리표시와 같�
     expect(tokens(line)).toContain("min-h-[30rem]");
   });
 
-  it.fails("짧은 로그 — 로그 상자가 글 길이로 줄지 않고 높이 한도(30rem) 그대로", async () => {
+  it("짧은 로그 — 로그 상자가 글 길이로 줄지 않고 높이 한도(30rem) 그대로", async () => {
     response = issues({ counts: { errors: 0, warnings: 1, recentGroups: 0, missingDatasets: 0 }, text: SHORT_LOG });
     render(<IssuesPanel />);
     const box = await screen.findByRole("region", { name: "수집 오류·경고 로그 (스크롤)" });
@@ -75,7 +75,7 @@ describe("저장소 상태 로그 절 — 응답 뒤에도 자리표시와 같�
     expect(tokens(box)).not.toContain("max-h-[30rem]");
   });
 
-  it.fails("수집기에 닿지 못해 누락 데이터셋을 모름 — 안내 한 줄도 같은 자리", async () => {
+  it("수집기에 닿지 못해 누락 데이터셋을 모름 — 안내 한 줄도 같은 자리", async () => {
     response = issues({ collectorReachable: false, counts: { errors: 0, warnings: 0, recentGroups: 0, missingDatasets: null } });
     render(<IssuesPanel />);
     const line = (await screen.findByText(/수집기에 연결하지 못해 누락 데이터셋은/)).closest("p");

@@ -7,6 +7,9 @@ import { Empty } from "./Empty";
 /** 상자 높이 한도 — 넘으면 상자 안에서 스크롤합니다. */
 const MAX_HEIGHT = { sm: "max-h-[20rem]", md: "max-h-[30rem]", lg: "max-h-[40rem]" } as const;
 
+/** 고정 높이(`fixedHeight`) — 한도와 같은 높이로 늘 둡니다(글이 짧아도 줄지 않음). */
+const FIXED_HEIGHT = { sm: "h-[20rem]", md: "h-[30rem]", lg: "h-[40rem]" } as const;
+
 /**
  * 줄바꿈 — anywhere: 칸보다 긴 낱말(경로·키·URL이 붙은 로그 한 줄)은 아무 데서나 꺾음(예전 break-all 대신 — 짧은 낱말은 그대로 둠, 한국어 낱말도
  * 낱말 사이에서만 — break-keep: 없으면 한글 음절 사이가 모두 줄바꿈 기회라 '태스|크'처럼 꺾였음, QA-872),
@@ -32,6 +35,8 @@ export type LogPanelTone = keyof typeof TONE;
  * - 빈 글('' 또는 공백만): 상자 없이 `emptyText`(기본 '내용이 없습니다.') 한 줄 — 빈 상자를 남기지 않습니다.
  * - 모름(null·undefined — 받지 못함): 상자 없이 공용 '—'(Empty — 읽기 '값 없음') + 사유(`emptyReason`, 기본 '받지 못함'). 0이나 빈 상자를 만들지 않습니다.
  * - 추정·대리·이전 값 배지는 이 패턴에 해당 없음: 글 원문을 그대로 보이는 상자라 값 꼬리표가 붙을 숫자가 없습니다(배지는 부르는 쪽 패널 머리가 붙임).
+ * - `fixedHeight`(기본 끔): 글이 있을 때 상자를 높이 한도 그대로의 고정 높이로 둡니다 — 부르는 쪽이 첫 읽기 동안 같은 높이의 자리를 잡을 때, 짧은 글이 와도
+ *   상자가 줄어 아래 내용을 당기지 않게(저장소 상태 로그 — QA-882). 끄면 지금처럼 높이 한도까지만 늘어납니다. 빈 글·모름은 상자가 없어 해당 없습니다.
  *
  * 복사 단추는 넣지 않습니다 — 부르는 쪽 패널 머리의 CopyButton(지금 자리 그대로). 데이터 영역이라 강조 파랑을 쓰지 않습니다(데이터 칸 강조색 금지 목록).
  */
@@ -43,6 +48,7 @@ export function LogPanel({
   maxHeight = "md",
   wrap = "anywhere",
   tone = "plain",
+  fixedHeight = false,
 }: {
   /** 영역 이름의 앞부분 — 상자 이름은 '{label} (스크롤)'. */
   label: string;
@@ -58,6 +64,8 @@ export function LogPanel({
   wrap?: LogPanelWrap;
   /** 글색 — plain(기본, text-2)·muted(text-3). */
   tone?: LogPanelTone;
+  /** 글이 짧아도 상자를 높이 한도 그대로 둠 — 기본 끔(한도까지만 늘어남). */
+  fixedHeight?: boolean;
 }): JSX.Element {
   if (text === null || text === undefined) {
     return (
@@ -74,7 +82,7 @@ export function LogPanel({
       tabIndex={0}
       role="region"
       aria-label={`${label} (스크롤)`}
-      className={`${MAX_HEIGHT[maxHeight]} overflow-auto whitespace-pre-wrap ${WRAP[wrap]} rounded-control border border-border bg-bg p-3 font-mono text-micro leading-5 ${TONE[tone]} ${FOCUS_RING}`}
+      className={`${fixedHeight ? FIXED_HEIGHT[maxHeight] : MAX_HEIGHT[maxHeight]} overflow-auto whitespace-pre-wrap ${WRAP[wrap]} rounded-control border border-border bg-bg p-3 font-mono text-micro leading-5 ${TONE[tone]} ${FOCUS_RING}`}
     >
       {text}
     </pre>

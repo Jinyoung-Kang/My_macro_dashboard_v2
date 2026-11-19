@@ -10,6 +10,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { FOCUS_RING } from "@/components/ui/classes";
+
 import { LogPanel } from "../LogPanel";
 
 afterEach(() => cleanup());
@@ -104,5 +106,32 @@ describe("LogPanel", () => {
     const word = screen.getByRole("region", { name: "AI 리포트 원문 (스크롤)" });
     expect(tokens(word)).toEqual(expect.arrayContaining(["break-keep", "wrap-break-word"]));
     expect(tokens(word)).not.toContain("wrap-anywhere");
+  });
+
+  it("fixedHeight(QA-882) — 켜면 한도와 같은 고정 높이(h-), 기본값이면 지금 쓰는 곳의 상자 DOM 그대로(높이 한도 max-h-, 같은 속성·클래스)", () => {
+    // 기본값의 상자 — 저장소 상태 로그·AI 리포트 원문·AI 입력 원본·토스 조회 JSON이 지금 그리는 꼴을 글자 그대로 묶어 둡니다.
+    const plain = render(<LogPanel label="토스 조회 결과" text="{}" maxHeight="md" tone="muted" />);
+    expect(plain.container.innerHTML).toBe(
+      `<pre tabindex="0" role="region" aria-label="토스 조회 결과 (스크롤)" class="max-h-[30rem] overflow-auto whitespace-pre-wrap break-keep wrap-anywhere rounded-control border border-border bg-bg p-3 font-mono text-micro leading-5 text-text-3 ${FOCUS_RING}">{}</pre>`,
+    );
+    plain.unmount();
+    const off = render(<LogPanel label="토스 조회 결과" text="{}" maxHeight="md" tone="muted" fixedHeight={false} />);
+    const offHtml = off.container.innerHTML;
+    off.unmount();
+    const again = render(<LogPanel label="토스 조회 결과" text="{}" maxHeight="md" tone="muted" />);
+    expect(offHtml).toBe(again.container.innerHTML);
+    again.unmount();
+    for (const [maxHeight, cls] of [["sm", "h-[20rem]"], ["md", "h-[30rem]"], ["lg", "h-[40rem]"]] as const) {
+      const { unmount } = render(<LogPanel label="수집 오류·경고 로그" text="짧은 글" maxHeight={maxHeight} fixedHeight />);
+      const box = screen.getByRole("region", { name: "수집 오류·경고 로그 (스크롤)" });
+      expect(tokens(box)).toContain(cls);
+      expect(tokens(box).filter((token) => token.startsWith("max-h-"))).toHaveLength(0);
+      expect(tokens(box)).toContain("overflow-auto");
+      unmount();
+    }
+    // 빈 글·모름은 상자가 없어 그대로입니다(부르는 쪽이 자리를 둠).
+    const empty = render(<LogPanel label="수집 오류·경고 로그" text="" fixedHeight />);
+    expect(empty.container.querySelector("pre")).toBeNull();
+    expect(empty.container.innerHTML).toBe('<p class="text-sm text-text-3">내용이 없습니다.</p>');
   });
 });

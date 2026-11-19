@@ -18,6 +18,9 @@ import { endpoints } from "@/lib/endpoints";
  *
  * 작업대 P7: 위에 KPI 띠 '오류·경고'(현재 오류·현재 경고·최근 실패 유형·누락 데이터셋), 아래 공용 로그 상자(LogPanel — 고정폭 12/20, 30rem에서 상자 안 스크롤,
  * 이름 있는 영역 '수집 오류·경고 로그 (스크롤)'). 머리 동작(신선도·새로고침 GET·로그 복사)은 그대로입니다.
+ *
+ * 로그 자리는 첫 읽기·응답 뒤 모두 30rem입니다(QA-882) — 첫 읽기의 자리 막대, 글이 있으면 고정 높이 로그 상자, 오류·경고가 없거나 수집기에 닿지 못한
+ * 안내 한 줄은 그만큼의 자리. 응답의 로그가 짧거나 없을 때 이 절이 줄어 아래 태스크·스냅샷 패널이 당겨 올라오지 않게(오류·경고 0의 첫 적재 CLS 1024 0.1024).
  */
 export function IssuesPanel() {
   const { data, loading, error, reload, refreshError } = useApi<StatusIssuesResponse>(endpoints.status.issues, 60_000);
@@ -58,14 +61,14 @@ export function IssuesPanel() {
             <Callout tone="warn">수집기에 연결하지 못해 DB 기록만으로 만들었습니다(누락 데이터셋·없앤 태스크 거르기 제외).</Callout>
           )}
           {hasIssues ? (
-            <LogPanel label="수집 오류·경고 로그" text={data.text} maxHeight="md" />
+            <LogPanel label="수집 오류·경고 로그" text={data.text} maxHeight="md" fixedHeight />
           ) : missingUnknown ? (
-            <p className="text-sm text-text-3">
+            <p className={`${LOG_AREA} text-sm text-text-3`}>
               실행 기록에는 최근 {data.lookbackHours}시간 동안 오류·경고가 없지만, 수집기에 연결하지 못해 누락 데이터셋은
               확인하지 못했습니다.
             </p>
           ) : (
-            <p className="text-sm">
+            <p className={`${LOG_AREA} text-sm`}>
               <StatusText tone="ok">최근 {data.lookbackHours}시간 동안 오류·경고가 없습니다.</StatusText>
             </p>
           )}
@@ -77,6 +80,9 @@ export function IssuesPanel() {
 
 /** 읽는 중 로그 상자 자리 — LogPanel 높이 한도 md(30rem = 480px). */
 const LOG_PENDING_HEIGHT = 480;
+
+/** 로그 상자 대신 안내 한 줄일 때의 자리 — 읽는 중 자리·고정 높이 로그 상자와 같은 30rem(QA-882). */
+const LOG_AREA = "min-h-[30rem]";
 
 /** 읽는 중 KPI 띠 — 값이 온 뒤의 네 타일과 같은 이름(값 자리 막대 + 상태 줄 한 줄 자리). */
 const ISSUE_PENDING: KpiItem[] = [
