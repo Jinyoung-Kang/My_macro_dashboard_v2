@@ -73,6 +73,10 @@ final class KrIntradayFill {
     static final String BEFORE = "before";
     static final String CASH_BEFORE = "cashBefore";
     static final String CASH_AFTER = "cashAfter";
+    /** ON 기록 칸 — 기록 직전 보유의 since 봉 거래량(보유 레코드 밖 — 사후 점검의 기업행위 판정이 since 봉을 밤과 같게 만듦). */
+    static final String FILL_REF_VOLUME = "fillRefVolume";
+    /** ON 사후 점검의 기업행위 판정 칸(밤 일괄이었다면 그 STOP을 보류했을 판정 — 운영 알림, 되돌리지 않음). */
+    static final String POST_CHECK = "postCheck";
     /** 기록 뒤 그 세션 밤 처리 전에 책을 일시정지함(밤 일괄이면 그 STOP이 취소됐을 경우 — 실제 계좌 창은 보유·현금만 되감고 주문은 넣지 않음). */
     static final String PAUSED_AT = "pausedAt";
     /** 밤 처리 뒤 대조 칸. */
@@ -114,6 +118,10 @@ final class KrIntradayFill {
     static final String SOURCE_MISMATCH = "SOURCE_MISMATCH";
     static final String QTY_MISMATCH = "QTY_MISMATCH";
     static final String DATE_MISMATCH = "DATE_MISMATCH";
+    /** 사후 점검 사유(ON) — 밤 일괄이었다면 기업행위 판정이 그 STOP을 보류했음(밤이 체결하지 않음과 함께 씀). */
+    static final String CORP_ACTION = "CORP_ACTION";
+    /** 사후 점검 사유(ON) — 그 세션 밤 관측치가 이미 다음 세션 것이라 밤 일괄을 다시 셀 수 없음({@code match} null). */
+    static final String NIGHT_UNCHECKED = "NIGHT_UNCHECKED";
 
     /** 안정 조건 — 그 종목 항목을 받은 시각이 라벨 T+1 봉 끝 + 이만큼 이후(토스 새 봉 10초 안·완성 봉 거래량 고정 관측에 여유). */
     static final Duration SETTLE = Duration.ofSeconds(60);
@@ -370,6 +378,72 @@ final class KrIntradayFill {
         }
         out.put("match", match);
         out.put(REASONS, reasons);
+        return out;
+    }
+
+    // ------------------------------------------------------------------ ON 사후 점검(밤 일괄이었다면)
+    /**
+     * 사후 점검의 기업행위 판정(ON — 클래스 설명 G4의 밤 뒤 짝): 밤 장부의 판정({@code PaperLedgerService.assess})과 같은 입력 — 그 밤 관측치의 그 종목 봉(이어받은
+     * 항목이면 넘기지 않음) + 기록 직전 보유의 since 봉(저장본 창 밖이면 더함), 토스 상장 상태(새 항목이면 상장, 관측치가 '없음'으로 적었으면 없음, 아니면 모름)·
+     * 금융위 존재·상장주식수, 기준일 = 그 봉의 마지막 날(새 항목이 아니면 그 세션). 밤 일괄에서 이 판정이 '없음'이 아니면 그 STOP은 보류돼 체결되지 않았습니다.
+     *
+     * @param bar           그 밤 관측치의 그 종목 봉(없으면 null)
+     * @param absent        그 밤 관측치가 그 종목을 '없음'으로 적음
+     * @param before        기록 직전 보유(근거 {@value #BEFORE}) — since 봉이 없으면 판정하지 않고 null을 돌려줌
+     * @param fillRefVolume 기록 직전 since 봉 거래량(근거 {@value #FILL_REF_VOLUME} — 모르면 null)
+     */
+    static KrxCorporateActions.Assessment nightCorporate(PaperMarketData.Bar bar, boolean absent, LocalDate session, Position before,
+                                                         Long fillRefVolume, KrConfirmed.Series fsc, boolean etf) {
+        if (before == null || before.fillRefDate() == null) {
+            return null;
+        }
+        boolean fresh = bar != null && !bar.stale() && bar.kr() != null;
+        List<KrxCorporateActions.DailyBar> bars = new ArrayList<>();
+        if (fresh) {
+            for (KrQuotes.Day day : bar.kr().days()) {
+                if (day.close() != null) {
+                    bars.add(new KrxCorporateActions.DailyBar(day.date(), day.close().doubleValue(), day.volume(), day.adjRatio()));
+                }
+            }
+        }
+        if (before.fillRefClose() > 0 && Double.isFinite(before.fillRefClose())) {
+            KrxCorporateActions.DailyBar since = new KrxCorporateActions.DailyBar(before.fillRefDate(), before.fillRefClose(), fillRefVolume, null);
+            if (bars.stream().noneMatch(b -> b.date().equals(since.date()))
+                    && (bars.isEmpty() || since.date().isBefore(bars.get(bars.size() - 1).date()))) {
+                bars.add(since);
+            }
+        }
+        KrxCorporateActions.Presence toss = fresh ? KrxCorporateActions.Presence.LISTED
+                : absent ? KrxCorporateActions.Presence.ABSENT : KrxCorporateActions.Presence.UNKNOWN;
+        KrConfirmed.Series series = fsc == null ? KrConfirmed.Series.UNKNOWN : fsc;
+        KrxCorporateActions.Listing listing = new KrxCorporateActions.Listing(toss, series.presence(), series.sharesBefore(),
+                series.sharesAfter());
+        LocalDate asOf = fresh ? bar.kr().last().date() : session;
+        return KrxCorporateActions.assess(asOf, before.fillRefDate(), before.qty(), bars, listing, etf);
+    }
+
+    /**
+     * 사후 점검의 값 비교(ON) — 밤 일괄이 그 STOP에 골랐을 체결(관측가·출처·체결일·수량)과 장중 기록의 값. 다르면 그 사유들({@value #PRICE_MISMATCH}·
+     * {@value #SOURCE_MISMATCH}·{@value #DATE_MISMATCH}·{@value #QTY_MISMATCH}), 같으면 빈 목록.
+     */
+    static List<String> compare(JsonNode record, double nightRaw, String nightSource, LocalDate nightDate, int nightQty) {
+        List<String> out = new ArrayList<>();
+        Double price = Json.asDouble(record, RAW_PRICE);
+        if (price == null || BigDecimal.valueOf(price).compareTo(BigDecimal.valueOf(nightRaw)) != 0) {
+            out.add(PRICE_MISMATCH);
+        }
+        if (!Objects.equals(Json.asText(record, PRICE_SOURCE), nightSource)) {
+            out.add(SOURCE_MISMATCH);
+        }
+        String target = Json.asText(record, TARGET_AT);
+        Instant targetAt = target == null ? null : instant(target);
+        if (targetAt == null || !targetAt.atZone(KrxCalendar.SEOUL).toLocalDate().equals(nightDate)) {
+            out.add(DATE_MISMATCH);
+        }
+        Double qty = Json.asDouble(record, QTY);
+        if (qty == null || qty.intValue() != nightQty) {
+            out.add(QTY_MISMATCH);
+        }
         return out;
     }
 

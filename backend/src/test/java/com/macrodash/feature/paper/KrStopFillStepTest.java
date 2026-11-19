@@ -239,20 +239,150 @@ class KrStopFillStepTest {
     }
 
     @Test
-    @DisplayName("스위치 — 유효 값 OFF(기록 OFF·감시 SHADOW)면 저장본을 읽지 않음, ON은 이 판에서 평가하지 않음(밤 장부가 체결)")
-    void switchOffAndOn() {
+    @DisplayName("스위치 — 유효 값 OFF(기록 OFF·감시 SHADOW)면 저장본·실행(공휴일 저장본)을 읽지 않고 아무것도 남기지 않음")
+    void switchOff() {
         long id = stop(A, "2026-11-17T13:10:42");
         settings("ON", "OFF");
         assertThat(step.run(KrPaperMarket.INSTANCE).skipped()).contains("유효 값 OFF");
         settings("SHADOW", "SHADOW");
         assertThat(step.run(KrPaperMarket.INSTANCE).skipped()).contains("유효 값 OFF");
-        settings("ON", "ON");
-        assertThat(step.run(KrPaperMarket.INSTANCE).skipped()).contains("ON 장부 기록은 이 판에 없음");
         verify(marketData, never()).stopWatch(anyBoolean());
-        verify(reader, org.mockito.Mockito.times(1)).read(org.mockito.ArgumentMatchers.eq(com.macrodash.store.Datasets.SNAP_KR_HOLIDAYS),
-                org.mockito.ArgumentMatchers.anyLong(), any());   // 유효 값 OFF인 두 주기는 실행(공휴일 저장본)을 열지 않음 — ON 주기 하나만
+        verify(reader, never()).read(org.mockito.ArgumentMatchers.eq(com.macrodash.store.Datasets.SNAP_KR_HOLIDAYS),
+                org.mockito.ArgumentMatchers.anyLong(), any());
         assertThat(store.orders.get(id).reason().has(KrIntradayFill.FIELD)).isFalse();
         assertThat(store.recentJobRuns(5)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ON — G5·R1이 갖춰진 첫 주기에 밤 auctionSell과 같은 칸으로 장부에 적음: 체결 행(관측 시각 = 감시 항목 수집 시각·관측일 S·R1), 주문 FILLED, "
+            + "보유 삭제, 재진입 금지(체결한 날부터), 판정 근거 칸·intradayFill(ON·기록 시각·보유 사본·직전·직후 현금), 상태 네 칸만(마지막 관측·처리·순자산 줄 날짜 그대로)")
+    void onWritesTheLedger() {
+        settings("ON", "ON");
+        long id = stop(A, "2026-11-17T13:10:42");
+        Position held = store.positions.get(BOOK).get(A);
+        BookState state = store.states.get(BOOK);
+
+        KrStopFillStep.Outcome outcome = step.run(KrPaperMarket.INSTANCE);
+
+        assertThat(outcome.error()).isNull();
+        assertThat(outcome.recorded()).singleElement().satisfies(r -> assertThat(r.get("orderId")).isEqualTo(id));
+        PaperSettings settings = PaperSettings.from(store.settings.body(), KrPaperMarket.INSTANCE);
+        FillTerms terms = KrFills.termsFor(com.macrodash.analytics.PaperLedger.Side.SELL, A, new KrQuotes.Choice(S, BigDecimal.valueOf(70_170),
+                KrTimedLadder.SOURCE_AT, null), "KOSPI", settings, KrPaperMarket.BENCHMARK_TICKERS);
+        FillTerms.Costs costs = terms.costs(10);
+        assertThat(store.fills.values()).singleElement().satisfies(f -> {
+            assertThat(f.orderId()).isEqualTo(id);
+            assertThat(f.qty()).isEqualTo(10);
+            assertThat(f.rawPrice()).isEqualTo(70_170);
+            assertThat(f.priceSource()).isEqualTo(KrTimedLadder.SOURCE_AT);
+            assertThat(f.observedAt()).isEqualTo(kst("2026-11-17T13:15:20"));
+            assertThat(f.observationDate()).isEqualTo(S);
+            assertThat(f.fee()).isEqualByComparingTo(costs.fee());
+            assertThat(f.tax()).isEqualByComparingTo(costs.tax());
+        });
+        Order filled = store.orders.get(id);
+        assertThat(filled.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+        assertThat(filled.filledAt()).isEqualTo(kst("2026-11-17T13:15:20"));
+        assertThat(store.positions.get(BOOK)).containsOnlyKeys(B);
+        assertThat(store.lockouts.get(BOOK)).containsKey(A);
+        assertThat(store.lockouts.get(BOOK).get(A).untilTradingDate()).isEqualTo(com.macrodash.analytics.TrailingStop.lockoutUntil(
+                KrIntradayFillTest.CALENDAR, S, settings.lockoutTradingDays()));
+        assertThat(filled.reason().path("stopBasis").asString()).isEqualTo(PaperLedgerService.STOP_BASIS_INTRADAY);
+        assertThat(filled.reason().path("stopBasisNote").asString()).contains("장중 감시 STOP");
+        JsonNode record = record(id);
+        assertThat(record.path(KrIntradayFill.MODE).asString()).isEqualTo("ON");
+        assertThat(record.path(KrIntradayFill.RECORDED_AT).asString()).isEqualTo(kst("2026-11-17T13:15:20").toString());
+        assertThat(record.path(KrIntradayFill.BEFORE).path("qty").asInt()).isEqualTo(10);
+        assertThat(KrIntradayFill.position(BOOK, A, record.path(KrIntradayFill.BEFORE))).as("보유 사본 — 되감기가 그대로 되살림").isEqualTo(held);
+        double after = com.macrodash.analytics.PaperLedger.round4(state.cash() + costs.cashDelta());
+        assertThat(record.path(KrIntradayFill.CASH_BEFORE).asDouble()).isEqualTo(state.cash());
+        assertThat(record.path(KrIntradayFill.CASH_AFTER).asDouble()).isEqualTo(after);
+        BookState now = store.states.get(BOOK);
+        assertThat(now.cash()).isEqualTo(after);
+        assertThat(now.equityValue()).as("남은 보유 B 5주 × 마지막 평가 가격").isEqualTo(5 * 140_000.0);
+        assertThat(now.nav()).isEqualTo(com.macrodash.analytics.PaperLedger.round4(after + 5 * 140_000.0));
+        assertThat(now.lastObservedAt()).isEqualTo(state.lastObservedAt());
+        assertThat(now.lastProcessedCollectedAt()).isEqualTo(state.lastProcessedCollectedAt());
+        assertThat(now.lastNavTradingDate()).isEqualTo(state.lastNavTradingDate());
+        assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.detail().path("mode").asString()).isEqualTo("ON"));
+
+        clock.now = kst("2026-11-17T13:15:40");
+        assertThat(step.run(KrPaperMarket.INSTANCE).recorded()).as("멱등 — 대기가 아님").isEmpty();
+        assertThat(store.fills).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("ON — 관문에 걸리면 대기 그대로(밤 장부가 체결)·근거를 쓰지 않고 미룬 사유는 작업 기록에 처음 한 번, 같은 저장본으로는 다시 판정하지 않음, "
+            + "막던 주문이 사라지고 새 저장본이 오면 적음")
+    void onDefersUntilTheGateClears() {
+        settings("ON", "ON");
+        long id = stop(A, "2026-11-17T13:10:42");
+        long blocking = store.insertOrder(new Order(0, BOOK, null, "035420", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, PREV, kst("2026-11-16T22:40"), S.plusDays(2), null, LocalTime.of(13, 0)));
+
+        KrStopFillStep.Outcome first = step.run(KrPaperMarket.INSTANCE);
+        assertThat(first.recorded()).isEmpty();
+        assertThat(first.deferred()).singleElement().satisfies(d -> assertThat(d.get(KrIntradayFill.REASONS))
+                .isEqualTo(List.of(KrIntradayFill.EARLIER_ORDER)));
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.orders.get(id).reason().has(KrIntradayFill.FIELD)).as("ON은 미룬 판정을 근거에 쓰지 않음").isFalse();
+        assertThat(store.fills).isEmpty();
+        assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.detail().path("deferred")).hasSize(1));
+
+        clock.now = kst("2026-11-17T13:15:40");
+        KrStopFillStep.Outcome second = step.run(KrPaperMarket.INSTANCE);
+        assertThat(second.deferred()).as("같은 저장본 — 다시 판정하지 않음").isEmpty();
+        verify(marketData, org.mockito.Mockito.times(1)).fscMarkets(any());
+        assertThat(store.recentJobRuns(5)).as("할 일이 없으면 기록하지 않음").hasSize(1);
+
+        store.markOrderStatus(blocking, PaperBooks.ORDER_CANCELLED, "장중 교체");
+        clock.now = kst("2026-11-17T13:20:20");
+        snapshot(kst("2026-11-17T13:20:20"));
+        tickers.set(A, entry(S, kst("2026-11-17T13:20:20"), minutes("12:55", "13:20", 70_000), List.of()));
+        assertThat(step.run(KrPaperMarket.INSTANCE).recorded()).singleElement().satisfies(r -> assertThat(r.get("orderId")).isEqualTo(id));
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_FILLED);
+    }
+
+    @Test
+    @DisplayName("ON — 같은 분의 다른 종목 STOP 둘은 한 트랜잭션에 기준 시각 순으로 함께 적음(직전·직후 현금이 같은 한 기록)")
+    void onWritesTwoStopsInOneTransaction() {
+        settings("ON", "ON");
+        long a = stop(A, "2026-11-17T13:10:42");
+        long b = stop(B, "2026-11-17T13:10:50");
+        tickers.set(B, entry(S, kst("2026-11-17T13:15:20"), minutes("12:55", "13:15", 140_000), List.of()));
+
+        KrStopFillStep.Outcome outcome = step.run(KrPaperMarket.INSTANCE);
+
+        assertThat(outcome.recorded()).hasSize(2);
+        assertThat(store.positions.get(BOOK)).isEmpty();
+        assertThat(record(a).path(KrIntradayFill.CASH_BEFORE).asDouble()).isEqualTo(record(b).path(KrIntradayFill.CASH_BEFORE).asDouble());
+        assertThat(record(a).path(KrIntradayFill.CASH_AFTER).asDouble()).isEqualTo(record(b).path(KrIntradayFill.CASH_AFTER).asDouble());
+        assertThat(store.states.get(BOOK).cash()).isEqualTo(record(a).path(KrIntradayFill.CASH_AFTER).asDouble());
+        assertThat(store.states.get(BOOK).equityValue()).isZero();
+        List<Fill> fills = store.fills.values().stream().sorted(java.util.Comparator.comparingLong(Fill::id)).toList();
+        assertThat(PaperNotifyJob.batches(fills, PaperNotifyJob.FETCH_LIMIT, kst("2026-11-17T14:00"), Fill::bookCode, Fill::createdAt, Fill::id))
+                .as("체결 알림 — 한 트랜잭션(같은 만든 시각)의 두 체결은 계좌 묶음 한 통").singleElement()
+                .satisfies(batch -> assertThat(batch.rows()).hasSize(2));
+    }
+
+    @Test
+    @DisplayName("ON — 잠금 안 다시 확인: 판정 뒤 쓰기 전에 그 책의 대기 주문이 바뀌면(새 주문) 그 책 기록을 버림(다음 주기에 다시 판정)")
+    void onDiscardsWhenPendingOrdersChanged() {
+        settings("ON", "ON");
+        long id = stop(A, "2026-11-17T13:10:42");
+        PaperLedgerService racing = new PaperLedgerService(store, marketData, MAPPER) {
+            @Override
+            <T> T exclusively(java.util.function.Supplier<T> work) {
+                store.insertOrder(new Order(0, BOOK, null, "035420", PaperBooks.BUY, null, 5.0, null, PaperBooks.NEXT_OPEN, "CLAUDE",
+                        PaperBooks.ORDER_PENDING, null, null, S, kst("2026-11-17T13:15:30"), S.plusDays(4), null));
+                return super.exclusively(work);
+            }
+        };
+        KrStopFillStep raced = new KrStopFillStep(store, reader, marketData, racing, PaperFixtures.config(), MAPPER, clock,
+                new PaperMarkets(store, reader, List.of(KrPaperMarket.INSTANCE)));
+        assertThat(raced.run(KrPaperMarket.INSTANCE).recorded()).isEmpty();
+        assertThat(store.orders.get(id).status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(store.fills).isEmpty();
     }
 
     @Test

@@ -1477,6 +1477,11 @@ public class PaperLedgerService {
     static final String STOP_BASIS_INTRADAY = PaperStopWatchJob.STOP_MODE;
     private static final StopCheck INTRADAY_STOP_CHECK = new StopCheck(STOP_BASIS_INTRADAY, null, null,
             "장중 감시 STOP — 장중 실제 가격(토스 1분봉)으로 판정해 금융위 종가로 다시 판정하지 않음");
+
+    /** 장중 감시 STOP 체결의 판정 근거 칸({@code stopBasis}·{@code stopBasisNote}) — 장중 기록(ADR 0045 {@code KrStopFillStep})도 밤 체결과 같은 칸을 남김. */
+    static Map<String, Object> intradayStopFields() {
+        return INTRADAY_STOP_CHECK.fields();
+    }
     /** 스탑 취소 사유의 머리 — 확정 종가가 스탑가 위. */
     static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
     /**
