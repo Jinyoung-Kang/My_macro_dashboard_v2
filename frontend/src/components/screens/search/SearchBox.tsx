@@ -136,14 +136,16 @@ export function SearchBox({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(candidate)}
               onMouseMove={() => setActive(index)}
-              className={`relative flex min-h-11 cursor-pointer items-center gap-2 px-3 text-sm lg:min-h-8 ${index === activeIndex ? "bg-surface" : ""}`}
+              className={`relative flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1 text-sm lg:min-h-8 ${index === activeIndex ? "bg-surface" : ""}`}
             >
               {index === activeIndex ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
               <span className="text-text-3">
                 <KindIcon kind={candidate.kind} size={14} />
               </span>
-              <span className="min-w-0 flex-1 truncate text-text">{candidate.name}</span>
-              <span className="shrink-0 truncate text-xs text-text-3">
+              {/* 이름은 두 줄까지(그 뒤에만 말줄임), 보조 글은 줄어드는 칸이라 이름보다 먼저 줄고 폭의 45%를 넘지 않습니다 — 보조 글이 줄지 않던 때는
+                  390에서 긴 보조 글이 이름을 몇 글자로 밀어냈습니다(QA-857). */}
+              <span className="min-w-0 flex-1 break-keep wrap-anywhere line-clamp-2 text-text">{candidate.name}</span>
+              <span className="min-w-0 max-w-[45%] truncate text-xs text-text-3">
                 {[entityKindLabel(candidate.kind), candidate.sub].filter(Boolean).join(" · ")}
               </span>
             </div>

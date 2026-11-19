@@ -53,7 +53,7 @@ async function openSuggest() {
 const classesOf = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/);
 
 describe("입력 후보 줄 — 이름이 보조 글에 밀려 잘리지 않음(QA-857)", () => {
-  it.fails("보조 글은 줄어드는 칸(shrink-0 아님)에 폭 상한·한 줄 말줄임, 이름은 두 줄까지(한 줄 말줄임 아님)", async () => {
+  it("보조 글은 줄어드는 칸(shrink-0 아님)에 폭 상한·한 줄 말줄임, 이름은 두 줄까지(한 줄 말줄임 아님)", async () => {
     const { option } = await openSuggest();
     const name = within(option).getByText("엔비디아 코리아 합성 유한회사 반도체 사업부");
     const sub = within(option).getByText(`기업 · ${LONG_SUB}`);
