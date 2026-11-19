@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { Banner, ErrorState, Loading, buttonClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -18,12 +18,39 @@ export function Reader({ entry }: { entry: ReaderEntry }) {
   const original = entry.itemId ? (stored.data?.item?.body ?? stored.data?.item?.summary ?? null) : entry.text;
   const { translate: request, busy, translated, error } = useTranslate();
   const [showKorean, setShowKorean] = useState(false);
+  // 번역 단추는 요청 동안 disabled가 아니라 aria-disabled입니다 — 누른 단추가 disabled가 되면 크롬이 포커스를 body로 보내고, 넓은 틀의 옆 칸에는
+  // 대화상자처럼 되살리는 포커스 가두기가 없습니다(QA-887). 다시 그리기 전에 두 번 눌러도 한 번만 보내게 누름을 여기서 막습니다(정보 검색 원문 팝업과 같은 꼴).
+  const inFlight = useRef(false);
+  // 성공으로 번역 단추가 사라지면(옮길 것이 없음) 포커스를 '원문 보기' 전환 단추로 — 누를 때 그 단추에 포커스가 있었고 그 사이 다른 곳으로 옮기지 않았을 때만.
+  // 옮기는 것은 응답을 그린 뒤입니다(상태로 두어 한 번 더 그린 효과에서 — 이미 '번역 보기'였던 두 번째 성공에도).
+  const [refocus, setRefocus] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const actions = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!refocus) return;
+    setRefocus(false);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    (toggle.current ?? actions.current?.querySelector<HTMLElement>("button, a[href]"))?.focus();
+  }, [refocus]);
 
-  const translate = async () => {
-    const result = await request(
-      entry.itemId ? { itemId: entry.itemId } : { title: entry.titleKo ? undefined : entry.title, text: entry.text ?? undefined },
-    );
-    if (result && (result.textKo || result.titleKo || result.alreadyKorean)) setShowKorean(true);
+  const translate = async (event: MouseEvent<HTMLButtonElement>) => {
+    if (inFlight.current || busy) return;
+    inFlight.current = true;
+    const button = event.currentTarget;
+    const hadFocus = document.activeElement === button;
+    try {
+      const result = await request(
+        entry.itemId ? { itemId: entry.itemId } : { title: entry.titleKo ? undefined : entry.title, text: entry.text ?? undefined },
+      );
+      if (result && (result.textKo || result.titleKo || result.alreadyKorean)) {
+        const active = document.activeElement;
+        if (hadFocus && (active === button || active === document.body || active === null)) setRefocus(true);
+        setShowKorean(true);
+      }
+    } finally {
+      inFlight.current = false;
+    }
   };
 
   const loading = !!entry.itemId && entry.hasBody && stored.loading && !stored.data;
@@ -40,14 +67,25 @@ export function Reader({ entry }: { entry: ReaderEntry }) {
           {koreanTitle}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div ref={actions} className="flex flex-wrap items-center gap-2">
         {offerTranslate && (
-          <button type="button" onClick={translate} disabled={busy} className={buttonClasses("primary", "sm")}>
+          <button
+            type="button"
+            onClick={(event) => void translate(event)}
+            aria-disabled={busy || undefined}
+            className={`${buttonClasses("primary", "sm")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          >
             {busy ? "번역 중…" : retry ? "다시 번역" : "한국어로 번역"}
           </button>
         )}
         {translated?.textKo && (
-          <button type="button" onClick={() => setShowKorean((value) => !value)} className={buttonClasses("secondary", "sm")} aria-pressed={showKorean}>
+          <button
+            ref={toggle}
+            type="button"
+            onClick={() => setShowKorean((value) => !value)}
+            className={buttonClasses("secondary", "sm")}
+            aria-pressed={showKorean}
+          >
             {showKorean ? "원문 보기" : "번역 보기"}
           </button>
         )}

@@ -82,7 +82,7 @@ async function pressTranslate(article: typeof ARTICLE) {
 }
 
 describe("원문 검사 칸(옆 칸) 번역 뒤 포커스(QA-887)", () => {
-  it.fails("요청 동안 단추는 disabled가 아니라 aria-disabled(포커스 유지, 다시 눌러도 한 번) — 실패하면 같은 자리 '다시 번역'에 포커스", async () => {
+  it("요청 동안 단추는 disabled가 아니라 aria-disabled(포커스 유지, 다시 눌러도 한 번) — 실패하면 같은 자리 '다시 번역'에 포커스", async () => {
     let fail: (error: Error) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((_, reject) => { fail = reject; }));
     const { side, button } = await pressTranslate(ARTICLE);
@@ -99,7 +99,7 @@ describe("원문 검사 칸(옆 칸) 번역 뒤 포커스(QA-887)", () => {
     expect(document.activeElement).toBe(retry);
   });
 
-  it.fails("성공해 번역 단추가 사라지면 '원문 보기' 전환 단추로 포커스", async () => {
+  it("성공해 번역 단추가 사라지면 '원문 보기' 전환 단추로 포커스", async () => {
     let finish: (value: unknown) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const { side } = await pressTranslate(OTHER);
