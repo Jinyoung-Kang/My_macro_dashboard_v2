@@ -6,6 +6,8 @@
  * - 거르기 둘(알림 종류 — 받은 종류만, 읽음 상태): 화면 안에서 거름 — 요청 수 그대로, 하나 고름 라디오(aria-checked).
  * - 넓은 화면: 왼쪽 목록 + 넓은 검사 칸, 첫 알림이 저절로 보임(요청 없음). 검사 칸: 발생일·받은 시각·상태·지난 사건, 본문, '읽음'(같은 POST {ids}).
  * - 읽은 알림·데모 열람에는 '읽음'이 없습니다.
+ * - 알림 규칙(같은 커밋 묶음의 둘째): 공용 조밀 표·개수 줄, 표 안 켜기·끄기·지우기는 작은 단추(넓은 화면 24px), 규칙 만들기 폼 이름표는 공용 고르기 상자와 같은
+ *   13px text-2이고 입력칸 폭 상한도 같음(22rem — form-label-styles-mixed).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,5 +135,36 @@ describe("알림함 — 검사 칸", () => {
     fireEvent.click(await screen.findByText("국면 바뀜"));
     const demo = await screen.findByRole("dialog", { name: "국면 바뀜" });
     expect(within(demo).queryByRole("button", { name: "읽음" })).toBeNull();
+  });
+});
+
+describe("알림 규칙 — 표와 폼", () => {
+  it("규칙 표는 조밀 표·개수 줄, 표 안 단추는 작은 단추 — 폼 이름표·폭은 공용 고르기 상자와 같음", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path === "/api/alerts/rules") {
+        return Promise.resolve({ available: true, limit: 5, rules: [
+          { id: 3, kind: "REGIME_CHANGE", params: {}, enabled: true, description: "국면 전환", createdAt: "2026-11-01T00:00:00Z" },
+        ] });
+      }
+      if (path === "/api/alerts/inbox?limit=50") return Promise.resolve({ items: [], unread: 0 });
+      return new Promise(() => {});
+    });
+    renderAs(MEMBER);
+    const table = await screen.findByRole("region", { name: "알림 규칙 (좌우 스크롤)" });
+    expect(within(table.closest("section") as HTMLElement).getByText("1건")).toBeTruthy();
+    for (const name of ["켜짐 — 끄기", "지우기"]) {
+      expect(within(table).getByRole("button", { name }).className, name).toContain("lg:min-h-6");
+    }
+    fireEvent.change(screen.getByLabelText("알림 종류"), { target: { value: "FOREIGN_STREAK" } });
+    fireEvent.change(screen.getByLabelText("대상"), { target: { value: "STOCK" } });
+    const code = screen.getByLabelText("종목코드(6자리)");
+    const codeLabel = code.closest("label") as HTMLElement;
+    const selectLabel = screen.getByLabelText("연속 일수").closest("label") as HTMLElement;
+    for (const cls of ["text-[13px]", "text-text-2"]) {
+      expect(codeLabel.className, cls).toContain(cls);
+      expect(selectLabel.className, cls).toContain(cls);
+    }
+    expect(code.className).toContain("sm:max-w-[22rem]");
+    expect((screen.getByLabelText("연속 일수").parentElement as HTMLElement).className).toContain("sm:max-w-[22rem]");
   });
 });

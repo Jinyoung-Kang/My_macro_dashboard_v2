@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
-import { Banner, Button, Callout, Card, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Table, Tag } from "@/components/ui";
+import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
+import { Button, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -17,6 +17,9 @@ import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
+
+/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
+const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
 
 /**
  * 알림 — 화면 알림함과 알림 규칙(명세 C, D2: 화면 알림함만).
@@ -69,7 +72,7 @@ export default function AlertsPage() {
 
   if (rules.loading && !rules.data) return <Loading label="알림을 읽는 중…" />;
   if (rules.error) return <ErrorState message={rules.error} onRetry={rules.reload} />;
-  if (rules.data && !rules.data.available) return <Banner tone="warn">{rules.data.message}</Banner>;
+  if (rules.data && !rules.data.available) return <Callout tone="warn">{rules.data.message}</Callout>;
 
   const items = inbox.data?.items ?? [];
   return (
@@ -118,32 +121,41 @@ export default function AlertsPage() {
         )}
       </Panel>
 
-      <Card
+      <Panel
         title="알림 규칙"
         subtitle={`${rules.data?.rules?.length ?? 0}/${rules.data?.limit ?? 0}개 · 규칙을 만든 날 이후의 사건만 들어옵니다`}
       >
-        {(toggle.error || remove.error) && <Banner tone="warn">{toggle.error ?? remove.error}</Banner>}
-        <Table<AlertRule>
+        {(toggle.error || remove.error) && (
+          <div className="mb-3">
+            <Callout tone="warn">{toggle.error ?? remove.error}</Callout>
+          </div>
+        )}
+        <DataTable<AlertRule>
+          dense
+          count
+          caption="알림 규칙"
           rows={rules.data?.rules ?? []}
           rowKey={(row) => String(row.id)}
-          emptyMessage="규칙이 없습니다."
+          emptyText="규칙이 없습니다."
           columns={[
-            { key: "desc", header: "알림", render: (row) => withoutLeadingIcon(row.description) },
-            { key: "created", header: "만든 날", render: (row) => formatKst(row.createdAt) },
+            { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => withoutLeadingIcon(row.description) },
+            { key: "created", header: "만든 날", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
             {
               key: "enabled",
               header: "상태",
-              render: (row) => (
-                <Button disabled={demo} onClick={async () => { await toggle.run(row.id, !row.enabled); reloadAll(); }}>
+              // 표 안 조작은 작은 단추(넓은 화면 24px — 명세 §3-7, table-cell-controls-md-30의 이 화면 몫).
+              cell: (row) => (
+                <Button size="sm" disabled={demo} onClick={async () => { await toggle.run(row.id, !row.enabled); reloadAll(); }}>
                   {row.enabled ? "켜짐 — 끄기" : "꺼짐 — 켜기"}
                 </Button>
               ),
             },
             {
               key: "delete",
-              header: "",
-              render: (row) => (
-                <Button disabled={demo} onClick={async () => { await remove.run(row.id); reloadAll(); }}>지우기</Button>
+              header: <span className="sr-only">지우기</span>,
+              align: "right",
+              cell: (row) => (
+                <Button size="sm" disabled={demo} onClick={async () => { await remove.run(row.id); reloadAll(); }}>지우기</Button>
               ),
             },
           ]}
@@ -166,10 +178,10 @@ export default function AlertsPage() {
                 options={[{ value: "KOSPI", label: "코스피 전체" }, { value: "KOSDAQ", label: "코스닥 전체" },
                   { value: "STOCK", label: "관심 종목" }]} />
               {target === "STOCK" && (
-                <label className="text-xs text-text-3">
+                <label className={FIELD_LABEL}>
                   종목코드(6자리)
                   <input value={code} onChange={(event) => setCode(event.target.value.trim())} placeholder="005930"
-                    className={`mt-1 w-full ${inputClasses()}`} />
+                    className={`w-full sm:max-w-[22rem] ${inputClasses()}`} />
                 </label>
               )}
               <Select label="연속 일수" value={days} onChange={setDays}
@@ -185,15 +197,15 @@ export default function AlertsPage() {
               options={[{ value: "", label: "기관을 고르세요" },
                 ...(institutions.data?.institutions ?? []).map((i) => ({ value: i.cik, label: filerName(i.name) ?? `CIK ${i.cik}` }))]} />
           )}
-          {create.error && <Banner tone="warn">{create.error}</Banner>}
-          {create.result && <Banner tone={create.result.ok ? "info" : "warn"}>{create.result.message}</Banner>}
+          {create.error && <Callout tone="warn">{create.error}</Callout>}
+          {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}
           <Button variant="primary" type="submit"
             disabled={demo || create.busy || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))}>
             {create.busy ? "만드는 중…" : "규칙 만들기"}
           </Button>
           {demo && <p className="text-xs text-text-3">{DEMO_READ_ONLY}</p>}
         </form>
-      </Card>
+      </Panel>
     </div>
   );
 }
