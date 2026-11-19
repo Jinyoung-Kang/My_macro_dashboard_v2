@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Table } from "@/components/ui";
+import { DataTable, PropertyList } from "@/components/patterns";
+import { Button, Callout, ErrorState, inputClasses, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusDot, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -20,7 +21,18 @@ import type { LoginSession, SessionResponse } from "@/lib/types";
  * 데모 열람(ADR 0013)은 계정이 없으므로 대시보드 첫 화면으로 보냅니다.
  * 로그인 없이 연 로컬 운영자(ADR 0016)는 세션(쿠키)이 없어 로그인한 기기 목록·다른 기기 로그아웃을 숨기고,
  * 비밀번호 변경만 둡니다 — 그 비밀번호는 웹·QA 스택이나 이 DB를 복원한 백업에서 로그인할 때 씁니다.
+ *
+ * 작업대 P7(실행 명세 §7 7행 '내 계정: 속성 목록'): 머리 설명 대신 '계정' 속성 목록(이메일·역할·등급·로그인 방식), 안내는 중립 안내 상자, 폼 이름표는 공용 고르기
+ * 상자와 같은 13px text-2·입력칸 폭 상한 22rem, 로그인한 기기는 공용 조밀 표. 쓰기(비밀번호 변경·다른 기기 로그아웃·계정 지우기 확인 창 문구)는 그대로입니다.
  */
+
+/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
+const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
+/** 한 줄 입력칸 — 고르기 상자와 같은 폭 상한(sm 이상 22rem). */
+const FIELD_INPUT = `w-full sm:max-w-[22rem] ${inputClasses()}`;
+
+/** 등급 이름 — 모르는 값은 받은 글 그대로. */
+const TIER_LABEL: Record<string, string> = { FREE: "무료", PRO: "유료" };
 export default function AccountPage() {
   const router = useRouter();
   const sessionUser = useSessionUser();
@@ -62,19 +74,33 @@ export default function AccountPage() {
   if (session.error) return <ErrorState message={session.error} onRetry={session.reload} />;
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader title="내 계정" description={<>{user?.email} · {roleLabel(user)}</>} />
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
+      <PageHeader title="내 계정" />
+
+      <Panel title="계정">
+        <div className="max-w-md">
+          <PropertyList
+            dense
+            items={[
+              { label: "이메일", value: user?.email ?? null },
+              { label: "역할", value: roleLabel(user) || null },
+              { label: "등급", value: user?.tier ? (TIER_LABEL[user.tier] ?? user.tier) : null },
+              { label: "로그인 방식", value: local ? noLoginName(user) : user ? "이메일·비밀번호(세션)" : null },
+            ]}
+          />
+        </div>
+      </Panel>
 
       {local && (
-        <Banner tone="info">
+        <Callout>
           {noLoginName(user)} — {user?.tailnet
             ? "Tailscale 계정(운영자로 정한 사용자)으로 연 서버 화면이라"
             : "이 컴퓨터(localhost)에서 연 로컬 실행이라"} 로그인 없이 이 운영자 계정으로 열렸습니다.
           로그인 세션이 없어 로그아웃·로그인한 기기 목록이 없습니다.
-        </Banner>
+        </Callout>
       )}
 
-      <Card
+      <Panel
         title="비밀번호 변경"
         subtitle={
           local
@@ -88,14 +114,14 @@ export default function AccountPage() {
             { label: "새 비밀번호", value: next, set: setNext, auto: "new-password" },
             { label: "새 비밀번호 확인", value: confirm, set: setConfirm, auto: "new-password" },
           ].map((field) => (
-            <label key={field.label} className="text-xs text-text-3">
+            <label key={field.label} className={FIELD_LABEL}>
               {field.label}
               <input
                 type="password"
                 value={field.value}
                 autoComplete={field.auto}
                 onChange={(event) => field.set(event.target.value)}
-                className={`mt-1 w-full ${inputClasses()}`}
+                className={FIELD_INPUT}
               />
             </label>
           ))}
@@ -105,8 +131,8 @@ export default function AccountPage() {
               <StatusText tone="danger" iconSize={12}>새 비밀번호가 서로 다릅니다.</StatusText>
             </p>
           )}
-          {change.error && <Banner tone="warn">{change.error}</Banner>}
-          {change.result?.ok && <Banner tone="info">{change.result.message}</Banner>}
+          {change.error && <Callout tone="warn">{change.error}</Callout>}
+          {change.result?.ok && <Callout tone="ok">{change.result.message}</Callout>}
           <Button
             variant="primary"
             type="submit"
@@ -115,12 +141,17 @@ export default function AccountPage() {
             {change.busy ? "바꾸는 중…" : "비밀번호 바꾸기"}
           </Button>
         </form>
-      </Card>
+      </Panel>
 
       {user?.role !== "OWNER" && (
-        <Card title="계정 삭제" subtitle="계정과 개인정보(이메일·로그인 기기·알림 설정)를 바로 지웁니다. 되돌릴 수 없습니다.">
+        <Panel title="계정 삭제" subtitle="계정과 개인정보(이메일·로그인 기기·알림 설정)를 바로 지웁니다. 되돌릴 수 없습니다.">
           {remove.result?.ok ? (
-            <Banner tone="info">{remove.result.message} <a href="/login" className="underline">로그인 화면으로</a></Banner>
+            <Callout tone="ok">
+              {remove.result.message}{" "}
+              <a href="/login" className="underline">
+                로그인 화면으로
+              </a>
+            </Callout>
           ) : (
             <form
               onSubmit={(event) => {
@@ -129,28 +160,28 @@ export default function AccountPage() {
               }}
               className="flex max-w-sm flex-col gap-3"
             >
-              <label className="text-xs text-text-3">
+              <label className={FIELD_LABEL}>
                 비밀번호 확인
                 <input
                   type="password"
                   value={deletePassword}
                   autoComplete="current-password"
                   onChange={(event) => setDeletePassword(event.target.value)}
-                  className={`mt-1 w-full ${inputClasses()}`}
+                  className={FIELD_INPUT}
                 />
               </label>
-              {remove.error && <Banner tone="warn">{remove.error}</Banner>}
+              {remove.error && <Callout tone="warn">{remove.error}</Callout>}
               <Button type="submit" disabled={remove.busy || !deletePassword}>
                 {remove.busy ? "지우는 중…" : "계정 지우기"}
               </Button>
             </form>
           )}
-        </Card>
+        </Panel>
       )}
 
       {/* 세션(쿠키)이 없는 로컬 운영자는 목록이 늘 비고, 다른 기기 로그아웃도 뜻이 없습니다. */}
       {!local && (
-        <Card
+        <Panel
           title="로그인한 기기"
           subtitle="이 계정으로 로그인돼 있는 세션입니다. 모르는 기기가 있으면 다른 기기를 모두 로그아웃하고 비밀번호를 바꾸세요."
           actions={
@@ -165,21 +196,27 @@ export default function AccountPage() {
             </Button>
           }
         >
-          {others.result && <Banner tone="info">다른 기기 {others.result.revoked}곳의 로그인을 끊었습니다.</Banner>}
-          {others.error && <Banner tone="warn">{others.error}</Banner>}
+          {others.result && <Callout tone="ok">다른 기기 {others.result.revoked}곳의 로그인을 끊었습니다.</Callout>}
+          {others.error && <Callout tone="warn">{others.error}</Callout>}
           {sessions.error && <ErrorState message={sessions.error} onRetry={sessions.reload} />}
           {sessions.loading && !sessions.data && <Loading />}
           {/* 목록을 받기 전에는 '로그인한 기기가 없습니다'가 아닙니다(QA-050). */}
           {sessions.data && (
-            <Table<LoginSession>
+            <DataTable<LoginSession>
+              dense
+              count
+              scrollHint="overflow"
+              caption="로그인한 기기 목록"
               rows={sessions.data?.sessions ?? []}
               rowKey={(row) => row.id}
-              emptyMessage="로그인한 기기가 없습니다."
+              emptyText="로그인한 기기가 없습니다."
               columns={[
                 {
                   key: "device",
                   header: "기기",
-                  render: (row) =>
+                  rowHeader: true,
+                  className: "min-w-[14rem] break-keep wrap-anywhere",
+                  cell: (row) =>
                     row.current ? (
                       // 점은 장식 — 뜻은 '지금 이 기기' 글이 나릅니다.
                       <span className="inline-flex items-center gap-1.5">
@@ -190,13 +227,13 @@ export default function AccountPage() {
                       row.userAgent ?? "알 수 없음"
                     ),
                 },
-                { key: "lastSeen", header: "마지막 사용", render: (row) => formatKst(row.lastSeenAt) },
-                { key: "created", header: "로그인", render: (row) => formatKst(row.createdAt) },
-                { key: "expires", header: "만료", render: (row) => formatKst(row.expiresAt) },
+                { key: "lastSeen", header: "마지막 사용", className: "whitespace-nowrap", cell: (row) => formatKst(row.lastSeenAt) },
+                { key: "created", header: "로그인", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
+                { key: "expires", header: "만료", className: "whitespace-nowrap", cell: (row) => formatKst(row.expiresAt) },
               ]}
             />
           )}
-        </Card>
+        </Panel>
       )}
     </div>
   );
