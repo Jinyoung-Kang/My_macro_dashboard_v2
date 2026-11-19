@@ -296,6 +296,7 @@ function InboxTimeline({
     <div ref={rootRef} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-2">
         <FilterList label="알림 종류" selection="single" wide="wrap" items={kindItems} selected={[kindShown]} onToggle={setKindFilter} />
+        {/* 거른 뒤의 개수를 낭독기에 알립니다(공용 거르기 목록의 알림 영역 — QA-879). 거르기가 둘이라 같은 글을 두 번 읽지 않게 영역은 이 하나에만 둡니다. */}
         <FilterList
           label="읽음 상태"
           selection="single"
@@ -303,6 +304,7 @@ function InboxTimeline({
           items={[{ key: ALL, label: "전체" }, { key: UNREAD, label: "읽지 않음" }]}
           selected={[readFilter]}
           onToggle={setReadFilter}
+          status={`고른 조건의 알림 ${shown.length.toLocaleString("ko-KR")}건`}
         />
       </div>
       <Timeline

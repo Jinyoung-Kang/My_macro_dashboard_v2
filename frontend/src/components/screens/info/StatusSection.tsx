@@ -48,7 +48,16 @@ export function StatusSection() {
               selected={[tab]}
               onToggle={setTab}
             />
-            <FilterList label="상태" selection="single" wide="wrap" items={TONES} selected={[tone]} onToggle={(key) => setTone(key as InfoTone | "all")} />
+            {/* 거른 뒤의 출처 수를 낭독기에 알립니다(공용 거르기 목록의 알림 영역 — QA-879). 거르기가 둘이라 같은 글을 두 번 읽지 않게 영역은 이 하나에만. */}
+            <FilterList
+              label="상태"
+              selection="single"
+              wide="wrap"
+              items={TONES}
+              selected={[tone]}
+              onToggle={(key) => setTone(key as InfoTone | "all")}
+              status={`고른 조건의 출처 ${rows.length.toLocaleString("ko-KR")}곳`}
+            />
           </div>
           {/* 거르기를 바꾸면 표를 새로 그립니다 — 첫 쪽으로, 고른 줄도 풂(지금처럼 쪽 1). */}
           <SourceTable

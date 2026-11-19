@@ -6,7 +6,7 @@
  *
  * 기대: 거르기를 바꾸면 알림 영역(role=status)이 거른 뒤의 개수('고른 조건의 알림 n건'·'고른 조건의 출처 n곳')를 읽음 — 거르기가 둘이라 같은 글을 두 번 읽지
  * 않게 영역은 하나. 요청 수는 그대로.
- * 수정 전(재현 커밋에서는 it.fails): 첫 사례 "expected [] to deeply equal [ '고른 조건의 알림 3건' ]", 둘째 사례 "expected [] to deeply equal [ '고른 조건의 출처 4곳' ]"
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 첫 사례 "expected [] to deeply equal [ '고른 조건의 알림 3건' ]", 둘째 사례 "expected [] to deeply equal [ '고른 조건의 출처 4곳' ]"
  * (알림 영역 없음).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -63,7 +63,7 @@ const statusTexts = (scope: HTMLElement) =>
   [...scope.querySelectorAll('[role="status"]')].map((element) => element.textContent ?? "").filter((text) => /^고른 조건의/.test(text));
 
 describe("화면 안 거르기의 결과 개수 알림(QA-879)", () => {
-  it.fails("알림함: 거르기를 바꾸면 알림 영역 하나가 거른 뒤의 개수를 읽는다 — 요청 수 그대로", async () => {
+  it("알림함: 거르기를 바꾸면 알림 영역 하나가 거른 뒤의 개수를 읽는다 — 요청 수 그대로", async () => {
     render(<SessionUserProvider user={MEMBER}><AlertsPage /></SessionUserProvider>);
     await screen.findAllByText("알림 1");
     await act(async () => {});
@@ -77,7 +77,7 @@ describe("화면 안 거르기의 결과 개수 알림(QA-879)", () => {
     expect(api.apiGetShared.mock.calls.length).toBe(before);
   });
 
-  it.fails("정보 수집 출처 상태: 거르기를 바꾸면 알림 영역 하나가 거른 뒤의 출처 수를 읽는다", async () => {
+  it("정보 수집 출처 상태: 거르기를 바꾸면 알림 영역 하나가 거른 뒤의 출처 수를 읽는다", async () => {
     render(<StatusSection />);
     const tones = await screen.findByRole("radiogroup", { name: "상태" });
     const card = tones.closest("section") as HTMLElement;
