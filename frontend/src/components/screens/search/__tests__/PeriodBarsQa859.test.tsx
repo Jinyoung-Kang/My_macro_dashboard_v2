@@ -37,7 +37,7 @@ function ancestorClasses(element: HTMLElement, root: HTMLElement): string[] {
 }
 
 describe("기간 막대의 넓은 화면 대체 고르기(QA-859)", () => {
-  it.fails("'날로 좁히기' 고르기 상자는 모든 폭에 있다 — 조상에 lg:hidden 없음, 막대 줄(도구 막대)도 그대로", () => {
+  it("'날로 좁히기' 고르기 상자는 모든 폭에 있다 — 조상에 lg:hidden 없음, 막대 줄(도구 막대)도 그대로", () => {
     const { container } = render(<PeriodBars bars={BARS} active={null} onToggle={() => {}} onClear={() => {}} />);
     const select = screen.getByLabelText("날로 좁히기");
     expect(select.tagName).toBe("SELECT");
