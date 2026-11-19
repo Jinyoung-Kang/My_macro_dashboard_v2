@@ -3571,4 +3571,6 @@ Tab 30정지·검사 칸·팔레트·'?'·'/' 동작과 API GET 집합 같음.
   커밋마다 커밋 전에 `npx vitest run` 전체·`npm run typecheck`·`npx eslint src`(오류 0 — 경고 1은 `lib/infoSearch.ts`)·`npm run check` 통과(재현 커밋은 `it.fails`만 기대 실패, 흔들림 없음 —
   `moreWritesKeep`과 QA-898 시험 다섯 번 되풀이도 통과). webpack 빌드는 고치기 전 트리와 고친 코드 네 트리(번호마다 그때까지의 트리)에서 통과(저장소 안 임시 폴더 — 지움).
 
+- 두 번째 고침의 반박 확인(같은 날): QA-895~898과 QA-886~894의 첫 적재 개선이 모두 그대로임을 확인. 남은 것 둘 — (1) 결정 거리 `info-news-catalog-hang`(P8, S4): `/info/news`에서 catalog가 답하지 않는 동안 거르기 줄·글 목록이 '불러오는 중' 한 줄에 머묾(`NewsSection` `catalogPending = firstLoadPending(catalog)`에 시간 상한이 없음 — QA-897의 2초 상한은 아래 출처 패널만 덮음). 백엔드 catalog는 수집기 `/status` 읽기 시간 초과 3초를 거쳐 답하므로 보통은 몇 초 늦어지는 몫이라[추정 — 운영 응답 시간은 재지 않음] D6에는 그대로 둠. (2) 공용 `Freshness` `pending` 주석이 `loading && !data`를 안내하던 것을 `firstLoadPending`으로 바로잡음(주석만).
+
 - 새 결함 번호는 QA-899부터(이 회차가 받은 QA-886~909 가운데 QA-886~898을 씀 — 반박 확인 뒤 두 번째 고침이 QA-895~898).
