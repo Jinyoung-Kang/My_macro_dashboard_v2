@@ -108,7 +108,9 @@ describe("상태 화면 수집 오류·경고 로그 — 현재 오류·경고 �
     reads[endpoints.status.issues] = issuesResponse(3, 19);
     const { unmount } = render(<StatusPage />);
     let card = await cardTitled("수집 오류·경고 로그");
-    await within(card).findByText("현재 오류");
+    // 값이 온 KPI 띠('오류·경고')를 기다립니다 — 읽는 중 띠('오류·경고 불러오는 중', QA-876)에도 같은 타일 이름이 있어 이름만 기다리면 응답 전에
+    // 넘어갈 수 있습니다(QA-883 — 부하 아래 전체 실행에서 '현재 오류현재 오류 불러오는 중'으로 흔들림).
+    await within(card).findByRole("region", { name: "오류·경고" });
     for (const [label, value, tone, text] of [
       ["현재 오류", "3건", "text-danger", "지금 실패 중인 태스크"],
       ["현재 경고", "19건", "text-warn", "지금 경고인 태스크"],
@@ -127,7 +129,7 @@ describe("상태 화면 수집 오류·경고 로그 — 현재 오류·경고 �
     reads[endpoints.status.issues] = issuesResponse(0, 0);
     render(<StatusPage />);
     card = await cardTitled("수집 오류·경고 로그");
-    await within(card).findByText("현재 오류");
+    await within(card).findByRole("region", { name: "오류·경고" });
     for (const label of ["현재 오류", "현재 경고"]) {
       const tile = tileOf(card, label);
       expect(tile.textContent).toBe(`${label}0건`);
