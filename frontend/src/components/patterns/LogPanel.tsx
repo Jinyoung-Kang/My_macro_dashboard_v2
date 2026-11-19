@@ -8,10 +8,11 @@ import { Empty } from "./Empty";
 const MAX_HEIGHT = { sm: "max-h-[20rem]", md: "max-h-[30rem]", lg: "max-h-[40rem]" } as const;
 
 /**
- * 줄바꿈 — anywhere: 칸보다 긴 낱말(경로·키·URL이 붙은 로그 한 줄)은 아무 데서나 꺾음(예전 break-all 대신 — 짧은 낱말은 그대로 둠),
+ * 줄바꿈 — anywhere: 칸보다 긴 낱말(경로·키·URL이 붙은 로그 한 줄)은 아무 데서나 꺾음(예전 break-all 대신 — 짧은 낱말은 그대로 둠, 한국어 낱말도
+ * 낱말 사이에서만 — break-keep: 없으면 한글 음절 사이가 모두 줄바꿈 기회라 '태스|크'처럼 꺾였음, QA-872),
  * word: 낱말 사이에서만 꺾고(한국어도 — break-keep) 칸보다 긴 낱말만 그 안에서 꺾음(긴 글 원문).
  */
-const WRAP = { anywhere: "wrap-anywhere", word: "break-keep wrap-break-word" } as const;
+const WRAP = { anywhere: "break-keep wrap-anywhere", word: "break-keep wrap-break-word" } as const;
 
 /** 글색 — plain 본문 보조(text-2), muted 한 단계 옅게(text-3 — AI 입력 원본처럼 참고로 펼친 글). */
 const TONE = { plain: "text-text-2", muted: "text-text-3" } as const;

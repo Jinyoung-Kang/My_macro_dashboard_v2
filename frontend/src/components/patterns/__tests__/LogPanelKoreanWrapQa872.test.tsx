@@ -6,7 +6,7 @@
  * '짧은 낱말은 그대로 둠'은 라틴 글자에만 맞았습니다.
  *
  * 기대: anywhere도 break-keep(한국어 낱말은 낱말 사이에서만) + wrap-anywhere(공백 없는 긴 경로·키·URL은 칸 안에서 아무 데서나). word 꼴은 그대로.
- * 수정 전(재현 커밋에서는 it.fails): "expected [ 'max-h-[30rem]', …(15) ] to include 'break-keep'".
+ * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): "expected [ 'max-h-[30rem]', …(15) ] to include 'break-keep'".
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,7 +17,7 @@ afterEach(() => cleanup());
 const tokens = (element: HTMLElement) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 describe("로그 상자 anywhere 줄바꿈의 한국어 낱말(QA-872)", () => {
-  it.fails("anywhere(기본)는 break-keep + wrap-anywhere — 예전 break-all은 쓰지 않음", () => {
+  it("anywhere(기본)는 break-keep + wrap-anywhere — 예전 break-all은 쓰지 않음", () => {
     render(<LogPanel label="수집 오류·경고 로그" text={"■ 지금 실패 중인 태스크 (최근 결과 기준)\n  krx_flows: 연결 시간 초과"} />);
     const box = screen.getByRole("region", { name: "수집 오류·경고 로그 (스크롤)" });
     expect(tokens(box)).toContain("break-keep");

@@ -3,7 +3,7 @@
  *  - 값 있음: 받은 글 그대로(공백·줄바꿈 유지), 이름 있는 영역 '{label} (스크롤)'·Tab 정지점(tabIndex 0)·고정폭 12/20·화면 바탕 상자·포커스 링
  *  - 빈 글('' 또는 공백만): 상자 없이 emptyText(기본 '내용이 없습니다.') — 영역·빈 상자 없음
  *  - 모름(null·undefined): 상자 없이 공용 '—'(읽기 '값 없음') + 사유(기본 '받지 못함') — 0·빈 상자를 만들지 않음
- *  - 긴 글: 높이 한도(sm 20rem·md 30rem·lg 40rem) 안에서 상자 스크롤, 줄바꿈 꼴(anywhere — 긴 낱말을 아무 데서나, word — 낱말 사이)
+ *  - 긴 글: 높이 한도(sm 20rem·md 30rem·lg 40rem) 안에서 상자 스크롤, 줄바꿈 꼴(anywhere — 긴 낱말을 아무 데서나·한국어 낱말은 사이에서(QA-872), word — 낱말 사이)
  * 추정·대리·이전 값 배지는 이 패턴에 해당 없습니다 — 글 원문을 그대로 보이는 상자라 꼬리표가 붙을 숫자가 없고, 배지는 부르는 쪽 패널 머리가 붙입니다.
  * 강조 파랑 없음(데이터 칸 강조색 금지 목록 — lib/__tests__/accentInData.test.ts가 파일 전체를 봄).
  */
@@ -96,9 +96,9 @@ describe("LogPanel", () => {
     const anywhere = render(<LogPanel label="수집 오류·경고 로그" text={long} />);
     const box = screen.getByRole("region", { name: "수집 오류·경고 로그 (스크롤)" });
     expect(tokens(box)).toContain("wrap-anywhere");
-    // 예전 break-all(짧은 낱말까지 아무 데서나 꺾음)은 쓰지 않습니다.
+    // 예전 break-all(짧은 낱말까지 아무 데서나 꺾음)은 쓰지 않습니다. 한국어 낱말은 낱말 사이에서만(break-keep — QA-872).
     expect(tokens(box)).not.toContain("break-all");
-    expect(tokens(box)).not.toContain("break-keep");
+    expect(tokens(box)).toContain("break-keep");
     anywhere.unmount();
     render(<LogPanel label="AI 리포트 원문" text="한국어 문단은 낱말 사이에서 꺾습니다." wrap="word" />);
     const word = screen.getByRole("region", { name: "AI 리포트 원문 (스크롤)" });
