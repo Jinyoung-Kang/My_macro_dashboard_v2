@@ -26,11 +26,10 @@ export type FundamentalsRead = ReturnType<typeof useFundamentals>;
  * 수급은 "누가 샀나"만 말합니다. 같은 순매수라도 부채가 많거나 이익이 줄고
  * 있는 회사라면 해석이 달라지므로 공시 재무를 옆에 둡니다. 비율은 백엔드가
  * 계산하고(analytics/KrFundamentals), 화면은 그대로 보여 주기만 합니다.
- * `fundamentals`(화면이 useFundamentals로 이미 읽은 것)를 주면 스스로 읽지 않습니다.
+ * `fundamentals`는 화면이 useFundamentals로 한 번 읽은 것(순위 검사 칸과 같은 응답) — 패널은 스스로 읽지 않습니다(예전 대체 길은 쓰는 화면이 없어 뗌 — P7 검토).
  */
-export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fundamentals?: FundamentalsRead }) {
-  const own = useFundamentals(fundamentals ? [] : codes);
-  const { data, loading, error, reload } = fundamentals ?? own;
+export function FundamentalsPanel({ codes, fundamentals }: { codes: string[]; fundamentals: FundamentalsRead }) {
+  const { data, loading, error, reload } = fundamentals;
   const { all, rows, empty, covered } = splitFundamentals(codes, data?.companies ?? []);
 
   // 모르면 null — 공용 표가 '—'(읽기 '값 없음')를 그립니다.

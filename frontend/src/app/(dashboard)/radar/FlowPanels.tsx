@@ -114,12 +114,11 @@ export function useStockFlows(codes: readonly string[]) {
 export type StockFlowsRead = ReturnType<typeof useStockFlows>;
 
 /**
- * 수급 지속성 패널. `flows`(화면이 useStockFlows로 이미 읽은 것)를 주면 그것을 그리고 스스로 읽지 않습니다 — 순위 검사 칸과 같은 응답 하나(요청 그대로).
- * 주지 않으면(패널만 쓰는 곳) 스스로 읽습니다.
+ * 수급 지속성 패널. `flows`는 화면이 useStockFlows로 한 번 읽은 것 — 순위 검사 칸과 같은 응답 하나(요청 그대로)라 패널은 스스로 읽지 않습니다
+ * (예전의 '주지 않으면 스스로 읽음' 길은 쓰는 화면이 없어 뗐습니다 — P7 검토).
  */
-export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: string }[]; flows?: StockFlowsRead }) {
-  const own = useStockFlows(flows ? [] : rows.map((row) => row.code));
-  const { data, loading, error, refreshError } = flows ?? own;
+export function StockFlowsPanel({ rows, flows }: { rows: { code: string; name: string }[]; flows: StockFlowsRead }) {
+  const { data, loading, error, refreshError } = flows;
   const names = new Map(rows.map((row) => [row.code, row.name]));
   const stocks = (data?.stocks ?? []).filter((stock) => stock.available);
   const investor = (stock: StockFlowsResponse["stocks"][number], key: string) =>

@@ -37,23 +37,18 @@ export type ConsensusRead = ReturnType<typeof useConsensus>;
  * 상위 N 밖에서 사들인 종목은 기관이 1위로 샀더라도 여기 나오지 않습니다.
  * 표시 종목 수를 늘리면 그만큼 넓게 봅니다. 이 한계는 카드에도 적습니다.
  *
- * `consensus`(화면이 useConsensus로 이미 읽은 것)를 주면 스스로 읽지 않습니다.
+ * `consensus`는 화면이 useConsensus로 한 번 읽은 것(순위 검사 칸과 같은 응답) — 패널은 스스로 읽지 않습니다(예전 대체 길은 쓰는 화면이 없어 뗌 — P7 검토).
  */
 export function ConsensusPanel({
-  market,
   tradeType,
-  interval,
   topN,
   consensus,
 }: {
-  market: string;
   tradeType: string;
-  interval: string;
   topN: string;
-  consensus?: ConsensusRead;
+  consensus: ConsensusRead;
 }) {
-  const own = useConsensus(consensus ? null : { market, tradeType, interval, topN });
-  const { data, loading, error, reload, refreshError } = consensus ?? own;
+  const { data, loading, error, reload, refreshError } = consensus;
 
   const buying = tradeType === "순매수";
   const rows = data?.rows ?? [];

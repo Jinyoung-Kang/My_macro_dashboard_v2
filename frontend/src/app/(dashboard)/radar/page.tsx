@@ -248,7 +248,7 @@ export default function RadarPage() {
       {/* 표 둘을 눈으로 대조하지 않아도 되게, 겹치는 종목만 따로 모읍니다.
           위 선택(시장·매매 구분·기간·표시 종목 수)을 그대로 따릅니다 —
           여기만 다른 조건으로 계산하면 같은 화면에서 숫자가 어긋납니다. */}
-      <ConsensusPanel market={market} tradeType={tradeType} interval={interval} topN={topN} consensus={consensus} />
+      <ConsensusPanel tradeType={tradeType} topN={topN} consensus={consensus} />
 
       <HistoryPanel market={market} investor={investor} tradeType={tradeType} />
     </div>
