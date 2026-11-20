@@ -660,3 +660,27 @@ describe("QA-676 판정 근거 메모는 '상태 · 해석'", () => {
     expect(memo("연준 순유동성 4주 변화")).toBe("주의: 축소 · 최근 4주 동안 시장에서 유동성이 빠져나갔습니다.");
   });
 });
+
+// QA-965(작업대 P8 후속 — `regime-loading-placeholder-height`): 판정 근거 패널의 읽는 중 자리표시가 막대 네 줄(약 200px)이라, 값이 오면 패널이 속성 넷
+// (이름·값·해석 글)·기준일 줄·고지 상자로 자라(390 201 → 553px) 좁은 화면에서 아래 '네 국면'·탭을 밀었습니다 — 기준 빌드(40a8b4cf, QA API GET 300ms 지연)
+// 390 첫 적재 CLS 0.2125(대상 머리 +20px와 같은 프레임). 자리표시는 값이 온 뒤와 같은 꼴(같은 이름 넷의 속성 줄·해석 글 자리·기준일 줄·고지 상자)이어야
+// 합니다. jsdom은 배치를 계산하지 않으므로 꼴을 봅니다.
+describe("QA-965 판정 근거의 읽는 중 자리표시는 값이 온 뒤의 속성 목록 꼴", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 막대 네 줄뿐이었습니다(속성 줄 dt 0개).
+  it.fails("응답 전 판정 근거는 이름 넷의 속성 줄(해석 글 자리)·기준일 줄·고지 상자 — 읽기에서는 상태 이름만", async () => {
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 근거");
+    const status = within(panel).getByRole("status", { name: "판정 근거 불러오는 중" });
+    const hidden = status.querySelector('[aria-hidden="true"]') as HTMLElement;
+    expect(Array.from(hidden.querySelectorAll("dt")).map((dt) => dt.textContent)).toEqual([
+      "장단기 금리차 10Y-3M",
+      "시카고 연준 금융상황지수",
+      "하이일드 스프레드",
+      "연준 순유동성 4주 변화",
+    ]);
+    // 해석 글 자리 넷(값 아래 12px 보조 글 — 보이지 않는 글이 줄 수를 정함)·기준일 줄·고지 상자.
+    expect(hidden.querySelectorAll("dd .invisible")).toHaveLength(4);
+    expect(hidden.querySelector("p.mt-2.text-xs .invisible")?.textContent).toMatch(/^기준일 .+ — 네 입력 계열/);
+    expect(hidden.querySelector("p.rounded-sm.border .invisible")?.textContent).toContain("임계치는 역사적 분포에 근거한 참고치");
+  });
+});
