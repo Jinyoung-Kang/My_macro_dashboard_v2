@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 보안 공지 저장소 읽기(ADR 0046, V40) — 실제 표(테스트 DB)에서 공지·표 행·버전 목록·출처 판정을 읽는지. 수집기가 쓰는 표라 여기서 넣는 행은 시험
  * 고정본입니다(값은 모두 가짜 — 글 번호는 9.9억대, 출처 판정 태스크는 {@code test-}). 버전 목록 표 셋은 늘 한 벌이라 시험이 끝나면 비웁니다.
+ * 백엔드가 쓰는 알림 기록({@code security_alerts}, {@link SecurityAlertStore})도 함께 봅니다.
  */
 class SecurityStoreDbTest {
 
@@ -42,6 +43,7 @@ class SecurityStoreDbTest {
     @AfterEach
     void cleanUp() {
         jdbc.update("DELETE FROM security_notices WHERE ntt_id BETWEEN 990000000 AND 990000999");
+        jdbc.update("DELETE FROM security_alerts WHERE ntt_id BETWEEN 990000000 AND 990000999");
         jdbc.update("DELETE FROM fetch_source_state WHERE task LIKE 'test-%'");
         jdbc.update("DELETE FROM env_components");
         jdbc.update("DELETE FROM env_pending_updates");
@@ -124,5 +126,34 @@ class SecurityStoreDbTest {
         assertThat(state.lastRunAt()).isEqualTo(Instant.parse("2026-11-21T00:00:00Z"));
         assertThat(state.staleAfterMinutes()).isEqualTo(1080);
         assertThat(List.of(state.reason())).containsExactly("가짜 사유");
+    }
+
+    @Test
+    @DisplayName("알림 기록 — 공지당 한 행(두 번째 넣기는 거짓), 텔레그램 보낸 시각은 빈 행만, 트랜잭션 안에서 예외면 되돌림")
+    void alertRecords() {
+        SecurityAlertStore alerts = new SecurityAlertStore(jdbc, new SchemaCheck(jdbc));
+        assertThat(alerts.ready()).isTrue();
+        Instant first = Instant.parse("2026-11-21T03:00:00Z");
+        Instant later = Instant.parse("2026-11-21T03:15:00Z");
+
+        assertThat(alerts.insert(A, first, 7L)).isTrue();
+        assertThat(alerts.insert(A, later, null)).isFalse();
+        assertThat(alerts.insert(B, first, null)).isTrue();
+        assertThat(alerts.telegramSent(List.of(A), first)).isEqualTo(1);
+        assertThat(alerts.telegramSent(List.of(A), later)).as("이미 보낸 행은 그대로").isZero();
+
+        List<SecurityAlertStore.Alert> rows = alerts.all().stream().filter(a -> a.nttId() == A || a.nttId() == B).toList();
+        assertThat(rows).containsExactly(new SecurityAlertStore.Alert(A, first, 7L, first), new SecurityAlertStore.Alert(B, first, null, null));
+
+        long c = 990_000_003L;
+        try {
+            alerts.atomically(() -> {
+                alerts.insert(c, first, null);
+                throw new IllegalStateException("되돌림");
+            });
+        } catch (IllegalStateException expected) {
+            // 되돌렸는지 아래에서 봅니다.
+        }
+        assertThat(alerts.all()).noneMatch(a -> a.nttId() == c);
     }
 }

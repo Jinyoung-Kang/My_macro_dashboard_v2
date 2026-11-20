@@ -10,8 +10,8 @@
     새 백엔드 표 하나(`security_alerts`). 버전 목록 표 셋을 쓰는 곳은 수집기 CLI(`python -m app.inventory`)이고, 그 CLI도 `app/store.py`만 거칩니다.
 - 지키는 방법(시험): 표 소유 `ArchitectureRulesTest`·`test_table_ownership.py`, 마이그레이션 `test_migrations.py`(V40), 해석기 `test_kisa_notices.py`(합성 HTML),
   태스크 `test_security_task.py`, 버전 목록 받기 `test_inventory_ingest.py`(가짜 값 — 틀리면 아무것도 쓰지 않음), 호스트 스크립트 `test_vultr_scripts.py`(로그에 버전 없음),
-  판정 `VersionOrderTest`·`VersionRangeTest`·`ProductAliasesTest`·`NoticeJudgeTest`, 경로 `AccessPolicyTest`·`RouteInventoryTest`·`SecurityControllerTest`(회원 403·운영자 200), 화면 응답 `SecurityServiceTest`(판정 집계·거르기·쪽·버전 목록 없음)·`SecurityStoreDbTest`, 알림 `SecurityAlertJob` 시험(한 번만·실패 뒤 재시도·
-  버전 목록 없으면 0건·글에 버전 문자열 없음). 각 시험 이름은 구현 커밋에서 이 줄에 채웁니다.
+  판정 `VersionOrderTest`·`VersionRangeTest`·`ProductAliasesTest`·`NoticeJudgeTest`, 경로 `AccessPolicyTest`·`RouteInventoryTest`·`SecurityControllerTest`(회원 403·운영자 200), 화면 응답 `SecurityServiceTest`(판정 집계·거르기·쪽·버전 목록 없음)·`SecurityStoreDbTest`, 알림 `SecurityAlertJobTest`(한 번만·실패 뒤 재시도·
+  버전 목록 없으면 0건·글과 로그에 버전 문자열 없음·여럿이면 텔레그램 한 통)·`SecurityStoreDbTest`의 알림 기록. 각 시험 이름은 구현 커밋에서 이 줄에 채웁니다.
 
 ## 배경
 
