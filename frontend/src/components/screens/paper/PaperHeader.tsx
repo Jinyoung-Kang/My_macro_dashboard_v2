@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState, type JSX, type ReactNode } from "react";
 
-import { FOCUS_RING, Freshness, SEGMENT_TRACK, segmentClasses, Tag, TEXT_TARGET } from "@/components/ui";
+import { buttonClasses, FOCUS_RING, Freshness, NativeSelect, SEGMENT_TRACK, segmentClasses, Tag, TEXT_TARGET } from "@/components/ui";
 import { ChevronDownIcon } from "@/components/ui/icons";
 import { paperTabInMarket, type PaperTabKey } from "@/lib/paper";
 import type { PaperMarketCode } from "@/lib/paperMarket";
@@ -29,6 +29,8 @@ const MARKETS: readonly { code: PaperMarketCode; label: string }[] = [
  * - 시장 세그먼트는 같은 탭의 다른 시장 주소로 가는 링크 둘(지금 시장은 aria-current="page") — 그 시장에 없는 탭(미국의 'ISA 계좌')이면 그 시장의 개요.
  * - '자세히'는 예전 머리 설명 문단(글 그대로)을 펼치는 단추(aria-expanded·aria-controls)입니다. 접힌 동안에도 글은 DOM에 남습니다(hidden — `<details>`와 같음).
  * - 실제 계좌·ISA 탭이면 제목 옆에 주의 태그 '실제 계좌'(명세 §7-1 '실제 표지는 늘 보임' — 그 탭의 모듈은 건드리지 않음, 진행 기록 real-isa-banner-neutral-not-warn).
+ * - 개요를 처음 읽는 동안(`reserve` — PaperScreen이 정함)은 응답 뒤에 생길 계좌 칸·한계 단추와 같은 꼴의 보이지 않는 자리(낭독·포커스 없음)를 둡니다 — 없으면
+ *   응답 뒤 계좌 칸이 끼고 한계 단추(30px)가 줄 높이를 키워 '자세히'·신선도 묶음이 밀렸습니다(QA-956). 응답이 오면(값·실패) 자리는 빠집니다.
  * - 이 파일은 실제 매매·실제 계좌·ISA 모듈을 가져오지 않습니다(그 모듈을 부르는 곳은 PaperScreen 하나 — 경계 시험).
  */
 export function PaperHeader({
@@ -41,6 +43,7 @@ export function PaperHeader({
   realMarker = false,
   onAccountSlot,
   onActionsSlot,
+  reserve = null,
 }: {
   title: string;
   market: PaperMarketCode;
@@ -55,6 +58,11 @@ export function PaperHeader({
   realMarker?: boolean;
   onAccountSlot: (element: HTMLElement | null) => void;
   onActionsSlot: (element: HTMLElement | null) => void;
+  /**
+   * 개요를 처음 읽는 동안의 자리(QA-956) — `account`는 계좌 칸 자리의 고르기 상자 글(그 탭이 계좌를 고르지 않으면 null — 폭을 정하는 보이지 않는 글),
+   * `limits`는 한계 단추 자리. 주지 않으면(null) 자리 없음.
+   */
+  reserve?: { account: string | null; limits: boolean } | null;
 }): JSX.Element {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsId = `${useId()}-details`;
@@ -82,9 +90,27 @@ export function PaperHeader({
         </div>
         {/* 계좌 고르기 칸(탭이 채움 — 비면 숨김) — 고른 이름 폭 아래로 줄어들지 않고 줄 폭까지만(QA-772). */}
         <div ref={onAccountSlot} data-paper-header-slot="account" className="flex max-w-full shrink-0 items-center empty:hidden" />
+        {/* 개요를 읽는 동안의 계좌 칸 자리(QA-956) — 칸에 들어올 '계좌' 글 + 고르기 상자(PaperTabAccount)와 같은 꼴, 보이지 않고 읽히지도 포커스도 없음. */}
+        {reserve?.account ? (
+          <div aria-hidden="true" inert data-paper-header-reserve="account" className="invisible flex max-w-full shrink-0 items-center">
+            <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+              <span className="shrink-0 text-[13px] text-text-2">계좌</span>
+              <NativeSelect tabIndex={-1} defaultValue="" wrapperClassName="inline-flex min-w-0">
+                <option value="">{reserve.account}</option>
+              </NativeSelect>
+            </span>
+          </div>
+        ) : null}
         {/* 한계·자세히·신선도 — 한 묶음으로 줄을 바꿈(내용 폭 아래로 줄어들지 않고 줄 폭까지만). */}
         <div className="flex max-w-full shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
-          {limits ? <PaperLimitsDrawer limits={limits.lines} source={limits.source} book2Label={limits.book2Label} /> : null}
+          {limits ? (
+            <PaperLimitsDrawer limits={limits.lines} source={limits.source} book2Label={limits.book2Label} />
+          ) : reserve?.limits ? (
+            // 개요를 읽는 동안의 한계 단추 자리(QA-956) — 같은 단추 꼴(30px — 이 줄의 높이를 정함), 보이지 않고 읽히지 않음.
+            <span aria-hidden="true" data-paper-header-reserve="limits" className={`invisible ${buttonClasses("minimal", "md")}`}>
+              이 장부의 한계 (0줄)
+            </span>
+          ) : null}
           <button
             type="button"
             aria-expanded={detailsOpen}
