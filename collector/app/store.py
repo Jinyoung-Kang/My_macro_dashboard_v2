@@ -1898,6 +1898,52 @@ def security_notice(ntt_id: int) -> dict | None:
     return {**row, "rows": [dict(r) for r in rows]}
 
 
+# env_inventory·env_components·env_pending_updates는 수집기 CLI app/inventory.py가 이 함수로만 씁니다(ADR 0046 결정 2).
+def replace_env_inventory(doc: dict) -> None:
+    """
+    버전 목록 한 벌로 표 셋을 통째로 바꿉니다(한 트랜잭션 — 중간에 실패하면 앞의 목록이 그대로 남음).
+
+    :param doc: {collected_at, host_included, apt_lists_at, sections, components[(source, ecosystem, name, version, source_package)],
+                 pending[(package, arch, installed, candidate, repos, security)]} — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것
+    """
+    with transaction(), connection() as conn:
+        conn.execute("DELETE FROM env_components")
+        conn.execute("DELETE FROM env_pending_updates")
+        conn.execute(
+            """
+            INSERT INTO env_inventory (id, collected_at, received_at, host_included, apt_lists_at, sections)
+            VALUES (1, %s, now(), %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET collected_at = EXCLUDED.collected_at, received_at = EXCLUDED.received_at,
+                host_included = EXCLUDED.host_included, apt_lists_at = EXCLUDED.apt_lists_at, sections = EXCLUDED.sections
+            """,
+            (doc["collected_at"], bool(doc["host_included"]), doc.get("apt_lists_at"), Jsonb(doc.get("sections") or {})),
+        )
+        with conn.cursor() as cur:
+            if doc.get("components"):
+                cur.executemany(
+                    "INSERT INTO env_components (source, ecosystem, name, version, source_package) VALUES (%s, %s, %s, %s, %s)",
+                    [tuple(row) for row in doc["components"]],
+                )
+            if doc.get("pending"):
+                cur.executemany(
+                    "INSERT INTO env_pending_updates (package, arch, installed, candidate, repos, security) VALUES (%s, %s, %s, %s, %s, %s)",
+                    [tuple(row) for row in doc["pending"]],
+                )
+
+
+def env_inventory() -> dict | None:
+    """버전 목록 한 벌(시험·진단용) → {inventory, components, pending}. 받은 적이 없으면 None."""
+    with connection() as conn:
+        head = conn.execute("SELECT * FROM env_inventory WHERE id = 1").fetchone()
+        if head is None:
+            return None
+        components = conn.execute("SELECT source, ecosystem, name, version, source_package FROM env_components "
+                                  "ORDER BY source, ecosystem, name, version").fetchall()
+        pending = conn.execute("SELECT package, arch, installed, candidate, repos, security FROM env_pending_updates "
+                               "ORDER BY package, arch").fetchall()
+    return {"inventory": head, "components": [dict(r) for r in components], "pending": [dict(r) for r in pending]}
+
+
 # ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)
 # search_watches·search_media_excludes는 백엔드 표라 읽기만 합니다(ADR 0008 — paper_settings 선례). search_watch_items·fetch_budgets는
 # 수집기 표라 여기서만 씁니다(tests/test_table_ownership.py가 봄).

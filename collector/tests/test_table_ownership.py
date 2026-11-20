@@ -214,4 +214,11 @@ def test_보안_공지_수집기_표는_store_py만_쓴다():
     for path in APP.rglob("*.py"):
         for match in SECURITY_TABLE_WRITE.finditer(path.read_text(encoding="utf-8")):
             writers.setdefault(match.group(2).lower(), set()).add(path.relative_to(APP).as_posix())
-    assert {name: files for name, files in writers.items() if files != {"store.py"}} == {}
+    assert writers == {name: {"store.py"} for name in SECURITY_TABLES}
+
+
+def test_보안_공지_태스크와_버전_목록_CLI에는_SQL이_없다():
+    for module in ("tasks/security.py", "inventory.py"):
+        code = (APP / module).read_text(encoding="utf-8")
+        assert ".execute(" not in code and "connection(" not in code, module
+        assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s+", code.split('"""', 2)[2]), module
