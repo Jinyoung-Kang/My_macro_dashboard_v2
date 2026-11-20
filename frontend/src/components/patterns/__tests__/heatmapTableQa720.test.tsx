@@ -74,10 +74,15 @@ function table(rows: readonly HeatmapRow[]) {
   );
 }
 
+/**
+ * 넘김 안내 줄의 보임(null 줄 없음 · 'shown' 폭과 상관없이 · 'phone-only' sm 미만에서만 · 'hidden' 늘 숨김)과 스크롤 자리. 이 표는 열 넷(최소 폭 384px — QA-729)이라
+ * 넘침을 재지 못하면 안내가 'hidden'이 됩니다 — 'hidden'을 'shown'으로 읽으면 재기 효과만 되살아나지 않는 QA-720 회귀가 지나갔습니다(heatmapTableQa729의 hintState와 같은 판정).
+ */
 function observed() {
   const hint = screen.queryByText("← 표를 좌우로 넘겨 보세요");
+  const classes = hint === null ? null : hint.className.split(/\s+/);
   return {
-    hint: hint === null ? null : hint.className.split(/\s+/).includes("sm:hidden") ? "phone-only" : "shown",
+    hint: classes === null ? null : classes.includes("hidden") ? "hidden" : classes.includes("sm:hidden") ? "phone-only" : "shown",
     scrollLeft: screen.getByRole("region", { name: "합성 히트맵 (좌우 스크롤)" }).scrollLeft,
   };
 }

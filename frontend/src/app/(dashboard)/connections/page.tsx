@@ -16,7 +16,7 @@ import { TossSection } from "./TossSection";
  */
 export default function ConnectionsPage() {
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="외부 API 연결 테스트"
         description="AI 엔진과 토스증권 연결을 확인합니다. 모든 테스트는 버튼을 눌렀을 때만 외부를 호출합니다."

@@ -23,6 +23,7 @@ import {
   lineXTicks,
   lineYAxis,
   markerLabelSide,
+  markerLabelWidth,
   niceAxis,
   normalizeLineRows,
   scrubIndex,
@@ -299,6 +300,12 @@ describe("markerLabelSide — 세로 표시선 이름의 자리", () => {
     expect(markerLabelSide(rows, "2026-10-30", "프레임 v5", { width: 880 })).toBe("left");
     // 좁은 그림에서는 끝에서 둘째 선도 넘으면 왼쪽
     expect(markerLabelSide(rows, "2026-10-29", "프레임 v4", { width: 300 })).toBe("left");
+  });
+
+  it("이름표 글 폭 어림 — 한글 한 자 1em·그 밖 0.6em(축 글 폭 어림보다 좁음, QA-777)", () => {
+    expect(markerLabelWidth("프레임 v4", 12)).toBeCloseTo(57.6, 6);
+    expect(markerLabelWidth("프레임 v4", 12)).toBeLessThan(axisLabelWidth("프레임 v4", 12));
+    expect(markerLabelWidth("v12", 10)).toBeCloseTo(18, 6);
   });
 
   it("너비를 모르면 마지막 행의 선만 왼쪽, 행에 없는 날짜는 오른쪽(그려지지 않음)", () => {

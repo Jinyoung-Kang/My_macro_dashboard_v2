@@ -2,13 +2,14 @@
 
 import type { ReactNode } from "react";
 import { type Column, DataTable } from "@/components/patterns";
-import { Card } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { EMPTY } from "@/lib/format";
 import { PAPER_SOURCES } from "@/lib/paper";
 import { comparisonBasis, currentSource } from "@/lib/paperCurrent";
 import { accountComparisonRows, type ComparisonRow, sampleNotes } from "@/lib/paperOverview";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperLiveSessionSummary, PaperOverviewBook } from "@/lib/types";
+import { PaperBadge } from "./PaperBadge";
 
 /** 지금 값이 있는 표 아래의 설명 — 맨 위 기준 줄의 수익률과 통계(거래일 마감)의 누적 수익률이 다를 수 있음(장중 명세 §4·위험 5). */
 export const TWO_RETURNS_NOTE =
@@ -57,7 +58,7 @@ export function AccountComparisonCard({
   ];
 
   return (
-    <Card title="계좌 비교" subtitle={subtitle} source={live ? currentSource(true, market) : ledgerSource}>
+    <Panel title="계좌 비교" subtitle={subtitle} source={live ? currentSource(true, market) : ledgerSource}>
       {basis.reason && <p className="mb-3 text-xs text-text-2">{basis.reason}</p>}
       <DataTable<ComparisonRow>
         columns={comparisonColumns}
@@ -74,7 +75,7 @@ export function AccountComparisonCard({
           </li>
         ))}
       </ul>
-    </Card>
+    </Panel>
   );
 }
 
@@ -86,7 +87,11 @@ function comparisonContent(row: ComparisonRow, code: string): ReactNode {
   const cell = row.cells[code];
   if (!cell || cell.text === EMPTY) return cell?.text ?? null;
   if (row.badge && cell.className) {
-    return <span className={`whitespace-nowrap rounded-control border px-2 py-0.5 text-xs ${cell.className}`}>{cell.text}</span>;
+    return (
+      <span className="whitespace-nowrap">
+        <PaperBadge badge={{ label: cell.text, className: cell.className }} />
+      </span>
+    );
   }
   const text = cell.className ? <span className={cell.className}>{cell.text}</span> : cell.text;
   if (cell.sub) {

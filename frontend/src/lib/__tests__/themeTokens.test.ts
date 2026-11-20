@@ -9,7 +9,7 @@
  *  - 틴트(bg-*-tint — color-mix(in oklab, 톤 10%, surface)) 위 같은 톤 글자 4.5:1 — 못 미치는 톤은 FORBIDDEN_TONE_ON_TINT와 같아야 함 — 와 text·text-2·text-3.
  *    틴트 위 accent 글자(링크)가 4.5:1에 못 미치는 틴트는 FORBIDDEN_ACCENT_ON_TINT와 같아야 합니다(지금은 네 틴트 모두 — 명세 §3-2 틴트 표).
  *  - 블록 모양: 맨 바깥 블록(@media·data-theme 안이 아님), color-scheme dark, 토큰 블록에는 사용자 속성과 color-scheme만, 바탕·글자색은 @layer base.
- *  - 정보 검색 범위 블록(`[data-scope="search"]`)은 P7에서 걷어 낼 때까지 `:root`와 같은 값만 다시 적습니다(겉모습 변화 0).
+ *  - 정보 검색 범위 블록(`[data-scope="search"]`)은 P7에서 걷었습니다 — 그 단언은 `:root`·base 층 html·body 단언으로 옮겼습니다(겉모습 변화 0).
  *  - 금지 쌍(surface-3 위 text-3·neutral·accent·danger 글자, accent 틴트 위 accent 글자, 주의·정상·위험 틴트 위 accent 글자)은 소스 검사로 막습니다 — 제품 소스(.ts·.tsx, 시험 제외)의
  *    문자열·템플릿 조각 하나에 바탕 클래스와 글자 클래스가 함께 있으면 걸립니다(변형 접두어 hover: 등과 투명도 /50은 떼고 봄 — 눌렸을 때만 그 바탕이어도
  *    그때 그 글자가 그 위에 놓임). 부모가 칠한 바탕을 물려받는 자식 글자는 따로 봅니다 — className 글에 그 바탕이 있는 JSX 요소와 그 바탕을 칠하는
@@ -27,8 +27,6 @@ const CSS_NO_COMMENTS = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** 앱의 토큰 블록 선택자 — 블록마다 같은 허용 쌍 행렬을 잽니다. */
 const TOKEN_BLOCKS = [":root"] as const;
-/** P7까지 남기는 정보 검색 범위 블록(ADR 0041 결정 11 → ADR 0042 결정 2). */
-const SCOPE_SELECTOR = '[data-scope="search"]';
 
 /** 주석을 지운 CSS의 맨 바깥 규칙(선택자 → 본문). 안에 블록이 있는 규칙(@media·@layer·@theme)은 본문을 통째로 담습니다. */
 function topLevelRules(css: string): { selector: string; body: string }[] {
@@ -348,14 +346,21 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     expect(innerRule(body, "circle.chart-ref-line")).toMatch(/(?:^|;)\s*fill:\s*CanvasText\s*;/);
   });
 
-  // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 재정의가 그 범위 안의 SVG(연결 그림
-  // LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자 rgb(28,33,39)·
-  // rgb(37,42,49)가 남음). 재정의를 svg 요소 자신에 두면(QA-507) 조상인 범위 블록의 값보다 svg 자신의 선언이 이기므로, 범위 블록이 다시 적는 토큰
-  // 가운데 차트가 쓰는 것은 svg 규칙이 모두 시스템 색으로 다시 정의하기만 하면 됩니다(블록 순서와 상관없음). 재현 커밋에서는 it.fails였습니다.
-  it("QA-498: 고대비 재정의가 정보 검색 범위([data-scope=\"search\"]) 안의 SVG에도 닿는다 — 범위가 다시 적는 토큰을 svg 규칙이 시스템 색으로", () => {
+  // QA-498(정보 검색 범위 — P7에서 :root로 옮김): 처음에는 정보 검색 범위 블록([data-scope="search"])이 같은 토큰을 hex로 다시 적어, 고대비 재정의가
+  // 그 범위 안의 SVG(연결 그림 LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에
+  // 어두운 상자 rgb(28,33,39)·rgb(37,42,49)가 남음). 재정의를 svg 요소 자신에 두어(QA-507) 고쳤고, P7에서 범위 블록을 걷어 낸 뒤에는 :root의 토큰 가운데
+  // 차트 파일과 연결 그림이 쓰는 것을 svg 규칙이 모두 시스템 색으로 다시 정의하면 됩니다(QA-507·508 사례와 같은 집합 — 등락 채움·그림자는 뺌).
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-498: 고대비 재정의가 :root의 차트·연결 그림 토큰을 모두 시스템 색으로 다시 정의한다 — 연결 그림(LinksGraph)의 SVG에도 닿는다", () => {
     const svg = forcedDeclarations("svg") ?? {};
-    const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in svg);
+    const rootTokens = declarations(blockBody(":root"));
+    const graph = readFileSync(resolve(SRC, "components/screens/search/LinksGraph.tsx"), "utf8");
+    const graphTokens = [...graph.matchAll(/var\((--[\w-]+)\)|(?:^|[\s"'`:])(?:text|fill|stroke)-([a-z][a-z0-9-]*)/g)]
+      .map((match) => match[1] ?? `--${match[2]}`)
+      .filter((token) => token in rootTokens);
+    const shared = [...new Set([...chartTokens(), ...graphTokens])].filter((token) => token in rootTokens && !NOT_REMAPPED.has(token)).sort();
     expect(shared.length).toBeGreaterThan(5);
+    expect(shared).toEqual(expect.arrayContaining(["--surface", "--surface-2", "--accent", "--accent-hover", "--border-strong"]));
     for (const token of shared) expect(SYSTEM_COLORS.has(svg[token] ?? ""), `${token} = ${svg[token]}`).toBe(true);
   });
 
@@ -364,9 +369,11 @@ describe("고대비(forced-colors) 차트 잉크", () => {
   // 고정됩니다 — D1 QA 스택 재확인(qa@6740c10a, 밝은·어두운 고대비 1440)에서 화면 링크의 LinkText가 / 39/39 → 1/39, /sector 16/16 → 1/16로 줄었고
   // 비활성 '모두 읽음'·'이전'·'바꾼 값 되돌리기'와 /search 자리표시 글이 GrayText에서 CanvasText가 됐습니다. 재정의는 SVG 요소 자신(svg — 사용자 속성은
   // 안쪽으로 물려줌)에만 둡니다. 범위 블록이 hex로 다시 적어도 svg 요소 자신의 선언이 이기므로 범위 안의 연결 그림에도 닿습니다. 재현 커밋에서는 it.fails였습니다.
-  it("QA-507: 고대비 토큰 재정의는 SVG 안에만 — HTML 조상(:root·정보 검색 범위)에 두지 않아 링크·비활성·자리표시 글의 시스템 색을 덮지 않는다", () => {
+  it("QA-507: 고대비 토큰 재정의는 SVG 안에만 — HTML 조상(:root·body 등)에 두지 않아 링크·비활성·자리표시 글의 시스템 색을 덮지 않는다", () => {
     expect(forcedDeclarations(":root"), `${FORCED} { :root { … } }`).toBeUndefined();
-    expect(forcedDeclarations(SCOPE_SELECTOR), `${FORCED} { ${SCOPE_SELECTOR} { … } }`).toBeUndefined();
+    // 고대비 블록 안에서 사용자 속성(--*)을 다시 정의하는 규칙은 svg 하나뿐(범위 블록·html·body·* 없음).
+    const redefining = [...forcedBody().matchAll(/([^{};]+)\{([^}]*)\}/g)].filter((match) => /--[\w-]+\s*:/.test(match[2])).map((match) => match[1].trim());
+    expect(redefining).toEqual(["svg"]);
     const svg = forcedDeclarations("svg") ?? {};
     for (const token of chartTokens().filter((name) => !NOT_REMAPPED.has(name))) {
       expect(SYSTEM_COLORS.has(svg[token] ?? ""), `${token} = ${svg[token]}`).toBe(true);
@@ -450,29 +457,24 @@ describe("글자 단계(명세 §3-6)", () => {
   });
 });
 
-describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
-  const body = blockBody(SCOPE_SELECTOR);
-  const scope = declarations(body);
-  const root = declarations(blockBody(":root"));
-  const theme = themeDeclarations();
-
-  it("맨 바깥 블록이고 color-scheme은 dark, 사용자 속성 말고는 color-scheme만", () => {
-    expect(body).toMatch(/color-scheme:\s*dark;/);
-    expect(plainProperties(body)).toEqual(["color-scheme"]);
+describe("정보 검색 범위 장치를 걷어 낸 뒤(P7 — 범위 단언을 :root로 옮김)", () => {
+  // 정보 검색만 늘 어둡게 그리던 범위 블록([data-scope="search"] — :root와 같은 값만 다시 적음)과 그 뿌리의 base 층 바탕·글자색을 P7에서 걷었습니다
+  // (ADR 0042 결정 2, 명세 §4 끝). 그 단언(맨 바깥 블록·color-scheme dark·사용자 속성만·바탕은 base 층)은 :root 블록(위 describe.each)과 아래 base 층
+  // html·body 단언이 맡고, 정보 검색 뿌리의 바탕은 유틸리티(bg-bg text-text — components/screens/search/__tests__/searchScopeRemoved.test.tsx)가 칠합니다.
+  it("globals.css에 [data-scope 선택자가 없다 — 토큰 블록은 :root 하나와 덮개 범위([data-overlay])뿐", () => {
+    expect(CSS_NO_COMMENTS).not.toMatch(/\[data-scope/);
+    expect(RULES.filter((rule) => /^(?::root|\[data-)/.test(rule.selector)).map((rule) => rule.selector)).toEqual([":root", "[data-overlay]"]);
   });
 
-  it(":root(모서리는 @theme)와 같은 값만 다시 적는다 — 이 화면의 겉모습이 앱과 같다", () => {
-    for (const [name, value] of Object.entries(scope)) {
-      expect(value, name).toBe(root[name] ?? theme[name]);
-    }
-  });
-
-  it("바탕색·글자색은 레이어 밖 토큰 블록이 아니라 @layer base에 — 범위 표지를 단 대화상자의 bg-surface 같은 유틸리티가 이긴다", () => {
-    // 레이어 밖 선언은 우선순위와 상관없이 @layer utilities를 이깁니다. 토큰 블록에는 사용자 속성(--*)과 color-scheme만 둡니다.
-    const base = /@layer base\s*\{\s*\[data-scope="search"\]\s*\{([^}]*)\}\s*\}/.exec(CSS_NO_COMMENTS);
-    expect(base, "@layer base { [data-scope=\"search\"] { … } }").toBeTruthy();
-    expect(base?.[1]).toMatch(/background-color:\s*var\(--bg\);/);
-    expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
+  it("바탕색·글자색을 칠하는 요소 규칙은 문서 뿌리(html·body) 하나 — var(--bg)·var(--text)(자리표시 글 ::placeholder 색은 따로)", () => {
+    const rules = [...CSS_NO_COMMENTS.matchAll(/([^{};]+)\{([^{}]*)\}/g)].map((match) => ({ selector: match[1].trim().replace(/\s+/g, " "), body: match[2] }));
+    const painting = (property: string) =>
+      rules.filter((rule) => !rule.selector.includes("::") && new RegExp(`(?:^|;)\\s*${property}\\s*:`).test(rule.body)).map((rule) => rule.selector);
+    expect(painting("background-color")).toEqual(["html, body"]);
+    expect(painting("color")).toEqual(["html, body"]);
+    const root = rules.find((rule) => rule.selector === "html, body");
+    expect(root?.body).toMatch(/background-color:\s*var\(--bg\);/);
+    expect(root?.body).toMatch(/(?:^|;)\s*color:\s*var\(--text\);/);
   });
 });
 

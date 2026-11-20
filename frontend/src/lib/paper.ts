@@ -3097,6 +3097,14 @@ export interface WatchRow {
   condition: string;
 }
 
+/**
+ * 남긴 조건의 기준값 — 천 단위로 끊고(한국 원 가격 '180,000' — QA-818) 소수는 받은 자리 그대로('5.1'), 모르면 "—". 응답 값을 반올림하지 않습니다(소수 여섯째
+ * 자리까지 — 조건 기준값에 그보다 긴 소수는 없음).
+ */
+function conditionLevelText(level: number | null): string {
+  return level === null ? EMPTY : level.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
+}
+
 /** 결정이 다음 결정·장중 판단에 남긴 조건 한 줄(판단 이어받기 — ADR 0038). */
 export interface ConditionRow {
   key: string;
@@ -3319,7 +3327,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     return [{
       key: `${index}-${metric}`,
       holding: holding ? holding : EMPTY,
-      rule: `${metric} ${sign} ${level === null ? EMPTY : String(level)}`,
+      rule: `${metric} ${sign} ${conditionLevelText(level)}`,
       then: textOf(entry.then) ?? EMPTY,
     }];
   });

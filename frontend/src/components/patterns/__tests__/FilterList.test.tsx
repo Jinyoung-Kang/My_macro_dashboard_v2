@@ -376,3 +376,91 @@ describe("FilterList — 고름 알림(status)", () => {
     expect(within(group).queryByRole("status")).toBeNull();
   });
 });
+
+// 작업대 P6 선택 — wide="wrap"(넓은 화면도 태그 줄 — 표 위 한 줄 거르기). 기본(list)은 위 사례와 아래 고정 사례 그대로입니다.
+describe("FilterList — 기본 클래스 고정(P6 선택 wide를 더하기 전과 같은 글)", () => {
+  it("여럿·좁은 화면 wrap(기본) — 목록·줄·단추·체크 상자 클래스 글이 그대로", () => {
+    render(<FilterList label="분석 대상 기관" items={ITEMS} selected={["a"]} onToggle={() => {}} />);
+    const group = screen.getByRole("group", { name: "분석 대상 기관" });
+    const list = within(group).getByRole("list");
+    expect(list.getAttribute("class")).toBe("flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-0");
+    const [first, second, third] = within(group).getAllByRole("button");
+    expect(first.parentElement?.getAttribute("class")).toBe("min-w-0 max-w-full lg:max-w-none");
+    expect(first.getAttribute("class")).toBe(
+      "relative flex min-h-11 min-w-0 items-center gap-2 px-3 text-left text-body hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 "
+        + "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus "
+        + "max-lg:inline-flex max-lg:max-w-full max-lg:rounded-control max-lg:border max-lg:py-2 lg:w-full lg:min-h-0 lg:border-b lg:border-border-subtle lg:pt-1.5 lg:pb-[5px] "
+        + "font-semibold text-text forced-colors:border-2 max-lg:border-border-strong max-lg:bg-surface-2",
+    );
+    expect(second.getAttribute("class")).toBe(
+      "relative flex min-h-11 min-w-0 items-center gap-2 px-3 text-left text-body hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 "
+        + "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus "
+        + "max-lg:inline-flex max-lg:max-w-full max-lg:rounded-control max-lg:border max-lg:py-2 lg:w-full lg:min-h-0 lg:border-b lg:border-border-subtle lg:pt-1.5 lg:pb-[5px] "
+        + "font-normal text-text max-lg:border-border max-lg:font-medium max-lg:text-text-2 max-lg:hover:text-text",
+    );
+    expect(tokens(third)).toEqual(expect.arrayContaining(["lg:py-1.5"]));
+    // 끈 줄의 빈 체크 상자는 좁은 화면 태그에서 숨고 넓은 화면 목록에서 보입니다.
+    expect(second.querySelector("[aria-hidden='true']")?.getAttribute("class")).toBe(
+      "inline-flex size-4 shrink-0 rounded-control border border-border-strong max-lg:hidden",
+    );
+  });
+
+  it("하나·좁은 화면 list — 목록·줄 클래스 글이 그대로", () => {
+    render(<FilterList label="기관" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" narrow="list" />);
+    const radios = screen.getAllByRole("radio");
+    expect(radios[0].closest("ul")?.getAttribute("class")).toBe("flex min-w-0 flex-col");
+    expect(radios[0].parentElement?.getAttribute("class")).toBe("min-w-0");
+    expect(tokens(radios[0])).toEqual(expect.arrayContaining(["w-full", "border-b", "border-border-subtle", "py-2", "lg:min-h-0", "lg:pt-1.5", "lg:pb-[5px]"]));
+    expect(tokens(radios[1])).toEqual(expect.arrayContaining(["font-semibold", "bg-surface-2"]));
+  });
+});
+
+describe("FilterList — 모든 폭 태그 줄(wide=\"wrap\")", () => {
+  it("넓은 화면도 태그 — 줄바꿈 목록, 태그는 좁은 화면 44px·넓은 화면 30px, 세로 목록(lg:flex-col·lg:w-full·구분선) 클래스가 없다", () => {
+    render(<FilterList label="체결 방향" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" wide="wrap" />);
+    const radios = screen.getAllByRole("radio");
+    const list = radios[0].closest("ul") as HTMLElement;
+    expect(list.getAttribute("class")).toBe("flex min-w-0 flex-wrap gap-2");
+    for (const radio of radios) {
+      const classes = tokens(radio);
+      expect(classes).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-[30px]", "lg:py-1", "rounded-control", "border", "py-2"]));
+      expect(classes.filter((token) => token.startsWith("lg:w-full") || token.startsWith("lg:border-b") || token.startsWith("max-lg:"))).toEqual([]);
+    }
+    expect(list.className).not.toContain("lg:flex-col");
+    // 켠 태그 — 진한 경계·중립 바탕·굵은 글·고대비 2px, 잉크 막대(고대비 표지 — QA-712)
+    expect(tokens(radios[1])).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface-2", "font-semibold", "text-text", "forced-colors:border-2"]));
+    expect(radios[1].querySelector("span[aria-hidden='true']")?.getAttribute("class")).toBe(SELECTED_BAR);
+    // 끈 태그 — 옅은 경계·보조 글자색
+    expect(tokens(radios[0])).toEqual(expect.arrayContaining(["border-border", "font-medium", "text-text-2", "hover:text-text"]));
+    expect(tokens(radios[0])).not.toContain("text-text");
+  });
+
+  it("여럿 고름 — 켠 태그만 체크 상자(끈 태그에는 상자 없음), 누르기·aria-pressed는 그대로", () => {
+    const onToggle = vi.fn();
+    render(<FilterList label="주문 상태" items={ITEMS} selected={["a"]} onToggle={onToggle} wide="wrap" />);
+    const [on, off] = within(screen.getByRole("group", { name: "주문 상태" })).getAllByRole("button");
+    expect(on.querySelector("[aria-hidden='true'] svg")).toBeTruthy();
+    expect(off.querySelector("[aria-hidden='true']")).toBeNull();
+    fireEvent.click(off);
+    expect(onToggle).toHaveBeenCalledWith("b");
+    expect(off.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("처음 읽는 동안의 자리도 모든 폭 태그 꼴(넓은 화면 30px) — 세로 목록 자리가 없다", () => {
+    render(
+      <FilterList
+        label="체결 방향"
+        items={[]}
+        selected={[]}
+        onToggle={() => {}}
+        wide="wrap"
+        pending={{ label: "거르기를 읽는 중", rows: [{ tag: 80, lines: 1 }, { tag: 96, lines: 1 }] }}
+      />,
+    );
+    const status = screen.getByRole("status", { name: "거르기를 읽는 중" });
+    const lists = status.querySelectorAll("ul");
+    expect(lists).toHaveLength(1);
+    expect(lists[0].getAttribute("class")).toBe("flex min-w-0 flex-wrap gap-2");
+    expect(tokens(lists[0].querySelector("li > span") as HTMLElement)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-[30px]"]));
+  });
+});

@@ -238,6 +238,7 @@ export function Freshness({
   ageSeconds,
   stale,
   refreshError,
+  pending = false,
 }: {
   /** 백엔드가 KST로 찍어 준 수집 시각 문자열 (collectedAtKst). */
   collectedAt?: string | null;
@@ -248,9 +249,23 @@ export function Freshness({
    * 지금 값이 아니라는 것을 알려야 합니다 — 예전에는 아무 표시가 없었습니다(QA-050).
    */
   refreshError?: string | null;
+  /**
+   * 첫 응답을 기다리는 중(hooks/useApi의 `firstLoadPending` — `loading && !data`는 실패 뒤 다시 읽는 동안에도 참이라 쓰지 않음, QA-895) — 값이 온 뒤의 평상시 배지('수집' + 'YYYY-MM-DD HH:MM')와 같은 폭의 보이지 않는 자리를 둡니다(낭독
+   * 없음). 머리·패널 동작 줄이 응답 뒤 배지만큼 넓어져 꺾이며 아래를 밀던 첫 적재 이동을 막습니다(QA-892 — 수급 레이더 머리). 주지 않으면 예전 그대로
+   * 값이 없을 때 아무것도 그리지 않습니다.
+   */
+  pending?: boolean;
 }) {
   if (!collectedAt && ageSeconds === undefined && !refreshError) {
-    return null;
+    return pending ? (
+      <span aria-hidden="true" className="invisible inline-flex flex-wrap items-center gap-1">
+        <span className="inline-flex items-center gap-1 text-xs">
+          <ClockIcon size={12} />
+          수집
+          <span className="tabular-nums">0000-00-00 00:00</span>
+        </span>
+      </span>
+    ) : null;
   }
   const age = formatAge(ageSeconds);
 

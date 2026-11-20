@@ -42,6 +42,15 @@ const OFF = "font-normal text-text";
 const WRAP_ON = "max-lg:border-border-strong max-lg:bg-surface-2";
 const WRAP_OFF = "max-lg:border-border max-lg:font-medium max-lg:text-text-2 max-lg:hover:text-text";
 
+/**
+ * 모든 폭 태그 줄(`wide="wrap"` — 작업대 P6, 표 위 한 줄 거르기): 좁은 화면은 44px 태그, 넓은 화면은 30px 태그(14/20 글 + 위아래 4px + 경계 1px). 켠 태그는 진한 경계 +
+ * surface-2 + 굵은 글(여럿이면 체크 상자도), 끈 태그는 옅은 경계 + 보조 글자색(좁은 화면 태그와 같은 뜻). 클래스가 서로 덮지 않게 변형 없이 따로 적습니다.
+ */
+const TAGS_UL = "flex min-w-0 flex-wrap gap-2";
+const TAG = "max-w-full rounded-control border py-2 lg:min-h-[30px] lg:py-1";
+const TAG_ON = "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2";
+const TAG_OFF = "border-border font-medium text-text-2 hover:text-text";
+
 /** 여럿 고름의 체크 상자(16px 장식) — 켜면 잉크 바탕 + 바탕색 체크, 끄면 빈 상자(border-strong — 3:1). */
 const BOX_ON = "inline-flex size-4 shrink-0 items-center justify-center rounded-control border border-text bg-text text-bg";
 const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-border-strong";
@@ -61,6 +70,8 @@ const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-borde
  *   3px 잉크 막대(SELECTED_BAR) + 굵은 글 + 중립 바탕(surface-2)이고, 좁은 화면 태그도 같은 막대를 태그 안 왼쪽 끝에 둡니다(고대비 표지 — QA-712).
  * - 넓은 화면(lg 이상)은 늘 세로 목록(줄 32px, 마우스를 올리면 surface-2). 좁은 화면은 `narrow`: "wrap"(기본)은 44px 태그가 줄을 바꾸며 늘어섭니다(켠 태그 진한
  *   경계 + surface-2 + 굵은 글 — 여럿이면 체크 상자도, 끈 태그 옅은 경계 + 보조 글자색), "list"는 넓은 화면과 같은 세로 목록(줄 44px)입니다.
+ * - `wide="wrap"`(작업대 P6 — 표 위 한 줄 거르기: 모의매매 체결 방향·주문 상태·선정 후보): 넓은 화면도 태그 줄(30px 태그 — 좁은 화면은 44px)이고 `narrow`는
+ *   보지 않습니다. 기본 `wide="list"`는 위 그대로입니다.
  * - `count`: 목록 위 개수 줄(true면 여럿은 'n개 고름 · 전체 m개', 하나는 '전체 m개' — 함수면 그 글). `placeholder`를 주면 목록 대신(읽는 중·오류), 줄이 없으면 `emptyText`.
  * - `status`(선택): 고름이 바뀔 때 낭독기에 알릴 글 — 묶음 안 눈에 보이지 않는 알림 영역(role="status", aria-live polite)에 둡니다. 보이는 개수(패널 머리 등)는
  *   보통 글이라 바뀌어도 읽히지 않고, '빈 고름 = 전체' 같은 되돌림은 누른 단추의 상태만으로는 거꾸로 동작한 것처럼 들립니다(교집합 — P5b 검토 지적).
@@ -83,6 +94,7 @@ export function FilterList({
   pending,
   status,
   emptyText = "고를 항목이 없습니다.",
+  wide = "list",
 }: {
   /** 묶음 이름(여럿은 role="group", 하나는 role="radiogroup" — 줄이 없는 동안은 group, 예 '분석 대상 기관'). */
   label: string;
@@ -102,11 +114,15 @@ export function FilterList({
   /** 고름이 바뀔 때 낭독기에 알릴 글(위 설명). 주지 않으면 알림 영역 없음. */
   status?: string | null;
   emptyText?: ReactNode;
+  /** lg 이상 모양 — "list"(세로 목록, 기본) 또는 "wrap"(모든 폭 태그 줄 — narrow를 보지 않음). */
+  wide?: "list" | "wrap";
 }): JSX.Element {
   const baseId = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const multiple = selection === "multiple";
-  const wrap = narrow === "wrap";
+  // 모든 폭 태그 줄(wide="wrap")이면 좁은 화면 배치(narrow)는 보지 않습니다.
+  const tags = wide === "wrap";
+  const wrap = !tags && narrow === "wrap";
   const chosen = new Set(selected);
   const chosenCount = items.filter((item) => chosen.has(item.key)).length;
   const hasPlaceholder = placeholder !== undefined && placeholder !== null && placeholder !== false;
@@ -142,22 +158,26 @@ export function FilterList({
   if (hasPlaceholder) {
     body = <div className="min-w-0">{placeholder}</div>;
   } else if (isPending) {
-    body = <PendingRows label={pending.label} rows={pending.rows} wrap={wrap} />;
+    body = <PendingRows label={pending.label} rows={pending.rows} wrap={wrap} tags={tags} />;
   } else if (items.length === 0) {
     body = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
   } else {
     body = (
-      <ul role={multiple ? undefined : "none"} className={wrap ? "flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-0" : "flex min-w-0 flex-col"}>
+      <ul role={multiple ? undefined : "none"} className={tags ? TAGS_UL : wrap ? "flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-0" : "flex min-w-0 flex-col"}>
         {items.map((item, index) => {
           const on = chosen.has(item.key);
           const last = index === items.length - 1;
           const noteId = item.note ? `${baseId}-note-${index}` : undefined;
-          const shape = wrap ? (last ? WRAP_LAST : WRAP_LINED) : last ? LIST_LAST : LIST_LINED;
-          const tone = on
-            ? `${ON}${wrap ? ` ${WRAP_ON}` : ""}${multiple ? "" : " bg-surface-2"}`
-            : `${OFF}${wrap ? ` ${WRAP_OFF}` : ""}`;
+          const shape = tags ? TAG : wrap ? (last ? WRAP_LAST : WRAP_LINED) : last ? LIST_LAST : LIST_LINED;
+          const tone = tags
+            ? on
+              ? TAG_ON
+              : TAG_OFF
+            : on
+              ? `${ON}${wrap ? ` ${WRAP_ON}` : ""}${multiple ? "" : " bg-surface-2"}`
+              : `${OFF}${wrap ? ` ${WRAP_OFF}` : ""}`;
           return (
-            <li key={item.key} role={multiple ? undefined : "none"} className={wrap ? "min-w-0 max-w-full lg:max-w-none" : "min-w-0"}>
+            <li key={item.key} role={multiple ? undefined : "none"} className={tags ? "min-w-0 max-w-full" : wrap ? "min-w-0 max-w-full lg:max-w-none" : "min-w-0"}>
               <button
                 ref={(element) => {
                   buttons.current[index] = element;
@@ -177,7 +197,8 @@ export function FilterList({
                 {/* 하나 고름의 고른 줄 막대 — 좁은 화면 태그에도 둡니다(태그 안 왼쪽 끝, 절대 위치라 태그 폭이 그대로). 고대비에서는 바탕이 지워지고 끈 태그의
                     1px 경계도 시스템 색으로 남아, 이 막대(그 모드에서 3px 왼쪽 테두리)가 없으면 켠 태그와 끈 태그를 테두리 두께로만 갈랐습니다(QA-712). */}
                 {!multiple && on ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-                {multiple ? (
+                {/* 끈 체크 상자는 태그 꼴(좁은 화면 wrap·모든 폭 tags)에서 그리지 않습니다 — 켠 태그만 체크 상자로 가릅니다. */}
+                {multiple && !(tags && !on) ? (
                   <span aria-hidden="true" className={on ? BOX_ON : wrap ? `${BOX_OFF} max-lg:hidden` : BOX_OFF}>
                     {on ? <CheckIcon size={12} /> : null}
                   </span>
@@ -216,7 +237,26 @@ export function FilterList({
  * 세로 목록 줄(이름 줄 20px × 줄 수 + 위 6px·아래 5px + 구분선 1px, 마지막 줄은 위아래 6px — 목록 줄과 같은 셈 — list의 좁은 화면은 목록 줄처럼 44px 이상, 줄 수는 넓은
  * 화면 값). 글·숫자는 없고 막대는 읽기에서 뺍니다.
  */
-function PendingRows({ label, rows, wrap }: { label: string; rows: readonly FilterListPendingRow[]; wrap: boolean }) {
+function PendingRows({ label, rows, wrap, tags = false }: { label: string; rows: readonly FilterListPendingRow[]; wrap: boolean; tags?: boolean }) {
+  if (tags) {
+    // 모든 폭 태그 줄(wide="wrap") — 좁은 화면 44px·넓은 화면 30px 태그 꼴(잰 폭 tag).
+    return (
+      <div role="status" aria-busy="true" aria-label={label} className="min-w-0">
+        <span className="sr-only">{label}</span>
+        <ul aria-hidden="true" className="flex min-w-0 flex-wrap gap-2">
+          {rows.map(({ tag }, index) => (
+            <li key={index} className="max-w-full" style={{ width: tag }}>
+              <span className="flex min-h-11 flex-col justify-center rounded-control border border-border px-3 py-2 lg:min-h-[30px] lg:py-1">
+                <span className="flex h-5 items-center">
+                  <span className={`block h-3.5 w-full ${SKELETON_BAR}`} />
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <div role="status" aria-busy="true" aria-label={label} className="min-w-0">
       <span className="sr-only">{label}</span>

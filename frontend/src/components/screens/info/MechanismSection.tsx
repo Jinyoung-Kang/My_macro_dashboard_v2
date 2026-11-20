@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Pager } from "@/components/Pager";
-import { Banner, Card, ErrorState, Loading, Table } from "@/components/ui";
+import { DataTable } from "@/components/patterns";
+import { Callout, Card, ErrorState, Loading } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
@@ -16,7 +17,7 @@ type CadenceRow = Collector["cadences"][number] & { nextDue: string | null };
 
 /**
  * 정보(메커니즘) — 정보 수집이 어떻게 도는지. 값은 수집기 코드의 실제 값(수집기 /info/mechanism)과 표의 지금 상태(호스트별 오늘 쓴 예산·
- * 마지막 통과 계층·닫힘, 다음 실행 시각)입니다. 긴 표(호스트·태스크)는 10줄씩.
+ * 마지막 통과 계층·닫힘, 다음 실행 시각)입니다. 긴 표(호스트·태스크)는 공용 조밀 표로 10줄씩, 긴 설명 글은 긴 글 단계(running 15/24, 72ch까지).
  */
 export function MechanismSection() {
   const { data, loading, error, reload } = useApi<MechanismResponse>(endpoints.info.mechanism, 300_000);
@@ -36,7 +37,7 @@ export function MechanismSection() {
           <ArticlesCard c={c} />
         </>
       ) : (
-        <Banner tone="warn">수집기에 닿지 못해 코드의 실제 값을 읽지 못했습니다(상태 확인 {data.checkedAt}). 아래 활용·보류 안내만 보입니다.</Banner>
+        <Callout tone="warn">수집기에 닿지 못해 코드의 실제 값을 읽지 못했습니다(상태 확인 {data.checkedAt}). 아래 활용·보류 안내만 보입니다.</Callout>
       )}
       <PacketCard />
       <TranslationCard data={data} />
@@ -59,7 +60,7 @@ function FlowCard({ data }: { data: MechanismResponse }) {
         {steps.map(([title, body]) => (
           <li key={title} className="rounded-card border border-border bg-surface-2 p-3">
             <p className="text-sm font-semibold text-text">{title}</p>
-            <p className="mt-1 text-xs leading-5 text-text-2">{body}</p>
+            <p className="mt-1 break-keep text-caption leading-5 text-text-2">{body}</p>
           </li>
         ))}
       </ol>
@@ -125,24 +126,29 @@ function HostsCard({ c, data }: { c: Collector; data: MechanismResponse }) {
   const slice = pageSlice(rows, page, PAGE_SIZE);
   return (
     <Card title="호스트별 계층·하루 예산" subtitle="하루 예산은 그 호스트에 보내는 요청 수의 상한(KST 날짜 기준)입니다. 넘으면 다음 날까지 쉽니다.">
-      <Table<HostRow>
-        label="호스트별 계층·하루 예산"
+      <DataTable<HostRow>
+        dense
+        caption="호스트별 계층·하루 예산"
         rows={slice.rows}
         rowKey={(row) => row.host}
+        count={() => `${rows.length.toLocaleString("ko-KR")}곳`}
+        scrollHint="overflow"
         columns={[
-          { key: "host", header: "호스트", render: (row) => <span className="font-mono text-xs">{row.host}</span> },
-          { key: "tiers", header: "시도 계층", render: (row) => <span className="text-xs">{row.tiers.map(tierLabel).join(" → ")}</span> },
+          { key: "host", header: "호스트", cell: (row) => <span className="font-mono text-xs wrap-anywhere">{row.host}</span> },
+          { key: "tiers", header: "시도 계층", className: "min-w-[8rem] break-keep", cell: (row) => <span className="text-caption">{row.tiers.map(tierLabel).join(" → ")}</span> },
           {
             key: "budget",
             header: "오늘 / 하루 예산",
             align: "right",
-            render: (row) => <span className="tabular-nums">{`${formatNumber(row.state?.usedToday ?? 0, 0)} / ${formatNumber(row.dailyBudget, 0)}`}</span>,
+            // 오늘 쓴 수는 그 호스트의 상태 기록이 있을 때만 — 기록이 없으면 0이 아니라 '—'(없는 숫자를 만들지 않음).
+            cell: (row) => `${row.state ? formatNumber(row.state.usedToday, 0) : EMPTY} / ${formatNumber(row.dailyBudget, 0)}`,
           },
-          { key: "last", header: "마지막 통과", render: (row) => <span className="text-xs">{tierLabel(row.state?.lastGoodTier)}</span> },
+          { key: "last", header: "마지막 통과", className: "whitespace-nowrap", cell: (row) => <span className="text-caption">{tierLabel(row.state?.lastGoodTier)}</span> },
           {
             key: "state",
             header: "상태",
-            render: (row) => {
+            className: "min-w-[8rem]",
+            cell: (row) => {
               const s = row.state;
               if (!s) return <StatusText tone="neutral">기록 없음</StatusText>;
               if (s.givenUp) return <StatusText tone="danger">포기 — 가끔 다시 봄</StatusText>;
@@ -163,15 +169,18 @@ function CadenceCard({ c, data }: { c: Collector; data: MechanismResponse }) {
   const slice = pageSlice(rows, page, PAGE_SIZE);
   return (
     <Card title="출처별 간격·다음 실행" subtitle="실행할 때마다 다음 시각을 이 구간 안에서 무작위로 다시 뽑습니다(같은 시각에 되풀이되지 않음).">
-      <Table<CadenceRow>
-        label="출처별 간격"
+      <DataTable<CadenceRow>
+        dense
+        caption="출처별 간격"
         rows={slice.rows}
         rowKey={(row) => row.task}
+        count={() => `${rows.length.toLocaleString("ko-KR")}개`}
+        scrollHint="overflow"
         columns={[
-          { key: "task", header: "태스크", render: (row) => <span className="font-mono text-xs">{row.task}</span> },
-          { key: "range", header: "간격", render: (row) => minutesRange(row.lowMinutes, row.highMinutes) },
-          { key: "next", header: "다음 실행", render: (row) => <span className="tabular-nums text-xs">{row.nextDue ?? EMPTY}</span> },
-          { key: "note", header: "참고", render: (row) => <span className="text-xs text-text-2">{row.note ?? EMPTY}</span> },
+          { key: "task", header: "태스크", cell: (row) => <span className="font-mono text-xs wrap-anywhere">{row.task}</span> },
+          { key: "range", header: "간격", className: "whitespace-nowrap", cell: (row) => minutesRange(row.lowMinutes, row.highMinutes) },
+          { key: "next", header: "다음 실행", cell: (row) => (row.nextDue ? <span className="text-caption">{row.nextDue.replace(/ KST$/, "\u00a0KST")}</span> : null) },
+          { key: "note", header: "참고", className: "min-w-[12rem]", cell: (row) => (row.note ? <span className="block break-keep text-caption text-text-2">{row.note}</span> : null) },
         ]}
       />
       <Pager page={slice.page} pages={slice.pages} onChange={setPage} label="출처별 간격" />
@@ -213,14 +222,14 @@ function ArticlesCard({ c }: { c: Collector }) {
 function PacketCard() {
   return (
     <Card title="수집한 정보의 활용" subtitle="수집 글은 Claude 모의매매 판단에 참고 자료로 들어갑니다(지시가 아니라 자료 — 구분자로 감싸고, 구분자처럼 보이는 글자는 지움).">
-      <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-text-2">
+      <ul className="max-w-[72ch] list-disc space-y-2 break-keep pl-5 text-running text-text-2">
         <li>
           <b className="text-text">패킷 섹션 11c_reading</b> — 결정 창(직전 결정 이후)에 수집기가 처음 받은 글 최대 8편(출처마다 2편, 본문을 다 받은 글 먼저 — 받을 때 작성 72시간이 넘은 글은 뺌)의 출처·시각·제목·앞부분
           240자. 미국은 해외 블로그·waedge 거장·waedge 해외 시장 글, 한국은 waedge 국내 시장 글. 첫 결정과 글이 없는 창에는 싣지 않습니다.
         </li>
         <li>
           <b className="text-text">스위치</b> — 미국 <code>info.packet</code>, 한국 <code>kr.info.packet</code>(기본 켬). 모의매매{" "}
-          <Link href="/paper/us/settings" className="font-semibold hover:underline">
+          <Link href="/paper/us/settings" className="font-semibold text-accent underline-offset-2 hover:underline">
             설정 탭
           </Link>
           에서 시장별로 끄고 켭니다. 끄면 패킷은 이 섹션이 생기기 전과 바이트까지 같습니다.
@@ -271,7 +280,7 @@ function DeferredCard({ data }: { data: MechanismResponse }) {
   if (data.deferred.length === 0) return null;
   return (
     <Card title="보류한 출처">
-      <ul className="space-y-2 text-sm leading-6 text-text-2">
+      <ul className="max-w-[72ch] space-y-2 break-keep text-running text-text-2">
         {data.deferred.map((row) => (
           <li key={row.task}>
             <b className="text-text">{row.label}</b> — {row.reason}
@@ -285,8 +294,8 @@ function DeferredCard({ data }: { data: MechanismResponse }) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-text-3">{label}</dt>
-      <dd className="mt-0.5 text-text">{children}</dd>
+      <dt className="break-keep text-caption text-text-2">{label}</dt>
+      <dd className="mt-0.5 break-keep text-text">{children}</dd>
     </div>
   );
 }

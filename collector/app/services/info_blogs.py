@@ -8,6 +8,7 @@ app/services/info_blogs.py
   2. 새 글(정규화한 주소의 id로 이미 받은 글은 건너뜀, 30일보다 오래된 글은 넣지 않음)마다
      - 피드에 본문이 있으면(글자 400자 이상) 그 본문을 씁니다 — 같은 글을 다시 열지 않는 것이 출처 부하가 가장 적습니다.
      - 피드에 본문이 없거나 짧으면, 최근 7일 글만 글 페이지를 열어 본문을 고릅니다(실행 한 번에 최대 PAGE_FETCHES_PER_RUN건, 한 글에 두 번까지).
+       피드가 짧은 글도 전문을 싣는 블로그(Blog.short_posts_in_feed)는 피드 글이 비었을 때만 엽니다.
   3. info_items에 넣거나 채웁니다(본문은 더 나은 판정일 때만 덮음 — store.upsert_info_items).
 
 [실패 규칙]
@@ -43,16 +44,21 @@ PAGE_FETCHES_PER_RUN = 6
 PAGE_TRIES_PER_ITEM = 2
 # 피드의 글이 이만큼은 돼야 본문으로 봅니다(Blogger처럼 요약 칸에 본문 전체를 싣는 피드도 같은 기준).
 FEED_BODY_MIN_CHARS = info_text.MIN_BODY_CHARS
-# 글 페이지의 본문 자리가 바뀌었는지 볼 때(QA-391) — 글 페이지를 열어 본 최근 글 이만큼이 모두 본문을 얻지 못했고, 그보다 앞의 글(이 범위
-# 안)에는 글 페이지에서 본문을 받은 것이 있으면 '형식 바뀜'으로 봅니다. 글 페이지에서 본문을 받은 적이 없는 블로그(피드에 본문을 싣고 짧은
-# 글만 글 페이지로 가는 곳)는 짧은 글일 뿐이라 여기에 걸리지 않습니다.
+# 글 페이지의 본문 자리가 바뀌었는지 볼 때(QA-391) — 글 페이지를 받은 최근 글 이만큼이 모두 본문 자리를 못 찾았고, 그보다 앞의 글(이 범위
+# 안)에는 글 페이지에서 본문을 받은 것이 있으면 '형식 바뀜'으로 봅니다. '본문 자리를 못 찾음'은 글 페이지의 본문 자리에서 얻은 글이 피드 글의
+# PAGE_MISSED_RATIO에도 못 미칠 때입니다(빈 글 포함). 자리에서 피드 글만큼은 얻었으면 400자에 못 미쳐도 짧은 글일 뿐 자리는 그대로입니다
+# (QA-391 후속 — 피드에 본문을 싣는 Marginal Revolution의 한두 문장짜리 글이 이어져 '형식 바뀜'이 됐던 거짓 경고, 2026-11-17).
 PAGE_ISSUE_RECENT = 3
 PAGE_ISSUE_LOOKBACK = 12
+PAGE_MISSED_RATIO = 0.5
 
 
 @dataclass(frozen=True)
 class Blog:
-    """블로그 하나 — 출처 키(info_items.source), 태스크 이름, 화면 이름, 사이트 주소(출처 링크), 피드 주소, 다음 실행까지의 간격(분, 하한·상한)."""
+    """
+    블로그 하나 — 출처 키(info_items.source), 태스크 이름, 화면 이름, 사이트 주소(출처 링크), 피드 주소, 다음 실행까지의 간격(분, 하한·상한),
+    피드가 짧은 글도 전문을 싣는가(short_posts_in_feed — 켜면 피드 글이 있는 한 400자에 못 미쳐도 글 페이지를 열지 않음).
+    """
 
     key: str
     task: str
@@ -60,6 +66,7 @@ class Blog:
     site: str
     feed: str
     minutes: tuple[int, int] = (180, 480)
+    short_posts_in_feed: bool = False
 
 
 BLOGS: tuple[Blog, ...] = (
@@ -68,8 +75,10 @@ BLOGS: tuple[Blog, ...] = (
          "https://abnormalreturns.com/feed/"),
     Blog("blog.awealthofcommonsense", "info_blog_awealthofcommonsense", "A Wealth of Common Sense",
          "https://awealthofcommonsense.com/", "https://awealthofcommonsense.com/feed/"),
+    # 피드가 짧은 글도 전문을 싣는 곳(2026-11-20 저장된 글로 확인 — 짧은 글의 글 페이지에서 더 얻은 본문이 없었음): Marginal Revolution·
+    # Econbrowser(글 페이지에서는 댓글을 본문으로 고름)·HumbleDollar. 글 페이지를 열지 않습니다(출처 부하와 4 GB 서버의 브라우저 기동을 줄임).
     Blog("blog.marginalrevolution", "info_blog_marginalrevolution", "Marginal Revolution", "https://marginalrevolution.com/",
-         "https://marginalrevolution.com/feed"),
+         "https://marginalrevolution.com/feed", short_posts_in_feed=True),
     Blog("blog.ritholtz", "info_blog_ritholtz", "The Big Picture (Ritholtz)", "https://ritholtz.com/", "https://ritholtz.com/feed/"),
     Blog("blog.calculatedrisk", "info_blog_calculatedrisk", "Calculated Risk", "https://calculatedrisk.substack.com/",
          "https://calculatedrisk.substack.com/feed"),
@@ -79,12 +88,14 @@ BLOGS: tuple[Blog, ...] = (
          (360, 900)),
     Blog("blog.klement", "info_blog_klement", "Klement on Investing", "https://klementoninvesting.substack.com/",
          "https://klementoninvesting.substack.com/feed"),
-    Blog("blog.econbrowser", "info_blog_econbrowser", "Econbrowser", "https://econbrowser.com/", "https://econbrowser.com/feed"),
+    Blog("blog.econbrowser", "info_blog_econbrowser", "Econbrowser", "https://econbrowser.com/", "https://econbrowser.com/feed",
+         short_posts_in_feed=True),
     Blog("blog.conversableeconomist", "info_blog_conversableeconomist", "Conversable Economist",
          "https://conversableeconomist.com/", "https://conversableeconomist.com/feed/"),
     Blog("blog.alphaarchitect", "info_blog_alphaarchitect", "Alpha Architect", "https://alphaarchitect.com/",
          "https://alphaarchitect.com/feed/"),
-    Blog("blog.humbledollar", "info_blog_humbledollar", "HumbleDollar", "https://humbledollar.com/", "https://humbledollar.com/feed/"),
+    Blog("blog.humbledollar", "info_blog_humbledollar", "HumbleDollar", "https://humbledollar.com/", "https://humbledollar.com/feed/",
+         short_posts_in_feed=True),
     # Blogger 피드(약 1.3 MB) — 요약 칸에 본문 전체가 옵니다. 글이 드물어 간격을 길게 둡니다.
     Blog("blog.damodaran", "info_blog_damodaran", "Musings on Markets (Damodaran)", "https://aswathdamodaran.blogspot.com/",
          "https://aswathdamodaran.blogspot.com/feeds/posts/default?alt=rss", (360, 900)),
@@ -201,17 +212,30 @@ class Collected:
     page_issue: str | None = None
 
 
+def _page_outcome(row: dict) -> str | None:
+    """
+    글 페이지를 받은 글 하나의 결과 — 'full'(본문을 받음) · 'short'(본문 자리에서 피드 글만큼은 얻음 — 짧은 글) · 'missed'(본문 자리를
+    못 찾음) · None(본문 자리의 글자 수를 남기지 않던 옛 행 — 짧은 글인지 못 찾은 것인지 몰라 세지 않음).
+    """
+    if row["body_status"] == "full":
+        return "full"
+    page, feed = row["page_chars"], row["feed_chars"]
+    if page is None:
+        return None
+    return "missed" if page == 0 or page < PAGE_MISSED_RATIO * (feed or 0) else "short"
+
+
 def _page_issue(blog: Blog) -> str | None:
     """
-    글 페이지에서 본문을 받던 블로그인데 최근에 글 페이지를 **받은** 글이 모두 본문을 얻지 못했으면 그 사유(QA-391) — 페이지 구조가 바뀌어
+    글 페이지에서 본문을 받던 블로그인데 최근에 글 페이지를 **받은** 글이 모두 본문 자리를 못 찾았으면 그 사유(QA-391) — 페이지 구조가 바뀌어
     추출이 빈 글이 되는 경우입니다. 글 페이지를 받지 못한 글(404·5xx)은 추출해 볼 페이지가 없었으므로 세지 않습니다('받지 못함'이지
-    '형식 바뀜'이 아님). 저장된 글만 봅니다(외부 호출 없음).
+    '형식 바뀜'이 아님). 짧은 글은 자리가 그대로라는 근거로 셉니다(QA-391 후속). 저장된 글만 봅니다(외부 호출 없음).
     """
-    outcomes = store.info_page_outcomes(blog.key, PAGE_ISSUE_LOOKBACK)
+    outcomes = [o for o in map(_page_outcome, store.info_page_outcomes(blog.key, PAGE_ISSUE_LOOKBACK)) if o is not None]
     recent, earlier = outcomes[:PAGE_ISSUE_RECENT], outcomes[PAGE_ISSUE_RECENT:]
-    if len(recent) < PAGE_ISSUE_RECENT or any(status == "full" for status in recent):
+    if len(recent) < PAGE_ISSUE_RECENT or any(outcome != "missed" for outcome in recent):
         return None
-    if not any(status == "full" for status in earlier):
+    if "full" not in earlier:
         return None
     return (f"{blog.label} 글 페이지에서 본문을 고르지 못함(최근에 글 페이지를 받은 글 {PAGE_ISSUE_RECENT}편 모두 — "
             "글 페이지의 본문 자리가 바뀐 경우)")
@@ -271,11 +295,14 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
                 tries += 1                        # 받음·404·5xx·거부 — 보내지 못한 것만 빼고 셉니다
                 meta = {"pageTries": tries}
             if page is not None:
-                meta["pageGot"] = True            # 글 페이지를 받았음 — 본문 자리가 바뀌었는지는 받은 글로만 봅니다(_page_issue)
+                # 글 페이지를 받았음 — 본문 자리가 바뀌었는지는 받은 글로만, 그 자리에서 얻은 글을 피드 글과 견주어 봅니다(_page_issue).
+                # 본문 고르기가 실패하면 자리를 못 찾은 것으로 남깁니다(pageChars 0).
+                meta.update(pageGot=True, pageChars=0, feedChars=len(text))
                 try:
-                    extracted = info_text.extract_article(page.text())
-                    if len(extracted) >= info_text.MIN_BODY_CHARS:
-                        body, status, tier = extracted, "full", page.tier
+                    article = info_text.read_article(page.text())
+                    meta["pageChars"] = article.region_chars
+                    if len(article.text) >= info_text.MIN_BODY_CHARS:
+                        body, status, tier = article.text, "full", page.tier
                         opened += 1
                 except Exception as exc:  # noqa: BLE001 — 글 하나의 본문 고르기가 실패해도 그 글만 요약으로 둡니다(다른 글은 저장)
                     logger.warning("%s 글 페이지에서 본문을 고르다 실패: %s", blog.label, http.brief_error(exc))
@@ -308,12 +335,14 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
 
 def _page_worthy(blog: Blog, entry: dict, seen: dict | None, now: datetime) -> bool:
     """
-    글 페이지를 열 만한가 — 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았고, 그 글의 주소가 **이 블로그 자신의 호스트**
+    글 페이지를 열 만한가 — 피드가 짧은 글도 전문을 싣는 블로그라면 피드 글이 비었고, 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았고, 그 글의 주소가 **이 블로그 자신의 호스트**
     (사이트·피드 주소의 호스트)이며 그 호스트가 정책 표에 있음.
 
     피드 항목의 링크는 출처가 정하는 값입니다. 정책 표의 다른 호스트(KRX 등)를 가리키는 링크까지 열면 그 호스트의 세션 쿠키가 붙은 요청이
     나가고 응답이 이 블로그의 글로 저장됩니다(QA-388). 그런 글은 피드 요약으로만 둡니다.
     """
+    if blog.short_posts_in_feed and entry["text"]:
+        return False                              # 피드 글이 그 글의 전문 — 짧은 글일 뿐입니다
     published = entry["published_at"]
     if published is not None and published < now - timedelta(days=PAGE_MAX_AGE_DAYS):
         return False

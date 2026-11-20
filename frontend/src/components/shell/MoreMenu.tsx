@@ -25,7 +25,8 @@ const GROUP_IDS: Record<string, string> = { [KR_MARKET_GROUP]: "more-kr", [INFO_
  * 상단바의 계정 메뉴에도 있음). 새로고침 단추와 그 안내는 lg 미만에서만 여기 있습니다 — 넓은 화면은 상단바 아이콘 단추 하나라 안내(live region)도 하나입니다
  * (QA-564, 명세 §5). 새로고침·로그아웃은 홀로 선 단추라 기본 크기(좁은 화면 44px, 로그아웃은 넓은 화면 30px)입니다.
  * 테마 전환 행은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 운영자 전용 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘.
- * 하위 화면은 목록 행(높이 64px — 원 안 아이콘 · 화면 이름 · 오른쪽 화살표)이고, 행 전체가 링크입니다(hover 바탕).
+ * 하위 화면은 작업대 목록 줄(좁은 화면 48px·넓은 화면 40px — 20px 아이콘(장식, 원판 없음) · 화면 이름 14px 굵게(말줄임 없이 낱말 사이 줄바꿈) · 오른쪽 화살표)이고,
+ * 행 전체가 링크입니다(hover 바탕). 예전 64px 줄·40px 원판보다 줄마다 16px 낮아 390에서 아래 묶음이 첫 화면에 더 들어옵니다(작업대 P7).
  * 묶음은 '메뉴'(묶음 없는 더보기 화면)와 그다음 메뉴 표(lib/nav TABS)의 묶음 차례 — '한국 시장'(옛 한국 탭의 수급 레이더·파생·투기세력, ADR 0041 결정 1),
  * '정보 수집'(여덟 분류, 운영자에게만 — 2026-11-18 사용자 요청으로 맨 위 단계 탭에서 이 묶음으로, 그 전에는 '메뉴' 맨 위 행 하나).
  */
@@ -85,7 +86,7 @@ export function MoreMenu() {
   );
 }
 
-/** 묶음 하나의 행 목록 — 원 안 아이콘 · 화면 이름(유료 잠금 표시) · 오른쪽 화살표, 행 전체가 링크. */
+/** 묶음 하나의 행 목록 — 아이콘(장식) · 화면 이름(유료 잠금 표시) · 오른쪽 화살표, 행 전체가 링크. */
 function MenuRows({ items, user }: { items: readonly { href: string; label: string }[]; user: SessionUser | null | undefined }) {
   return (
     <ul className="divide-y divide-border overflow-hidden rounded-card border border-border bg-surface">
@@ -93,15 +94,12 @@ function MenuRows({ items, user }: { items: readonly { href: string; label: stri
         <li key={item.href}>
           <Link
             href={item.href}
-            className="flex min-h-16 items-center gap-3 px-4 text-[15px] font-semibold text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus lg:px-5"
+            className="flex min-h-12 items-center gap-3 px-3 text-body font-semibold text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus lg:min-h-10 lg:px-4"
           >
-            <span
-              aria-hidden="true"
-              className="inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-text-2"
-            >
+            <span aria-hidden="true" className="inline-flex shrink-0 items-center text-text-2">
               <MenuIcon href={item.href} size={20} />
             </span>
-            <span className="min-w-0 flex-1 truncate">
+            <span className="min-w-0 flex-1 break-keep">
               {item.label}
               {lockedFor(user, item.href) && (
                 <span title="유료 등급 기능" className="ml-1.5 inline-flex align-[-2px]">

@@ -262,6 +262,22 @@ describe("한국 종목 선정 탭", () => {
     expect(screen.getByText("기준 세션 뒤 날짜 0 · 읽은 순간 뒤에 받음 2 · 받은 시각 모름 0")).toBeTruthy();
   });
 
+  it("구성원 표 거르기 — 전체·후보·매수 목표·제외(개수는 받은 구성원), 고르면 그 줄만·새 요청 없음(작업대 P6 검토)", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({ available: true, decisions: [summary(40)] });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    renderSelection();
+    const filter = await screen.findByRole("radiogroup", { name: "구성원 거르기" });
+    expect(within(filter).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["전체4", "후보2", "매수 목표1", "제외2"]);
+    const reads40 = api.apiGetShared.mock.calls.length;
+    const table = screen.getByRole("table", { name: "유니버스 구성원" });
+    const codes = () => within(table).getAllByRole("row").slice(1).map((row) => row.children[1]?.textContent?.slice(0, 6));
+    fireEvent.click(within(filter).getByRole("radio", { name: /^제외/ }));
+    await waitFor(() => expect(codes()).toEqual(["323410", "035720"]));
+    fireEvent.click(within(filter).getByRole("radio", { name: /^매수 목표/ }));
+    await waitFor(() => expect(codes()).toEqual(["005930"]));
+    expect(api.apiGetShared.mock.calls.length).toBe(reads40);
+  });
+
   it("선정한 결정이 가장 최근 결정이면 상세를 한 번만 읽고 참고 줄이 없다", async () => {
     reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({ available: true, decisions: [summary(40)] });
     reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
@@ -285,5 +301,56 @@ describe("한국 종목 선정 탭", () => {
     renderSelection();
     expect(await screen.findByText(/아직 한국 규칙 계좌의 선정 기록이 없습니다/)).toBeTruthy();
     expect(await screen.findByText(/#41\)은 선정 칸이 없습니다\(기한 지남·일시정지 등\) — 결정 기한이 지나 주문 없음/)).toBeTruthy();
+  });
+});
+
+// QA-817 — 한국 종목 선정 표의 한국어가 음절 중간에서 꺾임(개편 전부터): '매수 목표' 표의 종목 이름(CodeName — 390 '한화에어로' / '스페이스', 다섯 줄 모두)과
+// '유니버스 구성원' 표의 '사유' 칸(min-w-64뿐 — '최' / '소', '기' / '관'). 이름은 한 덩어리로 다음 줄에, 사유는 낱말 사이에서만 꺾여야 합니다(break-keep).
+describe("QA-817 — 한국 종목 선정 표의 이름·사유는 낱말 사이에서만 꺾인다", () => {
+
+  /** 표에서 머리 글이 `header`인 열의 칸들(머리 포함) — 정렬 표시(↕↑↓)는 떼고 봅니다. */
+  function columnCells(table: HTMLElement, header: string): HTMLElement[] {
+    const heads = within(table).getAllByRole("columnheader");
+    const index = heads.findIndex((th) => th.textContent?.replace(/[↕↑↓]/g, "") === header);
+    if (index < 0) throw new Error(`열 없음: ${header}`);
+    return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
+  }
+
+  it("매수 목표 표의 종목 이름과 구성원 표 '사유' 칸에 break-keep", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
+      available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
+    });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    reads["/api/paper/decisions/45"] = () => Promise.resolve(LATEST_DETAIL);
+    renderSelection();
+    const targets = await screen.findByRole("region", { name: "매수 목표" });
+    const name = within(targets).getByText("삼성전자");
+    expect(name.closest(".break-keep"), name.parentElement?.outerHTML ?? "").not.toBeNull();
+    const members = screen.getByRole("table", { name: "유니버스 구성원" });
+    for (const cell of columnCells(members, "사유")) expect(cell.className.split(/\s+/), cell.textContent ?? "").toContain("break-keep");
+  });
+});
+
+// QA-819 — QA-817 고침(802a0701)의 회귀: CodeName 바깥 span에 break-keep을 달았는데 코드 span과 이름 span 사이에 공백이 없어, keep-all이 '012450한화에어로스페이스'를
+// 한 낱말로 봐 줄을 바꿀 곳이 없었음(숫자와 한글 사이의 줄바꿈 기회도 keep-all이 막음). 자기 빌드 360~430: '매수 목표' 표 379px가 상자(302~372px)를 넘어 '목표 비중'
+// 칸이 잘림 — KrSelectionSection 주석의 약속(열 넷, 390에서도 한 화면)이 깨짐. jsdom은 배치를 계산하지 않아 클래스만으로는 못 잡으므로, 코드와 이름 사이에
+// 줄바꿈 기회(공백 글 마디나 <wbr>)가 DOM에 있는지 봅니다(브라우저 잰 값은 커밋 본문).
+describe("QA-819 — 매수 목표 표의 코드와 이름 사이에는 줄바꿈 기회가 있다", () => {
+  it("코드 span과 이름 span 사이에 공백 글 마디나 <wbr>", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
+      available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
+    });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    reads["/api/paper/decisions/45"] = () => Promise.resolve(LATEST_DETAIL);
+    renderSelection();
+    const targets = await screen.findByRole("region", { name: "매수 목표" });
+    const name = within(targets).getByText("삼성전자");
+    const between = name.previousSibling;
+    const opportunity = between !== null && (
+      (between.nodeType === Node.TEXT_NODE && /\s/.test(between.textContent ?? "")) || (between.nodeType === Node.ELEMENT_NODE && (between as Element).tagName === "WBR")
+    );
+    expect(opportunity, name.parentElement?.innerHTML ?? "").toBe(true);
+    // 이름은 여전히 낱말 사이에서만 꺾입니다(QA-817).
+    expect(name.closest(".break-keep")).not.toBeNull();
   });
 });

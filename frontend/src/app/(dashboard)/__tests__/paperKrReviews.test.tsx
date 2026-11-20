@@ -4,7 +4,7 @@
  *  - 불러오는 중: 복기 목록 전에는 읽는 중 — 목록은 ?market=KR(미국 복기가 섞이지 않음)
  *  - 빈 상태: 한국 복기가 없다고 말하고 최근 복기 주·열리는 시각(일요일 22:00)을, 달력이 그 해를 모르면 그 사유를 적음
  *  - 오류: 목록을 못 읽으면 오류 + 다시 시도
- *  - 자료: 복기 한 건(?market=KR)의 가정 진입 표(금융위 확정 시가·토스 잠정 시가·종가 근사 배지)와 계좌 수익률 비교('잠정 줄 포함'),
+ *  - 자료(그 주 줄을 눌러 복기 한 건 — jsdom은 좁은 배치라 대화상자): 복기 한 건(?market=KR)의 가정 진입 표(금융위 확정 시가·토스 잠정 시가·종가 근사 배지)와 계좌 수익률 비교('잠정 줄 포함'),
  *    수동 실행은 확인 창에 수동 문턱 → POST /api/paper/reviews/run?market=KR
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -125,6 +125,13 @@ async function openReviews() {
   fireEvent.click(await screen.findByRole("button", { name: "주간 복기" }));
 }
 
+/** 그 주의 복기 한 건을 엽니다 — 시각순 목록('복기 기록')의 그 주 줄 단추(jsdom은 좁은 배치 — 위쪽 대화상자). */
+async function openWeek(week: string): Promise<HTMLElement> {
+  const list = await screen.findByRole("list", { name: "복기 기록" });
+  fireEvent.click(within(list).getAllByRole("button").find((button) => button.querySelector("time")?.textContent === week) as HTMLElement);
+  return screen.findByRole("region", { name: `${week} 주 복기` });
+}
+
 describe("불러오는 중", () => {
   it("복기 목록 전에는 읽는 중 — 목록은 ?market=KR(미국 복기 경로를 읽지 않음)", async () => {
     await openReviews();
@@ -174,6 +181,7 @@ describe("자료", () => {
 
   it("복기 한 건(?market=KR) — 가정 진입 표의 출처·근사 배지와 계좌 수익률 비교의 '잠정 줄 포함'", async () => {
     await openReviews();
+    await openWeek("2026-11-06");
     const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
     expect(requested()).toContain("/api/paper/reviews/2026-11-06?market=KR");
     const row = (ticker: string) => within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes(ticker)) as HTMLElement;
@@ -190,6 +198,7 @@ describe("자료", () => {
   // 예전에는 표에 방향 칸이 없고 안내가 '샀다고 가정'이라, 거절된 매도의 −3%(피한 하락)가 매수 손실처럼 읽혔습니다.
   it("거절된 매도 줄 — 방향 '매도'와 판 뒤 변화의 뜻('피한 하락'), 안내는 '체결됐다고 가정'(매수·매도 모두)", async () => {
     await openReviews();
+    await openWeek("2026-11-06");
     const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
     const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("005930")) as HTMLElement;
     expect(within(row).getByText("매도")).toBeTruthy();
@@ -205,6 +214,7 @@ describe("자료", () => {
   // 예전에는 서버가 보낸 값 없음의 이유(비교 줄 reason·주문 notes의 '가정 수익률:')를 버리고 '—'만 그렸습니다.
   it("값이 없으면 서버가 보낸 이유를 곁에 — 가정 진입은 주문 notes의 '가정 수익률:' 줄, 계좌 수익률 비교는 reason", async () => {
     await openReviews();
+    await openWeek("2026-11-06");
     const entries = await screen.findByRole("region", { name: "가정 진입 (좌우 스크롤)" });
     const row = within(entries).getAllByRole("row").find((tr) => tr.textContent?.includes("051910")) as HTMLElement;
     expect(within(row).getByText("결정 다음 세션(2026-11-09)이 복기 기준일 뒤")).toBeTruthy();
@@ -218,6 +228,7 @@ describe("자료", () => {
   // 예전에는 계좌 수익률 비교가 계좌 코드(kr_rules …)를 그대로 적었습니다 — 다른 한국 화면은 계좌 이름.
   it("계좌 수익률 비교는 계좌 이름(개요의 계좌 이름) — 코드는 마우스를 올려 봄", async () => {
     await openReviews();
+    await openWeek("2026-11-06");
     const comparison = await screen.findByRole("list", { name: "계좌 수익률 비교" });
     expect(within(comparison).getByText("한국 규칙 계좌").getAttribute("title")).toBe("kr_rules");
     expect(within(comparison).getByText("한국 Claude 계좌")).toBeTruthy();

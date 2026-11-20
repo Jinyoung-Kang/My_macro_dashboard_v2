@@ -45,6 +45,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import PaperPage from "@/components/screens/paper/PaperScreen";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { PENDING_BACKFILL_WARNING } from "@/lib/paperOverview";
 
 /** 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신). */
@@ -110,7 +111,18 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+/** 넓은 화면(lg 이상)으로 — 계좌 표의 검사 칸이 옆 칸(처음부터 기본 계좌의 곡선·속성)입니다. */
+function stubWide() {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === WIDE_SHELL_MEDIA, media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+  }));
+}
 
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => String(path));
 
@@ -142,24 +154,29 @@ describe("쉬는 한국", () => {
     expect(screen.getByText(/PAPER_KR_START_DATE/)).toBeTruthy();
     expect(screen.getByText(/한국 계좌가 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("table", { name: "계좌 비교" })).toBeNull();
-    // 한계 문구(§6)는 쉬어도 보입니다 — 접어 둔 채 시작하고 단추로 펼칩니다(사용자 요청 2026-11-02).
-    expect(screen.getByText("이 장부의 한계")).toBeTruthy();
+    // 한계 문구(§6)는 쉬어도 닿습니다 — 닫힌 서랍으로 시작하고 머리 단추로 엽니다(사용자 요청 2026-11-02 접힌 채 시작, 작업대 P6 서랍).
+    const opener = screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ });
+    expect(opener.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText(/수익률을 서로 비교하지 않습니다/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
-    expect(screen.getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "접기" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(opener);
+    const drawer = screen.getByRole("dialog", { name: "이 장부의 한계" });
+    expect(within(drawer).getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
   });
 
-  // QA-494: 접힌 한계 카드는 머리만 있는 상자여야 합니다 — 공용 Panel이 false 본문에도 빈 본문 칸(p-3 lg:p-4)과 머리 아래 경계를 그려 빈 띠가
-  // 남았습니다(/paper/kr 아홉 탭, 1440 32px·390 24px). 재현 커밋에서는 it.fails였습니다.
-  it("QA-494: 접힌 '이 장부의 한계' 카드는 머리(header)만 — 펼치면 본문 칸이 생긴다", async () => {
+  // QA-494: 접힌 한계 카드가 빈 본문 칸(p-3 lg:p-4)과 머리 아래 경계를 그려 빈 띠가 남았습니다(/paper/kr 아홉 탭, 1440 32px·390 24px — 재현 커밋에서는
+  // it.fails). 작업대 P6부터 한계는 카드가 아니라 머리 단추 + 서랍이라, 닫힌 동안 본문에 한계 상자가 없습니다 — 그 뜻(접힌 동안 빈 띠 없음)을 지킵니다.
+  it("QA-494: 닫힌 '이 장부의 한계'는 머리 단추뿐(본문에 상자 없음) — 열면 서랍에 목록", async () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
     render(<PaperPage market="KR" />);
     expect(await screen.findByText(/한국 계좌가 쉬고 있습니다/)).toBeTruthy();
-    const limits = screen.getByText("이 장부의 한계").closest("section") as HTMLElement;
-    expect(limits.lastElementChild?.tagName).toBe("HEADER");
-    fireEvent.click(within(limits).getByRole("button", { name: /펼치기/ }));
-    expect(limits.lastElementChild?.tagName).not.toBe("HEADER");
+    expect(screen.queryByRole("region", { name: "이 장부의 한계" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const opener = screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ });
+    expect(opener.closest("header")).not.toBeNull();
+    fireEvent.click(opener);
+    expect(within(screen.getByRole("dialog", { name: "이 장부의 한계" })).getAllByRole("listitem").length).toBeGreaterThan(0);
   });
 });
 
@@ -188,12 +205,13 @@ describe("자료", () => {
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     render(<PaperPage market="KR" />);
 
-    const rules = await screen.findByRole("button", { name: "한국 규칙 계좌 상세 보기" });
+    const rules = (await screen.findByRole("button", { name: "한국 규칙 계좌 상세 보기" })).closest("tr") as HTMLElement;
     expect(within(rules).getByText("100,312,450")).toBeTruthy();
     expect(within(rules).getByText("원")).toBeTruthy();
     expect(within(rules).getByText("+0.31%")).toBeTruthy();
-    expect(within(rules).getByText(/^규칙 · 운용 중 · 외국인·기관이 함께 사는/)).toBeTruthy();
-    expect(within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(rules).getByText("규칙")).toBeTruthy();
+    expect(within(rules).getByText("운용 중")).toBeTruthy();
+    expect(within(screen.getByRole("table", { name: "계좌 목록" })).getAllByRole("rowheader")).toHaveLength(4);
     expect(screen.queryByText(PENDING_BACKFILL_WARNING)).toBeNull();
 
     expect(comparisonCell("처음 현금", "한국 규칙 계좌").textContent).toBe("100,000,000원");
@@ -201,11 +219,16 @@ describe("자료", () => {
     expect(comparisonCell("현금", "한국 60/40 계좌").textContent).toBe("34,000원");
     expect(comparisonCell("비교 기준", "한국 규칙 계좌").textContent).toBe("KODEX 200 계좌");
 
-    // 히어로: 기본은 한국 규칙 계좌(사용자 결정 2026-11-13 — 그 전에는 한국 Claude 계좌) — 원 정수, 곡선은 그 계좌 한 줄
-    const hero = screen.getByRole("region", { name: "한국 규칙 계좌 순자산" });
-    expect(within(hero).getByText("100,312,450")).toBeTruthy();
-    expect(within(hero).getByText("원")).toBeTruthy();
-    expect(within(hero).getByRole("list", { name: "한국 규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000000,100312450");
+    // KPI 띠: 기본은 한국 규칙 계좌(사용자 결정 2026-11-13 — 그 전에는 한국 Claude 계좌) — 원 정수
+    const hero = screen.getByRole("region", { name: "한국 규칙 계좌 요약" });
+    const navTile = within(hero).getByRole("group", { name: "순자산" }).textContent ?? "";
+    expect(navTile).toContain("100,312,450");
+    expect(navTile).toContain("원");
+    // 검사 칸(좁은 틀은 줄 단추가 여는 대화상자) 곡선은 그 계좌 한 줄
+    fireEvent.click(screen.getByRole("button", { name: "한국 규칙 계좌 상세 보기" }));
+    const dialog = screen.getByRole("dialog", { name: "한국 규칙 계좌" });
+    expect(within(dialog).getByRole("list", { name: "한국 규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000000,100312450");
+    fireEvent.keyDown(dialog, { key: "Escape" });
 
     // 순자산 곡선: 네 계좌 계열·툴팁 0자리·넓은 축(원 단위 정수 눈금)
     const nav = screen.getByRole("list", { name: "순자산 계열" });
@@ -216,10 +239,11 @@ describe("자료", () => {
     expect(nav.getAttribute("data-axis-width")).toBe("84");
     expect(screen.getByText(/KR 거래일별 순자산\(원\)/)).toBeTruthy();
 
-    // 한계 문구(§6) — 펼친 뒤
-    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
-    const limits = screen.getByText("이 장부의 한계").closest("section") ?? document.body;
+    // 한계 문구(§6) — 머리 단추로 서랍을 연 뒤(닫으면 다음 확인이 뒤 화면을 봄)
+    fireEvent.click(screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ }));
+    const limits = screen.getByRole("dialog", { name: "이 장부의 한계" });
     expect(within(limits).getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
+    fireEvent.keyDown(limits, { key: "Escape" });
 
     // 미국 전용 카드는 없음
     for (const title of ["신호 기관", "OS 게이트 지표", "장부 초기화", "벤치마크 사후 체결 대기"]) {
@@ -283,13 +307,13 @@ describe("지금 값 — 계좌 행(한국)", () => {
     render(<PaperPage market="KR" />);
 
     await settled();
-    const claude = screen.getByRole("button", { name: "한국 Claude 계좌 상세 보기" });
+    const claude = screen.getByRole("button", { name: "한국 Claude 계좌 상세 보기" }).closest("tr") as HTMLElement;
     expect(within(claude).getByText("100,400,000")).toBeTruthy();
     expect(within(claude).getByText("장중 마지막 추정 15:30 · 종가 확정 전 · 시가 체결 대기 2건 반영 전 · 오늘 +0.09% · 10-29 잠정 대비"))
       .toBeTruthy();
     expect(within(claude).getByText("추정")).toBeTruthy();
     // current가 없는 계좌 줄(사라진 계좌·옛 응답)은 장부 값 그대로
-    expect(within(screen.getByRole("button", { name: "한국 규칙 계좌 상세 보기" })).getByText("100,312,450")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: "한국 규칙 계좌 상세 보기" }).closest("tr") as HTMLElement).getByText("100,312,450")).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/13F|SHY|SPY|사후 체결/);
   });
 });
@@ -541,7 +565,8 @@ describe("노출 맞춘 참고선(K40)", () => {
 
 describe("오늘 추정 꼬리(한국)", () => {
 
-  it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 히어로(한국 Claude 계좌를 고르면) 곡선도 꼬리 점", async () => {
+  it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 검사 칸(머리에서 한국 Claude 계좌를 고르면) 곡선도 꼬리 점", async () => {
+    stubWide();
     const live = {
       nav: 100_400_000, returnPct: 0.4, exposurePct: 99.9, dayChangePct: 0.09, previousTradingDate: "2026-10-30", previousNavFinal: false,
       basis: "LIVE", stage: "LIVE", tradingDate: "2026-11-02", atKst: "2026-11-02 10:05 KST", isEstimated: true, livePriced: 1,
@@ -566,9 +591,9 @@ describe("오늘 추정 꼬리(한국)", () => {
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     render(<PaperPage market="KR" />);
     await settled();
-    // 기본 히어로는 한국 규칙 계좌(꼬리 없음) — 꼬리가 있는 한국 Claude 계좌를 히어로로 고릅니다.
+    // 기본 계좌는 한국 규칙 계좌(꼬리 없음) — 꼬리가 있는 한국 Claude 계좌를 머리의 계좌 고르기로 고릅니다.
     expect(screen.getByRole("list", { name: "한국 규칙 계좌 순자산 곡선" }).getAttribute("data-estimate")).toBe("null,null");
-    fireEvent.change(screen.getByRole("combobox", { name: "순자산을 볼 계좌" }), { target: { value: "kr_claude" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "계좌 고르기" }), { target: { value: "kr_claude" } });
 
     const nav = screen.getByRole("list", { name: "순자산 계열" });
     expect(within(nav).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
@@ -587,5 +612,36 @@ describe("오늘 추정 꼬리(한국)", () => {
       .toBeTruthy();
     expect(screen.getByText(/— 긴 점선\(노출 맞춘 참고선 — 출발 뒤/)).toBeTruthy();
     expect(screen.queryByText(/^점선 /)).toBeNull();
+  });
+});
+
+// QA-817 — 개요 '한국 수집 상태' 표 머리·칸의 한국어가 음절 중간에서 꺾임(개편 전부터 — 390·1024 '공공데이터' / '포털', '고유번호'·'없음'). 글이 든 칸
+// (항목·기준·범위·상태)은 낱말 사이에서만 꺾여야 합니다(break-keep).
+describe("QA-817 — 한국 수집 상태 표의 칸은 낱말 사이에서만 꺾인다", () => {
+
+  /** 표에서 머리 글이 `header`인 열의 칸들(머리 포함) — 정렬 표시(↕↑↓)는 떼고 봅니다. */
+  function columnCells(table: HTMLElement, header: string): HTMLElement[] {
+    const heads = within(table).getAllByRole("columnheader");
+    const index = heads.findIndex((th) => th.textContent?.replace(/[↕↑↓]/g, "") === header);
+    if (index < 0) throw new Error(`열 없음: ${header}`);
+    return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
+  }
+
+  it("항목·기준·범위·상태 열의 머리·칸에 break-keep", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(KR_OVERVIEW);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve({
+      ...KR_STATUS,
+      collection: {
+        quotes: { task: "kr_paper_quotes", dataset: "paper.kr.quotes", available: true, collectedAtKst: "2026-10-30 22:05 KST",
+          session: "2026-10-30", universeDate: "2026-10-29", scope: 103, stale: false, staleReason: null },
+        universe: { available: true, baseDate: "2026-10-29", size: 100, behind: false, behindReason: null },
+      },
+    });
+    render(<PaperPage market="KR" />);
+    const region = await screen.findByRole("region", { name: "한국 수집 상태 (좌우 스크롤)" });
+    const table = within(region).getByRole("table");
+    for (const header of ["항목", "기준(세션·기준일)", "범위·개수", "상태"]) {
+      for (const cell of columnCells(table, header)) expect(cell.className.split(/\s+/), `${header}: ${cell.textContent ?? ""}`).toContain("break-keep");
+    }
   });
 });

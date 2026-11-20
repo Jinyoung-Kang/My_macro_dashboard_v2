@@ -278,7 +278,7 @@ describe("자료", () => {
     expect(headers).toContain("평단(원)");
     expect(headers).toContain("평가액(원)↕");
     const held = rowOf(table, "000660");
-    expect(within(held).getByText("기업행위 확인 필요").getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
+    expect(within(held).getByText("기업행위 확인 필요").closest("[title]")?.getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
     expect(within(held).getByText("200,000")).toBeTruthy();
     expect(within(held).getByText("1,005,000")).toBeTruthy();
     expect(within(rowOf(table, "035420")).getByText("가격 없음 · 지난 값")).toBeTruthy();
@@ -367,8 +367,8 @@ describe("자료", () => {
     try {
       render(<PaperPage market="KR" initialTab="holdings" />);
       const box = await screen.findByRole("region", { name: "주문 (좌우 스크롤)" });
-      const hint = box.previousElementSibling as HTMLElement;
-      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      // 개수 줄(작업대 P6 — 표 머리 개수)이 있으면 안내는 그 줄 오른쪽 — 상자 바로 앞 줄 안에서 찾습니다.
+      const hint = within(box.previousElementSibling as HTMLElement).getByText("← 표를 좌우로 넘겨 보세요");
       await waitFor(() => expect(hint.className).not.toContain("sm:hidden"));
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;
@@ -428,5 +428,30 @@ describe("자료", () => {
     expect(within(dialog).getByText(/한국 계좌에는 사후 체결이 없습니다 — 이 계좌만 지우면/)).toBeTruthy();
     expect(within(dialog).getByText(/네 계좌를 모두 지우면 다음 KR 거래일 결정 창에서/)).toBeTruthy();
     expect(within(dialog).queryByText(/출발일 종가로 다시 사후 체결/)).toBeNull();
+  });
+});
+
+// QA-817 — 한국 표의 한국어 칸이 음절 중간에서 꺾임(QA-737·776과 같은 꼴 — 그 고침이 빠뜨린 곳, 개편 전부터): 체결 표 '종목' 칸(min-w-[9rem]뿐 — 390·1024에서
+// '한화에어로스페이' / '스'). 낱말 사이에서만 꺾여야 합니다(break-keep). jsdom은 배치를 재지 않아 칸 클래스로 봅니다.
+describe("QA-817 — 한국 체결 표의 종목 칸은 낱말 사이에서만 꺾인다", () => {
+
+  /** 표에서 머리 글이 `header`인 열의 칸들(머리 포함) — 정렬 표시(↕↑↓)는 떼고 봅니다. */
+  function columnCells(table: HTMLElement, header: string): HTMLElement[] {
+    const heads = within(table).getAllByRole("columnheader");
+    const index = heads.findIndex((th) => th.textContent?.replace(/[↕↑↓]/g, "") === header);
+    if (index < 0) throw new Error(`열 없음: ${header}`);
+    return [heads[index], ...within(table).getAllByRole("row").slice(1).map((tr) => tr.children[index] as HTMLElement)];
+  }
+
+  it("체결 표 '종목' 머리·칸에 break-keep", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(overview(BOOKS));
+    reads["/api/paper/books/kr_rules/positions"] = () => Promise.resolve(POSITIONS);
+    reads["/api/paper/books/kr_rules/orders"] = () => Promise.resolve(ORDERS);
+    reads["/api/paper/books/kr_rules/fills"] = () => Promise.resolve(FILLS);
+    reads["/api/paper/books/kr_rules/nav"] = () => Promise.resolve(NAV);
+    reads["/api/paper/status?market=KR"] = () => Promise.resolve(STATUS);
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    const table = await screen.findByRole("table", { name: "체결" });
+    for (const cell of columnCells(table, "종목")) expect(cell.className.split(/\s+/), cell.textContent ?? "").toContain("break-keep");
   });
 });

@@ -6,7 +6,7 @@ import { Tag, type TagTone } from "@/components/ui";
 import { SKELETON_BAR } from "@/components/ui/classes";
 
 import { EstimateBadge, StaleBadge } from "./badges";
-import { MasterDetail } from "./MasterDetail";
+import { MasterDetail, type MasterDetailGroup } from "./MasterDetail";
 
 /**
  * 기록의 종류 — 공용 태그(Tag)로 그립니다. 톤(주의·위험·정상)을 주면 아이콘 + 글(주의·위험은 낭독기에 '주의: ' — 색만으로 뜻을 전하지 않음),
@@ -107,7 +107,9 @@ export function TimelineSkeleton({ rows, label = "불러오는 중" }: { rows: n
  *   `selectedKey`·`onSelectedKeyChange`, 빈 목록 `emptyText`, 읽는 중·오류 `placeholder`(목록 꼴 자리표시 `TimelineSkeleton`·ErrorState — 목록 대신), `count`.
  * - 기록의 차례는 부르는 쪽이 정합니다(보통 최근이 위). 줄 단추 안이라 요약에 링크·단추를 넣지 않습니다 — 그런 것은 `renderDetail`에.
  * - 펼칠 때 읽는 자세한 값(결정 원문 등)은 `renderDetail` 안의 자식 부품이 읽습니다(목록은 읽지 않음 — 요청 시점은 부르는 쪽 몫).
- * - 날짜 묶음 머리·넓은 검사 칸은 P6이 선택 prop으로 더합니다(지금은 없음).
+ * - 작업대 P6 선택 prop(목록-검사에 그대로 넘김 — 기본값이면 위 동작 그대로): `groupBy`(날짜 묶음 머리 — 거래일 등, 이어진 같은 key를 한 묶음으로,
+ *   `groupHeadingLevel` 기본 4), `inspectorWidth="wide"`(틀 48rem부터 왼쪽 목록 + 오른쪽 넓은 검사 칸), `dialogFocus="title"`(대화상자 첫 포커스를 제목에),
+ *   `revealSelectedInDialog`(대화상자 배치에서 부르는 쪽이 바꾼 고름을 대화상자로 엶).
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(종류 태그는 중립·의도 톤, 고른 줄은 잉크 막대 — 데이터 칸 강조색 금지 목록).
  */
 export function Timeline({
@@ -122,6 +124,11 @@ export function Timeline({
   onSelectedKeyChange,
   inspectorHint,
   headingLevel,
+  groupBy,
+  groupHeadingLevel,
+  inspectorWidth,
+  dialogFocus,
+  revealSelectedInDialog,
 }: {
   /** 목록 이름(ul aria-label) — 예 '판정 기록'. */
   label: string;
@@ -135,6 +142,12 @@ export function Timeline({
   onSelectedKeyChange?: (key: string | null) => void;
   inspectorHint?: string;
   headingLevel?: 2 | 3 | 4;
+  /** 기록의 묶음(거래일 등) — 이어진 같은 key를 한 묶음 머리 아래로. null이면 묶음 없이. */
+  groupBy?: (entry: TimelineEntry) => MasterDetailGroup | null;
+  groupHeadingLevel?: 3 | 4;
+  inspectorWidth?: "narrow" | "wide";
+  dialogFocus?: "content" | "title";
+  revealSelectedInDialog?: boolean;
 }): JSX.Element {
   return (
     <MasterDetail<TimelineEntry>
@@ -152,6 +165,11 @@ export function Timeline({
       onSelectedKeyChange={onSelectedKeyChange}
       inspectorHint={inspectorHint}
       headingLevel={headingLevel}
+      groupOf={groupBy}
+      groupHeadingLevel={groupHeadingLevel}
+      inspectorWidth={inspectorWidth}
+      dialogFocus={dialogFocus}
+      revealSelectedInDialog={revealSelectedInDialog}
     />
   );
 }

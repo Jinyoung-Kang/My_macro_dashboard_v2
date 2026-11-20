@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Tag } from "@/components/ui";
+import { LINK_CLASSES } from "@/components/ui/classes";
 import { EMPTY } from "@/lib/format";
 import { entityFailuresText, entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
-import { KindBadge, KindIcon, LINK, PaneHeading, Tag } from "./parts";
+import { KindBadge, KindIcon, PaneHeading } from "./parts";
 
 /** 화면에 보이는 별칭 — 이름과 같은 것은 뺍니다. */
 function visibleAliases(entity: SearchEntity): string[] {
@@ -63,7 +65,7 @@ export function EntityHeader({
           {shortcuts.length > 0 ? (
             <nav aria-label="바로가기" className="flex flex-wrap gap-3 text-sm">
               {shortcuts.map((shortcut) => (
-                <Link key={shortcut.href} href={shortcut.href} className={LINK}>
+                <Link key={shortcut.href} href={shortcut.href} className={LINK_CLASSES}>
                   {shortcut.label}
                 </Link>
               ))}

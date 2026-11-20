@@ -64,3 +64,33 @@ describe("장중 판단 패널의 확인 단계(QA-366)", () => {
     expect(api.apiPost.mock.calls[0][1]).toEqual({ book: "claude" });
   });
 });
+
+describe("장중 판단 패널의 계획 줄", () => {
+  afterEach(cleanup);
+
+  it("계획 상태는 공용 태그(20px) — 놓침은 주의 태그(아이콘 + 낭독 '주의: '), 예정은 중립, 글은 그대로", () => {
+    const intraday = {
+      ...STATUS,
+      books: [{
+        book: "claude", freeTiming: true,
+        plans: [
+          { slot: 1, at: "10:15", feed: "MINUTE", status: "EXPIRED", watch: ["AAPL"], reason: null },
+          { slot: 2, at: "13:30", feed: "MINUTE", status: "PLANNED", watch: [], reason: null },
+        ],
+      }],
+    };
+    render(<IntradayPlansPanel intraday={intraday} book="claude" onChanged={() => {}} />);
+
+    const [missed, planned] = screen.getAllByRole("listitem");
+    expect(missed.textContent).toContain("1번째 · 10:15 ET · 감시 1분봉 · AAPL");
+    const missedTag = screen.getByText("놓침").closest("span.inline-flex.rounded-control") as HTMLElement;
+    expect(missedTag.className).toContain("leading-4");
+    expect(missedTag.className).toContain("text-warn");
+    expect(missedTag.querySelector("svg")).not.toBeNull();
+    expect(missed.textContent).toContain("주의: 놓침");
+    const plannedTag = screen.getByText("예정").closest("span.inline-flex.rounded-control") as HTMLElement;
+    expect(plannedTag.className).toContain("text-text-2");
+    expect(planned.textContent).not.toContain("주의:");
+  });
+});
+

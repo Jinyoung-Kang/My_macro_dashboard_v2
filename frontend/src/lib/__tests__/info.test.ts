@@ -8,6 +8,7 @@ import {
   bannerText,
   bodyLabel,
   canTranslate,
+  catalogStatusText,
   eokText,
   hasHangul,
   headlineLink,
@@ -31,7 +32,6 @@ import {
   sourceChoices,
   speedLabel,
   splitText,
-  stanceTone,
   statusLabel,
   statusTone,
   tabTone,
@@ -91,6 +91,16 @@ describe("출처 상태", () => {
   });
 });
 
+describe("출처 표의 상태 글", () => {
+  const row = { access: "bypass" as const, incident: null, politeStatus: "failed", lastStatus: "fail", streak: 3 };
+  it("정상이 아닌 판정을 두 번 넘게 이어 받았으면 '(연속 n회)', 한 번이거나 정상·모름이면 꼬리 없음", () => {
+    expect(catalogStatusText(row)).toBe("받지 못함 (연속 3회)");
+    expect(catalogStatusText({ ...row, streak: 1 })).toBe("받지 못함");
+    expect(catalogStatusText({ ...row, politeStatus: "ok", streak: 5 })).toBe("정상");
+    expect(catalogStatusText({ ...row, politeStatus: null, lastStatus: null, streak: null })).toBe("기록 없음");
+  });
+});
+
 describe("수집 주기 글", () => {
   it("속도군마다 글이 있고, 탄력 주기(ADR 0040 — 사건 뉴스·BLS 발표 시각)도 이름 대신 글로, 없으면 '—'", () => {
     expect(speedLabel("slow")).toBe("1시간마다");
@@ -144,8 +154,10 @@ describe("네이버 수급", () => {
   it("금액이 없으면 '—'(0원이 아님), 있으면 부호와 억", () => {
     expect(eokText(null)).toBe("—");
     expect(eokText(1661.6)).toBe("+1,661.6억");
-    expect(eokText(-500)).toBe("-500.0억");
-    expect(sharesText(-873324)).toBe("-873,324주");
+    // 음수는 −(U+2212 — 작업대 P7, 부호 있는 비등락 값), 0은 부호 없이
+    expect(eokText(-500)).toBe("\u2212500.0억");
+    expect(eokText(0)).toBe("0.0억");
+    expect(sharesText(-873324)).toBe("\u2212873,324주");
     expect(sharesText(null)).toBe("—");
   });
 
@@ -160,12 +172,13 @@ describe("네이버 수급", () => {
 });
 
 describe("거장", () => {
-  it("점수·나눔 글과 견해 색", () => {
+  // 작업대 P7: 견해는 색 글이 아니라 중립 태그(강세·약세는 등락이 아니라 색으로 나르지 않음) — 견해 색 함수(stanceTone)는 부르는 곳이 없어 지움.
+  it("점수·나눔 글", () => {
     expect(scoreText(95)).toBe("+95");
+    expect(scoreText(-60)).toBe("\u221260");
     expect(scoreText(null)).toBe("—");
     expect(splitText({ bull: 95, neutral: 5, bear: 0 })).toBe("강세 95 · 중립 5 · 약세 0");
     expect(splitText({ bull: 95, neutral: null, bear: 0 })).toBe("—");
-    expect([stanceTone("강세"), stanceTone("약세"), stanceTone("중립"), stanceTone(null)]).toEqual(["ok", "danger", "neutral", "neutral"]);
   });
 });
 

@@ -61,8 +61,10 @@ describe("비중 히트맵이 상자보다 넓으면 최신 분기가 보이게 
     render(<WeightHeatmap dates={DATES} series={SERIES} />);
     const region = screen.getByRole("region", { name: "비중 히트맵 (좌우 스크롤)" });
     const hint = screen.queryByText("← 표를 좌우로 넘겨 보세요");
+    const classes = hint === null ? null : hint.className.split(/\s+/);
+    // 'hidden'(늘 숨김 — 최소 폭이 640px보다 좁고 넘치지 않는 표, QA-729)을 따로 읽습니다 — 'shown'으로 읽으면 넘침을 잘못 잰 것이 지나감.
     expect({
-      hint: hint === null ? null : hint.className.split(/\s+/).includes("sm:hidden") ? "phone-only" : "shown",
+      hint: classes === null ? null : classes.includes("hidden") ? "hidden" : classes.includes("sm:hidden") ? "phone-only" : "shown",
       scrollLeft: region.scrollLeft,
     }).toEqual({ hint: "shown", scrollLeft: 158 });
   });
