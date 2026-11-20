@@ -47,7 +47,7 @@ function description(element: HTMLElement): string {
 }
 
 describe("행마다 같은 이름의 쓰기 단추에 줄 이름(QA-900)", () => {
-  it.fails("저장소 상태 태스크 표 '다시 실행' — 이름은 그대로, 설명은 태스크 이름", async () => {
+  it("저장소 상태 태스크 표 '다시 실행' — 이름은 그대로, 설명은 태스크 이름", async () => {
     reads = {
       [endpoints.status.overview]: {
         readMode: "auto", collectorReachable: true,
@@ -64,7 +64,7 @@ describe("행마다 같은 이름의 쓰기 단추에 줄 이름(QA-900)", () =>
     expect(buttons.map((button) => button.textContent)).toEqual(["다시 실행", "다시 실행"]);
   });
 
-  it.fails("알림 규칙 표 '켜짐 — 끄기'·'꺼짐 — 켜기'·'지우기' — 이름은 그대로, 설명은 규칙 설명", async () => {
+  it("알림 규칙 표 '켜짐 — 끄기'·'꺼짐 — 켜기'·'지우기' — 이름은 그대로, 설명은 규칙 설명", async () => {
     reads = {
       [endpoints.alerts.inbox(50)]: { available: true, unread: 0, items: [] },
       [endpoints.alerts.rules]: {

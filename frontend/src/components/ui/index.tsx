@@ -422,6 +422,10 @@ const BUSY_CLASSES = "aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
  *             (submit이면 폼 보내기도 막음). 누른 단추가 disabled가 되면 크롬이 포커스를 body로 보내 응답 뒤 Tab이 문서 처음부터 시작했습니다(QA-899 —
  *             정보 수집 번역 단추 QA-887·알림 규칙 줄 QA-898과 같은 꼴). 모양은 꺼진 단추와 같습니다. 입력칸에서 Enter로 폼을 다시 보내는 길은 단추가 막지
  *             못하므로(꺼진 submit 단추와 달리) 폼의 onSubmit도 busy면 돌아갑니다 — 부르는 쪽이 지킵니다.
+ * @param ariaLabel 낭독 이름(aria-label) — 보이는 글로 이름이 모자란 아이콘 단추 등에만. 보이는 글이 있으면 그 글로 시작하게 씁니다(WCAG 2.5.3).
+ * @param describedBy 낭독 설명이 될 요소의 id(aria-describedby, 빈칸으로 여럿) — 보이는 글·이름은 그대로 두고 덧붙여 읽힙니다. 표의 줄마다 같은 이름인
+ *                    쓰기 단추('다시 실행'·'지우기')가 그 줄의 이름 칸을 가리킵니다(QA-900). 이름은 그대로라 이름으로 찾는 쓰기 시험·음성 조작이 바뀌지 않고,
+ *                    설명 글을 단추 옆에 따로 두지 않아(보이는 줄 이름을 가리킴) 같은 글이 두 번 있지 않습니다.
  */
 export function Button({
   children,
@@ -431,6 +435,8 @@ export function Button({
   icon,
   disabled,
   busy = false,
+  ariaLabel,
+  describedBy,
   type = "button",
   className = "",
   expanded,
@@ -444,6 +450,8 @@ export function Button({
   icon?: ReactNode;
   disabled?: boolean;
   busy?: boolean;
+  ariaLabel?: string;
+  describedBy?: string;
   type?: "button" | "submit";
   className?: string;
   /** 펼치고 접는 버튼이면 지금 펼쳐졌는지(aria-expanded). 아니면 넘기지 않습니다. */
@@ -453,6 +461,8 @@ export function Button({
     <button
       aria-expanded={expanded}
       aria-disabled={busy || undefined}
+      aria-label={ariaLabel}
+      aria-describedby={describedBy || undefined}
       type={type}
       onClick={busy ? (event) => event.preventDefault() : onClick}
       disabled={disabled}

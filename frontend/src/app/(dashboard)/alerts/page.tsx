@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
+import { FormEvent, useEffect, useId, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
 import { Button, buttonClasses, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -73,6 +73,9 @@ export default function AlertsPage() {
   const [busyRules, setBusyRules] = useState<ReadonlySet<number>>(() => new Set());
   const [ruleRefocus, setRuleRefocus] = useState<{ id: number; action: RuleAction; next: number | null } | null>(null);
   const rulesTable = useRef<HTMLDivElement>(null);
+  // 규칙 줄의 두 단추는 줄마다 이름이 같아('켜짐 — 끄기'·'지우기') 낭독 설명으로 그 줄의 규칙 설명(행 머리 칸의 글)을 가리킵니다(보이는 글·이름은 그대로 — QA-900).
+  const ruleNamePrefix = useId();
+  const ruleNameId = (id: number) => `${ruleNamePrefix}-rule-${id}`;
   useEffect(() => {
     if (ruleRefocus === null) return;
     setRuleRefocus(null);
@@ -185,7 +188,7 @@ export default function AlertsPage() {
             rowKey={(row) => String(row.id)}
             emptyText="규칙이 없습니다."
             columns={[
-              { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => withoutLeadingIcon(row.description) },
+              { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => <span id={ruleNameId(row.id)}>{withoutLeadingIcon(row.description)}</span> },
               { key: "created", header: "만든 날", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
               {
                 key: "enabled",
@@ -196,6 +199,7 @@ export default function AlertsPage() {
                     type="button"
                     disabled={demo}
                     aria-disabled={busyRules.has(row.id) || undefined}
+                    aria-describedby={ruleNameId(row.id)}
                     data-rule-id={row.id}
                     data-rule-action="toggle"
                     onClick={(event) => void ruleWrite(event, row, "toggle")}
@@ -214,6 +218,7 @@ export default function AlertsPage() {
                     type="button"
                     disabled={demo}
                     aria-disabled={busyRules.has(row.id) || undefined}
+                    aria-describedby={ruleNameId(row.id)}
                     data-rule-id={row.id}
                     data-rule-action="delete"
                     onClick={(event) => void ruleWrite(event, row, "delete")}
