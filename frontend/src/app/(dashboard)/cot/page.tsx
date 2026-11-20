@@ -268,10 +268,11 @@ export default function CotPage() {
                   상업헤저: row.commNet,
                   소액: row.nrNet,
                 }))}
+                // 순포지션은 계약 수(정수)라 툴팁도 소수 없이 — 기본(둘째 자리)이면 '….00 계약'처럼 없는 자리가 보였습니다(QA-942).
                 series={[
-                  { key: "스마트머니", name: "비상업 (투기)", color: SERIES_COLORS.blue },
-                  { key: "상업헤저", name: "상업 (헤저)", color: SERIES_COLORS.orange },
-                  { key: "소액", name: "비보고 (소액)", color: "#8B949E" },
+                  { key: "스마트머니", name: "비상업 (투기)", color: SERIES_COLORS.blue, valueDigits: 0 },
+                  { key: "상업헤저", name: "상업 (헤저)", color: SERIES_COLORS.orange, valueDigits: 0 },
+                  { key: "소액", name: "비보고 (소액)", color: "#8B949E", valueDigits: 0 },
                 ]}
                 // 순포지션은 부호가 곧 방향(롱/숏)입니다. 0선을 그려 언제 뒤집혔는지
                 // 눈으로 좇을 수 있게 합니다.
