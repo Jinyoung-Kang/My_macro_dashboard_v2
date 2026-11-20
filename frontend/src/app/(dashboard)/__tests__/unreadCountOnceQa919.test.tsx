@@ -69,7 +69,7 @@ afterEach(() => {
 });
 
 describe("운영자 홈 첫 적재의 읽지 않은 알림 수 요청(QA-919)", () => {
-  it.fails("셸과 홈이 같은 경로를 읽어도 /api/alerts/unread-count는 한 번만 나간다", async () => {
+  it("셸과 홈이 같은 경로를 읽어도 /api/alerts/unread-count는 한 번만 나간다", async () => {
     render(
       <DashboardLayout>
         <HomePage />
