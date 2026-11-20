@@ -18,7 +18,7 @@ import {
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon, XIcon } from "./icons";
 import { keepFocusNearby } from "./keepFocus";
 
-export { keepFocusNearby } from "./keepFocus";
+export { keepFocusNearby, useFocusAfterWrite } from "./keepFocus";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {

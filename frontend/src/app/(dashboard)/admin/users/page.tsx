@@ -2,7 +2,7 @@
 
 import { FormEvent, useId, useRef, useState } from "react";
 import { DataTable, InspectorFrame, InspectorSubheading, InspectorTrigger, PropertyList } from "@/components/patterns";
-import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
+import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Loading, NativeSelect, PageHeader, Panel, Select, useFocusAfterWrite } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { CheckIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -97,13 +97,18 @@ export default function AdminUsersPage() {
     else promoteInput.current?.focus();
   };
 
+  // 성공해 비밀번호 칸을 비우면 '회원 만들기'가 켜짐 조건으로 꺼집니다 — 그 단추에 있던 포커스를 결과 상자로(QA-905, 공용 useFocusAfterWrite).
+  const focusAfterWrite = useFocusAfterWrite();
+  const createdRef = useRef<HTMLDivElement>(null);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
     if (create.busy) return;
+    const done = focusAfterWrite(document.activeElement, () => createdRef.current);
     // 성공했을 때만 비밀번호 칸을 비웁니다. 실패(메일 중복·형식 오류·연결 끊김)에도 지워 고쳐 다시 보내려면 처음부터
     // 다시 쳐야 했습니다(QA-105, 내 계정의 QA-051과 같음).
     if (await create.run(email, password, tier)) setPassword("");
+    done();
     void users.reload();
     void audit.reload();
   };
@@ -194,7 +199,11 @@ export default function AdminUsersPage() {
           <Select label="등급" value={tier} onChange={setTier}
             options={[{ value: "FREE", label: "무료" }, { value: "PRO", label: "유료" }]} />
           {create.error && <Callout tone="warn">{create.error}</Callout>}
-          {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}
+          {create.result && (
+            <div ref={createdRef} tabIndex={-1} className="outline-none">
+              <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>
+            </div>
+          )}
           <Button variant="primary" type="submit" disabled={!email || !password} busy={create.busy}>
             {create.busy ? "만드는 중…" : "회원 만들기"}
           </Button>

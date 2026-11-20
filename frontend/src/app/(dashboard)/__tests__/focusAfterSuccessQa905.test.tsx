@@ -95,7 +95,7 @@ async function pressAndSettle(button: HTMLButtonElement): Promise<Element | null
 }
 
 describe("성공 뒤 꺼지는 쓰기 단추의 포커스(QA-905)", () => {
-  it.fails("내 계정 '비밀번호 바꾸기' — 성공하면 포커스가 결과 글로", async () => {
+  it("내 계정 '비밀번호 바꾸기' — 성공하면 포커스가 결과 글로", async () => {
     reads = {
       [endpoints.auth.session]: { authenticated: true, readMode: "auto", noLogin: false, user: MEMBER },
       [endpoints.auth.sessions]: { sessions: [] },
@@ -115,7 +115,7 @@ describe("성공 뒤 꺼지는 쓰기 단추의 포커스(QA-905)", () => {
     expect(active?.textContent).toContain("비밀번호를 바꿨습니다.");
   });
 
-  it.fails("사용자 관리 '회원 만들기' — 성공하면 포커스가 결과 글로", async () => {
+  it("사용자 관리 '회원 만들기' — 성공하면 포커스가 결과 글로", async () => {
     reads = {
       [endpoints.admin.users]: { users: [{ id: 7, email: "m@test.local", role: "MEMBER", tier: "FREE", verified: true, createdAt: "2026-10-01T00:00:00Z" }] },
       [endpoints.admin.audit(100)]: { entries: [] },
@@ -132,7 +132,7 @@ describe("성공 뒤 꺼지는 쓰기 단추의 포커스(QA-905)", () => {
     expect(active?.textContent).toContain("회원을 만들었습니다.");
   });
 
-  it.fails("알림 '모두 읽음' — 다시 읽어 읽지 않은 수가 0이면 포커스가 알림함 제목으로", async () => {
+  it("알림 '모두 읽음' — 다시 읽어 읽지 않은 수가 0이면 포커스가 알림함 제목으로", async () => {
     const item = { id: 7, kind: "REGIME_CHANGE", occurredOn: "2026-11-18", title: "[국면 전환] 확장", body: "본문", late: false, createdAt: "2026-11-18" };
     reads = {
       [endpoints.alerts.inbox(50)]: { available: true, unread: 1, items: [{ ...item, read: false }] },

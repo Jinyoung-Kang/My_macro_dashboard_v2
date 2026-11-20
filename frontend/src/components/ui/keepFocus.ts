@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
 /**
  * 다시 읽기로 사라지는 조작의 포커스 지키기 — 작업대 P8 키보드 경로의 한 규칙(QA-901 '다시 시도'·QA-902 쪽 넘김).
  *
@@ -18,8 +20,7 @@
  */
 export function keepFocusNearby(origin: HTMLElement): void {
   if (document.activeElement !== origin) return;
-  const ancestors: HTMLElement[] = [];
-  for (let node = origin.parentElement; node && node !== document.body; node = node.parentElement) ancestors.push(node);
+  const ancestors = ancestorsOf(origin);
   setTimeout(() => {
     if (origin.isConnected) return;
     const active = document.activeElement;
@@ -28,6 +29,62 @@ export function keepFocusNearby(origin: HTMLElement): void {
     const target = start ? focusTarget(start) : null;
     if (target) focusQuietly(target);
   }, 0);
+}
+
+/** 조작이 들어 있는 조상들(body 바로 아래까지) — 조작이 빠진 뒤에도 남아 있는 가장 가까운 자리를 찾으려고 누를 때 적어 둡니다. */
+function ancestorsOf(origin: HTMLElement): HTMLElement[] {
+  const ancestors: HTMLElement[] = [];
+  for (let node = origin.parentElement; node && node !== document.body; node = node.parentElement) ancestors.push(node);
+  return ancestors;
+}
+
+type WriteFocus = { origin: HTMLElement; ancestors: HTMLElement[]; preferred?: () => HTMLElement | null };
+
+/**
+ * 쓰기가 끝난 뒤 꺼지는 단추의 포커스 지키기 — 작업대 P8 키보드 경로의 한 규칙(QA-905, QA-899 후속).
+ *
+ * 쓰기 단추는 요청 동안 공용 `Button`의 busy(aria-disabled — 포커스가 남음)이지만, 성공하면 화면이 입력·수를 비워 그 단추의 켜짐 조건(disabled)이 참이
+ * 되기도 합니다(비밀번호 바꾸기·회원 만들기 — 칸을 비움, '모두 읽음' — 읽지 않은 수 0). 그러면 포커스를 가진 단추가 진짜 disabled가 되어 크롬이 포커스를
+ * body로 보내고, 다음 Tab이 문서 처음부터 시작했습니다.
+ *
+ * 규칙: 쓰기를 시작할 때 포커스를 가진 조작(`origin` — 보통 누른 단추, 폼이면 보낼 때의 document.activeElement)을 적어 두고(`begin`), 쓰기와 뒤따른
+ * 다시 읽기가 끝난 뒤 돌려받은 함수를 부릅니다. 그린 뒤(effect) 포커스를 잃었으면 — 포커스가 body이거나, 문서에서 빠졌거나, 아직 그 조작인데 꺼졌으면
+ * (브라우저가 포커스를 아직 옮기지 않은 순간) — `preferred`(결과 글 상자 — tabIndex -1, 그리지 않았으면 null)로, 없으면 `keepFocusNearby`와 같은
+ * 자리(가장 가까운 패널·영역의 머리 제목, 본문이면 화면 제목)로 옮깁니다. 포커스가 그 사이 다른 곳(입력칸 등 — 입력칸 Enter로 보냈으면 그 입력칸은
+ * 비워져도 켜져 있음)에 있으면 건드리지 않고, 시작할 때 이 조작에 포커스가 없었으면(다른 곳에서 부른 쓰기) 아무것도 하지 않습니다.
+ *
+ * 결과 글로 옮기는 까닭: 성공 뒤 할 일은 결과를 읽는 것이고(새로 적을 칸은 없음), 결과 상자는 그 단추 바로 위라 다음 Tab이 같은 폼에서 이어집니다.
+ * 결과 글이 없는 쓰기('모두 읽음')는 그 목록의 머리 제목이 '어디에 있는지'를 알립니다(keepFocusNearby의 B안과 같음).
+ */
+export function useFocusAfterWrite(): (origin: Element | null, preferred?: () => HTMLElement | null) => () => void {
+  const pending = useRef<WriteFocus | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const write = pending.current;
+    pending.current = null;
+    if (write === null) return;
+    const { origin, ancestors, preferred } = write;
+    const active = document.activeElement;
+    const lost =
+      active === null || active === document.body || !active.isConnected || (active === origin && origin.matches(":disabled"));
+    if (!lost) return;
+    const wanted = preferred?.() ?? null;
+    if (wanted !== null && wanted.isConnected) {
+      wanted.focus();
+      return;
+    }
+    const start = ancestors.find((node) => node.isConnected);
+    const target = start ? focusTarget(start) : null;
+    if (target) focusQuietly(target);
+  }, [tick]);
+  return useCallback((origin: Element | null, preferred?: () => HTMLElement | null) => {
+    if (!(origin instanceof HTMLElement) || origin === document.body || document.activeElement !== origin) return () => {};
+    const ancestors = ancestorsOf(origin);
+    return () => {
+      pending.current = { origin, ancestors, preferred };
+      setTick((count) => count + 1);
+    };
+  }, []);
 }
 
 const HEADING = /^H[1-3]$/;

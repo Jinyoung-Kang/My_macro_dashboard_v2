@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useId, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
-import { Button, buttonClasses, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag, useFocusAfterWrite } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -106,6 +106,18 @@ export default function AlertsPage() {
     }
   };
 
+  // '모두 읽음' — 다시 읽은 읽지 않은 수가 0이면 단추가 켜짐 조건으로 꺼집니다. 그 단추에 있던 포커스를 알림함 제목(알림 목록 머리)으로(QA-905 — 공용
+  // useFocusAfterWrite, 예전에는 <body>로 떨어짐). 쓰기·다시 읽기·벨 알림의 차례와 본문은 그대로입니다.
+  const focusAfterWrite = useFocusAfterWrite();
+  const readAll = async () => {
+    const done = focusAfterWrite(document.activeElement);
+    await read.run(null);
+    const reloaded = inbox.reload();
+    notifyAlertsRead();
+    await reloaded;
+    done();
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
@@ -137,7 +149,7 @@ export default function AlertsPage() {
           <span className="flex items-center gap-2">
             {/* 자동 갱신(5분)이 실패하면 새 알림이 들어오지 않은 채 남으므로 '새로 읽지 못함'을 붙입니다(QA-104). */}
             <Freshness refreshError={inbox.refreshError} />
-            <Button onClick={async () => { await read.run(null); void inbox.reload(); notifyAlertsRead(); }} disabled={demo || !inbox.data?.unread} busy={read.busy}>
+            <Button onClick={() => void readAll()} disabled={demo || !inbox.data?.unread} busy={read.busy}>
               모두 읽음
             </Button>
           </span>
