@@ -4,9 +4,9 @@ import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, SKELETON_BAR, TEXT_TARGET } from "@/components/ui";
 import { LandmarkIcon } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { CHART_KEY, detailQuery, institutionHref, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
@@ -34,6 +34,44 @@ const HOLDINGS_SHOWN = 30;
 
 /** 13F 공시의 한계 — 분기마다 45일 안에 공시되어 지금 보유와 다를 수 있습니다. */
 const FILING_NOTE = "분기마다 45일 안에 공시 — 지금 보유와 다를 수 있음";
+
+/** 자리표시 막대 — 공용 Skeleton 막대와 같은 모양(ui/classes SKELETON_BAR). */
+const BAR = `block ${SKELETON_BAR}`;
+
+/**
+ * 대상 머리의 읽는 중 자리표시(QA-967) — 값이 온 뒤 보조 글 아래에 생기는 주 값 줄(12px 캡션 + 28px 값)과 배지 줄(보고 기준일·공시일 + 출처 배지)과 같은 꼴.
+ * 두 줄 모두 값이 온 뒤와 같은 글꼴·꼴의 보이지 않는 글(날짜·금액은 같은 자릿수의 본보기)이 높이를 정하고 막대를 그 위에 덮습니다 — 예전 막대 두 줄(44px)은
+ * 값이 온 뒤(56px — 좁은 화면은 배지 줄이 꺾이면 더)보다 낮아 아래 칸 틀이 밀렸습니다. 보이지 않는 글은 읽기에서 빠지고 상태 이름만 읽힙니다.
+ */
+function HeaderPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="13F 포트폴리오를 불러오는 중" className="flex flex-col gap-1">
+      <span className="sr-only">13F 포트폴리오를 불러오는 중</span>
+      <div aria-hidden="true" className="relative">
+        <div className="invisible flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-xs">13F 보고 평가액</span>
+          <span className="inline-flex items-baseline gap-x-1">
+            <span className="text-value-lg tabular-nums">{formatUsd(100_000_000_000)}</span>
+          </span>
+        </div>
+        <div className="absolute inset-0 flex items-end gap-2 pb-1.5">
+          <span className={`h-3 w-20 ${BAR}`} />
+          <span className={`h-6 w-36 max-w-[50%] ${BAR}`} />
+        </div>
+      </div>
+      <div aria-hidden="true" className="relative">
+        <div className="invisible flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="text-xs tabular-nums">보고 기준일 2026-01-01 · 공시일 2026-01-01</span>
+          <ProvenanceBadge source="SEC EDGAR 13F" />
+        </div>
+        <div className="absolute inset-0 flex flex-wrap content-start items-center gap-1.5 overflow-hidden">
+          <span className={`h-3 w-56 max-w-full ${BAR}`} />
+          <span className={`h-3 w-24 ${BAR}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * 기관 상세(/institutions/<CIK>) — 13F 기관 한 곳을 작업대 대상 문법(P4 — 정보 검색 대상 화면과 같은 틀)으로: 대상 머리(이름·CIK·13F 보고 평가액·
@@ -84,7 +122,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
     ) : portfolio.error ? (
       <ErrorState message={portfolio.error} onRetry={() => void portfolio.reload()} />
     ) : (
-      <Skeleton lines={2} label="13F 포트폴리오를 불러오는 중" />
+      <HeaderPending />
     );
   } else if (!data.available) {
     placeholder = <p className="text-sm text-text-2">{data.message ?? "13F 저장본이 없습니다."}</p>;
@@ -119,7 +157,12 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
     ) : portfolio.error ? (
       <p className="text-sm text-text-2">13F 포트폴리오를 읽지 못해 추이를 그리지 않습니다.</p>
     ) : (
-      <Skeleton height={220} label="분기별 평가액을 불러오는 중" />
+      // 값이 온 뒤의 히어로 차트와 같은 높이(LineChart hero — 좁은 화면 200·lg 260px, QA-967). 공용 Skeleton height는 한 값(220 + 위아래 여백)이라
+      // lg에서 차트가 오면 아래 AI 요약이 32px 밀렸습니다.
+      <div role="status" aria-busy="true" aria-label="분기별 평가액을 불러오는 중">
+        <span className="sr-only">분기별 평가액을 불러오는 중</span>
+        <div aria-hidden="true" className={`h-[200px] w-full lg:h-[260px] ${BAR}`} />
+      </div>
     );
   } else {
     chart = <p className="text-sm text-text-2">분기가 둘 이상이어야 추이를 그립니다(지금 {rows.length}분기).</p>;
@@ -149,7 +192,12 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
         }
         actions={
           <>
-            {data ? <Freshness collectedAt={data.collectedAtKst} ageSeconds={data.ageSeconds} refreshError={portfolio.refreshError} /> : null}
+            {/* 첫 응답을 기다리는 동안은 값이 온 뒤의 수집 배지와 같은 폭의 보이지 않는 자리(QA-967 — 넓은 화면은 이 동작 칸이 넓어지며 왼쪽 이름 줄이 꺾였음). */}
+            {data ? (
+              <Freshness collectedAt={data.collectedAtKst} ageSeconds={data.ageSeconds} refreshError={portfolio.refreshError} />
+            ) : (
+              <Freshness pending={firstLoadPending(portfolio)} />
+            )}
             {entityLink ? (
               <Link href={entityLink.href} className={`${LINK_CLASSES} text-sm`}>
                 {entityLink.label}

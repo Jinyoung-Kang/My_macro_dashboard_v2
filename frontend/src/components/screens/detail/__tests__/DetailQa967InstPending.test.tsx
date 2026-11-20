@@ -44,7 +44,7 @@ async function header(): Promise<HTMLElement> {
 
 describe("QA-967 기관 상세 대상 머리의 읽는 중 자리표시는 값이 온 뒤의 꼴", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 막대 두 줄(공용 Skeleton)뿐이라 보이지 않는 글이 없었습니다.
-  it.fails("주 값 줄(12px 캡션 + 28px 값)과 배지 줄(보고 기준일·공시일 + 출처) 꼴의 보이지 않는 글 — 읽기에서는 상태 이름만", async () => {
+  it("주 값 줄(12px 캡션 + 28px 값)과 배지 줄(보고 기준일·공시일 + 출처) 꼴의 보이지 않는 글 — 읽기에서는 상태 이름만", async () => {
     const head = await header();
     const status = within(head).getByRole("status", { name: "13F 포트폴리오를 불러오는 중" });
     const rows = Array.from(status.children).filter((child) => child.getAttribute("aria-hidden") === "true");
@@ -56,7 +56,7 @@ describe("QA-967 기관 상세 대상 머리의 읽는 중 자리표시는 값�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 응답 전 동작 칸에 수집 배지 자리가 없었습니다.
-  it.fails("응답 전 동작 칸에 수집 배지 폭의 보이지 않는 자리(읽기에서 빠짐)", async () => {
+  it("응답 전 동작 칸에 수집 배지 폭의 보이지 않는 자리(읽기에서 빠짐)", async () => {
     const head = await header();
     const reserve = Array.from(head.querySelectorAll<HTMLElement>('[aria-hidden="true"].invisible')).find((element) => element.textContent?.includes("수집"));
     expect(reserve).toBeTruthy();
@@ -64,7 +64,7 @@ describe("QA-967 기관 상세 대상 머리의 읽는 중 자리표시는 값�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 공용 Skeleton(style 높이 220px — 폭과 상관없음)이었습니다.
-  it.fails("분기별 평가액 자리는 히어로 차트와 같은 높이(좁은 화면 200·lg 260px — LineChart hero)", async () => {
+  it("분기별 평가액 자리는 히어로 차트와 같은 높이(좁은 화면 200·lg 260px — LineChart hero)", async () => {
     await header();
     const slot = screen.getByRole("status", { name: "분기별 평가액을 불러오는 중" });
     const block = slot.querySelector('[aria-hidden="true"]') as HTMLElement;
