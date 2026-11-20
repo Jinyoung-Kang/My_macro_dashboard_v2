@@ -15,11 +15,22 @@ export { type EntityChange, EntityHeader, type EntityKind, type EntityKindSpec }
 export { FilterList, type FilterListItem, type FilterListPendingRow } from "./FilterList";
 export { type HeatmapColumn, type HeatmapRow, HeatmapTable } from "./HeatmapTable";
 export { Hero } from "./Hero";
-export { type InspectorContext, InspectorFrame, type InspectorLayout, InspectorTrigger, type InspectorTriggerProps } from "./InspectorFrame";
+export {
+  type InspectorContext,
+  InspectorFrame,
+  InspectorHeadingScope,
+  type InspectorLayout,
+  InspectorSubheading,
+  InspectorTrigger,
+  type InspectorTriggerProps,
+  type SubheadingTag,
+} from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
-export { MasterDetail } from "./MasterDetail";
+export { LogPanel, type LogPanelHeight, type LogPanelTone, type LogPanelWrap } from "./LogPanel";
+export { MasterDetail, type MasterDetailGroup } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
+export { ReadingGuide } from "./ReadingGuide";
 export { SectionAnchor, SectionIndex, type SectionIndexItem, type SectionIndexLeaf } from "./SectionIndex";
 export { Skeleton } from "./Skeleton";
 export { Sparkline } from "./Sparkline";

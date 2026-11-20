@@ -242,6 +242,21 @@ export function axisLabelWidth(text: string, fontSize: number): number {
   return visualWidth(text) * fontSize * 0.6;
 }
 
+/** 한 자가 글자 크기만큼 넓은 글자(한글·한자·가나 — chartAxis visualWidth와 같은 범위). */
+const WIDE_CHAR = /[가-힣ㄱ-ㅎㅏ-ㅣ一-鿿ぁ-ヿ]/;
+
+/**
+ * 세로 표시선 이름표의 글 폭 어림(px) — 한글·한자·가나는 한 자 1em, 그 밖은 0.6em. 축 글 폭 어림(axisLabelWidth — 한글 한 자 1.2em)은 축 자리를 넉넉히
+ * 잡는 값이라, 이웃 이름표가 겹치는지 따지면 겹치지 않는 이름표까지 숨겼습니다(QA-777 — '프레임 v4' 어림 64.8px, 검토 자기 빌드가 잰 그린 폭 52px). 이
+ * 어림은 '프레임 v4' 57.6px입니다(그린 폭보다 큼 — 겹침 판정이 실제 겹침을 놓치지 않는 쪽). 표시선 이름표 자리(markerLabelSide)와 겹침 판정(공용 차트
+ * MultiLineSeries)이 함께 씁니다.
+ */
+export function markerLabelWidth(text: string, fontSize: number): number {
+  let ems = 0;
+  for (const char of text) ems += WIDE_CHAR.test(char) ? 1 : 0.6;
+  return ems * fontSize;
+}
+
 /** X 눈금 글 사이 최소 틈(px)과 중간 눈금 개수 상한. */
 const X_TICK_GAP = 16;
 const X_TICK_MAX_INTERIOR = 6;
@@ -385,7 +400,7 @@ export function markerLabelSide(
     return index === lastIndex ? "left" : "right";
   }
   const at = (index / lastIndex) * width;
-  return at + MARKER_LABEL_PAD + axisLabelWidth(label, options.fontSize ?? 12) > width ? "left" : "right";
+  return at + MARKER_LABEL_PAD + markerLabelWidth(label, options.fontSize ?? 12) > width ? "left" : "right";
 }
 
 /** X축 눈금 행의 date만(`lineXAxis`의 ticks) — 너비를 주지 않으면 첫·마지막. */

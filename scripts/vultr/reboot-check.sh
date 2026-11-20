@@ -8,6 +8,8 @@
 #   · /var/run/reboot-required(패키지 목록은 .pkgs)가 있음
 #   · Livepatch가 지금 커널을 지원하지 않음, 점검·적용이 실패함, 지원 기한이 30일 안이거나 지남, 마지막 점검이 48시간보다 오래됨,
 #     상태를 읽지 못함(canonical-livepatch 없음 등)
+# Livepatch 상태는 root가 아니면 sudo -n으로 읽습니다(QA-417 후속 — cron에는 사용자 세션 버스가 없어 root가 아닌 사용자의 snap 실행이
+# 'is not a snap cgroup'으로 실패함, 2026-11-20 서버 재현). sudo -n이 안 되는 곳(PC 등)에서는 그냥 부릅니다.
 #
 # 사용(저장소 최상위로 옮겨 .env·backups/를 봄):
 #   bash scripts/vultr/reboot-check.sh                       cron — 걸린 것이 있으면 운영 텔레그램 봇으로 한 통(한 줄 요약 + 할 일 '실행:',
@@ -52,15 +54,22 @@ fi
 # 2. Livepatch — 지금 돌고 있는 커널의 항목(없으면 첫 항목)을 봅니다. 판정은 아래 python 한 곳.
 livepatch_ok=""
 livepatch_issue=""
-# QA-417: 2026-11-13 16:10 KST cron에서 status가 한 번 실패했고(원인 미확인 — 그때는 오류를 버렸음) 바로 뒤에는 늘 읽혔습니다.
-# 세 번까지(사이 REBOOT_CHECK_RETRY_SECONDS초, 기본 10) 다시 묻고, 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 남깁니다.
+# QA-417: cron(16:10 KST)에서는 root가 아닌 사용자로 부르면 늘 실패했습니다 — snap은 실행될 때 자기 프로세스를 systemd의 추적용 scope로
+# 옮기는데, root가 아니면 사용자 세션 버스로 하고 cron에는 그 버스가 없습니다(ssh 세션이 떠 있는 동안만 있음 — 그래서 손으로는 늘 읽혔음).
+# root가 아니면 sudo -n(절대 경로·고정 인자)으로 읽고, 세 번까지(사이 REBOOT_CHECK_RETRY_SECONDS초, 기본 10) 다시 묻고,
+# 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 남깁니다.
 lp_json=""
 lp_err=""
-if command -v canonical-livepatch >/dev/null 2>&1; then
+if lp_bin="$(command -v canonical-livepatch 2>/dev/null)"; then
+    lp_cmd=("$lp_bin")
+    if [ "$(id -u)" != 0 ] && command -v sudo >/dev/null 2>&1 &&
+            sudo -n -l "$lp_bin" status --format json >/dev/null 2>&1; then
+        lp_cmd=(sudo -n "$lp_bin")
+    fi
     err_file="$(mktemp)"
     trap 'rm -f "$err_file"' EXIT
     for attempt in 1 2 3; do
-        if lp_json="$(canonical-livepatch status --format json 2>"$err_file")"; then
+        if lp_json="$("${lp_cmd[@]}" status --format json 2>"$err_file")"; then
             lp_err=""
             break
         fi
@@ -177,7 +186,7 @@ if [ -n "$needs_reboot" ]; then
 fi
 if [ -n "$livepatch_issue" ]; then
     actions+=$'\n\n실행(Livepatch 확인):'
-    actions+=$'\n   셸: ssh ubuntu@my-macro-app 다음 canonical-livepatch status; pro status'
+    actions+=$'\n   셸: ssh ubuntu@my-macro-app 다음 sudo canonical-livepatch status; pro status'
     actions+=$'\n   다음 날 점검에서 사라지면 할 일 없음.'
 fi
 if [ -n "$needs_reboot" ]; then

@@ -200,6 +200,14 @@ export function formatSignedKrw(value: number | null | undefined): string {
 }
 
 /**
+ * 부호 있는 원화 금액의 표 칸 글(순매수처럼 오르내린 값이 아닌 부호 값 — 본문 잉크로 그림): formatSignedKrw에 음수 부호를 U+2212(−)로. 모르면 null
+ * (표가 '—'로 그림). 수급 레이더 시장 전체·국내 파생 현물선물 표가 같은 일을 따로 적던 것을 모았습니다(P7 검토).
+ */
+export function signedKrwText(value: number | null): string | null {
+  return value === null ? null : withMinusSign(formatSignedKrw(value));
+}
+
+/**
  * 주식 수(순매수 거래량 등). 만 주 단위로 줄이고 부호를 붙입니다.
  *
  * @returns 예: `"+29.2만 주"`, `"-1,250 주"`, 값이 없으면 `"—"`

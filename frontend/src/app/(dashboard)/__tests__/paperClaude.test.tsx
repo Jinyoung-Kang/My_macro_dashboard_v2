@@ -1,7 +1,7 @@
 /**
  * 모의 매매 — Claude 재량 책(단계 3a). 서버 값을 그대로 보이고, 통과·거절·어긋남을 화면이 다시 판정하지 않는다.
  *
- *  - 결정 로그: Claude 책 목록에 목표 노출 칸, 상세는 판단(자세·목표 노출·어긋남 배지·확신도·요약·노출 근거)·제안 주문(근거·라벨·
+ *  - 결정 로그: Claude 책 목록(시각순 목록)에 목표 노출, 줄을 고르면 상세(jsdom은 좁은 배치 — 대화상자)는 판단(자세·목표 노출·어긋남 배지·확신도·요약·노출 근거)·제안 주문(근거·라벨·
  *    무효화)·검증(통과·거절·사유·설명)·사용량(모델·토큰)·프레임 판("임시 v0")·입력 패킷(접힘). 규칙 책 표(신호·게이트)는 그리지 않는다
  *  - 응답이 없으면(형식 오류) "응답 없음"과 오류, 모델 원문은 접어서. 건너뛴 기록(호출 상한·일시정지)은 "Claude를 부르지 않음 — 사유"
  *  - 결정 중 일시정지로 취소된 주문은 취소와 서버 사유로, 다른 결정이 돌고 있다는 서버 거절은 경고로
@@ -152,6 +152,20 @@ async function openClaudeDecisions() {
 }
 
 describe("결정 로그 — Claude 책", () => {
+  /** 결정 줄 — 거래일 묶음(목록 이름 '거래일 {날짜}') 안의 종류 태그 '정기' 줄 단추(시각순 목록 — 목록-검사). */
+  const line = async () => {
+    const group = await screen.findByRole("list", { name: "거래일 2026-10-26" });
+    const lines = within(group).getAllByRole("button").filter((button) => within(button).queryByText("정기") !== null);
+    expect(lines).toHaveLength(1);
+    return lines[0];
+  };
+  /** 그 줄을 눌러 상세를 엽니다(jsdom은 좁은 배치 — 위쪽 대화상자). */
+  const openDetail = async () => {
+    fireEvent.click(await line());
+    await screen.findByRole("dialog", { name: "2026-10-26 정기" });
+    return screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+  };
+
   beforeEach(() => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE_ACTIVE));
     reads["/api/paper/decisions?book=rules"] = () => Promise.resolve({ available: true, decisions: [] });
@@ -159,26 +173,32 @@ describe("결정 로그 — Claude 책", () => {
     reads["/api/paper/decisions/21"] = () => Promise.resolve(DETAIL);
   });
 
-  it("목록에 목표 노출 칸, 상세는 판단·제안 주문·검증·사용량·프레임 판(임시 v0) — 규칙 책 표는 없다", async () => {
+  it("목록에 목표 노출, 상세는 판단·제안 주문·검증·사용량·프레임 판(임시 v0) — 규칙 책 표는 없다", async () => {
     await openClaudeDecisions();
 
-    const row = await screen.findByRole("row", { name: "2026-10-26 정기" });
-    expect(within(row).getAllByRole("cell").map((td) => td.textContent)).toEqual([
-      "2026-10-26상세 펼치기", "정기", "주문 냄", "2건 · 거절 1", "35.0%", "노출 35% · XLV 매수", "확정 종가", "2026-10-27 07:41",
-    ]);
-    fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+    const row = await line();
+    expect(within(row).getByText("10-27 07:41")).toBeTruthy();
+    expect(within(row).getByText("주문 냄")).toBeTruthy();
+    expect(within(row).getByText("주문 2건 · 거절 1")).toBeTruthy();
+    expect(within(row).getByText("목표 노출 35.0%")).toBeTruthy();
+    expect(within(row).getByText("확정 종가")).toBeTruthy();
+    expect(within(row).getByText("노출 35% · XLV 매수")).toBeTruthy();
+    fireEvent.click(row);
 
     const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/decisions/21", 0);
-    const meta = (label: string) => within(detail).getByText(label).nextElementSibling?.textContent;
+    const head = detail.querySelector("dl") as HTMLElement;
+    const meta = (label: string) => within(head).getByText(label).nextElementSibling?.textContent;
     expect(meta("모델")).toBe("claude-sonnet-5-5");
     expect(meta("프레임 버전")).toBe("임시 v0");
-    expect(within(detail).getByText("프레임 버전").nextElementSibling?.getAttribute("title")).toBe("임시 v0 — OS 원문 반영 전");
+    // 판 제목은 마우스 설명(title)으로.
+    expect(within(head).getByText("임시 v0").closest("[title]")?.getAttribute("title")).toBe("임시 v0 — OS 원문 반영 전");
     expect(meta("소요")).toBe("41.2초");
 
     const judgement = within(detail).getByRole("region", { name: "판단" });
     expect(within(judgement).getByText("위험 회피 (RISK_OFF)")).toBeTruthy();
-    expect(within(judgement).getByText("목표 주식 노출").nextElementSibling?.textContent).toBe("35.0%목표 노출 ≠ 주문");
+    // 어긋남 배지는 공용 주의 태그 — 낭독기에 '주의: '를 먼저 읽힙니다.
+    expect(within(judgement).getByText("목표 주식 노출").nextElementSibling?.textContent).toBe("35.0%주의: 목표 노출 ≠ 주문");
     expect(within(judgement).getByText(/15%p 넘게 다릅니다/)).toBeTruthy();
     expect(within(judgement).getByText("확신도").nextElementSibling?.textContent).toBe("62.0%");
     expect(within(judgement).getByText("노출을 35%로 낮추고 방어 섹터 일부만")).toBeTruthy();
@@ -192,7 +212,7 @@ describe("결정 로그 — Claude 책", () => {
     expect(within(validation).getByText(/현금 비중·매크로 조건은 검사하지 않습니다/)).toBeTruthy();
     expect(rowsOf(validation)).toEqual([
       ["XLV", "매수", "목표 비중 12.00%", "통과", "—", "—"],
-      ["NVDA", "매수", "목표 비중 15.00%", "거절", "비중 상한 초과 (WEIGHT_CAP)", "목표 15% > 종목 상한 10%"],
+      ["NVDA", "매수", "목표 비중 15.00%", "주의: 거절", "비중 상한 초과 (WEIGHT_CAP)", "목표 15% > 종목 상한 10%"],
     ]);
     expect(within(validation).getByText("비중 상한 초과 (WEIGHT_CAP)").getAttribute("title")).toContain("maxWeightStockPct");
     expect(rowsOf(within(detail).getByRole("region", { name: "관찰 목록" }))).toEqual([["TLT", "10Y 4.75% 아래로 3일"]]);
@@ -205,7 +225,7 @@ describe("결정 로그 — Claude 책", () => {
     const orders = rowsOf(within(detail).getByRole("region", { name: "주문" }));
     expect(orders.map((cells) => [cells[0], cells[3], cells[6]])).toEqual([
       ["XLV", "대기", "방어 섹터 상대 강도 개선 [사실·해석] · 무효화: 200일선 아래로"],
-      ["NVDA", "거절WEIGHT_CAP", "교차 확인 2곳 [가설] · 무효화: 다음 13F에서 축소"],
+      ["NVDA", "주의: 거절WEIGHT_CAP", "교차 확인 2곳 [가설] · 무효화: 다음 13F에서 축소"],
     ]);
     // 크기 — 통과 매수는 살 금액, 거절 매수는 받은 값 그대로라 목표 비중(제안)으로
     expect(orders.map((cells) => cells[2])).toEqual(["순자산의 12.00% 매수", "목표 15.00% (제안)"]);
@@ -222,8 +242,7 @@ describe("결정 로그 — Claude 책", () => {
   // (초록 '통과' 옆 — 값이 없는 칸이 경고처럼 보임). 같은 상세의 다른 빈 칸(라벨)처럼 '—'는 보조 글 색, 거절 사유가 있을 때만 주의색입니다.
   it("QA-506: 검증 표 거절 사유 칸 — 통과 행의 빈 값 '—'은 보조 글 색(text-3), 거절 사유가 있는 행만 주의색", async () => {
     await openClaudeDecisions();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-26 정기" })).getByRole("button", { name: "상세 펼치기" }));
-    const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+    const detail = await openDetail();
     const validation = within(detail).getByRole("region", { name: "검증" });
     const reasonOf = (ticker: string) => {
       const row = within(validation).getAllByRole("row").slice(1)
@@ -255,9 +274,7 @@ describe("결정 로그 — Claude 책", () => {
       orders: [],
     });
     await openClaudeDecisions();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-26 정기" })).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+    const detail = await openDetail();
     expect(within(detail).getByText("오류 — orders[0].ticker: 패턴과 다릅니다")).toBeTruthy();
     expect(within(detail).getByText(/검사한 모델 응답이 없습니다/)).toBeTruthy();
     expect(within(detail).queryByRole("region", { name: "제안 주문 (모델 응답)" })).toBeNull();
@@ -284,11 +301,8 @@ describe("결정 로그 — Claude 책", () => {
       orders: [],
     });
     await openClaudeDecisions();
-    const row = await screen.findByRole("row", { name: "2026-10-26 정기" });
-    expect(within(row).getByText("건너뜀")).toBeTruthy();
-    fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+    expect(within(await line()).getByText("건너뜀")).toBeTruthy();
+    const detail = await openDetail();
     const judgement = within(detail).getByRole("region", { name: "판단" });
     expect(within(judgement).getByText(`Claude를 부르지 않음 — ${cap}`)).toBeTruthy();
     expect(within(detail).queryByText(/응답 형식 오류·모델 거절·API 오류/)).toBeNull();
@@ -312,12 +326,10 @@ describe("결정 로그 — Claude 책", () => {
       orders: [{ ...DETAIL.orders[0], status: "CANCELLED", rejectReason: pausedReason, expiresOn: null }, DETAIL.orders[1]],
     });
     await openClaudeDecisions();
-    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-26 정기" })).getByRole("button", { name: "상세 펼치기" }));
-
-    const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+    const detail = await openDetail();
     expect(within(within(detail).getByRole("region", { name: "판단" })).getByText("위험 회피 (RISK_OFF)")).toBeTruthy();
     const orders = within(detail).getByRole("region", { name: "주문" });
-    expect(rowsOf(orders).map((cells) => [cells[0], cells[3]])).toEqual([["XLV", `취소${pausedReason}`], ["NVDA", "거절WEIGHT_CAP"]]);
+    expect(rowsOf(orders).map((cells) => [cells[0], cells[3]])).toEqual([["XLV", `취소${pausedReason}`], ["NVDA", "주의: 거절WEIGHT_CAP"]]);
     expect(within(orders).getByText(/집행 전에 취소되면\(다음 결정이 대신함·일시정지\) 취소와 사유가 보입니다/)).toBeTruthy();
     const packet = within(detail).getByText("입력 패킷(JSON)").closest("details") as HTMLDetailsElement;
     expect(packet.open).toBe(false);
@@ -328,7 +340,7 @@ describe("결정 로그 — Claude 책", () => {
   it("다른 결정이 돌고 있어 서버가 거절하면 그 문구를 경고로 — 확인 단계는 닫히고 다시 누를 수 있다", async () => {
     api.apiPost.mockRejectedValue(new Error("다른 결정을 실행하고 있습니다 — 끝난 뒤 다시 누르세요."));
     await openClaudeDecisions();
-    await screen.findByRole("row", { name: "2026-10-26 정기" });
+    await line();
     fireEvent.click(screen.getByRole("button", { name: "지금 결정 실행" }));
     fireEvent.click(screen.getByRole("button", { name: "결정 실행 확인" }));
 
@@ -341,7 +353,7 @@ describe("결정 로그 — Claude 책", () => {
   it("지금 결정 실행은 비용 안내와 확인을 거쳐 POST /api/paper/run/decision {book:'claude'}", async () => {
     api.apiPost.mockResolvedValue({ ok: true, decision: decision(23, { kind: "MANUAL", status: "NO_TRADE", orderCount: 0, rejectedCount: 0, summary: "관망" }) });
     await openClaudeDecisions();
-    await screen.findByRole("row", { name: "2026-10-26 정기" });
+    await line();
 
     fireEvent.click(screen.getByRole("button", { name: "지금 결정 실행" }));
     expect(api.apiPost).not.toHaveBeenCalled();
@@ -600,7 +612,7 @@ describe("개요 — Claude 책 시작", () => {
     expect(within(result).getByText(/장부·결정·주문 기록은 바꾸지 않았습니다/)).toBeTruthy();
     expect(rowsOf(within(result).getByRole("region", { name: "검증" })).map((cells) => [cells[0], cells[3], cells[4]])).toEqual([
       ["XLV", "통과", "—"],
-      ["NVDA", "거절", "비중 상한 초과 (WEIGHT_CAP)"],
+      ["NVDA", "주의: 거절", "비중 상한 초과 (WEIGHT_CAP)"],
     ]);
     expect(within(within(result).getByRole("region", { name: "사용량" })).getByText("캐시 읽기 토큰").nextElementSibling?.textContent)
       .toBe("—");

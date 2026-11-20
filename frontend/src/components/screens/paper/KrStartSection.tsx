@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card } from "@/components/ui";
+import { Button, Callout, Panel } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -70,14 +70,14 @@ export function KrStartSection({
   };
 
   const initResult = init.result && (
-    <Banner tone={init.result.ok === false ? "warn" : "info"}>한국 초기화 — {krInitResultText(init.result)}</Banner>
+    <Callout tone={init.result.ok === false ? "warn" : "info"}>한국 초기화 — {krInitResultText(init.result)}</Callout>
   );
   const startView = start.result ? krStartResultView(start.result) : null;
   const startResult = startView && (
-    <Banner tone={startView.tone}>
+    <Callout tone={startView.tone}>
       <p>{startView.text}</p>
       {startView.detail.length > 0 && <p className="mt-1 text-xs">{startView.detail.join(" · ")}</p>}
-    </Banner>
+    </Callout>
   );
   const today = status?.available ? status.apiUsage?.today ?? null : null;
   const manualLimit = today?.manualLimit ?? null;
@@ -94,18 +94,18 @@ export function KrStartSection({
 
   if (state.kind === "dormant") {
     return (
-      <Card title="한국 출발" subtitle="쉬는 동안에는 초기화·출발 단추가 없습니다" source={PAPER_SOURCES.krLedger}>
+      <Panel title="한국 출발" subtitle="쉬는 동안에는 초기화·출발 단추가 없습니다" source={PAPER_SOURCES.krLedger}>
         <p className="text-sm leading-relaxed text-text-2">
           출발일이 정해지면 한국 초기화(네 계좌·kr.* 기본 설정)를 한 뒤, 출발일 밤 결정 창에서 네 계좌가 함께 출발합니다(다음 KR 거래일 시가
           체결 — 사후 체결 없음). 지금 쉬는 사유는 화면 위 경고에 있습니다.
         </p>
-      </Card>
+      </Panel>
     );
   }
 
   if (state.kind === "init") {
     return (
-      <Card title="한국 초기화" subtitle={`출발일 ${state.startDate}`} source={PAPER_SOURCES.krLedger}>
+      <Panel title="한국 초기화" subtitle={`출발일 ${state.startDate}`} source={PAPER_SOURCES.krLedger}>
         <p className="text-sm leading-relaxed text-text-2">
           초기화하면 한국 네 계좌(규칙 · Claude · KODEX 200 · 한국 60/40)를 계좌마다 {cash === null ? "배포 설정의 처음 현금" : formatMoney(cash, "KR")}
           의 &apos;시작 전&apos;(현금만)으로 만들고, 설정 행에 없는 kr.* 키를 기본값으로 채웁니다(판을 한 번 올림). 사후 체결은 없습니다 —
@@ -117,16 +117,16 @@ export function KrStartSection({
           </Button>
         </div>
         {/* 출발일 없음·달력 없음·거래일 아님·출발 기한 지남(400) — 서버 문구 그대로. */}
-        {init.error && <div className="mt-3"><Banner tone="warn">{init.error}</Banner></div>}
+        {init.error && <div className="mt-3"><Callout tone="warn">{init.error}</Callout></div>}
         {initResult && <div className="mt-3">{initResult}</div>}
-      </Card>
+      </Panel>
     );
   }
 
   const record = latestStartRecord(overview.jobs);
   const windowText = settings.data?.available ? krDecisionWindowText(settings.data.body) : `${EMPTY} ~ ${EMPTY} KST`;
   return (
-    <Card title="한국 출발 대기" subtitle={`출발일 ${state.startDate} · 결정 창 ${windowText}`} source={PAPER_SOURCES.krDecisions}>
+    <Panel title="한국 출발 대기" subtitle={`출발일 ${state.startDate} · 결정 창 ${windowText}`} source={PAPER_SOURCES.krDecisions}>
       <p className="text-sm leading-relaxed text-text-2">
         네 계좌가 모두 &apos;시작 전&apos;입니다. 출발일 밤 결정 창에서 정기 결정 작업이 자료 게이트를 기다려 네 계좌를 한 번에 출발시키고(다음 KR
         거래일 시가 체결), 아래 단추는 같은 창·같은 게이트·같은 네 계좌 몫으로 그것을 앞당깁니다. 창 밖·게이트 미달·이미 미룬 세션이면 서버가
@@ -156,9 +156,9 @@ export function KrStartSection({
         onConfirm={() => void runStart()}
       />
       {/* 창 밖·게이트 미달·이미 미룬 세션(400) — 서버 문구 그대로. */}
-      {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
+      {start.error && <div className="mt-3"><Callout tone="warn">{start.error}</Callout></div>}
       {startResult && <div className="mt-3">{startResult}</div>}
       {initResult && <div className="mt-3">{initResult}</div>}
-    </Card>
+    </Panel>
   );
 }

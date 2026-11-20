@@ -92,7 +92,7 @@ describe("정규장", () => {
     // 그 계좌의 평균 단가(사용자 요청 2026-11-03) — 보유 표와 같은 칸 이름
     expect(within(positions).getByRole("columnheader", { name: "평단(달러)" })).toBeTruthy();
     expect(within(positions).getByText("400.0000")).toBeTruthy();
-    expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
+    expect(screen.getByText(/보유 종목 — 계좌 표의 계좌 이름이나 머리의 계좌 고르기로 바뀝니다/)).toBeTruthy();
     expect(screen.getByText("정규장 동안 종목 가격은 1시간마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 1시간마다 다시 읽습니다(이 화면을 보는 동안만)."))
       .toBeTruthy();
     // 주기 1시간 — 그 사이 매시 장부 관측이 돌아 지금 값이 대개 장부 단계라는 안내(미국)

@@ -1,12 +1,14 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { useSideBySide } from "@/hooks/useSideBySide";
 import { useWideShell } from "@/hooks/useWideShell";
 import { listKeyAction, SHELL_LIST_ATTR } from "@/lib/shortcuts";
+
+import { InspectorHeadingScope } from "./InspectorFrame";
 
 const DEFAULT_HINT = "줄을 고르면 이 칸에 자세한 값이 나옵니다(j/k·↑↓로 옮김).";
 
@@ -18,8 +20,27 @@ const ROW = `relative flex min-h-11 w-full min-w-0 items-center gap-2 px-3 py-2 
 const ROW_LINED = "border-b border-border-subtle lg:pt-1.5 lg:pb-[5px]";
 const ROW_LAST = "lg:py-1.5";
 
-/** 검사 칸이 목록 옆에 놓이는 칸 폭(rem) — 아래 크기 질의 `@lg`(32rem)와 같은 값입니다. 바꾸면 둘을 함께 고칩니다. */
-const SIDE_MIN_REM = 32;
+/**
+ * 검사 칸 배치(`inspectorWidth`) — 옆 칸이 되는 틀 폭(rem)과 크기 질의 클래스. 기준 폭은 크기 질의와 같은 값이어야 합니다(useSideBySide가 같은 폭으로 동작을
+ * 바꿈 — 바꾸면 둘을 함께 고칩니다). Tailwind가 클래스를 글로 찾으므로 통째로 적어 둡니다.
+ * - narrow(기본): 틀 32rem(`@lg`)부터 목록 오른쪽에 15rem 검사 칸.
+ * - wide(작업대 P6 — 결정 로그·제안처럼 검사 내용이 긴 목록): 틀 48rem부터 왼쪽 목록(16~22rem) + 오른쪽 넓은 검사 칸(나머지 폭).
+ * 검사 칸은 옆에 놓이면 스크롤 영역 위쪽에 붙되, 긴 화면 목차의 가로 줄이 보이면 그 줄 아래 16px에 붙습니다(--section-strip-h — QA-657, InspectorFrame과 같음).
+ */
+const LAYOUT = {
+  narrow: { minRem: 32, grid: "@lg:grid-cols-[minmax(0,1fr)_15rem]", panel: "@lg:sticky @lg:top-[calc(var(--section-strip-h,0px)+1rem)]" },
+  wide: {
+    minRem: 48,
+    grid: "@min-[48rem]:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]",
+    panel: "@min-[48rem]:sticky @min-[48rem]:top-[calc(var(--section-strip-h,0px)+1rem)]",
+  },
+} as const;
+
+/** 날짜 묶음(`groupOf`) 하나 — 이어진 같은 key의 줄. key가 null이면 묶음 없이 목록에 바로 둡니다. */
+export type MasterDetailGroup = { key: string; label: string; dateTime?: string };
+
+/** 묶음 머리 — 누르지 않는 12px 보조 글(줄 글과 같은 왼쪽 여백), 날짜면 tabular-nums. 첫 묶음은 위 여백을 줄입니다. */
+const GROUP_HEADING = "px-3 pb-1 text-xs font-semibold tabular-nums text-text-2";
 
 /**
  * 목록-검사(작업대 실행 명세 §6 SplitPane/MasterDetail — 상세 화면의 보유 탭 등, P4): 왼쪽 목록에서 줄을 고르면 그 줄의 자세한 값을 검사 칸에.
@@ -47,6 +68,19 @@ const SIDE_MIN_REM = 32;
  * - `autoSelectFirst`의 첫 줄은 보이는 고름일 뿐 `onSelectedKeyChange`를 부르지 않습니다(사용자가 고르거나 닫으면 그때부터 부름). Esc로 닫은 뒤에는 다시 저절로
  *   고르지 않습니다.
  * - 줄이 없으면 `emptyText`, 불러오는 중·오류면 `placeholder`(목록 대신). `count`는 목록 위 개수 줄('12건' — 함수면 그 글).
+ *
+ * 작업대 P6이 더한 선택 prop(모두 기본값이면 위 동작 그대로):
+ * - `inspectorWidth="wide"`: 틀 48rem부터 왼쪽 목록(16~22rem) + 오른쪽 넓은 검사 칸, 그 아래 폭은 대화상자(같은 넓은 폭·위쪽 고정)입니다.
+ * - `groupOf`: 줄마다 묶음(날짜 등)을 돌려주면 이어진 같은 key의 줄을 한 묶음으로 — 목록 안에 `<li><hN id>머리</hN><ul aria-labelledby>줄…</ul></li>`
+ *   (머리 단계 `groupHeadingLevel` 기본 4, `dateTime`이면 머리 글을 `<time>`으로). null을 돌려준 줄은 묶음 없이 목록에 바로 둡니다. 차례는 부르는 쪽 그대로이고,
+ *   j/k·↑↓·Home·End·roving tabindex는 묶음을 건너 이어집니다(목록 표지 data-shell-list는 바깥 목록 하나).
+ * - `dialogFocus="title"`: 대화상자를 열면 첫 포커스를 제목에(ui/Dialog initialFocus) — 긴 검사 내용을 제목부터 읽게.
+ * - `revealSelectedInDialog`: 대화상자 배치에서 부르는 쪽이 `selectedKey`를 (사용자 누름이 아닌 길로) 바꾸면 그 줄의 대화상자를 엽니다 — 다른 화면에서 넘어온
+ *   고름(모의매매 주간 복기 → 프레임 제안)이 좁은 화면에서도 보이게. 같은 키로는 한 번만 열고(닫은 뒤 다시 열지 않음), 그 키의 줄이 아직 없으면 줄이 생길 때 엽니다.
+ *   옆 검사 칸 배치에서는 고른 줄이 검사 칸에 보이므로 열지 않습니다.
+ * - `dialogDismissible={false}`(작업대 P6 검토 — QA-766): 대화상자를 Esc·바깥 누르기·닫기 단추로 닫지 못하게 합니다(ui/Dialog `dismissible`). 검사 칸 안에서
+ *   서버에 쓰는 동안(모의 프레임 제안 승인·거절) 부르는 쪽이 `!busy`로 넘겨, 결과·오류가 나온 뒤에 닫게 합니다(공용 확인 창의 '확인은 결과가 나온 뒤 닫는다'와 같음).
+ *   옆 검사 칸 배치로 바뀌어 대화상자가 닫히는 것(사용자가 닫는 것이 아님)은 그대로입니다.
  */
 export function MasterDetail<T>({
   label,
@@ -63,6 +97,12 @@ export function MasterDetail<T>({
   placeholder,
   inspectorHint = DEFAULT_HINT,
   headingLevel = 3,
+  inspectorWidth = "narrow",
+  groupOf,
+  groupHeadingLevel = 4,
+  dialogFocus = "content",
+  revealSelectedInDialog = false,
+  dialogDismissible = true,
 }: {
   /** 목록 이름(ul aria-label) — 예 '상위 보유 종목'. */
   label: string;
@@ -85,11 +125,25 @@ export function MasterDetail<T>({
   inspectorHint?: string;
   /** 넓은 화면 검사 칸 제목의 단계 — 기본 3(패널 h2 안의 목록). 목록이 화면 제목(h1) 바로 아래에 놓이면 2, 패널 안 작은 제목(h3) 아래면 4. */
   headingLevel?: 2 | 3 | 4;
+  /** 검사 칸 배치 — narrow(기본 — 32rem부터 옆 15rem) 또는 wide(48rem부터 왼쪽 목록 + 오른쪽 넓은 검사 칸). */
+  inspectorWidth?: "narrow" | "wide";
+  /** 줄의 묶음(날짜 등) — 이어진 같은 key를 한 묶음으로. null이면 묶음 없이. */
+  groupOf?: (item: T) => MasterDetailGroup | null;
+  /** 묶음 머리의 단계 — 기본 4. */
+  groupHeadingLevel?: 3 | 4;
+  /** 대화상자를 열 때 첫 포커스 — 내용(기본) 또는 제목. */
+  dialogFocus?: "content" | "title";
+  /** 대화상자 배치에서 부르는 쪽이 selectedKey를 바꾸면 그 줄의 대화상자를 엽니다. */
+  revealSelectedInDialog?: boolean;
+  /** 대화상자를 사용자가 닫을 수 있는가(기본 참) — 검사 칸 안에서 서버에 쓰는 동안 거짓으로. */
+  dialogDismissible?: boolean;
 }): JSX.Element {
   const wide = useWideShell();
   const Heading = headingLevel === 2 ? "h2" : headingLevel === 4 ? "h4" : "h3";
+  const GroupHeading = groupHeadingLevel === 3 ? "h3" : "h4";
+  const layout = LAYOUT[inspectorWidth];
   const frameRef = useRef<HTMLDivElement>(null);
-  const side = useSideBySide(frameRef, wide, SIDE_MIN_REM);
+  const side = useSideBySide(frameRef, wide, layout.minRem);
   // 검사 칸을 목록 옆에 두는가 — 넓은 화면이고 틀 폭이 32rem 이상(재지 못했으면 크기 질의 배치에 맡김). 아니면 좁은 화면처럼 대화상자로 엽니다.
   const inline = wide && side !== false;
   const baseId = useId();
@@ -117,6 +171,22 @@ export function MasterDetail<T>({
     if (selectedKey === undefined) setOwnSelected(key);
     onSelectedKeyChange?.(key);
   };
+
+  // 부르는 쪽이 바꾼 고름을 대화상자로 보이기(revealSelectedInDialog) — 마지막으로 본 키(같은 키로는 한 번만). 옆 칸 배치에서도 적어 두어, 그 키를 옆 칸에서
+  // 본 뒤 좁아질 때 대화상자가 저절로 열리지 않게 합니다. 키의 줄이 아직 없으면(자료를 읽는 중) 적지 않고 줄이 생길 때 엽니다.
+  const revealed = useRef<string | null>(null);
+  const keyList = keys.join("\n");
+  useEffect(() => {
+    if (!revealSelectedInDialog) return;
+    const key = selectedKey ?? null;
+    if (key === null) {
+      revealed.current = null;
+      return;
+    }
+    if (revealed.current === key || !keyList.split("\n").includes(key)) return;
+    revealed.current = key;
+    if (!inline) setDialogKey(key);
+  }, [revealSelectedInDialog, selectedKey, keyList, inline]);
 
   // 직전 그리기의 배치(옆 검사 칸인가) — 첫 그리기는 null(바뀐 것으로 치지 않음). effect 안에서만 읽고 씁니다.
   const wasInline = useRef<boolean | null>(null);
@@ -200,35 +270,52 @@ export function MasterDetail<T>({
     // 안내 글은 낱말 사이에서 꺾습니다(공용 글 부품의 break-keep 규약 — 공백 없는 긴 글은 비상으로 꺾음, QA-661).
     list = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
   } else {
+    const row = (item: T, index: number) => {
+      const key = keys[index];
+      const isCurrent = key === current;
+      return (
+        <li key={key} className="min-w-0">
+          <button
+            type="button"
+            ref={(element) => {
+              if (element) buttons.current.set(key, element);
+              else buttons.current.delete(key);
+            }}
+            data-item-key={key}
+            tabIndex={key === tabStop ? 0 : -1}
+            aria-current={inline && isCurrent ? "true" : undefined}
+            aria-controls={inline ? inspectorId : undefined}
+            aria-haspopup={inline ? undefined : "dialog"}
+            aria-expanded={inline ? undefined : dialogKey === key}
+            onClick={(event) => onRowClick(key, event)}
+            onFocus={() => setFocusKey(key)}
+            className={`${ROW} ${index === items.length - 1 ? ROW_LAST : ROW_LINED} ${isCurrent ? "bg-surface-2" : ""}`.trim()}
+          >
+            {isCurrent ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
+            <span className="min-w-0 flex-1">{renderItem(item)}</span>
+          </button>
+        </li>
+      );
+    };
     list = (
       <ul aria-label={label} {...{ [SHELL_LIST_ATTR]: "" }} onKeyDown={onListKeyDown} className="flex min-w-0 flex-col">
-        {items.map((item, index) => {
-          const key = keys[index];
-          const isCurrent = key === current;
-          return (
-            <li key={key} className="min-w-0">
-              <button
-                type="button"
-                ref={(element) => {
-                  if (element) buttons.current.set(key, element);
-                  else buttons.current.delete(key);
-                }}
-                data-item-key={key}
-                tabIndex={key === tabStop ? 0 : -1}
-                aria-current={inline && isCurrent ? "true" : undefined}
-                aria-controls={inline ? inspectorId : undefined}
-                aria-haspopup={inline ? undefined : "dialog"}
-                aria-expanded={inline ? undefined : dialogKey === key}
-                onClick={(event) => onRowClick(key, event)}
-                onFocus={() => setFocusKey(key)}
-                className={`${ROW} ${index === items.length - 1 ? ROW_LAST : ROW_LINED} ${isCurrent ? "bg-surface-2" : ""}`.trim()}
-              >
-                {isCurrent ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-                <span className="min-w-0 flex-1">{renderItem(item)}</span>
-              </button>
-            </li>
-          );
-        })}
+        {groupOf
+          ? groupRuns(items, groupOf).flatMap((run, runIndex) => {
+              // 묶음 없는 줄(null)은 바깥 목록에 바로, 묶음은 머리(id) + 그 머리를 이름으로 하는 목록 — 한 겹 배열로 펼쳐 줄마다 key가 있게.
+              if (run.group === null) return run.indexes.map((index) => row(items[index], index));
+              const headingId = `${baseId}-group-${run.indexes[0]}`;
+              return [
+                <li key={`group-${run.indexes[0]}`} className="min-w-0">
+                  <GroupHeading id={headingId} className={`${GROUP_HEADING} ${runIndex === 0 ? "pt-1" : "pt-3"}`}>
+                    {run.group.dateTime ? <time dateTime={run.group.dateTime}>{run.group.label}</time> : run.group.label}
+                  </GroupHeading>
+                  <ul aria-labelledby={headingId} className="flex min-w-0 flex-col">
+                    {run.indexes.map((index) => row(items[index], index))}
+                  </ul>
+                </li>,
+              ];
+            })
+          : items.map((item, index) => row(item, index))}
       </ul>
     );
   }
@@ -238,7 +325,7 @@ export function MasterDetail<T>({
       {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
       {/* 두 칸 격자는 검사 칸이 서거나(줄이 있음) 자리표시가 그 자리를 잡을 때만 — 줄이 없으면 검사 칸이 없어 안내 글이 왼쪽 칸에 갇히고 오른쪽 15rem이
           비었습니다(QA-661). 읽는 중·오류 자리표시는 값이 온 뒤의 목록 폭과 같게 두 칸 그대로(QA-651). */}
-      <div className={`grid min-w-0 gap-3 ${inline && (hasPlaceholder || items.length > 0) ? "@lg:grid-cols-[minmax(0,1fr)_15rem]" : ""}`.trim()}>
+      <div className={`grid min-w-0 gap-3 ${inline && (hasPlaceholder || items.length > 0) ? layout.grid : ""}`.trim()}>
         {list}
         {inline && !hasPlaceholder && items.length > 0 ? (
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 목록 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
@@ -246,12 +333,14 @@ export function MasterDetail<T>({
           <section
             id={inspectorId}
             aria-label={`${label} — ${currentItem !== null && currentItem !== undefined ? itemLabel(currentItem) : "고른 줄 없음"}`}
-            className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-[calc(var(--section-strip-h,0px)+1rem)]"
+            className={`min-w-0 self-start rounded-control border border-border p-3 ${layout.panel}`}
           >
             {currentItem !== null && currentItem !== undefined ? (
               <>
                 <Heading className="break-keep wrap-anywhere text-heading-sm text-text">{itemLabel(currentItem)}</Heading>
-                <div className="mt-2 min-w-0">{renderDetail(currentItem)}</div>
+                <div className="mt-2 min-w-0">
+                  <InspectorHeadingScope level={headingLevel}>{renderDetail(currentItem)}</InspectorHeadingScope>
+                </div>
               </>
             ) : (
               <p className="text-sm text-text-2">{inspectorHint}</p>
@@ -268,9 +357,27 @@ export function MasterDetail<T>({
         title={dialogItem !== null && dialogItem !== undefined ? itemLabel(dialogItem) : label}
         size="lg"
         placement="top"
+        initialFocus={dialogFocus}
+        dismissible={dialogDismissible}
       >
-        {dialogItem !== null && dialogItem !== undefined ? <div className="mt-3 min-w-0">{renderDetail(dialogItem)}</div> : null}
+        {dialogItem !== null && dialogItem !== undefined ? (
+          <div className="mt-3 min-w-0">
+            <InspectorHeadingScope level={2}>{renderDetail(dialogItem)}</InspectorHeadingScope>
+          </div>
+        ) : null}
       </Dialog>
     </div>
   );
+}
+
+/** 이어진 같은 묶음 key의 줄 차례(줄 번호) — 묶음이 null인 줄은 그 줄 하나가 묶음 없는 차례입니다. */
+function groupRuns<T>(items: readonly T[], groupOf: (item: T) => MasterDetailGroup | null): { group: MasterDetailGroup | null; indexes: number[] }[] {
+  const runs: { group: MasterDetailGroup | null; indexes: number[] }[] = [];
+  items.forEach((item, index) => {
+    const group = groupOf(item);
+    const last = runs[runs.length - 1];
+    if (group !== null && last !== undefined && last.group !== null && last.group.key === group.key) last.indexes.push(index);
+    else runs.push({ group, indexes: [index] });
+  });
+  return runs;
 }

@@ -1265,6 +1265,30 @@ export function krReviewComparison(input: unknown, labels?: ReadonlyMap<string, 
 /** 종목 선정 탭이 읽는 결정 기록 수(최근 순) — 재선정은 한 달에 한두 번이라 50건이면 가장 최근 선정이 들어 있습니다. */
 export const KR_SELECTION_LIMIT = 50;
 
+/** 유니버스 구성원 표 거르기의 칸 — 전체 · 후보 · 매수 목표 · 제외(후보가 아님 — 사유 칸이 까닭). */
+export type KrMemberFilter = "all" | "candidate" | "target" | "excluded";
+
+/**
+ * 구성원 표 거르기 칸(작업대 P6 검토 — 명세 §7-1 '종목 선정: 조밀 표와 필터', 미국 후보 거르기와 같은 꼴) — 이름 뒤 개수는 결정 때 읽은 구성원 기준. 후보를 모르는
+ * 구성원(candidate null — 옛 기록)은 '전체'에만 듭니다. 받은 구성원만 거릅니다(새 요청 없음).
+ */
+export function krMemberFilterOptions(rows: readonly Pick<KrMemberRow, "candidate" | "target">[]): { key: KrMemberFilter; label: string; count: number }[] {
+  return [
+    { key: "all", label: "전체", count: rows.length },
+    { key: "candidate", label: "후보", count: rows.filter((row) => row.candidate === true).length },
+    { key: "target", label: "매수 목표", count: rows.filter((row) => row.target).length },
+    { key: "excluded", label: "제외", count: rows.filter((row) => row.candidate === false).length },
+  ];
+}
+
+/** 고른 칸의 구성원만(U 순위 차례 그대로). */
+export function filterKrMembers<T extends Pick<KrMemberRow, "candidate" | "target">>(rows: readonly T[], filter: KrMemberFilter): T[] {
+  if (filter === "candidate") return rows.filter((row) => row.candidate === true);
+  if (filter === "target") return rows.filter((row) => row.target);
+  if (filter === "excluded") return rows.filter((row) => row.candidate === false);
+  return [...rows];
+}
+
 /** '자료 없음' 사유 이름(백엔드 KrRules.Reason.NO_DATA의 이름표). */
 const NO_DATA_REASON = "자료 없음";
 /** 부채비율로 빠진 표 밖 회사에 '유동자산' 계정이 없을 때 사유에 붙는 경고(백엔드 KrRules.FINANCIAL_TABLE_CHECK). */

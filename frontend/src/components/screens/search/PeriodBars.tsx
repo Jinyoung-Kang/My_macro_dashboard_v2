@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { NativeSelect } from "@/components/ui";
+import { buttonClasses } from "@/components/ui/classes";
 import {
   PERIOD_BARS_NOTE,
   periodAriaLabel,
@@ -10,7 +11,6 @@ import {
   type PeriodBarsView,
   type PeriodBin,
 } from "@/lib/infoSearch";
-import { BUTTON } from "./parts";
 
 /**
  * 결과 위의 기간 막대(계약 §9-1) — 고른 기간의 건수를 7일·30일은 하루씩, 1년·2년은 주(월요일 시작, KST)마다 세로 막대로 둡니다. 새 의존성 없이
@@ -19,7 +19,8 @@ import { BUTTON } from "./parts";
  * 넓은 화면(lg)의 막대 줄은 도구 막대 하나(Tab 자리 하나 — ←→·Home·End로 옮김, Enter·Space·누르기로 그 날·주로 좁히고 다시 누르면 풂)이고,
  * 막대마다 낭독 이름(날짜·건수)과 눌림 상태(aria-pressed)가 있습니다. 0건 막대는 누를 수 없다고 알리고(aria-disabled) 옮겨 갈 수는 있습니다.
  * 좁은 화면(lg 미만)에서는 막대 하나의 폭이 손가락보다 훨씬 좁으므로(390px에서 30일 약 11px) 같은 막대를 그림으로만 그리고(낭독 제외), 날·주는
- * 44px 고르기 상자(건수가 있는 칸만, 최근부터)로 고릅니다(ADR 0041 결정 11 — lg 미만 누름 자리 44px).
+ * 44px 고르기 상자(건수가 있는 칸만, 최근부터)로 고릅니다(ADR 0041 결정 11 — lg 미만 누름 자리 44px). 같은 고르기 상자를 넓은 화면에도 둡니다 —
+ * 넓은 화면의 막대 하나는 4~18.7px 폭이라 WCAG 2.5.8(24px)에 못 미치므로 같은 일을 하는 24px 이상의 조작이 있어야 하고, 막대는 지름길입니다(QA-859).
  * 화면 읽기 프로그램용 표(숨김)에 같은 건수를 둡니다. 막대 색은 데이터라 중립(text-3), 좁힌 막대는 잉크(text)와 '좁힌 기간' 글 — 색만으로
  * 가르지 않습니다(명세 A1·A5). 고대비 모드에서는 바탕색이 지워지므로 테두리로 막대를 남깁니다.
  */
@@ -139,14 +140,15 @@ export function PeriodBars({
         <span>가장 큰 칸 {max}건</span>
         <span>{periodTickLabel(last, unit)}</span>
       </div>
-      <div className="flex flex-col gap-1 lg:hidden">
+      {/* 날·주 고르기 — 좁은 화면은 막대 대신(44px 줄), 넓은 화면은 막대와 같은 일을 하는 대체 조작(이름표 옆 작은 상자 — QA-859). */}
+      <div className="flex flex-col gap-1 lg:flex-row lg:items-center lg:gap-2">
         <label htmlFor={selectId} className="text-xs text-text-2">
           {unit === "day" ? "날" : "주"}로 좁히기
         </label>
         <NativeSelect
           id={selectId}
           inputSize="sm"
-          wrapperClassName="block w-full"
+          wrapperClassName="block w-full lg:w-auto"
           value={active?.start ?? ""}
           onChange={(event) => pick(event.target.value)}
         >
@@ -162,7 +164,7 @@ export function PeriodBars({
         {/* 좁힘·풂을 같은 상태 영역에서 알립니다. */}
         <p role="status">{active ? `좁힌 기간: ${periodLabel(active, unit)} · ${active.count}건` : ""}</p>
         {active ? (
-          <button type="button" className={BUTTON} onClick={clear}>
+          <button type="button" className={buttonClasses("default")} onClick={clear}>
             좁히기 풀기
           </button>
         ) : null}

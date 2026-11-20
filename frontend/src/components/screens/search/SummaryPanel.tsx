@@ -1,6 +1,8 @@
 "use client";
 
 import type { Ref } from "react";
+import { Tag } from "@/components/ui";
+import { buttonClasses, LINK_CLASSES } from "@/components/ui/classes";
 import { ClockIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import type { SummaryPhase } from "@/hooks/useInfoSearchSummary";
 import {
@@ -14,7 +16,6 @@ import {
   summaryRefs,
 } from "@/lib/infoSearch";
 import type { SearchFeedItem, SearchSummaryResponse } from "@/lib/types";
-import { BUTTON, LINK, Tag } from "./parts";
 
 /*
  * AI 요약(단계 6 묶음 3 — 계약 §9-6, 운영자 전용)의 단추와 패널. 요약은 서버가 받아 둔 줄의 제목·매체·날짜·출처 요약만 보고 만든 것이라
@@ -44,7 +45,7 @@ export function SummaryButton({
     <button
       ref={ref}
       type="button"
-      className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${className}`}
+      className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 ${className}`}
       aria-disabled={locked || undefined}
       onClick={() => {
         if (!locked) onClick();
@@ -154,7 +155,7 @@ export function SummaryPanel({
                             return (
                               <li key={ref.id} className="flex min-w-0 max-w-full lg:max-w-[22rem]">
                                 {ref.reachable ? (
-                                  <button type="button" className={`${LINK} min-w-0 max-w-full text-left text-xs`} onClick={() => onRef(ref.id)}>
+                                  <button type="button" className={`${LINK_CLASSES} min-w-0 max-w-full text-left text-xs`} onClick={() => onRef(ref.id)}>
                                     <span className="min-w-0 truncate">{title}</span>
                                     <span className="sr-only"> — 목록에서 이 줄 고르기</span>
                                   </button>

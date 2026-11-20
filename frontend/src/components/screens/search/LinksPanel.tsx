@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { buttonClasses, pillTabClasses } from "@/components/ui/classes";
 import { ChevronRightIcon, SpinnerIcon, StatusText } from "@/components/ui/icons";
 import { entityKindLabel, linkSourceLabel, linkTarget, type LinksView, type SearchTarget } from "@/lib/infoSearch";
 import { LinksGraph } from "./LinksGraph";
-import { BUTTON, KindIcon, PaneHeading, segmentClass } from "./parts";
+import { KindIcon, PaneHeading } from "./parts";
 
 /**
  * 연결 탭 — 대상 풀기 응답의 links(Wikidata 관계·13F 운용자·기관)와 연결 보강(GET /api/search/links — 미국 상장사의 내부자 명단, LEI가 있는 법인의
@@ -56,7 +57,7 @@ export function LinksPanel({
               type="button"
               aria-pressed={mode === key}
               onClick={() => setMode(key)}
-              className={`${segmentClass(mode === key)} forced-colors:border`}
+              className={`${pillTabClasses(mode === key)} forced-colors:border`}
             >
               {label}
             </button>
@@ -78,7 +79,7 @@ export function LinksPanel({
             )}
           </p>
           {view.extra.state === "error" ? (
-            <button type="button" className={BUTTON} onClick={onRetry}>
+            <button type="button" className={buttonClasses("default")} onClick={onRetry}>
               다시 받기
             </button>
           ) : null}

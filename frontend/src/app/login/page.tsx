@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { AuthMessage } from "@/components/auth/AuthCard";
 import { AUTH_CARD, AUTH_LINK, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui";
 import { isDemo, isLocalOwner } from "@/lib/access";
@@ -99,11 +100,7 @@ export default function LoginPage() {
           />
         </label>
 
-        {error && (
-          <p className="mt-4 rounded-control border border-danger/30 bg-danger-tint px-3 py-2.5 text-[13px] text-danger">
-            {error}
-          </p>
-        )}
+        {error && <AuthMessage tone="error">{error}</AuthMessage>}
 
         <button
           type="submit"

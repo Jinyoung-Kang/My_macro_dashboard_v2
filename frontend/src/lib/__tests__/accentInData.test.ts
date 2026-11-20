@@ -53,6 +53,8 @@ const DATA_FILES = [
   "components/patterns/InspectorFrame.tsx",
   // 시각순 목록(시각 열·종류 태그·요약·배지 — 목록-검사 위, P5a 국면 판정 기록·P6 결정 로그).
   "components/patterns/Timeline.tsx",
+  // 로그·원문 글 상자(받은 글 그대로·'—'와 사유·빈 글 안내 — P7 저장소 상태 로그·AI 리포트 원문·AI 입력·토스 조회 JSON).
+  "components/patterns/LogPanel.tsx",
   // 칸 틀(SplitPane, P4)은 넣지 않습니다 — 색 클래스 없이 칸 자리만 정하는 틀이고, 칸 안의 데이터는 위 패턴들이 그립니다.
   // 긴 화면 목차(SectionIndex, P5a)도 넣지 않습니다 — 같은 화면 절로 가는 내비(누를 수 있는 것)라 지금 칸 막대·가로 줄 밑줄이 강조 파랑이고(셸의 현재 메뉴와
   // 같은 규칙 — 원칙 A1), 데이터 칸이 없습니다(개수는 보조 글색).

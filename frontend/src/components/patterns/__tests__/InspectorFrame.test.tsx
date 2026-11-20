@@ -4,6 +4,7 @@
  * 불러오는 중·오류(renderDetail이 Skeleton·ErrorState를 돌려주면 그대로 — 자리표시는 부르는 쪽이 그림).
  * 넓은 화면은 matchMedia 대역(lib/shellCommands WIDE_SHELL_MEDIA)으로, 틀 폭은 getBoundingClientRect·ResizeObserver 대역으로 흉내 냅니다(MasterDetail.test와 같음).
  * jsdom은 크기 질의를 계산하지 않아 옆 칸 자리(@lg·@min-[52rem])는 클래스로 봅니다. 누름 자리(lg 미만 44px), 강조색 없음.
+ * P7 선택 dialogDescriptionOf: 주지 않으면 대화상자 DOM 그대로(설명 줄·aria-describedby 없음), 주면 대화상자에만 설명 줄.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +14,7 @@ import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 import { DataTable } from "../DataTable";
-import { InspectorFrame, InspectorTrigger, type InspectorLayout } from "../InspectorFrame";
+import { InspectorFrame, InspectorSubheading, InspectorTrigger, type InspectorLayout, type SubheadingTag } from "../InspectorFrame";
 import { PropertyList } from "../PropertyList";
 import { Skeleton } from "../Skeleton";
 
@@ -534,3 +535,148 @@ describe("QA-657 옆 검사 칸은 목차 가로 줄 아래 16px에 붙는다", 
     expect(lgTokens).not.toContain("@min-[52rem]:top-4");
   });
 });
+
+// 작업대 P6 선택 — 배치 wide(틀 64rem부터 옆 28rem)·문맥 inline(지금 옆 칸 배치인가)·dialogFocus(대화상자 첫 포커스). 기본값이면 위 사례 그대로입니다.
+describe("InspectorFrame — 넓은 배치(wide)·배치 문맥(inline)·제목 첫 포커스(P6)", () => {
+  it("wide는 틀 폭 64rem부터 옆 28rem(크기 질의 클래스·sticky는 목차 줄 아래 16px) — 그 아래(1000px)는 대화상자", () => {
+    stubWide();
+    const frame = stubFrameWidth(1100);
+    renderFrame({ layout: "wide" });
+    const region = inspectorRegion() as HTMLElement;
+    expect(tokens(region.parentElement as HTMLElement)).toContain("@min-[64rem]:grid-cols-[minmax(0,1fr)_28rem]");
+    expect(tokens(region)).toEqual(expect.arrayContaining(["@min-[64rem]:sticky", "@min-[64rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    frame.resize(1000);
+    expect(inspectorRegion()).toBeNull();
+    expect(trigger("VIX").getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(trigger("VIX"));
+    expect(screen.getByRole("dialog", { name: "VIX" })).toBeTruthy();
+  });
+
+  it("문맥의 inline은 지금 옆 칸 배치인가 — 넓은 틀 참, 좁은 틀·좁은 화면·dialog 배치 거짓", () => {
+    const seen: boolean[] = [];
+    const renderSeen = (layout: InspectorLayout) =>
+      render(
+        <InspectorFrame label="지표 미리보기" layout={layout} titleOf={() => "제목"} renderDetail={() => null}>
+          {(inspector) => {
+            seen.push(inspector.inline);
+            return <span>표</span>;
+          }}
+        </InspectorFrame>,
+      );
+    // 좁은 화면
+    renderSeen("lg");
+    expect(seen.at(-1)).toBe(false);
+    cleanup();
+    stubWide();
+    const frame = stubFrameWidth(900);
+    renderSeen("lg");
+    expect(seen.at(-1)).toBe(true);
+    frame.resize(800);
+    expect(seen.at(-1)).toBe(false);
+    cleanup();
+    renderSeen("dialog");
+    expect(seen.at(-1)).toBe(false);
+  });
+
+  it("dialogFocus='title'이면 대화상자를 열 때 제목에 포커스 — 기본은 내용의 첫 조작(닫기 단추 포함 Radix 그대로)", async () => {
+    renderFrame({ dialogFocus: "title" });
+    fireEvent.click(trigger("VIX"));
+    const heading = await screen.findByRole("heading", { name: "VIX" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    cleanup();
+    renderFrame();
+    fireEvent.click(trigger("VIX"));
+    const dialog = await screen.findByRole("dialog", { name: "VIX" });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.tagName).not.toBe("H2");
+  });
+});
+
+describe("InspectorFrame — 대화상자 설명 줄(dialogDescriptionOf, P7)", () => {
+  /** 대화상자 상자의 자식 차례 — 태그와 클래스(제목·설명·내용·닫기 단추). */
+  const layoutOf = (dialog: HTMLElement) => [...dialog.children].map((child) => `${child.tagName}.${child.getAttribute("class") ?? ""}`);
+
+  it("주지 않으면 대화상자 DOM 그대로 — 제목 다음 바로 내용, 설명 줄과 aria-describedby 없음", () => {
+    renderFrame();
+    fireEvent.click(trigger("VIX"));
+    const dialog = screen.getByRole("dialog", { name: "VIX" });
+    expect(dialog.hasAttribute("aria-describedby")).toBe(false);
+    const children = layoutOf(dialog);
+    expect(children.map((child) => child.split(".")[0])).toEqual(["H2", "DIV", "BUTTON"]);
+    expect(children[1]).toBe("DIV.mt-3 min-w-0");
+    expect(within(dialog).getByText("15.30")).toBeTruthy();
+  });
+
+  it("주면 대화상자 제목 아래 설명 줄(그 키의 글) — aria-describedby로 이어지고, 내용은 그 아래", () => {
+    const describeKey = vi.fn((key: string) => `합성 출처 · ${key} 2026-11-15 09:00 KST`);
+    renderFrame({ dialogDescriptionOf: describeKey });
+    expect(describeKey).not.toHaveBeenCalled();
+    fireEvent.click(trigger("VIX"));
+    const dialog = screen.getByRole("dialog", { name: "VIX" });
+    expect(describeKey).toHaveBeenCalledWith("vix");
+    const describedBy = dialog.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const description = document.getElementById(describedBy as string) as HTMLElement;
+    expect(description.textContent).toBe("합성 출처 · vix 2026-11-15 09:00 KST");
+    expect(dialog.contains(description)).toBe(true);
+    expect(layoutOf(dialog).map((child) => child.split(".")[0])).toEqual(["H2", "DIV", "DIV", "BUTTON"]);
+    expect(dialog.children[1]).toBe(description);
+    expect(within(dialog.children[2] as HTMLElement).getByText("15.30")).toBeTruthy();
+  });
+
+  it("옆 검사 칸 배치에는 그리지 않는다 — 함수를 부르지 않고 설명 글도 없음, 좁은 틀로 바뀌면 대화상자에만", () => {
+    stubWide();
+    const frame = stubFrameWidth(1200);
+    const describeKey = vi.fn((key: string) => `설명 ${key}`);
+    renderFrame({ layout: "lg", dialogDescriptionOf: describeKey });
+    fireEvent.click(trigger("VIX"));
+    const region = screen.getByRole("region", { name: "지표 미리보기 — VIX" });
+    expect(within(region).getByText("15.30")).toBeTruthy();
+    expect(screen.queryByText("설명 vix")).toBeNull();
+    expect(region.hasAttribute("aria-describedby")).toBe(false);
+    expect(describeKey).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    frame.resize(800);
+    fireEvent.click(trigger("달러 인덱스"));
+    const dialog = screen.getByRole("dialog", { name: "달러 인덱스" });
+    expect(within(dialog).getByText("설명 dxy")).toBeTruthy();
+    expect(describeKey.mock.calls.every(([key]) => key === "dxy")).toBe(true);
+  });
+});
+
+/** 검사 칸 안 절 머리 — InspectorSubheading이 고른 태그로 그립니다. */
+function Section({ fallback = "h4" as SubheadingTag, depth = 1 as 1 | 2 }) {
+  return (
+    <InspectorSubheading fallback={fallback} depth={depth}>
+      {`절 ${depth}`}
+    </InspectorSubheading>
+  );
+}
+
+describe("InspectorFrame — 검사 칸 안 절 머리 단계(InspectorSubheading, P6 검토)", () => {
+  it("옆 칸은 제목(h3) 다음 h4·h5, headingLevel 4면 h5, 대화상자는 제목(h2) 다음 h3, 검사 칸 밖은 fallback", async () => {
+    stubWide();
+    const levels = () => [...document.querySelectorAll("h3, h4, h5, h6")].filter((node) => node.textContent?.startsWith("절 ")).map((node) => node.tagName);
+    const detail = () => (
+      <>
+        <Section />
+        <Section depth={2} />
+      </>
+    );
+    const { unmount } = renderFrame({ defaultKey: "us10y", layout: "lg", renderDetail: detail });
+    expect(levels()).toEqual(["H4", "H5"]);
+    unmount();
+    const deeper = renderFrame({ defaultKey: "us10y", layout: "lg", headingLevel: 4, renderDetail: detail });
+    expect(levels()).toEqual(["H5", "H6"]);
+    deeper.unmount();
+    renderFrame({ layout: "dialog", renderDetail: detail });
+    fireEvent.click(trigger("미국채 10년물"));
+    await screen.findByRole("dialog");
+    expect(levels()).toEqual(["H3", "H4"]);
+    cleanup();
+    render(<Section fallback="h3" />);
+    expect(levels()).toEqual(["H3"]);
+  });
+});
+

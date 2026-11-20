@@ -2,7 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { type Column, DataTable, Empty } from "@/components/patterns";
-import { Banner, Card, ErrorState, FOCUS_RING, Freshness, Loading, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
+import { Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
@@ -18,6 +18,7 @@ import {
   primaryClaudeBook,
 } from "@/lib/paper";
 import type { PaperBookSummary, PaperExecutionResponse, PaperMarketCode } from "@/lib/types";
+import { PaperBadge } from "./PaperBadge";
 
 /** 요약만 쓰므로 주문 줄은 하나만 받습니다(요약은 limit과 상관없이 그 계좌 전부 — docs/API.md). */
 const SUMMARY_LIMIT = 1;
@@ -37,11 +38,8 @@ const columns = (first: string, firstClassName: string, proxyTitle: string): rea
       <span className="flex flex-wrap items-center gap-1">
         <span>{row.timing}</span>
         {row.proxy && (
-          <span
-            className="whitespace-nowrap rounded-control border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
-            title={proxyTitle}
-          >
-            대리값
+          <span title={proxyTitle}>
+            <Tag tone="warn">대리값</Tag>
           </span>
         )}
       </span>
@@ -69,12 +67,9 @@ const COLUMNS: Record<PaperMarketCode, { chosen: readonly Column<ExecutionTiming
 /** 실행 감사가 있는 한국 계좌 — 계좌2(체결 시점을 고름)를 앞에, 그다음 계좌1(기준 분포). 서버는 그 밖의 코드를 400으로 거절합니다. */
 const KR_AUDITED = ["kr_claude2", "kr_claude"] as const;
 
+/** 상태·동작 배지 — 공용 태그(PaperBadge — 20px, 마우스 설명 그대로). */
 function BadgeChip({ badge }: { badge: Badge }) {
-  return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-      {badge.label}
-    </span>
-  );
+  return <PaperBadge badge={badge} />;
 }
 
 /** 한 칸 두 줄 — 위는 본문, 아래는 작은 보조 글(같은 행의 관련 값 — 칸 수를 줄여 1280px 카드 안에 표가 들어가게, 보유·체결 탭 계좌2 표와 같은 방식). */
@@ -178,7 +173,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
   const checkpointRows = executionCheckpointRows(execution.data);
 
   return (
-    <Card
+    <Panel
       title="체결 시점 실험"
       subtitle={text.subtitle}
       source={market === "KR" ? PAPER_SOURCES.krExecution : PAPER_SOURCES.execution}
@@ -204,7 +199,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
       )}
       {execution.loading && !execution.data && <Loading label="실행 감사를 읽는 중…" />}
       {execution.error && <ErrorState message={execution.error} onRetry={execution.reload} />}
-      {execution.data && !execution.data.available && <Banner tone="warn">{execution.data.message ?? "실행 감사를 읽을 수 없습니다."}</Banner>}
+      {execution.data && !execution.data.available && <Callout tone="warn">{execution.data.message ?? "실행 감사를 읽을 수 없습니다."}</Callout>}
       {view && (
         <>
           <p className="mb-2 text-xs text-text-3">{view.head}</p>
@@ -266,6 +261,6 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
           </ul>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

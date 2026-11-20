@@ -291,3 +291,12 @@ describe("기준 시각 — 초까지(formatKstSeconds, 명세 2026-11-06-us-cos
     expect(formatKstSeconds(new Date(Number.NaN))).toBe("—");
   });
 });
+
+describe("signedKrwText — 부호 있는 원화 금액의 표 칸 글(P7 검토 — 두 화면의 같은 도우미를 모음)", () => {
+  it("양수는 +, 음수는 U+2212, 모르면 null(표가 '—')", async () => {
+    const { signedKrwText, formatSignedKrw, withMinusSign } = await import("../format");
+    expect(signedKrwText(null)).toBeNull();
+    for (const value of [123_400_000_000, -2_611_000_000_000, 0]) expect(signedKrwText(value)).toBe(withMinusSign(formatSignedKrw(value)));
+    expect(signedKrwText(-2_611_000_000_000)?.startsWith("\u2212")).toBe(true);
+  });
+});

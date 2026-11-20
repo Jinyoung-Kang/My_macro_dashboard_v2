@@ -1,6 +1,9 @@
 /**
  * AI 리포트 목차(절이 셋 이상일 때 맨 위의 앵커 링크 묶음)의 누르는 자리 — 좁은 화면(lg 미만) 44px(작업대 실행 명세 §3-7, QA-458과 같은 기준).
  * jsdom은 배치를 재지 않아 높이는 클래스로 따집니다(lib/__tests__/touchTargetAudit).
+ *
+ * 작업대 P7: 목차가 공용 긴 화면 목차(SectionIndex — 내비 하나 안에 xl 미만 가로 줄과 xl 이상 세로 목록, 폭마다 하나만 보임)가 되어 같은 절 링크가 두 목록에
+ * 한 벌씩 있습니다. 아래 사례는 가로 줄(첫 목록)을 예전 버튼 줄 자리로 보고, 세로 목록도 같은 절을 가리키는지 함께 봅니다.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,18 +28,22 @@ describe("AI 리포트 목차", () => {
   it("QA-472: 목차 링크는 좁은 화면에서 누르는 자리 44px", () => {
     render(<ReportView markdown={REPORT} />);
     const toc = screen.getByRole("navigation", { name: "리포트 목차" });
-    expect(toc.querySelectorAll("a")).toHaveLength(3);
+    const [strip, column] = Array.from(toc.querySelectorAll(":scope > ul"));
+    expect(strip.querySelectorAll("a")).toHaveLength(3);
+    expect(Array.from(column.querySelectorAll("a")).map((link) => link.getAttribute("href"))).toEqual(
+      Array.from(strip.querySelectorAll("a")).map((link) => link.getAttribute("href")),
+    );
     expect(smallTargets(toc)).toEqual([]);
   });
 
-  it("넓은 화면(lg 이상)은 기본 조작 높이 30px — 표 밖의 따로 선 링크(명세 §3-7, 상세 화면 '다른 곳에서 보기'와 같음)", () => {
+  // P7: 넓은 화면의 가로 줄(lg~xl) 칸은 밑줄 탭 sm(30px — 예전 버튼 줄과 같은 높이), xl 이상 세로 목록 칸은 목차 줄 32px(공용 SectionIndex).
+  it("넓은 화면(lg 이상)은 가로 줄 칸 30px·세로 목록 칸 32px — 표 밖의 따로 선 링크(명세 §3-7)", () => {
     render(<ReportView markdown={REPORT} />);
-    const links = Array.from(screen.getByRole("navigation", { name: "리포트 목차" }).querySelectorAll("a"));
-    expect(links.map((link) => link.className.split(/\s+/).filter((name) => name.startsWith("lg:min-h-")))).toEqual([
-      ["lg:min-h-[30px]"],
-      ["lg:min-h-[30px]"],
-      ["lg:min-h-[30px]"],
-    ]);
+    const [strip, column] = Array.from(screen.getByRole("navigation", { name: "리포트 목차" }).querySelectorAll(":scope > ul"));
+    const heights = (list: Element) =>
+      Array.from(list.querySelectorAll("a")).map((link) => link.className.split(/\s+/).filter((name) => name.startsWith("lg:min-h-")));
+    expect(heights(strip)).toEqual([["lg:min-h-[30px]"], ["lg:min-h-[30px]"], ["lg:min-h-[30px]"]]);
+    expect(heights(column)).toEqual([["lg:min-h-8"], ["lg:min-h-8"], ["lg:min-h-8"]]);
   });
 });
 

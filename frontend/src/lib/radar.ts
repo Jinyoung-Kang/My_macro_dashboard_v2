@@ -1,6 +1,7 @@
 /**
- * 수급 레이더 화면의 순수 규칙 — 소스 이름·순서, 재무 패널의 행 나누기.
+ * 수급 레이더 화면의 순수 규칙 — 소스 이름·순서, 재무 비율·배수 글, 재무 패널의 행 나누기.
  */
+import { formatNumber, withMinusSign } from "./format";
 import type { KrFundamentalsCompany, RadarResponse } from "./types";
 
 /** 진단 표의 소스 이름 — 폴백 체인과 같은 이름으로. */
@@ -27,6 +28,14 @@ export function sortBySourceOrder<T>(sources: Record<string, T>): ({ name: strin
   return Object.entries(sources)
     .map(([name, value]) => ({ name, ...value }))
     .sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+/**
+ * 재무 비율(%)·배수(배) 글 — 소수 한 자리. 부호 있는 비등락 값이라 본문 잉크로 두고 음수 부호만 −(U+2212 — P7 규칙 '부호 있는 값은 잉크와 −', 예전에는
+ * ASCII 하이픈이라 같은 검사 칸의 순매수대금·변화 칩과 부호 글자가 섞였음 — QA-889). 양수는 부호 없이. 모르면 null(표·속성 목록이 '—').
+ */
+export function ratioText(value: number | null | undefined, unit: "%" | "배"): string | null {
+  return value === null || value === undefined || Number.isNaN(value) ? null : withMinusSign(`${formatNumber(value, 1)}${unit}`);
 }
 
 /** 자료가 없는 종목은 available=false이고 나머지 칸이 비어 있는 같은 모양의 행입니다. */

@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Loading } from "@/components/ui";
+import { PANEL_CLASSES } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
+import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useInfoSearchLinks } from "@/hooks/useInfoSearch";
 import type { InfoSearchWatch } from "@/hooks/useInfoSearchWatch";
 import { endpoints } from "@/lib/endpoints";
+import { SEARCH_ENTITY_HREF } from "@/lib/breadcrumbs";
 import { formatKst } from "@/lib/format";
 import {
   SEARCH_TABS,
@@ -27,7 +30,7 @@ import { ENTITY_GRID, ENTITY_LEFT } from "./entityGrid";
 import { FeedPanel } from "./FeedPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { LinksPanel } from "./LinksPanel";
-import { PANEL, SourceStatusLine } from "./parts";
+import { SourceStatusLine } from "./parts";
 import { WatchButton, WatchPane } from "./WatchPane";
 
 /** 대상 풀기 응답에 errors가 없을 때 — 그릴 때마다 새 객체를 만들지 않게(연결 탭 상태의 useMemo 의존값). */
@@ -80,6 +83,9 @@ export function EntityView({
   const resolved = useApi<SearchEntityResponse>(endpoints.search.entity(entityKey));
   const entity = resolved.data?.available ? (resolved.data.entity ?? null) : null;
   const settled = resolved.data !== null || resolved.error !== null;
+  // 셸 빵부스러기의 대상 칸·탭 제목 앞 이름(QA-861) — 풀린 대상의 이름을 넘기고, 이 화면이 사라지면(다른 대상·후보 보기·첫 화면) 지웁니다. 셸은 주소
+  // 쿼리를 읽지 않습니다. 풀지 못했으면 넘기지 않습니다('정보 검색' 한 칸).
+  useEntityCrumb(SEARCH_ENTITY_HREF, entity?.name?.trim() || null);
   // 종류: 풀린 대상 → 키 앞부분 → (wd: 키를 풀지 못했으면) 사람으로 봄(보유 탭 없음). 짐작(kind)은 탭을 고르는 데만 쓰고, 머리·속성 칸에는
   // 확인한 종류(known — 모르면 null)만 보입니다(QA-431 — 짐작을 사실처럼 보이지 않게).
   const known = entity?.kind ?? kindOfKey(entityKey);
@@ -201,7 +207,7 @@ export function EntityView({
                 aliasEditor={aliasEditor}
               />
             ) : (
-              <div className={`${PANEL} flex flex-col`}>
+              <div className={`${PANEL_CLASSES} flex flex-col`}>
                 <div className={ENTITY_GRID}>
                   <div className={`border-b border-border p-3 lg:border-b-0 lg:border-r ${ENTITY_LEFT}`}>{watchPane}</div>
                   <div className="min-w-0 px-3 py-2">

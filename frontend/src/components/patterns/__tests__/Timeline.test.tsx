@@ -5,7 +5,7 @@
  * 오류(placeholder ErrorState·다시 시도). 톤 태그는 아이콘 + 글('주의:'), 긴 요약은 낱말 사이에서 꺾음, 좁은 화면은 대화상자, 누름 자리 44px, 강조색 없음.
  * 넓은 화면은 matchMedia 대역(WIDE_SHELL_MEDIA). 키·검사 칸 동작 자체는 목록-검사(MasterDetail.test)가 지킵니다.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ErrorState } from "@/components/ui";
@@ -212,5 +212,58 @@ describe("Timeline — 강조색", () => {
       (element.getAttribute("class") ?? "").split(/\s+/).filter((token) => token.includes("accent")),
     );
     expect(accent).toEqual([]);
+  });
+});
+
+// 작업대 P6 선택 prop — 날짜 묶음(groupBy)·넓은 검사 칸·제목 포커스·부르는 쪽 고름 보이기(목록-검사에 그대로 넘김). 네 상태를 묶음과 함께 봅니다.
+describe("Timeline — 날짜 묶음(groupBy)과 P6 선택 prop", () => {
+  const byMonth = (entry: TimelineEntry) => ({ key: entry.at.slice(0, 7), label: `${entry.at.slice(0, 7)} 판정`, dateTime: entry.at.slice(0, 7) });
+
+  it("값 있음 — 이어진 같은 key를 묶음 머리 아래로(기본 h4, groupHeadingLevel 3), 줄의 시각·태그·요약은 그대로", () => {
+    renderTimeline({
+      entries: [...ENTRIES, { key: "2026-10-31", at: "2026-10-31", kind: { label: "확장" }, summary: "10월 마지막 판정", title: "2026-10-31 판정 — 확장" }],
+      groupBy: byMonth,
+    });
+    const headings = [...list().querySelectorAll("h4")].map((heading) => heading.textContent);
+    expect(headings).toEqual(["2026-11 판정", "2026-10 판정"]);
+    const november = screen.getByRole("list", { name: "2026-11 판정" });
+    expect(within(november).getAllByRole("button")).toHaveLength(3);
+    expect(within(november).getAllByRole("button")[0].querySelector("time")?.getAttribute("dateTime")).toBe("2026-11-16");
+    cleanup();
+    renderTimeline({ groupBy: byMonth, groupHeadingLevel: 3 });
+    expect(list().querySelectorAll("h3")).toHaveLength(1);
+  });
+
+  it("추정·이전 값 — 묶음 안 줄에도 배지가 늘 보인다", () => {
+    renderTimeline({ groupBy: byMonth });
+    const november = screen.getByRole("list", { name: "2026-11 판정" });
+    expect(within(november).getByText("추정")).toBeTruthy();
+    expect(within(november).getByText(/이전 값/)).toBeTruthy();
+  });
+
+  it("빈 목록·읽는 중·오류 — 묶음 머리 없이 emptyText·placeholder 그대로", () => {
+    renderTimeline({ entries: [], groupBy: byMonth, emptyText: "아직 판정 기록이 없습니다." });
+    expect(screen.getByText("아직 판정 기록이 없습니다.")).toBeTruthy();
+    expect(document.querySelectorAll("h3, h4")).toHaveLength(0);
+    cleanup();
+    renderTimeline({ groupBy: byMonth, placeholder: <TimelineSkeleton rows={2} label="판정 기록을 읽는 중" /> });
+    expect(screen.getByRole("status", { name: "판정 기록을 읽는 중" })).toBeTruthy();
+    expect(document.querySelectorAll("h3, h4")).toHaveLength(0);
+    cleanup();
+    renderTimeline({ groupBy: byMonth, placeholder: <ErrorState message="요청 실패 (HTTP 503)" /> });
+    expect(screen.getByText("요청 실패 (HTTP 503)")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "판정 기록" })).toBeNull();
+  });
+
+  it("inspectorWidth·dialogFocus·revealSelectedInDialog를 목록-검사로 넘긴다", async () => {
+    stubWide();
+    renderTimeline({ inspectorWidth: "wide", autoSelectFirst: true });
+    const region = screen.getByRole("region", { name: "판정 기록 — 2026-11-16 판정 — 확장" });
+    expect(tokens(region.parentElement as HTMLElement)).toContain("@min-[48rem]:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]");
+    cleanup();
+    vi.unstubAllGlobals();
+    renderTimeline({ dialogFocus: "title", revealSelectedInDialog: true, selectedKey: "2026-11-15" });
+    const heading = await screen.findByRole("heading", { name: "2026-11-15 판정 — 후퇴 경계" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 });

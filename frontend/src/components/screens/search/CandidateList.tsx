@@ -2,12 +2,13 @@
 
 import { useEffect } from "react";
 import { ErrorState, Loading } from "@/components/ui";
+import { PANEL_CLASSES } from "@/components/ui/classes";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { autoPick, entityKindLabel, isTopicSearch, sourceLabel } from "@/lib/infoSearch";
 import type { SearchCandidate, SearchResolveResponse } from "@/lib/types";
-import { KindIcon, PANEL } from "./parts";
+import { KindIcon } from "./parts";
 
 const CANDIDATE_SOURCES: Record<string, string> = {
   sec: "SEC",
@@ -53,7 +54,7 @@ export function CandidateList({
 
   const failures = Object.entries(data.errors ?? {});
   return (
-    <section aria-labelledby="search-candidates" className={`${PANEL} p-3`}>
+    <section aria-labelledby="search-candidates" className={`${PANEL_CLASSES} p-3`}>
       <h2 id="search-candidates" className="px-1 text-sm font-semibold text-text">
         ‘{query}’의 후보 <span className="font-normal text-text-3">— 하나를 고르세요</span>
       </h2>

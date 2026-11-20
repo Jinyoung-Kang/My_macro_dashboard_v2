@@ -4,8 +4,8 @@
 @import "tailwindcss" source("..");
 
 /* 디자인 토큰 — 어두운 한 벌(작업대 화면 언어, ADR 0042 결정 2·3 — 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-2).
-   2026-11-15까지는 라이트·다크 두 벌과 시스템 따름이었고(2026-10-31 화면 개편 명세 §2), 정보 검색만 아래 범위 블록으로 늘 어두웠습니다. 이제 그 범위 값이
-   앱 전체의 값입니다. 값은 공개 디자인 시스템의 어두운 단계를 참고했고, 상승 #ff6b6b는 사용자가 고른 값입니다(결정 3).
+   2026-11-15까지는 라이트·다크 두 벌과 시스템 따름이었고(2026-10-31 화면 개편 명세 §2), 정보 검색만 범위 토큰 블록으로 늘
+   어두웠습니다. 그 범위 값이 앱 전체의 값이 되었고, 범위 장치(그 블록·대화상자의 범위 prop과 문맥·정보 검색 화면의 표지)는 작업대 P7에서 걷었습니다. 값은 공개 디자인 시스템의 어두운 단계를 참고했고, 상승 #ff6b6b는 사용자가 고른 값입니다(결정 3).
    값은 여기 원래 변수(--bg 등)에만 둡니다. 차트·JS에서 색이 필요하면 var(--up)처럼 이 이름을 씁니다
    (아래 @theme inline의 --color-*는 CSS에 출력되지 않습니다).
    면 네 단계: bg 0층 바탕 · surface 1층 패널(패널 머리·입력칸 바탕도) · surface-2 hover·선택·기본 단추·덮개 바탕 · surface-3 덮개 안 hover·눌림만.
@@ -56,45 +56,6 @@
    않습니다(themeTokens.test.ts가 bg-control-fill을 surface-3과 같은 금지 쌍으로 봄). */
 [data-overlay] {
   --control-fill: var(--surface-3);
-}
-
-/* 정보 검색(/search) 내용 영역의 범위 토큰(ADR 0041 결정 11) — 앱이 밝을 때도 이 화면만 어둡게 그리던 장치입니다. 이제 :root가 같은 어두운 값이라
-   이 블록은 :root와 같은 값만 다시 적고(겉모습 변화 없음 — 고대비에서는 맨 끝 고대비 블록이 svg 요소 자신에 시스템 색을 주므로 이 범위 안 SVG에도
-   닿음), 범위 장치(이 블록·ui/Dialog의 scope·DialogScope·SearchScreen의 표지)는 P7에서 걷어 냅니다(ADR 0042 결정 2). themeTokens.test.ts가 값이
-   :root와 같은지 봅니다. */
-[data-scope="search"] {
-  color-scheme: dark;
-  --bg: #111418;
-  --surface: #1c2127;
-  --surface-2: #252a31;
-  --border: #383e47;
-  --border-strong: #738091;
-  --text: #f6f7f9;
-  --text-2: #c5cbd3;
-  --text-3: #8f99a8;
-  --accent: #4c90f0;
-  --accent-fg: #111418;
-  --accent-hover: #8abbff;
-  --up: #ff6b6b;
-  --down: #68c1ee;
-  --warn: #ec9a3c;
-  --neutral: #8f99a8;
-  --focus: #8abbff;
-  --ok: #72ca9b;
-  --danger: #e76a6e;
-  --danger-fg: #111418;
-  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
-  --radius-card: 4px;
-  --radius-control: 4px;
-}
-
-/* 범위 뿌리의 바탕·글자색은 base 층에 둡니다. 레이어 밖에 두면 우선순위와 상관없이 유틸리티를 이겨, 범위 표지를 단 대화상자의 bg-surface가
-   --bg로 덮입니다. 토큰 블록(위)에는 사용자 속성과 color-scheme만 둡니다. */
-@layer base {
-  [data-scope="search"] {
-    background-color: var(--bg);
-    color: var(--text);
-  }
 }
 
 /* bg-surface·text-up·border-border 같은 클래스가 이 이름에서 나옵니다. inline이어야 유틸리티가 var(--x)를 바로 참조해
@@ -310,8 +271,8 @@
    칠하는 선·축 글·기준선)는 강제하지 않아 작성자 색이 남습니다(명세 D9). 어두운 한 벌(:root 하나)이라 밝은 고대비(흰 Canvas)에서도 어두운 값이
    칠해져 히어로 선 1.07:1·축 글 2.88:1·막대 2.01~2.78:1이 됐습니다(QA-498 — 개편 전에는 prefers-color-scheme light로 밝은 토큰이 들어갔음).
    차트 파일이 쓰는 토큰을 이 모드에서만 시스템 색으로 다시 정의합니다: 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음),
-   장식 격자는 CanvasText에 불투명도 0.35, 면은 Canvas. 재정의는 SVG 요소 자신(svg)에만 둡니다 — 사용자 속성은 안쪽으로 물려주므로 SVG 안 모든 그림에 닿고, 선언이 svg 요소 자신에 있어
-   조상의 정보 검색 범위 블록([data-scope="search"] — 같은 토큰을 hex로 다시 적음)보다 이깁니다(그 범위 안의 연결 그림 LinksGraph). HTML 조상(:root)에
+   장식 격자는 CanvasText에 불투명도 0.35, 면은 Canvas. 재정의는 SVG 요소 자신(svg)에만 둡니다 — 사용자 속성은 안쪽으로 물려주므로 SVG 안 모든 그림(정보 검색
+   연결 그림 LinksGraph 포함)에 닿고, 선언이 svg 요소 자신에 있어 조상이 같은 토큰을 다시 적어도 이깁니다. HTML 조상(:root)에
    두면 그 모드가 작성자의 시스템 색 키워드는 존중하므로 토큰을 쓰는 HTML 링크·비활성 단추·자리표시 글까지 CanvasText로 고정돼 UA 시스템 색
    (LinkText·GrayText)을 잃었습니다(QA-507). 보통 모드는 이 블록을 읽지 않습니다.
    등락 막대의 채움(--up·--down)은 그대로 두고 CanvasText 1px 테두리로 경계를 남기며(뜻은 ▲▼·부호·글이 나름), 계산한 참고선(K40 — 색은 토큰 밖 hex)은
