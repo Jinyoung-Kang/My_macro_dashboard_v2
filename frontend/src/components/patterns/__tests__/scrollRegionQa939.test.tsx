@@ -100,7 +100,7 @@ function renderHeatmap() {
 const tableBox = (container: HTMLElement) => container.querySelector("table")?.parentElement as HTMLElement;
 
 describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는 영역", () => {
-  it.fails("DataTable: 넘치지 않으면 정지점·영역·이름이 없다(스크립트 포커스 자리 -1)", () => {
+  it("DataTable: 넘치지 않으면 정지점·영역·이름이 없다(스크립트 포커스 자리 -1)", () => {
     boxSize = FITS;
     const { container } = renderTable();
     expect(screen.queryByRole("region", { name: "합성 표 (좌우 스크롤)" })).toBeNull();
@@ -108,6 +108,10 @@ describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는
     expect(box.getAttribute("tabindex")).toBe("-1");
     expect(box.hasAttribute("role")).toBe(false);
     expect(box.hasAttribute("aria-label")).toBe(false);
+    // 부르는 쪽의 포커스 되돌림 자리(알림 규칙 표를 지운 뒤 — data-scroll-box로 찾음)로는 그대로 닿습니다.
+    expect(box.hasAttribute("data-scroll-box")).toBe(true);
+    act(() => box.focus());
+    expect(document.activeElement).toBe(box);
     // 표 이름은 caption이 그대로 읽힙니다.
     expect(screen.getByRole("table", { name: "합성 표" })).toBeTruthy();
   });
@@ -118,7 +122,7 @@ describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는
     expect(screen.getByRole("region", { name: "합성 표 (좌우 스크롤)" }).getAttribute("tabindex")).toBe("0");
   });
 
-  it.fails("DataTable: 폭이 바뀌어 넘치게 되면 정지점이 생기고, 다시 들어가면 없어진다", () => {
+  it("DataTable: 폭이 바뀌어 넘치게 되면 정지점이 생기고, 다시 들어가면 없어진다", () => {
     boxSize = FITS;
     renderTable();
     boxSize = WIDE;
@@ -129,7 +133,7 @@ describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는
     expect(screen.queryByRole("region", { name: "합성 표 (좌우 스크롤)" })).toBeNull();
   });
 
-  it.fails("LogPanel: 위아래로 넘치지 않으면 정지점·영역이 없고, 넘치면 '{label} (스크롤)'", () => {
+  it("LogPanel: 위아래로 넘치지 않으면 정지점·영역이 없고, 넘치면 '{label} (스크롤)'", () => {
     boxSize = FITS;
     const { container } = render(<LogPanel label="합성 로그" text={"한 줄\n두 줄"} />);
     expect(screen.queryByRole("region", { name: "합성 로그 (스크롤)" })).toBeNull();
@@ -140,7 +144,7 @@ describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는
     expect(screen.getByRole("region", { name: "합성 로그 (스크롤)" }).getAttribute("tabindex")).toBe("0");
   });
 
-  it.fails("HeatmapTable: 넘치지 않으면 정지점·영역이 없고, 넘치면 '{표 이름} (좌우 스크롤)'", () => {
+  it("HeatmapTable: 넘치지 않으면 정지점·영역이 없고, 넘치면 '{표 이름} (좌우 스크롤)'", () => {
     boxSize = FITS;
     renderHeatmap();
     expect(screen.queryByRole("region", { name: "합성 행렬 (좌우 스크롤)" })).toBeNull();
@@ -167,7 +171,7 @@ describe("QA-939 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는
     expect(screen.getByRole("region", { name: "합성 로그 (스크롤)" }).getAttribute("tabindex")).toBe("0");
   });
 
-  it.fails("포커스가 있는 동안에는 넘침이 풀려도 정지점을 떼지 않고, 포커스가 떠나면 뗀다", () => {
+  it("포커스가 있는 동안에는 넘침이 풀려도 정지점을 떼지 않고, 포커스가 떠나면 뗀다", () => {
     boxSize = WIDE;
     const { container } = renderTable();
     const box = tableBox(container);

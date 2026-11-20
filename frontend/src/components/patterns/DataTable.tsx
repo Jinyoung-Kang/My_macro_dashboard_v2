@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ariaSortOf, nextSort, sortRows, type SortState, type SortValue } from "@/lib/dataTable";
 import { isMissingValue } from "@/lib/patterns";
 
 import { Empty } from "./Empty";
+import { useScrollRegion } from "./useScrollRegion";
 
 /**
  * 열 정의.
@@ -44,7 +45,9 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * 밀도 높은 표 — 열 정렬, 고정 머리, 행 클릭(선택), 가로 스크롤.
  *
  * - 정렬 단추는 머리 칸(`<th>`) 안의 `<button>`이고, 지금 정렬한 열의 `<th>`에만 `aria-sort`가 붙습니다. 새 열은 오름차순부터, 다시 누르면 반대로.
- * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자는 Tab으로 닿아 화살표로 넘길 수 있습니다.
+ * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자가 실제로 넘칠 때만 Tab으로 닿아 화살표로 넘길 수
+ *   있는 이름 있는 영역 '{caption} (좌우 스크롤)'입니다(공용 계약 useScrollRegion — 재기 전·잴 수 없으면 정지점을 둠, QA-939). 넘치지 않으면 정지점·영역·이름이
+ *   없고(표 이름은 caption), 부르는 쪽 포커스 되돌림 자리로 tabIndex -1과 `data-scroll-box` 표지만 남습니다.
  * - 머리는 `sticky top-0`입니다. 가로 스크롤 상자는 CSS상 세로로도 스크롤 상자가 되므로, 머리가 실제로 붙어 있으려면 상자에 높이 한도가
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
  *   선은 행(tr)이 아니라 칸(th·td)의 아래 테두리로 긋고 표는 `border-separate border-spacing-0`입니다 — 겹친 테두리(border-collapse) 표의
@@ -132,18 +135,15 @@ export function DataTable<T>({
   const countText =
     count === undefined || count === false ? null : typeof count === "function" ? count(rows.length) : `${rows.length.toLocaleString("ko-KR")}건`;
   const wide = scrollHint !== false && shown.length > 0;
+  // 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는 영역(공용 계약 useScrollRegion, QA-939). 세로 한도(maxHeight)가 있으면 위아래 넘침도 봅니다.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const { overflow, regionProps } = useScrollRegion(boxRef, `${caption ?? "표"} (좌우 스크롤)`, {
+    axis: maxHeight !== undefined && maxHeight > 0 ? "both" : "x",
+    watch: shown.length,
+  });
   // "overflow" — 상자보다 표가 넓은지 재서 안내를 폭과 상관없이 보입니다(첫 관찰은 ResizeObserver가 observe 때 한 번 알려 줌).
   const measured = scrollHint === "overflow" && shown.length > 0;
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [overflowing, setOverflowing] = useState(false);
-  useEffect(() => {
-    const box = boxRef.current;
-    if (!measured || !box || typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(() => setOverflowing(box.scrollWidth > box.clientWidth + 1));
-    observer.observe(box);
-    if (box.firstElementChild) observer.observe(box.firstElementChild);
-    return () => observer.disconnect();
-  }, [measured]);
+  const overflowing = overflow?.x === true;
 
   const activate = onRowClick
     ? {
@@ -189,9 +189,8 @@ export function DataTable<T>({
         // 넘침이 되어, 넓은 화면(본문 overflow-x hidden)에서 그 글로 scrollIntoView(낭독기 훑기·찾기)하면 본문 전체가 옆으로 밀렸습니다(QA-631).
         className={`${shown.length === 0 ? "@container " : ""}relative w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
         style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
-        tabIndex={0}
-        role="region"
-        aria-label={`${caption ?? "표"} (좌우 스크롤)`}
+        data-scroll-box=""
+        {...regionProps}
       >
         <table className={`w-full border-separate border-spacing-0 text-sm ${wide ? "min-w-[640px]" : ""}`}>
           {caption ? <caption className="sr-only">{caption}</caption> : null}

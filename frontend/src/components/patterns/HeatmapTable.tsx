@@ -5,6 +5,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { heatmapStep, SEQUENTIAL_STEPS, SEQUENTIAL_TEXT } from "@/lib/heatmap";
 
 import { Empty } from "./Empty";
+import { useScrollRegion } from "./useScrollRegion";
 
 /*
  * 표 히트맵 — 데이터를 그리는 패턴(Recharts를 쓰지 않는 표 — 크기 고정 ChartSizeHold와 무관). 화면은 패턴 배럴(`@/components/patterns`)에서 가져옵니다.
@@ -33,7 +34,8 @@ export type HeatmapRow = {
 /**
  * 표 히트맵 — 행 × 열 값을 칸에 적고 값의 크기를 칸 바탕의 순차 팔레트 단계로 칠합니다. 색만으로 값을 나르지 않도록 칸 안에 숫자도 함께 적습니다.
  *
- * - 영역 이름은 `${caption} (좌우 스크롤)`(가로로 스크롤하는 상자 — 키보드로도 옮길 수 있게 Tab 정지점).
+ * - 영역 이름은 `${caption} (좌우 스크롤)`(가로로 스크롤하는 상자 — 키보드로도 옮길 수 있게 Tab 정지점). 표가 상자에 들어가면 정지점·영역이 없습니다
+ *   (공용 계약 useScrollRegion — 재기 전·잴 수 없으면 정지점을 둠, QA-939).
  * - 칸 바탕은 순차 팔레트 다섯 단계(lib/heatmap — 명세 §3-5, 어두운 단계 = 0에 가까움 → 밝은 단계 = 큼): 값 ÷ `max`가 (0, 0.2]면 단계 1 … (0.8, 1]이면 5.
  *   칸 글자색은 단계마다 정해 두었습니다(단계 1~3 본문색·4~5 바탕색 — 모두 4.5:1 이상). 칠한 칸에는 `data-step`(1~5)을 붙입니다.
  *   고대비(forced-colors)에서도 단계가 남게 칠한 칸과 범례 견본은 색을 시스템 색으로 바꾸지 않습니다(forced-color-adjust: none — 글자·바탕 쌍이 4.5:1 이상이라 그대로 읽힘).
@@ -93,10 +95,12 @@ export function HeatmapTable({
   /** 행이나 열이 없을 때의 한 줄. */
   emptyText?: string;
 }) {
-  const boxRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
   // 표를 그리는지 — 빈 상태에는 스크롤 상자가 없어, 빈 상태로 먼저 그려진 뒤 행이 오면 아래 두 효과가 다시 돌아야 합니다(QA-720).
   const hasTable = rows.length > 0 && columns.length > 0;
+  // 스크롤 상자 — 넘칠 때만 Tab 정지점·이름 있는 영역(공용 계약 useScrollRegion, QA-939). 아래 재기(안내·끝 자리)와 같은 상자를 봅니다.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const { regionProps } = useScrollRegion(boxRef, `${caption} (좌우 스크롤)`, { axis: "x", enabled: hasTable });
   // 스크롤이 오른쪽 끝에 붙어 있는지(initialScroll="end"일 때만 씀) — 폭이 바뀌면 붙어 있던 때만 다시 끝으로 옮깁니다(QA-722). 상자의 scroll 이벤트로 갱신하므로
   // 사용자가 왼쪽으로 옮기면 풀리고, 브라우저가 줄인 자리가 끝이면 다시 붙습니다. 표가 상자에 들어가는 폭은 재기(measure)가 다시 붙입니다(QA-730).
   const pinnedEnd = useRef(initialScroll === "end");
@@ -159,7 +163,7 @@ export function HeatmapTable({
       <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${hintClass}`}>
         ← 표를 좌우로 넘겨 보세요
       </p>
-      <div ref={boxRef} className="overflow-x-auto" tabIndex={0} role="region" aria-label={`${caption} (좌우 스크롤)`}>
+      <div ref={boxRef} className="overflow-x-auto" {...regionProps}>
         <table className="w-full border-collapse text-xs" style={{ minWidth: tableMinWidth }}>
           <caption className="sr-only">{caption}</caption>
           <thead>

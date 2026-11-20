@@ -114,6 +114,7 @@ describe("components/patterns 배럴", () => {
         "StatTile",
         "Timeline",
         "TimelineSkeleton",
+        "useScrollRegion",
       ].sort(),
     );
     expect(names).not.toContain("LineChart");

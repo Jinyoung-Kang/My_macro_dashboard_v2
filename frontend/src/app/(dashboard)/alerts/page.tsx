@@ -68,7 +68,8 @@ export default function AlertsPage() {
   // 규칙 표 줄의 쓰기(QA-898). 단추의 켜짐 조건은 예전 그대로(disabled={demo})이고, 그 줄의 쓰기와 뒤따른 규칙 다시 읽기가 끝날 때까지 같은 줄 두 단추의
   // 누름만 무시합니다(aria-disabled로 요청 중임을 알림 — 진짜 disabled가 아니라 포커스가 남음). 예전에는 두 번 누르거나 Enter를 되풀이하면 같은 POST·DELETE가
   // 두 번 가고, 두 번째 DELETE는 서버 404라 지운 직후 경고가 떴습니다. 경로·메서드·본문·확인 없음은 그대로(moreWritesKeep). 다른 줄은 그대로 누를 수 있습니다.
-  // 누른 단추에 포커스가 있었고 끝난 뒤 포커스가 <body>면(지운 줄이 사라짐 등) 그 줄의 같은 단추 → 누를 때의 다음 줄의 같은 단추 → 표(가로 스크롤 상자)로 옮깁니다.
+  // 누른 단추에 포커스가 있었고 끝난 뒤 포커스가 <body>면(지운 줄이 사라짐 등) 그 줄의 같은 단추 → 누를 때의 다음 줄의 같은 단추 → 표(가로 스크롤 상자 — 넘치지 않아
+  // 영역이 아닐 때도 data-scroll-box·tabIndex -1로 남음, QA-939)로 옮깁니다.
   const ruleBusy = useRef(new Set<number>());
   const [busyRules, setBusyRules] = useState<ReadonlySet<number>>(() => new Set());
   const [ruleRefocus, setRuleRefocus] = useState<{ id: number; action: RuleAction; next: number | null } | null>(null);
@@ -82,7 +83,7 @@ export default function AlertsPage() {
     if (box === null) return;
     const find = (id: number | null) =>
       id === null ? null : box.querySelector<HTMLElement>(`[data-rule-id="${id}"][data-rule-action="${ruleRefocus.action}"]`);
-    (find(ruleRefocus.id) ?? find(ruleRefocus.next) ?? box.querySelector<HTMLElement>('[role="region"]'))?.focus();
+    (find(ruleRefocus.id) ?? find(ruleRefocus.next) ?? box.querySelector<HTMLElement>("[data-scroll-box]"))?.focus();
   }, [ruleRefocus]);
   const ruleWrite = async (event: MouseEvent<HTMLButtonElement>, row: AlertRule, action: RuleAction) => {
     if (ruleBusy.current.has(row.id)) return;
