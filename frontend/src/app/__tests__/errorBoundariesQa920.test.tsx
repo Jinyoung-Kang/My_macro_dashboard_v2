@@ -11,7 +11,7 @@
  * - 루트(`app/error.tsx` — 대시보드 레이아웃 자체·로그인 밖 화면의 예외): 루트 not-found(QA-270)와 같은 인증 카드 틀 — 같은 글·'다시 시도'·홈 링크.
  * - 전체(`app/global-error.tsx` — 루트 레이아웃의 예외): 루트 레이아웃을 대신하므로 `<html lang="ko">`·`<body>`(루트와 같은 바탕 클래스)를 스스로 그리고
  *   전역 CSS를 가져오며, metadata를 쓸 수 없어 `<title>`을 둡니다. 안은 루트와 같은 카드.
- * - '다시 시도'는 경계의 reset을 부르고(고장 주입 — 자식이 throw하는 화면을 경계 안에 그림), 다시 그린 자식이 이번에는 그려지면 카드가 사라집니다.
+ * - '다시 시도'는 경계의 retry를 부르고(고장 주입 — 자식이 throw하는 화면을 경계 안에 그림), 다시 그린 자식이 이번에는 그려지면 카드가 사라집니다.
  * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 'app/(dashboard)/error.tsx: expected false to be true'(파일 없음 — 셋 모두 같은 꼴).
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -42,10 +42,10 @@ async function load(file: string): Promise<ErrorComponent> {
 
 /**
  * 시험용 오류 경계 — Next의 경계(client/components/error-boundary)처럼 잡은 값을 `error`로, 상태를 지우는 `reset`·다시 받아 그리는 `retry`를 넘깁니다
- * (여기서는 둘 다 상태만 지움 — 서버에서 다시 받을 것이 없음). reset이 불린 수를 onReset으로 알립니다.
+ * (여기서 retry는 상태만 지움 — 서버에서 다시 받을 것이 없음). 화면이 부르는 retry의 수를 onRetry로 알립니다(reset은 부르면 안 됨 — 던짐).
  */
 class Boundary extends Component<
-  { fallback: ErrorComponent; onReset: () => void; children: ReactNode },
+  { fallback: ErrorComponent; onRetry: () => void; children: ReactNode },
   { caught: { error: unknown } | null }
 > {
   state: { caught: { error: unknown } | null } = { caught: null };
@@ -53,10 +53,12 @@ class Boundary extends Component<
     return { caught: { error } };
   }
   reset = () => {
-    this.props.onReset();
+    throw new Error("reset이 아니라 retry를 불러야 합니다");
+  };
+  retry = () => {
+    this.props.onRetry();
     this.setState({ caught: null });
   };
-  retry = () => this.setState({ caught: null });
   render() {
     const Fallback = this.props.fallback;
     return this.state.caught ? (
@@ -74,9 +76,9 @@ function Bomb() {
   return <p>다시 그린 화면</p>;
 }
 
-function renderBroken(Fallback: ErrorComponent, onReset: () => void) {
+function renderBroken(Fallback: ErrorComponent, onRetry: () => void) {
   return render(
-    <Boundary fallback={Fallback} onReset={onReset}>
+    <Boundary fallback={Fallback} onRetry={onRetry}>
       <Bomb />
     </Boundary>,
   );
@@ -98,10 +100,10 @@ describe("렌더 예외의 화면(QA-920)", () => {
     }
   });
 
-  it("셸 안: 화면 머리 h1·안내·'다시 시도'(reset)·홈 링크 하나 — 자기 <main> 없음, 누름 자리 좁은 화면 44px", async () => {
+  it("셸 안: 화면 머리 h1·안내·'다시 시도'(retry)·홈 링크 하나 — 자기 <main> 없음, 누름 자리 좁은 화면 44px", async () => {
     const DashboardError = await load(FILES.dashboard);
-    const onReset = vi.fn();
-    renderBroken(DashboardError, onReset);
+    const onRetry = vi.fn();
+    renderBroken(DashboardError, onRetry);
     expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBeTruthy();
     expect(screen.queryByRole("main")).toBeNull();
     expect(screen.getByText(TEXT).className).toContain("break-keep");
@@ -114,24 +116,24 @@ describe("렌더 예외의 화면(QA-920)", () => {
 
     fault.broken = false;
     fireEvent.click(retry);
-    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledTimes(1);
     expect(screen.getByText("다시 그린 화면")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: TITLE })).toBeNull();
   });
 
-  it("다시 시도해도 또 던지면 카드가 그대로 남는다(reset만 — 다른 쓰기·이동 없음)", async () => {
+  it("다시 시도해도 또 던지면 카드가 그대로 남는다(retry만 — 다른 쓰기·이동 없음)", async () => {
     const DashboardError = await load(FILES.dashboard);
-    const onReset = vi.fn();
-    renderBroken(DashboardError, onReset);
+    const onRetry = vi.fn();
+    renderBroken(DashboardError, onRetry);
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBeTruthy();
   });
 
-  it("루트: 루트 not-found와 같은 인증 카드(<main>·h1)·안내·'다시 시도'(reset)·홈 링크 하나", async () => {
+  it("루트: 루트 not-found와 같은 인증 카드(<main>·h1)·안내·'다시 시도'(retry)·홈 링크 하나", async () => {
     const RootError = await load(FILES.root);
-    const onReset = vi.fn();
-    renderBroken(RootError, onReset);
+    const onRetry = vi.fn();
+    renderBroken(RootError, onRetry);
     expect(screen.getByRole("main")).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBeTruthy();
     expect(screen.getByText(TEXT).className).toContain("break-keep");
@@ -140,7 +142,7 @@ describe("렌더 예외의 화면(QA-920)", () => {
 
     fault.broken = false;
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledTimes(1);
     expect(screen.getByText("다시 그린 화면")).toBeTruthy();
   });
 

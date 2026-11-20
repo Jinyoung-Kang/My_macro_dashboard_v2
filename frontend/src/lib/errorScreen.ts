@@ -12,7 +12,7 @@ export const ERROR_SCREEN_TITLE = "화면을 표시하지 못했습니다";
 /** 안내 한 줄. */
 export const ERROR_SCREEN_TEXT = "화면을 그리는 중 문제가 생겼습니다. 다시 시도해도 같으면 홈에서 다시 찾아 주세요.";
 
-/** 경계의 reset을 부르는 단추 글. */
+/** 경계의 retry를 부르는 단추 글. */
 export const ERROR_RETRY_LABEL = "다시 시도";
 
 /**

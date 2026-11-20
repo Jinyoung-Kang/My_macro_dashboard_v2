@@ -10,12 +10,12 @@ import "./globals.css";
  * docs/01-app/03-api-reference/03-file-conventions/error.md 'Global Error'). `<html>`·`<body>`는 루트 레이아웃과 같은 언어·바탕 클래스이고, 없앤 테마
  * 선택의 값을 지우는 인라인 스크립트는 두지 않습니다(다음 정상 적재 때 루트 레이아웃이 지움). 안은 루트 오류 경계와 같은 카드입니다.
  */
-export default function GlobalError({ error, reset }: { error: unknown; reset: () => void }) {
+export default function GlobalError({ error, retry }: { error: unknown; retry: () => void }) {
   return (
     <html lang="ko">
       <body className="min-h-screen bg-bg text-text antialiased">
         <title>{ERROR_DOCUMENT_TITLE}</title>
-        <ErrorCard error={error} reset={reset} />
+        <ErrorCard error={error} retry={retry} />
       </body>
     </html>
   );
