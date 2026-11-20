@@ -49,7 +49,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  window.scrollTo(0, 0);
+  vi.restoreAllMocks();
+  Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
 });
 
 const settled = () => act(async () => {});
@@ -57,7 +58,7 @@ const slot = (name: "account" | "actions") => document.querySelector(`[data-pape
 const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 describe("결정 로그 보기 바꾸기 — 누른 단추가 제자리(QA-957)", () => {
-  it.fails("복기 보기에서도 머리 칸에 같은 꼴의 보이지 않는 자리 — 읽히지 않고 포커스 없음, 쓰기 없음", async () => {
+  it("복기 보기에서도 머리 칸에 같은 꼴의 보이지 않는 자리 — 읽히지 않고 포커스 없음, 쓰기 없음", async () => {
     render(<PaperScreen market="US" initialTab="decisions" />);
     await settled();
     fireEvent.click(screen.getByRole("button", { name: "주간 복기" }));
@@ -86,16 +87,17 @@ describe("결정 로그 보기 바꾸기 — 누른 단추가 제자리(QA-957)"
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it.fails("보기를 바꾸면 보기 영역이 누른 때의 화면 아래 끝까지 이상 — 짧은 복기 보기에 스크롤이 당겨지지 않게", async () => {
+  it("보기를 바꾸면 보기 영역이 누른 때의 화면 아래 끝까지 이상 — 짧은 복기 보기에 스크롤이 당겨지지 않게", async () => {
     render(<PaperScreen market="US" initialTab="decisions" />);
     await settled();
     const group = screen.getByRole("group", { name: "결정 로그 보기" });
     const area = group.closest("[data-decision-view]") as HTMLElement | null;
     expect(area).toBeTruthy();
-    // jsdom은 배치가 없어 영역 위쪽 0 — 누른 때 스크롤 200 + 화면 높이까지가 지킬 높이.
-    window.scrollY = 200;
+    // 스크롤 200에서 영역 위쪽이 화면 위 100px(문서 300px)이면, 문서가 200 + 화면 높이까지 남도록 영역은 화면 높이 − 100px 이상.
+    Object.defineProperty(window, "scrollY", { value: 200, configurable: true });
+    vi.spyOn(area as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 100 } as DOMRect);
     fireEvent.click(screen.getByRole("button", { name: "주간 복기" }));
     await settled();
-    expect((group.closest("[data-decision-view]") as HTMLElement).style.minHeight).toBe(`${200 + window.innerHeight}px`);
+    expect((group.closest("[data-decision-view]") as HTMLElement).style.minHeight).toBe(`${window.innerHeight - 100}px`);
   });
 });
