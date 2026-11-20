@@ -21,8 +21,14 @@ export const AUTH_NOTICE_CARD = "w-full max-w-lg rounded-card border border-warn
 /** 카드 제목(h1) — 글자 단계 heading(20px 굵게). */
 export const AUTH_TITLE = "text-heading text-text";
 
-/** 주 단추 — 폭 전체 강조 파랑 큰 단추(누르는 것이라 강조색, 명세 원칙 A1). */
-export const AUTH_SUBMIT = `mt-6 w-full ${buttonClasses("primary", "lg")}`;
+/** 주 단추의 자리 — 위 24px·폭 전체. 모양은 공용 단추(Button primary lg)가 그립니다(AuthSubmit — 요청 중 aria-disabled, QA-909). */
+export const AUTH_SUBMIT_PLACE = "mt-6 w-full";
+
+/**
+ * 주 단추 — 폭 전체 강조 파랑 큰 단추(누르는 것이라 강조색, 명세 원칙 A1). AuthSubmit이 공용 Button으로 그리는 클래스 묶음과 같은 전체 클래스입니다
+ * (요청 중이 아닐 때 — 시험이 대조하고, lg 미만 44px 감사가 이 글을 봅니다).
+ */
+export const AUTH_SUBMIT = `${AUTH_SUBMIT_PLACE} ${buttonClasses("primary", "lg")}`;
 
 /**
  * 카드 아래 따로 선 글 링크('← 로그인'·'가입하기'·'비밀번호를 잊었나요?') — 보조 글색에 hover만 강조 파랑, 좁은 화면(lg 미만) 누르는 자리

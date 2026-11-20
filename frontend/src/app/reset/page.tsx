@@ -42,6 +42,8 @@ export default function ResetPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-909) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (busy) return;
     if (token) {
       if (!mismatch) void run(() => auth.confirmReset(token, password));
     } else {

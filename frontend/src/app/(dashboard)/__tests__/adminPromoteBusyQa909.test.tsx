@@ -44,7 +44,7 @@ async function openPromote() {
 }
 
 describe("운영자로 올리기 — 요청 동안 포커스(QA-909)", () => {
-  it.fails("입력칸 Enter로 보내면 요청 동안 입력칸·단추가 aria-disabled이고 포커스가 입력칸에 남는다 — 다시 보내도 한 번, 본문 그대로", async () => {
+  it("입력칸 Enter로 보내면 요청 동안 입력칸·단추가 aria-disabled이고 포커스가 입력칸에 남는다 — 다시 보내도 한 번, 본문 그대로", async () => {
     api.apiPost.mockImplementation(() => new Promise(() => {}));
     const dialog = await openPromote();
     const password = dialog.getByLabelText("운영자 비밀번호") as HTMLInputElement;
@@ -70,7 +70,7 @@ describe("운영자로 올리기 — 요청 동안 포커스(QA-909)", () => {
     expect((dialog.getByRole("button", { name: "취소" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it.fails("틀린 비밀번호: 실패하면 포커스가 비운 비밀번호 입력칸으로 — 단추는 켜짐 조건(빈 비밀번호)으로 꺼짐", async () => {
+  it("틀린 비밀번호: 실패하면 포커스가 비운 비밀번호 입력칸으로 — 단추는 켜짐 조건(빈 비밀번호)으로 꺼짐", async () => {
     api.apiPost.mockRejectedValue(new Error(WRONG));
     const dialog = await openPromote();
     fireEvent.change(dialog.getByLabelText("운영자 비밀번호"), { target: { value: "wrong guess" } });

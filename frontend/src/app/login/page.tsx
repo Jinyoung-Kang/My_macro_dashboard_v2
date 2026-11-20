@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, useEffect, useId, useState } from "react";
 import { AuthAlert, AuthMessage, credentialsRejected } from "@/components/auth/AuthCard";
-import { AUTH_CARD, AUTH_LINK, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
+import { AuthSubmit } from "@/components/auth/AuthSubmit";
+import { AUTH_CARD, AUTH_LINK, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui";
 import { isDemo, isLocalOwner } from "@/lib/access";
 import { auth } from "@/lib/api";
@@ -51,6 +52,8 @@ export default function LoginPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-909) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (busy) return;
     setBusy(true);
     setError(null);
     setRejected(false);
@@ -114,13 +117,9 @@ export default function LoginPage() {
 
         <AuthAlert>{error && <AuthMessage tone="error" id={errorId}>{error}</AuthMessage>}</AuthAlert>
 
-        <button
-          type="submit"
-          disabled={busy || password.length === 0 || email.trim().length === 0}
-          className={AUTH_SUBMIT}
-        >
-          {busy ? "확인 중…" : "로그인"}
-        </button>
+        <AuthSubmit busy={busy} disabled={password.length === 0 || email.trim().length === 0} busyLabel="확인 중…">
+          로그인
+        </AuthSubmit>
 
         {mailAvailable && (
           <div className="mt-5 flex justify-between text-[13px] text-text-2">

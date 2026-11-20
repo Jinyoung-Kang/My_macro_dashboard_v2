@@ -20,6 +20,7 @@ vi.mock("@/lib/api", () => api);
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
+import { AUTH_SUBMIT } from "@/components/auth/classes";
 import LoginPage from "@/app/login/page";
 import ResetPage from "@/app/reset/page";
 import SignupPage from "@/app/signup/page";
@@ -58,7 +59,7 @@ async function expectBusyKeepsFocus(control: HTMLElement, request: { mock: { cal
 }
 
 describe("인증 화면 주 단추 — 요청 동안 포커스(QA-909)", () => {
-  it.fails("로그인 '로그인' — 요청 글자 '확인 중…', 요청 그대로", async () => {
+  it("로그인 '로그인' — 요청 글자 '확인 중…', 요청 그대로", async () => {
     render(<LoginPage />);
     await act(async () => {});
     fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "member@test.local" } });
@@ -67,7 +68,7 @@ describe("인증 화면 주 단추 — 요청 동안 포커스(QA-909)", () => {
     expect(api.auth.login.mock.calls).toEqual([["member@test.local", "pw"]]);
   });
 
-  it.fails("가입 '가입하고 확인 메일 받기' — 요청 글자 '처리 중…', 본문 그대로", async () => {
+  it("가입 '가입하고 확인 메일 받기' — 요청 글자 '처리 중…', 본문 그대로", async () => {
     render(<SignupPage />);
     fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "member@test.local" } });
     fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "abcdefghij" } });
@@ -76,14 +77,14 @@ describe("인증 화면 주 단추 — 요청 동안 포커스(QA-909)", () => {
     expect(api.auth.signup.mock.calls).toEqual([["member@test.local", "abcdefghij", true]]);
   });
 
-  it.fails("재설정 요청 '재설정 메일 받기'", async () => {
+  it("재설정 요청 '재설정 메일 받기'", async () => {
     render(<ResetPage />);
     fireEvent.change(await screen.findByLabelText("이메일"), { target: { value: "member@test.local" } });
     await expectBusyKeepsFocus(screen.getByRole("button", { name: "재설정 메일 받기" }), api.auth.requestReset, "처리 중…");
     expect(api.auth.requestReset.mock.calls).toEqual([["member@test.local"]]);
   });
 
-  it.fails("재설정(링크) '비밀번호 바꾸기'", async () => {
+  it("재설정(링크) '비밀번호 바꾸기'", async () => {
     window.history.replaceState(null, "", "/reset?token=synthetic-token");
     render(<ResetPage />);
     fireEvent.change(await screen.findByLabelText("새 비밀번호"), { target: { value: "abcdefghij" } });
@@ -109,5 +110,12 @@ describe("인증 화면 주 단추 — 요청 동안 포커스(QA-909)", () => {
     fireEvent.change(await screen.findByLabelText("새 비밀번호"), { target: { value: "abcdefghij" } });
     fireEvent.change(screen.getByLabelText("새 비밀번호 확인"), { target: { value: "abcdefghik" } });
     expect((screen.getByRole("button", { name: "비밀번호 바꾸기" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("주 단추의 클래스 묶음은 예전(AUTH_SUBMIT)과 같음 — 공용 Button으로 그려도 겉모습 그대로(요청 중에만 aria-disabled 흐림이 더해짐)", async () => {
+    render(<LoginPage />);
+    await act(async () => {});
+    const tokens = (element: Element) => [...element.classList].sort();
+    expect(tokens(screen.getByRole("button", { name: "로그인" }))).toEqual(AUTH_SUBMIT.split(" ").sort());
   });
 });

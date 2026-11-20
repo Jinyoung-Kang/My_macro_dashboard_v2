@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useId, useState } from "react";
+import { FormEvent, useId, useRef, useState } from "react";
 import { DataTable, InspectorFrame, InspectorSubheading, InspectorTrigger, PropertyList } from "@/components/patterns";
 import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, inputClasses, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
@@ -18,6 +18,8 @@ const ROLE_LABEL: Record<string, string> = { OWNER: "운영자", MEMBER: "회원
 const TIER_LABEL: Record<string, string> = { FREE: "무료", PRO: "유료" };
 /** 검사 칸에 보일 그 사용자의 감사 기록 줄 수(이미 읽은 최근 100건 안에서). */
 const AUDIT_LINES = 5;
+/** 요청 중 입력칸 — 꺼진 입력칸(inputClasses의 disabled:)과 같은 흐림·커서. 읽기 전용 + aria-disabled일 때만 붙습니다(QA-909). */
+const INPUT_BUSY = "aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
 
 /**
  * 사용자 관리(운영자만 — 백엔드 접근 정책이 막음). 결제 연동 전까지 등급은 여기서 정합니다(명세 D4).
@@ -28,7 +30,9 @@ const AUDIT_LINES = 5;
  * 없음). 표 안 역할·등급 고르기와 운영자로 올리기 대화상자(문구·닫기 단추 없음·비밀번호)는 그대로입니다.
  *
  * 운영자로 올리기 대화상자의 오류(틀린 비밀번호·연속 실패 지연)는 대화상자를 열 때부터 있는 알림 영역(role="alert") 안에 그리고, 비밀번호 입력칸이 그 글로
- * 설명됩니다(QA-868 — 예전에는 보낸 뒤 붙는 보통 상자라 낭독되지 않았음). 경로·본문·문구·비밀번호 단계는 그대로입니다.
+ * 설명됩니다(QA-868 — 예전에는 보낸 뒤 붙는 보통 상자라 낭독되지 않았음). 보내는 동안 입력칸은 읽기 전용 + aria-disabled, 보내기 단추는 공용 Button busy
+ * (aria-disabled)라 포커스가 남고, 실패하면 포커스를 비운 비밀번호 칸으로 옮깁니다(QA-909 — 예전에는 진짜 disabled라 body로). 경로·본문·문구·비밀번호 단계는
+ * 그대로입니다.
  */
 export default function AdminUsersPage() {
   const users = useApi<{ users: AdminUser[] }>(endpoints.admin.users, 0);
@@ -59,6 +63,7 @@ export default function AdminUsersPage() {
   // 대화상자 안 오류 — 이 창에서 보낸 뒤에만(창을 열기 전 다른 변경의 오류는 보이지 않게).
   const promoteError = promote?.tried && !update.busy ? update.error : null;
   const promoteErrorId = useId();
+  const promoteInput = useRef<HTMLInputElement>(null);
   const save = async (row: AdminUser, role: string, nextTier: string, ownerPassword?: string): Promise<boolean> => {
     setSavingId(row.id);
     let ok = false;
@@ -87,6 +92,8 @@ export default function AdminUsersPage() {
     const ok = await save(promote.row, "OWNER", promote.tier, promotePassword);
     setPromotePassword("");
     if (ok) setPromote(null);
+    // 실패면 다시 칠 비밀번호 칸으로 — 비운 칸이라 보내기 단추가 켜짐 조건으로 꺼지고, 그 단추에 있던 포커스가 body로 떨어졌습니다(QA-909).
+    else promoteInput.current?.focus();
   };
 
   const submit = async (event: FormEvent) => {
@@ -148,10 +155,11 @@ export default function AdminUsersPage() {
           <div className="flex flex-col">
             <label className="text-xs text-text-3">
               운영자 비밀번호
-              <input type="password" autoComplete="off" value={promotePassword} disabled={update.busy}
+              <input ref={promoteInput} type="password" autoComplete="off" value={promotePassword}
+                readOnly={update.busy} aria-disabled={update.busy || undefined}
                 aria-describedby={promoteError ? promoteErrorId : undefined}
                 onChange={(event) => setPromotePassword(event.target.value)}
-                className={`mt-1 w-full ${inputClasses()}`} />
+                className={`mt-1 w-full ${inputClasses()}${update.busy ? ` ${INPUT_BUSY}` : ""}`} />
             </label>
             <div role="alert">
               {promoteError && (
@@ -163,7 +171,7 @@ export default function AdminUsersPage() {
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="secondary" type="button" disabled={update.busy} onClick={() => setPromote(null)}>취소</Button>
-            <Button variant="primary" type="submit" disabled={update.busy || !promotePassword}>
+            <Button variant="primary" type="submit" busy={update.busy} disabled={!promotePassword}>
               {update.busy ? "확인하는 중…" : "운영자로 올리기"}
             </Button>
           </div>
