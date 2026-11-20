@@ -371,8 +371,9 @@ export function DecisionsSection({
         >
           {list.loading && !list.data && (
             // 처음 읽는 동안은 화면 높이 이상의 자리(QA-955 — 최근 50건까지의 긴 목록, QA-892 순위와 같음): 한 줄이던 때는 목록이 오며 첫 화면 안에 들어온
-            // 아래 패널(한국 '출발·게이트 기록')을 밀었습니다. 실패 뒤 다시 읽는 동안은 한 줄(QA-655).
-            firstLoadPending(list) ? (
+            // 아래 패널(한국 '출발·게이트 기록')을 밀었습니다. 실패 뒤 다시 읽는 동안은 한 줄(QA-655). 이 화면에서 목록을 한 번이라도 받았으면(listSettled)
+            // 계좌를 바꿔 다시 읽는 동안도 한 줄 — 바꿀 때마다 화면 높이 자리가 생겼다 짧은 목록에 다시 줄며 아래 패널이 오르내렸습니다(QA-971).
+            firstLoadPending(list) && !listSettled ? (
               <div className="min-h-dvh">
                 <Loading label="결정 기록을 읽는 중…" />
               </div>

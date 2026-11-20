@@ -54,7 +54,7 @@ const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "
 
 describe("결정 기록 화면 높이 자리는 처음 마운트의 첫 적재에만(QA-971)", () => {
   // 수정 전(재현 커밋에서는 it.fails): 계좌를 바꾸면 다시 화면 높이 자리(min-h-dvh)가 생겼습니다.
-  it.fails("목록을 한 번 받은 뒤 계좌를 바꿔 읽는 동안은 한 줄 — 아래 '출발·게이트 기록' 패널은 그대로", async () => {
+  it("목록을 한 번 받은 뒤 계좌를 바꿔 읽는 동안은 한 줄 — 아래 '출발·게이트 기록' 패널은 그대로", async () => {
     render(<PaperScreen market="KR" initialTab="decisions" />);
     await settled();
     expect(screen.queryByText("결정 기록을 읽는 중…")).toBeNull();   // 규칙 계좌 목록이 옴
