@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -133,13 +134,25 @@ public class SecurityService {
     }
 
     /**
-     * '해당'인 제품의 표 행에 적힌 CVE 번호 수(겹침 없이). 그 행들에 CVE 번호 꼴의 글이 하나도 없으면 null(셀 수 없음 — 0으로 두지 않음).
+     * 실제로 '해당'인 표 행에 적힌 CVE 번호 수(겹침 없이). 행에 매인 '해당' 근거({@code Match.rowIndex})가 있는 행만 셉니다 — 같은 제품이라도 다른 계열의
+     * 행(16.x를 쓰는데 15.x 행)이나 패치된 행은 세지 않습니다(알림 글이 부풀지 않게). '해당'인데 행에 매인 근거가 없는 제품(배포판 패키지 — apt 보류 목록이
+     * 근거)은 그 제품의 행을 모두 셉니다. 셀 행들에 CVE 번호 꼴의 글이 하나도 없으면 null(셀 수 없음 — 0으로 두지 않음).
      */
     public Integer affectedCveCount(Judged judged) {
         Set<String> affected = judged.verdict().products().stream().filter(p -> p.status() == Status.AFFECTED)
                 .map(ProductVerdict::aliasId).collect(Collectors.toSet());
+        Set<Integer> affectedRows = new HashSet<>();
+        Set<String> rowBacked = new HashSet<>();
+        for (Verdict.Match match : judged.verdict().matches()) {
+            if (match.status() == Status.AFFECTED && match.rowIndex() != null && affected.contains(match.aliasId())) {
+                affectedRows.add(match.rowIndex());
+                rowBacked.add(match.aliasId());
+            }
+        }
         List<SecurityStore.NoticeRow> rows = judged.rows().stream()
-                .filter(row -> aliases.forProduct(row.product()).stream().anyMatch(a -> affected.contains(a.id()))).toList();
+                .filter(row -> affectedRows.contains(row.rowNo()) || aliases.forProduct(row.product()).stream()
+                        .anyMatch(a -> affected.contains(a.id()) && !rowBacked.contains(a.id())))
+                .toList();
         return cveCount(rows);
     }
 

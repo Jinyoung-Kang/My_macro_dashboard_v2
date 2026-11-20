@@ -137,7 +137,7 @@ class SecurityAlertJobTest {
         return new SecurityAlertJob(service, records, alerts, users, telegram, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
-    /** 해당 — 가짜 PostgreSQL 16.42가 16.x 행의 영향 구간 안(CVE 셋). */
+    /** 해당 — 가짜 PostgreSQL 16.42가 16.x 행의 영향 구간 안(그 행의 CVE 하나 — 15.x 행의 둘은 다른 계열이라 세지 않음). */
     private void postgresAffected() {
         notices.add(SecurityServiceTest.notice(9001, "가짜 PostgreSQL 보안 업데이트 권고", "2026-11-20", "ok", "product_table", List.of(), "가짜 개요"));
         rows.add(SecurityServiceTest.row(9001, 0, "CVE-2099-1001", "PostgreSQL", "16 이상 16.50 미만", "16.50 이상"));
@@ -168,11 +168,11 @@ class SecurityAlertJobTest {
         assertThat(events).containsOnlyKeys("security_notice:9001");
         List<String> event = events.get("security_notice:9001");
         assertThat(event.get(0)).isEqualTo("보안 공지 해당 — PostgreSQL");
-        assertThat(event.get(1)).isEqualTo("CVE 3건 · 화면: 더보기 > 보안 공지(/security)");
+        assertThat(event.get(1)).isEqualTo("CVE 1건 · 화면: 더보기 > 보안 공지(/security)");
         assertThat(event.get(2)).isEqualTo("/security?ntt=9001");
         assertThat(deliveries).extracting(d -> d[1]).containsExactly(1L, 3L);
         assertThat(sent).singleElement().satisfies(text -> assertThat(text)
-                .contains("*보안 공지 해당*", "*제품* PostgreSQL", "*CVE* 3건", "/security", "*실행*"));
+                .contains("*보안 공지 해당*", "*제품* PostgreSQL", "*CVE* 1건", "/security", "*실행*"));
         assertThat(table.get(9001L).telegramSentAt()).isEqualTo(NOW);
         assertThat(table.get(9001L).alertEventId()).isEqualTo(1L);
     }
@@ -235,7 +235,7 @@ class SecurityAlertJobTest {
         assertThat(events).containsOnlyKeys("security_notice:9001", "security_notice:9002");
         assertThat(events.get("security_notice:9002").get(1)).as("CVE 번호가 없으면 0건이라 하지 않음").startsWith("CVE 번호 표기 없음");
         assertThat(sent).singleElement().satisfies(text -> assertThat(text)
-                .contains("*보안 공지 해당 2건*", "PostgreSQL — CVE 3건", "Node\\.js — CVE 번호 표기 없음", "/security"));
+                .contains("*보안 공지 해당 2건*", "PostgreSQL — CVE 1건", "Node\\.js — CVE 번호 표기 없음", "/security"));
         assertThat(table.values()).allSatisfy(a -> assertThat(a.telegramSentAt()).isEqualTo(NOW));
     }
 

@@ -302,7 +302,7 @@ class SecurityServiceTest {
     }
 
     @Test
-    @DisplayName("알림용 — 해당 제품 이름과 그 제품 행의 CVE 수(번호가 없으면 null)")
+    @DisplayName("알림용 — 해당 제품 이름과 실제로 해당인 행의 CVE 수(다른 계열 행은 세지 않음, 번호가 없으면 null)")
     void affectedHelpers() {
         fiveNotices();
         fakeInventory(store, COLLECTED);
@@ -310,7 +310,8 @@ class SecurityServiceTest {
 
         SecurityService.Judged pg = judged.get(0);
         assertThat(SecurityService.affectedLabels(pg.verdict())).containsExactly("PostgreSQL");
-        assertThat(service.affectedCveCount(pg)).isEqualTo(3);
+        // 0행(16.x — 해당) CVE 하나만 — 1행(15.x)은 다른 계열이라 세지 않음(QA 스택 확인에서 '2건'으로 부풀던 것).
+        assertThat(service.affectedCveCount(pg)).isEqualTo(1);
         assertThat(SecurityService.cveCount(List.of(row(1, 0, "", "x", "", ""), row(1, 1, "번호 없음", "x", "", "")))).isNull();
     }
 }
