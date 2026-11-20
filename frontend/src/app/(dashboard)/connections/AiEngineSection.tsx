@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, Select, SourceBadge, Table } from "@/components/ui";
+import { DataTable, Skeleton } from "@/components/patterns";
+import { Button, Callout, ErrorState, inputClasses, Panel, Select } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { errorMessage, useAsyncAction } from "@/hooks/useAsyncAction";
 import { engineLabel } from "@/lib/aiEngines";
@@ -16,6 +18,9 @@ const SAMPLE_PROMPTS = [
   "장단기 금리차 역전이 시장에 주는 의미를 3줄로 요약해 주세요.",
   "미결제약정이 늘면서 가격이 하락하는 국면을 한 문장으로 설명해 주세요.",
 ];
+
+/** 읽는 중 엔진 표 자리(px) — 값이 온 뒤의 개수 줄 + 표 높이에 가깝게(브라우저로 잰 값 — 진행 기록 §P7 '검토 반영'). */
+const ENGINE_TABLE_PENDING_HEIGHT = 360;
 
 /** AI 엔진 — 엔진별 키 설정 여부, 호출 응답·지연시간·폴오버 경로. */
 export function AiEngineSection() {
@@ -37,41 +42,52 @@ export function AiEngineSection() {
     <section className="flex flex-col gap-4">
       <h2 className="text-base font-semibold text-text">AI 엔진</h2>
 
-      {engines.loading && !engines.data && <Loading />}
+      {/* 엔진을 읽는 동안 값이 온 뒤의 패널(제목·출처·부제)과 표 높이만큼 자리를 잡습니다 — 읽는 중 글 한 줄 뒤 패널이 자리 없이 들어와 아래 호출 테스트를
+          밀었습니다(1024 CLS 0.26 → 0.41 — QA-876). */}
+      {engines.loading && !engines.data && (
+        <Panel title="등록된 엔진" source={SOURCES.aiEngines} subtitle="엔진별 응답·지연시간·자동 번역 동작을 확인합니다">
+          <Skeleton height={ENGINE_TABLE_PENDING_HEIGHT} label="엔진 목록을 읽는 중" />
+        </Panel>
+      )}
       {/* 엔진 목록을 받지 못하면 엔진 표가 없고 호출 버튼이 이유 없이 꺼져 있었습니다(QA-103, ai/report의 QA-050과 같음). */}
       {engines.error && <ErrorState message={engines.error} onRetry={engines.reload} />}
 
       {engines.data && (
-        <Card title="등록된 엔진" source={SOURCES.aiEngines} subtitle="엔진별 응답·지연시간·자동 번역 동작을 확인합니다">
-          <Table
+        <Panel title="등록된 엔진" source={SOURCES.aiEngines} subtitle="엔진별 응답·지연시간·자동 번역 동작을 확인합니다">
+          <DataTable
+            dense
+            count
+            scrollHint="overflow"
+            caption="등록된 엔진"
             rows={engines.data.engines}
             rowKey={(row) => row.id}
             columns={[
-              { key: "label", header: "엔진", render: (row) => engineLabel(row) },
-              {
-                key: "model",
-                header: "모델",
-                render: (row) => (row.model ? <SourceBadge>{row.model}</SourceBadge> : "—"),
-              },
-              { key: "description", header: "용도", render: (row) => row.description },
+              // 열 폭(QA-875): 엔진 이름은 최소 10rem(눌려 3~5줄로 접히지 않게), 모델 이름(식별자)은 최소 12rem에 칸 안 아무 데서나 꺾일 수 있게, 용도는 최소
+              // 10rem — 최소 폭의 합(+ 키 칸·칸 여백)이 1024 상자(706px)에 듭니다. 모델 칸이 줄바꿈 금지였을 때는 가장 긴 모델 이름(368px)이 줄지 않아 1024에서
+              // 표가 넘쳐 '키' 칸이 가로 스크롤 뒤로 밀렸습니다.
+              { key: "label", header: "엔진", rowHeader: true, className: "min-w-[10rem] break-keep", cell: (row) => engineLabel(row) },
+              // 모델 이름은 식별자 — 고정폭 글(예전 출처 배지 모양).
+              { key: "model", header: "모델", className: "min-w-[12rem] wrap-anywhere", cell: (row) => (row.model ? <span className="font-mono text-caption">{row.model}</span> : null) },
+              { key: "description", header: "용도", className: "min-w-[10rem] break-keep", cell: (row) => row.description || null },
               {
                 key: "available",
                 header: "키",
                 // 낱말 안에서 끊지 않습니다(break-keep) — 좁은 표에서 '없 / 음'으로 접혔습니다. 긴 사유는 띄어쓰기에서만 줄을 바꿉니다.
                 className: "break-keep",
-                // available은 "허용됐고 키도 있음"입니다(ADR 0014). 허용 목록 밖이면 키가 있어도 쓰지 않으므로 따로 적습니다.
-                render: (row) => (
-                  <span className={row.available ? "text-ok" : "text-text-3"}>
-                    {row.available ? "설정됨" : row.unavailableReason === "not_allowed" ? "이 배포에서 사용 안 함" : "없음"}
-                  </span>
-                ),
+                // available은 "허용됐고 키도 있음"입니다(ADR 0014). 허용 목록 밖이면 키가 있어도 쓰지 않으므로 따로 적습니다. 아이콘 + 글(예전 정상색 글만).
+                cell: (row) =>
+                  row.available ? (
+                    <StatusText tone="ok">설정됨</StatusText>
+                  ) : (
+                    <StatusText tone="neutral">{row.unavailableReason === "not_allowed" ? "이 배포에서 사용 안 함" : "없음"}</StatusText>
+                  ),
               },
             ]}
           />
-        </Card>
+        </Panel>
       )}
 
-      <Card title="호출 테스트">
+      <Panel title="호출 테스트">
         <div className="flex flex-wrap items-end gap-3">
           <Select
             label="엔진"
@@ -103,39 +119,41 @@ export function AiEngineSection() {
         />
 
         <div className="mt-3">
-          <Button variant="primary" onClick={run} disabled={busy || !engines.data?.enabled}>
+          <Button variant="primary" onClick={run} disabled={!engines.data?.enabled} busy={busy}>
             {busy ? "호출 중…" : "선택 모델 호출"}
           </Button>
         </div>
-      </Card>
+      </Panel>
 
-      {result && (
-        <Card
-          title="응답" source={SOURCES.aiEngines}
-          subtitle={
-            result.status
-              ? `${result.provider} · ${result.latencyMs}ms · ${result.pipelineStep}`
-              : result.pipelineStep
-          }
-        >
-          {result.status ? (
-            <article className="whitespace-pre-wrap text-sm leading-relaxed text-text-2">
-              {result.response}
-            </article>
-          ) : (
-            // 실패 문구에는 엔진 라벨·'자동 탐색' 안내가 실려 예전 그림 문자가 섞여 옵니다 — 화면에서 뗍니다
-            <Banner tone="danger">{withoutLeadingIcon(result.error ?? "")}</Banner>
-          )}
-          {result.failoverPath && (
-            <p className="mt-3 text-xs text-text-3">
-              폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
-            </p>
-          )}
-          {result.translationInfo && (
-            <p className="mt-1 text-xs text-text-3">{result.translationInfo}</p>
-          )}
-        </Card>
-      )}
+      {/* 응답은 결과 안내 상자 — 성공은 정상 톤(제목 '응답 — 제공자 · 지연 · 단계'), 실패는 위험 톤(제목 '호출 실패'). 응답 글은 긴 글(15/24)·보조 글자색. */}
+      {result &&
+        (result.status ? (
+          <Callout tone="ok" title={`응답 — ${result.provider} · ${result.latencyMs}ms · ${result.pipelineStep}`}>
+            <article className="mt-1 max-w-[72ch] whitespace-pre-wrap break-keep wrap-break-word text-running text-text-2">{result.response}</article>
+            <ResultNotes result={result} />
+          </Callout>
+        ) : (
+          // 실패 문구에는 엔진 라벨·'자동 탐색' 안내가 실려 예전 그림 문자가 섞여 옵니다 — 화면에서 뗍니다
+          <Callout tone="danger" title="호출 실패">
+            <p>{withoutLeadingIcon(result.error ?? "")}</p>
+            {result.pipelineStep ? <p className="mt-1 text-xs">{result.pipelineStep}</p> : null}
+            <ResultNotes result={result} />
+          </Callout>
+        ))}
     </section>
+  );
+}
+
+/** 응답 아래 보조 줄 — 폴오버 경로(그림 문자 뗌)·자동 번역 안내. 보조 글자색(틴트 위 text-2). */
+function ResultNotes({ result }: { result: AiResponse }) {
+  return (
+    <>
+      {result.failoverPath && (
+        <p className="mt-2 text-xs text-text-2">
+          폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
+        </p>
+      )}
+      {result.translationInfo && <p className="mt-1 text-xs text-text-2">{result.translationInfo}</p>}
+    </>
   );
 }

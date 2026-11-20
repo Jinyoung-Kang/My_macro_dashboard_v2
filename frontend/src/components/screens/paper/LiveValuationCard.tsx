@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable } from "@/components/patterns";
-import { Banner, Button, Card } from "@/components/ui";
+import { Button, Callout, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
@@ -35,7 +35,7 @@ import { TickerQuickView } from "./TickerQuickView";
  * 모든 값에 기준 시각을 붙입니다. 종목 가격은 서버가 그 주기마다 밀어 주는 실시간 시세(SSE, ADR 0024)이고, 종목을 누르면 팝업 창이 열립니다
  * (사용자 요청 2026-11-03 — 화면 안 팝업 창, TickerQuickView). 계좌 숫자를 낳는 장중 저장본은 1분보다 짧게 다시 읽지 않습니다(서버 하한). 장 상태·간격
  * 선택·'지금 새로 읽기'·출처·받지 못한 종목도 여기에 둡니다. 계좌 숫자(순자산·수익률)는 이 카드에서 빼고 개요의 지금 값이 같은 장중 저장본으로
- * 맡습니다(명세 2026-10-31 §4) — 계좌 고르기도 계좌 행 한 곳입니다(`bookCode`).
+ * 맡습니다(명세 2026-10-31 §4) — 계좌 고르기는 개요의 계좌 표·머리의 계좌 고르기입니다(`bookCode` — 작업대 P6).
  *
  * 표시 전용입니다. 장부(체결·순자산 줄·통계·결정)는 이 값을 쓰지 않습니다(서버 PaperLiveService). 다시 읽기 규칙은 lib/paperLive —
  * 정규장에만 간격대로, 서버가 새 시세를 요청했으면 20초 뒤 한 번만 더, 장 밖에서는 멈추고 다음 개장에 한 번 깨어납니다. 탭을 숨기면 간격
@@ -58,7 +58,7 @@ export function LiveValuationCard({
    */
   onUpdated?: () => void;
   /**
-   * 고른 계좌의 순자산을 실시간 시세로 다시 셀 때마다 부릅니다(사용자 결정 2026-11-03 — 개요 히어로의 '계좌 순자산'이 고른 주기로 움직임, lib/paperLive
+   * 고른 계좌의 순자산을 실시간 시세로 다시 셀 때마다 부릅니다(사용자 결정 2026-11-03 — 개요 KPI 띠의 '순자산'이 고른 주기로 움직임, lib/paperLive
    * realtimeBookNav). 실시간 가격이 없으면 null.
    */
   onRealtime?: (nav: RealtimeNav | null) => void;
@@ -152,9 +152,9 @@ export function LiveValuationCard({
 
   if (live.error && !data) {
     return (
-      <Card title="장중 시세 (추정)">
-        <Banner tone="warn">장중 시세를 읽지 못했습니다 — {live.error}</Banner>
-      </Card>
+      <Panel title="장중 시세 (추정)">
+        <Callout tone="warn">장중 시세를 읽지 못했습니다 — {live.error}</Callout>
+      </Panel>
     );
   }
   if (!data?.available) return null;
@@ -190,7 +190,7 @@ export function LiveValuationCard({
   ];
 
   return (
-    <Card
+    <Panel
       title="장중 시세 (추정)"
       subtitle={`${session.label} — ${session.detail}`}
       // 계좌의 지금 값(개요 히어로·계좌 행의 장중 추정)은 서버가 이 카드가 받은 장중 저장본으로 평가한 값입니다(개요는 수집을 요청하지 않음).
@@ -219,11 +219,11 @@ export function LiveValuationCard({
         {(session.live || extended) && realtime.error && <span className="ml-1 text-warn">· {realtime.error}</span>}
         {live.refreshError && <span className="ml-1 text-warn">· 새로 읽지 못함({live.refreshError})</span>}
       </p>
-      {warning && <div className="mb-3"><Banner tone="warn">{warning}</Banner></div>}
+      {warning && <div className="mb-3"><Callout tone="warn">{warning}</Callout></div>}
       {holdings ? (
         <>
           <p className="mb-2 text-xs text-text-2">
-            <strong className="text-text">{holdings.label}</strong> 보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다
+            <strong className="text-text">{holdings.label}</strong> 보유 종목 — 계좌 표의 계좌 이름이나 머리의 계좌 고르기로 바뀝니다
           </p>
           <DataTable
             columns={positionColumns}
@@ -237,7 +237,7 @@ export function LiveValuationCard({
       ) : (
         <p className="text-sm text-text-3">계좌가 없습니다.</p>
       )}
-    </Card>
+    </Panel>
   );
 }
 

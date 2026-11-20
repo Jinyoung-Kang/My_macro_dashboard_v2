@@ -1652,19 +1652,23 @@ def info_source_exists(source: str) -> bool:
         return conn.execute("SELECT 1 FROM info_items WHERE source = %s LIMIT 1", (source,)).fetchone() is not None
 
 
-def info_page_outcomes(source: str, limit: int) -> list[str]:
+def info_page_outcomes(source: str, limit: int) -> list[dict]:
     """
-    그 출처에서 글 페이지를 **받은** 글(meta.pageGot이 있는 행)의 본문 판정을 최근 글부터 ``limit``건 — 'full'이면 그 글 페이지에서 본문을
-    받은 글입니다. 글 페이지의 본문 자리가 바뀌었는지 보는 데 씁니다(services/info_blogs — QA-391). 열어 봤지만 받지 못한 글(meta.pageTries만
-    있음 — 404·5xx)은 뺍니다.
+    그 출처에서 글 페이지를 **받은** 글(meta.pageGot이 있는 행)을 최근 글부터 ``limit``건 → [{body_status, page_chars, feed_chars}].
+    body_status 'full'이면 그 글 페이지에서 본문을 받은 글이고, page_chars·feed_chars는 글 페이지의 본문 자리에서 얻은 글자 수와 피드 글의
+    글자 수입니다(그 칸이 없던 옛 행은 None — QA-391 후속). 글 페이지의 본문 자리가 바뀌었는지 보는 데 씁니다(services/info_blogs — QA-391).
+    열어 봤지만 받지 못한 글(meta.pageTries만 있음 — 404·5xx)은 뺍니다.
     """
     with connection() as conn:
         rows = conn.execute(
-            "SELECT body_status FROM info_items WHERE source = %s AND meta ? 'pageGot' "
+            "SELECT body_status, meta->'pageChars' AS page_chars, meta->'feedChars' AS feed_chars FROM info_items "
+            "WHERE source = %s AND meta ? 'pageGot' "
             "ORDER BY COALESCE(published_at, first_seen_at) DESC, id LIMIT %s",
             (source, int(limit)),
         ).fetchall()
-    return [r["body_status"] for r in rows]
+    return [{"body_status": r["body_status"],
+             "page_chars": r["page_chars"] if isinstance(r["page_chars"], int) else None,
+             "feed_chars": r["feed_chars"] if isinstance(r["feed_chars"], int) else None} for r in rows]
 
 
 def upsert_info_items(items: Iterable[dict], *, now: datetime | None = None) -> int:

@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Select, SourceBadge } from "@/components/ui";
+import { Button, Callout, ErrorState, FIELD_LABEL, inputClasses, Loading, PageHeader, Panel, Select, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
-import { defaultEngineId, demoQuotaNote, engineOptions, quotaLabel } from "@/lib/aiEngines";
+import { LogPanel, PropertyList } from "@/components/patterns";
+import { defaultEngineId, demoQuotaNote, engineAvailability, engineOptions, quotaLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
 import { formatKst, formatLatency, withoutLeadingIcon } from "@/lib/format";
 import type { AiEngines, AiResponse, SnapshotText } from "@/lib/types";
@@ -57,7 +58,7 @@ export default function AiReportPage() {
     report.run({ engineId, reportType: reportType || reportTypes.data?.types?.[0], extraInstruction: extra });
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="AI 종합 데이터 분석 & 결론 리포트"
         description="수집된 데이터만 근거로 삼습니다. 데이터에 없는 수치는 생성하지 않도록 지시합니다."
@@ -66,20 +67,20 @@ export default function AiReportPage() {
       {/* 엔진 목록을 받지 못하면 생성 버튼이 이유 없이 꺼져 있었습니다(QA-050). */}
       {engines.error && <ErrorState message={engines.error} onRetry={engines.reload} />}
       {engines.data && !engines.data.enabled && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           AI 키가 하나도 설정되지 않았습니다. Anthropic(Claude) / NVIDIA / Cerebras / Cloudflare 중 하나 이상을
           설정하면 이 메뉴가 활성화됩니다.
-        </Banner>
+        </Callout>
       )}
 
-      <Card title="리포트 설정">
+      <Panel title="리포트 설정">
         <div className="flex flex-wrap items-end gap-3">
           <Select
             label="AI 엔진"
             value={engineId}
             onChange={setPickedEngine}
-            // 고르기 전에 속도를 보여 줍니다. 추론형 모델이 느린 것은 고장이
-            // 아니라 그 모델의 성질인데, 목록만 보면 알 수 없었습니다.
+            // 선택지 글은 이름 + 못 쓰는 이유만(속도 안내까지 실으면 상자에서 잘렸음 — QA-850). 속도는 아래 '고른 엔진'에 보입니다 — 추론형 모델이
+            // 느린 것은 고장이 아니라 그 모델의 성질인데, 목록만 보면 알 수 없었습니다.
             options={engineOptions(engines.data?.engines ?? [])}
           />
           <Select
@@ -93,6 +94,33 @@ export default function AiReportPage() {
           />
         </div>
 
+        {selectedEngine ? (
+          <div className="mt-3 max-w-md">
+            <PropertyList
+              title="고른 엔진"
+              dense
+              items={[
+                { label: "속도", value: selectedEngine.speedHint ?? null },
+                { label: "모델", value: selectedEngine.model, mono: true },
+                { label: "쓸 수 있는지", value: engineAvailability(selectedEngine) },
+              ]}
+            />
+          </div>
+        ) : engines.loading && !engines.data ? (
+          // 엔진을 읽는 동안에도 같은 세 줄을 '—' + '불러오는 중'으로 — 응답 뒤 속성 목록이 자리 없이 들어와 아래 칸을 밀었습니다(CLS — QA-876).
+          <div className="mt-3 max-w-md">
+            <PropertyList
+              title="고른 엔진"
+              dense
+              items={[
+                { label: "속도", value: null, emptyReason: "불러오는 중" },
+                { label: "모델", value: null, emptyReason: "불러오는 중" },
+                { label: "쓸 수 있는지", value: null, emptyReason: "불러오는 중" },
+              ]}
+            />
+          </div>
+        ) : null}
+
         <p className="mt-2 text-xs leading-relaxed text-text-3">
           {engineId === "auto"
             ? `자동 탐색은 빠른 엔진부터 부릅니다${
@@ -103,7 +131,8 @@ export default function AiReportPage() {
               }.${selectedEngine?.description ? ` ${selectedEngine.description}.` : ""}`}
         </p>
 
-        <label className="mt-4 block text-xs text-text-3">
+        {/* 이름표는 공용 고르기 상자와 같은 13px 보조 글(text-2 — 예전 12px text-3). */}
+        <label className={`mt-4 ${FIELD_LABEL}`}>
           추가 지시 (선택)
           <textarea
             value={extra}
@@ -111,7 +140,7 @@ export default function AiReportPage() {
             rows={3}
             maxLength={2000}
             placeholder="예: 향후 2주 관점에서 코스피200 선물 포지션에 집중해 주세요."
-            className={`mt-1 w-full ${inputClasses()}`}
+            className={`w-full ${inputClasses()}`}
           />
         </label>
 
@@ -119,7 +148,8 @@ export default function AiReportPage() {
           <Button
             variant="primary"
             onClick={generate}
-            disabled={busy || !engines.data?.enabled}
+            disabled={!engines.data?.enabled}
+            busy={busy}
           >
             {busy ? `생성 중… ${elapsed}초 경과` : "리포트 생성"}
           </Button>
@@ -140,10 +170,10 @@ export default function AiReportPage() {
             disabled={!snapshot.data?.text}
           />
         </div>
-      </Card>
+      </Panel>
 
       {showData && (
-        <Card
+        <Panel
           title="수집 데이터 원본 (AI 입력)" source={SOURCES.aiInput}
           subtitle={
             snapshot.data
@@ -157,19 +187,19 @@ export default function AiReportPage() {
           {snapshot.loading && !snapshot.data && <Loading />}
           {/* 받지 못하면 이유 없이 빈 상자만 남았습니다(QA-132). */}
           {snapshot.error && <ErrorState message={snapshot.error} onRetry={snapshot.reload} />}
-          {snapshot.data && (
-            <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-bg p-3 text-xs leading-relaxed text-text-3">
-              {snapshot.data.text}
-            </pre>
-          )}
-        </Card>
+          {snapshot.data && <LogPanel label="AI 입력 원본" text={snapshot.data.text} maxHeight="lg" tone="muted" wrap="word" />}
+        </Panel>
       )}
 
       {/* 실패 문구에는 엔진 라벨·'자동 탐색' 안내가 실려 예전 그림 문자가 섞여 옵니다 — 화면에서 뗍니다 */}
-      {error && <Banner tone="danger">{withoutLeadingIcon(error)}</Banner>}
+      {error && (
+        <Callout tone="danger" title="생성 실패">
+          <p>{withoutLeadingIcon(error)}</p>
+        </Callout>
+      )}
 
       {result && (
-        <Card
+        <Panel
           title={`${result.reportType ?? "AI 리포트"}`}
           source={`${result.provider ?? "AI"}가 대시보드 저장본을 읽고 쓴 해석 — 수치의 원래 출처는 입력 원본에 표기 · 투자 판단 근거 아님`}
           subtitle={
@@ -210,8 +240,8 @@ export default function AiReportPage() {
           }
         >
           {!result.status ? (
-            <Banner tone="danger">
-              생성 실패: {withoutLeadingIcon(result.error ?? "")}
+            <Callout tone="danger" title="생성 실패">
+              <p>{withoutLeadingIcon(result.error ?? "")}</p>
               {result.failoverPath && (
                 <ul className="mt-2 list-disc pl-5 text-xs">
                   {result.failoverPath.map((step) => (
@@ -219,7 +249,7 @@ export default function AiReportPage() {
                   ))}
                 </ul>
               )}
-            </Banner>
+            </Callout>
           ) : (
             <>
               {result.failoverPath && result.failoverPath.length > 1 && (
@@ -228,18 +258,13 @@ export default function AiReportPage() {
                 </p>
               )}
               {showRaw ? (
-                <pre
-                  tabIndex={0}
-                  className="max-h-[640px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-bg p-3 text-[12px] leading-relaxed text-text-2"
-                >
-                  {result.response}
-                </pre>
+                <LogPanel label="리포트 원문" text={result.response ?? ""} maxHeight="lg" wrap="word" />
               ) : (
                 <ReportView markdown={result.response ?? ""} />
               )}
             </>
           )}
-        </Card>
+        </Panel>
       )}
     </div>
   );

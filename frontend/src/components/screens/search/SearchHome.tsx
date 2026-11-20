@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { PANEL_CLASSES } from "@/components/ui/classes";
 import type { InfoSearchWatch } from "@/hooks/useInfoSearchWatch";
 import { ExcludesPanel } from "./ExcludesPanel";
-import { PANEL } from "./parts";
 import { RecentPanel } from "./RecentPanel";
 import { SearchIntro } from "./SearchIntro";
 import { WatchPane } from "./WatchPane";
@@ -28,7 +28,7 @@ export function SearchHome({
   const excludesChanged = useCallback(() => setExcludesVersion((value) => value + 1), []);
   return (
     <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
-      <aside className={`${PANEL} p-3`}>
+      <aside className={`${PANEL_CLASSES} p-3`}>
         <WatchPane watch={watch} demo={demo} onOpen={onOpen} />
       </aside>
       <div className="flex min-w-0 flex-col gap-3">

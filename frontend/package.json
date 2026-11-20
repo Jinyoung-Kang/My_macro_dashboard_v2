@@ -2,6 +2,7 @@
   "name": "macro-dashboard-frontend",
   "version": "2.0.0",
   "private": true,
+  "sideEffects": ["**/*.css", "./src/app/**", "./src/hooks/**", "./src/lib/**", "./src/components/*.tsx", "./src/components/auth/**", "./src/components/charts/**", "./src/components/screens/**", "./src/components/shell/**", "./src/components/ui/**"],
   "description": "글로벌 매크로 대시보드 화면 (Next.js + React + TypeScript)",
   "scripts": {
     "dev": "next dev -p 3000",

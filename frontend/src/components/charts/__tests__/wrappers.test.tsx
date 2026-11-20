@@ -388,7 +388,7 @@ describe("막대·산점도", () => {
     expect(bars).toHaveLength(2);
     const negative = bars.find((bar) => bar.negative);
     expect(negative, "음수 막대").toBeDefined();
-    const label = [...container.querySelectorAll("text")].find((node) => node.textContent === "-40.2억") as SVGTextElement;
+    const label = [...container.querySelectorAll("text")].find((node) => node.textContent === "\u221240.2억") as SVGTextElement; // 음수는 U+2212(QA-941)
     expect(label.getAttribute("text-anchor")).toBe("end");
     // (a) 라벨 글 끝이 막대 바깥 끝보다 6px 이상 왼쪽 — 막대와 겹치지 않음
     expect(Number(label.getAttribute("x")), "라벨 x").toBeLessThanOrEqual((negative?.start ?? 0) - 6);

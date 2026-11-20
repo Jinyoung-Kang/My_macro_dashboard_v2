@@ -24,7 +24,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY, formatChartNumber } from "@/lib/format";
 import { readableOn, valueDescKey } from "@/lib/chartTooltip";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
 import {
@@ -36,6 +36,7 @@ import {
   lineXAxis,
   lineYAxis,
   markerLabelSide,
+  markerLabelWidth,
   type LineRow,
   type LineYAxis,
   tailPointShown,
@@ -161,7 +162,7 @@ function BarValueLabel({
       fill={AXIS_TEXT}
       fontSize={AXIS.fontSize}
     >
-      {`${formatNumber(amount, digits)}${unit}`}
+      {`${formatChartNumber(amount, digits)}${unit}`}
     </text>
   );
 }
@@ -253,8 +254,8 @@ export function LineSeries({
       grid={grid}
       ariaLabel={ariaLabel}
       includeZero={zeroLine}
-      valueFormat={(value) => `${formatNumber(value, precision)}${unit}`}
-      tooltipFormat={(value) => `${formatNumber(value, precision + 1)}${unit}`}
+      valueFormat={(value) => `${formatChartNumber(value, precision)}${unit}`}
+      tooltipFormat={(value) => `${formatChartNumber(value, precision + 1)}${unit}`}
     />
   );
 }
@@ -311,6 +312,43 @@ export function SeriesColorTooltipContent(props: ComponentProps<typeof DefaultTo
   return <DefaultTooltipContent {...props} payload={payload} />;
 }
 
+/** 세로 표시선 이름과 선 사이(px) — lib/lineChart markerLabelSide의 여백(Recharts 표시선 이름의 안쪽 여백 5에 한 칸 더)과 같은 값. */
+const MARKER_LABEL_PAD = 6;
+/** 이웃 이름표 사이에 남길 최소 틈(px). */
+const MARKER_LABEL_GAP = 4;
+
+/**
+ * 이름표를 그릴 세로 표시선(QA-736) — 그림 너비를 알면 선마다 이름표의 x 범위(선 오른쪽 또는 왼쪽 — markerLabelSide, 폭은 이름표 글 폭 어림 markerLabelWidth —
+ * 축 글 폭 어림은 한글을 넉넉히 잡아 겹치지 않는 이름표까지 숨겼음, QA-777)를
+ * 셈해, 앞(날짜가 이른) 이름표와 겹치거나 4px보다 가까운 뒤 이름표는 그리지 않습니다. 선은 모두 그립니다. 너비를 모르면(측정 전) 모두 그립니다(예전과 같음).
+ * 날짜가 행에 없는 표시선은 Recharts가 그리지 않아 셈에서 뺍니다.
+ */
+function shownMarkerLabels(
+  rows: readonly LineRow[],
+  markers: readonly { x: string; label: string }[],
+  width: number | null,
+): Set<{ x: string; label: string }> {
+  if (!(width !== null && width > 0) || rows.length < 2) return new Set(markers);
+  const lastIndex = rows.length - 1;
+  const placed = markers
+    .map((marker) => ({ marker, index: rows.findIndex((row) => row.date === marker.x) }))
+    .filter((entry) => entry.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  const shown = new Set<{ x: string; label: string }>();
+  const taken: { left: number; right: number }[] = [];
+  for (const { marker, index } of placed) {
+    const at = (index / lastIndex) * width;
+    const labelWidth = markerLabelWidth(marker.label, CHART_FONT);
+    const side = markerLabelSide(rows, marker.x, marker.label, { width, fontSize: CHART_FONT });
+    const left = side === "left" ? at - MARKER_LABEL_PAD - labelWidth : at + MARKER_LABEL_PAD;
+    const right = left + labelWidth;
+    if (taken.some((range) => left < range.right + MARKER_LABEL_GAP && right > range.left - MARKER_LABEL_GAP)) continue;
+    taken.push({ left, right });
+    shown.add(marker);
+  }
+  return shown;
+}
+
 export function MultiLineSeries({
   data,
   series,
@@ -350,7 +388,8 @@ export function MultiLineSeries({
   zeroLine?: boolean;
   /**
    * 세로 기준선 — x는 data의 date 값, label은 선 위에 적는 짧은 이름(예: 모의 매매 순자산 곡선의 "프레임 v1" — 그날부터 판단 프레임이
-   * 바뀜). 범주 축이라 data에 없는 날짜는 그려지지 않으므로, 부르는 쪽이 같은 내용을 글로도 적습니다(선만으로 뜻을 나르지 않음).
+   * 바뀜). 범주 축이라 data에 없는 날짜는 그려지지 않고, 좁은 그림에서 이웃 이름표와 겹치는 뒤 이름표는 그리지 않으므로(선은 남음 — QA-736),
+   * 부르는 쪽이 같은 내용을 글로도 적습니다(선만으로 뜻을 나르지 않음).
    */
   markers?: { x: string; label: string }[];
   /**
@@ -387,8 +426,8 @@ export function MultiLineSeries({
   const usesRight = series.some((entry) => entry.axis === "right");
   // 그림 너비(px) — X 중간 눈금 개수를 고릅니다(선 차트 LineChart와 같음). 재기 전에는 null(첫·마지막만).
   const [width, setWidth] = useState<number | null>(null);
-  const leftLabel = (value: number) => `${formatNumber(value, precision)}${unit}`;
-  const rightLabel = (value: number) => formatNumber(value, rightPrecision);
+  const leftLabel = (value: number) => `${formatChartNumber(value, precision)}${unit}`;
+  const rightLabel = (value: number) => formatChartNumber(value, rightPrecision);
   // 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 둥근 간격, 0은 zeroLine일 때만). 고정 범위(domain)면 그 범위 안의 둥근 간격.
   const leftAxis: LineYAxis | null = domain
     ? fixedYAxis(domain, { zeroLine, format: leftLabel })
@@ -402,6 +441,7 @@ export function MultiLineSeries({
   const leftWidth = axisWidth ?? Math.max(0, ...(leftAxis?.ticks ?? []).map((tick) => axisLabelWidth(leftLabel(tick), CHART_FONT))) + 12;
   const plotWidth = width === null ? null : width - leftWidth - (usesRight ? 76 : 0) - 8;
   const xAxis = lineXAxis(rows, { width: plotWidth, fontSize: CHART_FONT });
+  const markerLabelShown = shownMarkerLabels(rows, markers, plotWidth);
   const xTicks = xAxis.ticks;
   const first = xTicks[0] ?? "";
   const last = xTicks[xTicks.length - 1] ?? "";
@@ -483,7 +523,7 @@ export function MultiLineSeries({
               return [
                 value === null || value === undefined
                   ? EMPTY
-                  : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
+                  : `${formatChartNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
                 String(name),
               ];
             }}
@@ -493,6 +533,7 @@ export function MultiLineSeries({
             경계선은 계열선보다 흐린 회색 점선 — 값이 아니라 "여기서 조건이 바뀜" 표시라 계열색과 겹치지 않게 합니다. 이름은 선 오른쪽에
             적고, 오른쪽에 적으면 그림 끝을 넘는 선(마지막 날짜 근처)만 왼쪽에 적습니다 — 예전에는 마지막 '프레임 v5'가 잘렸습니다.
           */}
+          {/* 이름표가 이웃 이름표와 겹치면 뒤 이름표를 그리지 않습니다(선은 남음 — QA-736). 판은 부르는 쪽이 글로도 적습니다(markers 설명). */}
           {markers.map((marker) => (
             <ReferenceLine
               key={`${marker.x}-${marker.label}`}
@@ -501,14 +542,14 @@ export function MultiLineSeries({
               stroke={GUIDE}
               strokeDasharray="4 3"
               strokeWidth={1}
-              label={{
+              label={markerLabelShown.has(marker) ? {
                 value: marker.label,
                 position: markerLabelSide(rows, marker.x, marker.label, { width: plotWidth, fontSize: CHART_FONT }) === "left"
                   ? "insideTopRight"
                   : "insideTopLeft",
                 fill: AXIS_TEXT,
                 fontSize: CHART_FONT,
-              }}
+              } : undefined}
             />
           ))}
           {series.map((entry) => {
@@ -614,7 +655,7 @@ export function HorizontalBars({
           tick={AXIS}
           tickLine={false}
           padding={hasNegative ? { left: NEG_LABEL_ROOM } : undefined}
-          tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 0)}${unit}`}
         />
         {/* 축 폭은 이름표 폭에 맞춥니다(width="auto") — 고정 150px은 12px 글자에서 영문 대문자가 섞인 24칸 이름('KODEX 코스닥150선물인버…')을 왼쪽에서 잘랐습니다. */}
         <YAxis
@@ -629,7 +670,7 @@ export function HorizontalBars({
         <Tooltip
           {...tooltipStyle()}
           cursor={BAR_CURSOR}
-          formatter={(value) => [`${formatNumber(Number(value), digits)}${unit}`, valueName]}
+          formatter={(value) => [`${formatChartNumber(Number(value), digits)}${unit}`, valueName]}
         />
         <ReferenceLine x={0} stroke={GUIDE} />
         {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 — 상승·하락 토큰(패널 면 surface 위 그래픽 대비 5.84·8.06:1 — 작업대 실행 명세 §3-5) */}
@@ -689,12 +730,12 @@ export function SignedBars({
           tick={AXIS}
           tickLine={false}
           width="auto"
-          tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 0)}${unit}`}
         />
         <Tooltip
           {...tooltipStyle()}
           cursor={BAR_CURSOR}
-          formatter={(value) => [`${formatNumber(Number(value), 0)}${unit}`, valueName]}
+          formatter={(value) => [`${formatChartNumber(Number(value), 0)}${unit}`, valueName]}
         />
         <ReferenceLine y={0} stroke={GUIDE} />
         <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
@@ -756,7 +797,7 @@ export function ScatterPlot({
           stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
-          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 2)}`}
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
                    offset: -18, fill: AXIS_TEXT, fontSize: CHART_FONT }}
         />
@@ -775,7 +816,7 @@ export function ScatterPlot({
           tick={AXIS}
           tickLine={false}
           width={70}
-          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 2)}`}
           label={{ value: `${yLabel}${yUnit ? ` (${yUnit})` : ""}`, angle: -90, position: "insideLeft",
                    fill: AXIS_TEXT, fontSize: CHART_FONT, textAnchor: "middle" }}
         />
@@ -787,7 +828,7 @@ export function ScatterPlot({
           {...tooltipStyle()}
           cursor={{ strokeDasharray: "3 3", stroke: GUIDE }}
           formatter={(value, name) => [
-            `${formatNumber(Number(value), 3)}${String(name) === xLabel ? xUnit : yUnit}`,
+            `${formatChartNumber(Number(value), 3)}${String(name) === xLabel ? xUnit : yUnit}`,
             String(name),
           ]}
           labelFormatter={() => ""}

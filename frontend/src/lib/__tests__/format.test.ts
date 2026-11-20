@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   deltaColor, deltaDirection, textDeltaDirection, withMinusSign, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
+  formatChartNumber,
   formatKstSeconds,
   formatLatency,
   formatSignedMinus,
@@ -203,6 +204,20 @@ describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
   });
 });
 
+describe("QA-941 차트 숫자(formatChartNumber) — formatNumber와 같은 글에 음수 부호만 U+2212", () => {
+  it("음수는 −, 양수·0·반올림 뒤 0은 부호 없음, 모르면 —, 천 단위·자릿수는 formatNumber 그대로", () => {
+    expect(formatChartNumber(-1.5, 1)).toBe(`${MINUS}1.5`);
+    expect(formatChartNumber(-12345.678, 0)).toBe(`${MINUS}12,346`);
+    expect(formatChartNumber(2.25)).toBe("2.25");
+    expect(formatChartNumber(0)).toBe("0.00");
+    expect(formatChartNumber(-0.004)).toBe("0.00");
+    expect(formatChartNumber(null)).toBe("—");
+    expect(formatChartNumber(Number.NaN)).toBe("—");
+    // formatNumber 자체는 그대로(여러 화면·복사 글이 씀).
+    expect(formatNumber(-1.5, 1)).toBe("-1.5");
+  });
+});
+
 describe("QA-525 등락 방향(deltaDirection)과 글 속 음수 부호(withMinusSign) — 공용 지표 칸 Metric", () => {
   it("방향은 보이는 자릿수로 반올림한 값의 부호 — deltaColor와 같은 판정, 모르면 null", () => {
     expect(deltaDirection(1.5)).toBe("up");
@@ -289,5 +304,14 @@ describe("기준 시각 — 초까지(formatKstSeconds, 명세 2026-11-06-us-cos
     expect(formatKstSeconds("")).toBe("—");
     expect(formatKstSeconds("어제 저녁")).toBe("어제 저녁");
     expect(formatKstSeconds(new Date(Number.NaN))).toBe("—");
+  });
+});
+
+describe("signedKrwText — 부호 있는 원화 금액의 표 칸 글(P7 검토 — 두 화면의 같은 도우미를 모음)", () => {
+  it("양수는 +, 음수는 U+2212, 모르면 null(표가 '—')", async () => {
+    const { signedKrwText, formatSignedKrw, withMinusSign } = await import("../format");
+    expect(signedKrwText(null)).toBeNull();
+    for (const value of [123_400_000_000, -2_611_000_000_000, 0]) expect(signedKrwText(value)).toBe(withMinusSign(formatSignedKrw(value)));
+    expect(signedKrwText(-2_611_000_000_000)?.startsWith("\u2212")).toBe(true);
   });
 });

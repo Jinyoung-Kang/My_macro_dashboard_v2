@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AUTH_NOTICE_CARD } from "@/components/auth/classes";
 import { Shell } from "@/components/shell/Shell";
 import { buttonClasses } from "@/components/ui/classes";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -83,18 +84,6 @@ function DashboardShell({
 }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
   const pathname = usePathname();
-  // 읽지 않은 알림 수 — 기존 자동 갱신 주기(5분). 알림 사건이 5분 평가에서 생기므로 더 빠를 이유가 없습니다.
-  const alerts = useApi<{ unread: number }>(endpoints.alerts.unreadCount, 300_000, { followRefresh: false });
-  // 모르면(읽는 중·실패) null — 알림 벨이 "0건"을 지어내지 않게 합니다(탭 제목은 0과 같게 접두사 없음).
-  const unread = alerts.data ? alerts.data.unread : null;
-  useDocumentTitle(pathname, unread);
-  // 알림함에서 읽음 처리하면 바로 다시 읽습니다(5분을 기다리지 않음, QA-051).
-  const reloadUnread = alerts.reload;
-  useEffect(() => {
-    const onRead = () => void reloadUnread();
-    window.addEventListener(ALERTS_READ_EVENT, onRead);
-    return () => window.removeEventListener(ALERTS_READ_EVENT, onRead);
-  }, [reloadUnread]);
   // 수동 새로고침에는 반응하지 않습니다(followRefresh: false). 반응하면 새로고침마다
   // 아래의 "세션을 확인하는 중…"이 떠 화면 전체가 다시 그려지고 화면 상태가 초기화됐습니다.
   const session = useApi<SessionResponse>(endpoints.auth.session, 0, {
@@ -107,6 +96,23 @@ function DashboardShell({
   const { sessionLost, unauthorizedCount } = useRefreshSignal();
 
   const authenticated = data?.authenticated ?? false;
+  // 읽지 않은 알림 수 — 기존 자동 갱신 주기(5분). 알림 사건이 5분 평가에서 생기므로 더 빠를 이유가 없습니다.
+  // 세션 확인이 끝나 화면(자식)을 그리는 때에 처음 요청합니다(QA-919). 같은 경로를 읽는 화면(홈의 알림 구역)이 같은 커밋에서 요청해 진행 중인 요청
+  // 하나로 합쳐집니다(lib/sharedRequest는 진행 중인 요청만 묶음). 전에는 세션 확인과 함께 먼저 요청해, 그 응답이 세션 응답보다 먼저 끝나면 홈이 같은
+  // 경로를 다시 요청했습니다. 벨의 수는 세션 응답 뒤에 오지만 벨(셸)은 그때 처음 그려지므로 늦어 보이지 않습니다.
+  const alerts = useApi<{ unread: number }>(authenticated ? endpoints.alerts.unreadCount : null, 300_000, {
+    followRefresh: false,
+  });
+  // 모르면(읽는 중·실패) null — 알림 벨이 "0건"을 지어내지 않게 합니다(탭 제목은 0과 같게 접두사 없음).
+  const unread = alerts.data ? alerts.data.unread : null;
+  useDocumentTitle(pathname, unread);
+  // 알림함에서 읽음 처리하면 바로 다시 읽습니다(5분을 기다리지 않음, QA-051).
+  const reloadUnread = alerts.reload;
+  useEffect(() => {
+    const onRead = () => void reloadUnread();
+    window.addEventListener(ALERTS_READ_EVENT, onRead);
+    return () => window.removeEventListener(ALERTS_READ_EVENT, onRead);
+  }, [reloadUnread]);
   const noLogin = isNoLogin(data);
   // 로그인 없이 열려는데 운영자 계정이 없음 — 로그인 화면도 쓸 수 없으니 계정을 만드는 방법을 안내합니다.
   const waitingForOwner = noLogin && !authenticated && data?.ownerMissing === true;
@@ -206,7 +212,7 @@ function BackendUnavailable({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+      <div className={AUTH_NOTICE_CARD}>
         <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           백엔드 API에 연결하지 못했습니다
@@ -247,7 +253,7 @@ make logs S=backend  # 기동 실패 원인`}
 function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-lg rounded-card border border-warn/40 bg-surface p-6 text-sm sm:p-8">
+      <div className={AUTH_NOTICE_CARD}>
         <h1 className="flex items-center gap-2 text-title-3 text-text">
           <AlertTriangleIcon size={18} className="text-warn" />
           운영자 계정이 아직 없습니다

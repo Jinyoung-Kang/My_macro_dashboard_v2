@@ -1,20 +1,22 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
-import { type Column, DataTable, Empty } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, Freshness, Loading, Select } from "@/components/ui";
+import { type Column, DataTable, Empty, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
+import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
+import type { ActionBarItem } from "@/components/ui/ActionBar";
+import { PanelRightIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
+import { useTickerName } from "@/hooks/useTickerNames";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { deltaColor, EMPTY, formatKst, formatNumber, formatPercent, formatSignedMinus, formatWithUnit } from "@/lib/format";
 import { liveKey, livePriceTitle, liveSecondsText, liveShown, returnVsCost, tradedAtText } from "@/lib/livePrices";
 import {
-  type Badge,
   bookCard,
   bookOptions,
   executionAdvantageText,
@@ -62,7 +64,15 @@ import {
   krPriceSourceLabel,
   krStopBasisText,
 } from "@/lib/paperKr";
-import { formatMoney, type PaperMarketCode } from "@/lib/paperMarket";
+import {
+  type FillSideFilter,
+  fillSideOptions,
+  filterFills,
+  filterOrders,
+  type OrderStatusFilter,
+  orderStatusOptions,
+} from "@/lib/paperHoldingsView";
+import { formatMoney, marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
 import type {
   PaperBookResetResult,
   PaperBookStatusResult,
@@ -80,6 +90,10 @@ import type {
   PaperStatusResponse,
   LivePrice,
 } from "@/lib/types";
+import { HoldingInspector } from "./HoldingInspector";
+import { PaperBadge, PaperBadges } from "./PaperBadge";
+import { RowFilter } from "./RowFilter";
+import { PaperTabAccount, PaperTabActions } from "./PaperTabHeader";
 import { TickerQuickView } from "./TickerQuickView";
 import { TickerName } from "./TickerName";
 
@@ -99,7 +113,7 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span className="font-semibold text-text"><TickerQuickView market="US" code={row.ticker}>{row.ticker}</TickerQuickView></span>
-        <Badges badges={positionBadges(row)} />
+        <PaperBadges bare badges={positionBadges(row)} />
       </span>
     ),
   },
@@ -129,7 +143,8 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
   },
   { key: "highWatermark", header: "최고가", align: "right", cell: (row) => formatSharePrice(row.highWatermark) },
   { key: "stop", header: "스탑 가격", align: "right", cell: (row) => stopText(row) },
-  { key: "held", header: "보유 기간", cell: (row) => heldText(row) },
+  // 보유 기간은 낱말 사이에서만 줄바꿈(break-keep — '15거래/일'처럼 한 글자씩 접지 않음, QA-737), 최소 폭은 날짜 한 줄(한국 표와 같음).
+  { key: "held", header: "보유 기간", className: "min-w-[8rem] break-keep", cell: (row) => heldText(row) },
 ];
 
 /**
@@ -173,19 +188,36 @@ const LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
   { key: "reason", header: "사유", cell: (row) => row.reason || EMPTY },
 ];
 
+// 짧은 한국어 칸(방향 '매수'·출처 '사후 체결')은 줄을 바꾸지 않습니다 — CSS 기본은 한글 음절 사이 어디서나 접어 좁은 칸에서 '매/수'가 됐습니다(QA-737).
+/** 머리 '일시정지'·'재개' 동작 id(ActionBar의 data-action) — 끝나면 포커스를 되돌릴 자리(QA-814). */
+const STATUS_ACTION = "status";
+
 const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "createdAt", header: "낸 시각", cell: (row) => formatKst(row.createdAtKst) },
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
-  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
-  { key: "size", header: "크기", align: "right", cell: (row) => orderSizeText(row) },
-  { key: "timing", header: "체결 시점", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
-  { key: "source", header: "출처", cell: (row) => sourceLabel(row.source) },
+  { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  // 오른쪽 정렬 칸은 줄바꿈 없음이 기본 — 긴 크기('순자산의 16.91% 매수 (목표 66.88%)')는 낱말 사이에서 접습니다(계좌2 주문 표와 같음). 줄바꿈 없이 두면 1440에서
+  // 이 칸이 256px을 쥐고 남은 폭을 근거 칸이 내줘 근거가 141px로 좁아졌습니다(QA-810).
+  {
+    key: "size",
+    header: "크기",
+    align: "right",
+    className: "min-w-[5.5rem]",
+    cell: (row) => {
+      const text = orderSizeText(row);
+      return text === EMPTY ? text : <span className="whitespace-normal break-keep">{text}</span>;
+    },
+  },
+  { key: "timing", header: "체결 시점", className: "min-w-[6.5rem] break-keep", cell: (row) => timingLabel(row.timing, "US", row.targetLocal, row) },
+  { key: "source", header: "출처", className: "whitespace-nowrap", cell: (row) => sourceLabel(row.source) },
+  // 거절·취소 사유는 낱말 사이에서만 꺾습니다('계/획'·'남/는'이 되지 않게 — QA-821, 결정 로그·한국 주문 표의 상태 칸과 같음). 최소 폭은 두지 않습니다(QA-810의 열 폭).
   {
     key: "status",
     header: "상태",
+    className: "break-keep",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <Badges badges={[orderStatusBadge(row.status)]} />
+        <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
         {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
       </span>
     ),
@@ -194,10 +226,12 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "expires", header: "만료", cell: (row) => row.expiresOn ?? EMPTY },
   { key: "filledAt", header: "체결 시각", cell: (row) => formatKst(row.filledAtKst) },
   // 규칙 책 근거는 `rule · signal · kind`가 앞이라 키 순서대로 80자에서 자르면 문장(text)이 안 보입니다 — 결정 로그
-  // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다.
+  // 탭과 같은 orderReasonText로 문장(없으면 점수 기여)을 먼저 보이고, 전체 JSON은 마우스를 올려 봅니다. 마지막 칸이라 최소 폭이 없으면 앞 칸들이 넓어질 때
+  // 폭을 모두 내줘 낱말 중간에서 꺾였습니다 — 한국 주문 표와 같은 최소 폭·낱말 사이 줄바꿈(QA-810).
   {
     key: "reason",
     header: "근거",
+    className: "min-w-[11rem] break-keep",
     cell: (row) => {
       const text = orderReasonText(row.reason, 80);
       return text === EMPTY ? text : (
@@ -217,11 +251,11 @@ const FILL_COLUMNS: readonly Column<PaperFill>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span>{row.ticker}</span>
-        <Badges badges={fillBadges(row)} />
+        <PaperBadges bare badges={fillBadges(row)} />
       </span>
     ),
   },
-  { key: "side", header: "방향", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
+  { key: "side", header: "방향", className: "whitespace-nowrap", cell: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
   { key: "qty", header: "수량", align: "right", cell: (row) => formatNumber(row.qty, 0) },
   { key: "price", header: "체결가(달러)", align: "right", cell: (row) => formatSharePrice(row.price) },
   { key: "rawPrice", header: "관측가", align: "right", cell: (row) => formatSharePrice(row.rawPrice) },
@@ -318,7 +352,7 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
       cell: (row) => (
         <span className="flex flex-col gap-0.5">
           <span className="flex flex-wrap items-center gap-1">
-            <Badges badges={[orderStatusBadge(row.status)]} />
+            <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
             {row.rejectReason && <span className="text-xs text-warn">{row.rejectReason}</span>}
           </span>
           <span className="whitespace-nowrap text-xs text-text-3">
@@ -364,7 +398,7 @@ function timedFillColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Colu
       cell: (row) => (
         <span className="flex flex-wrap items-center gap-1">
           <span>{row.ticker}</span>
-          <Badges badges={fillBadges(row)} />
+          <PaperBadges bare badges={fillBadges(row)} />
         </span>
       ),
     },
@@ -439,7 +473,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span className="font-semibold text-text"><TickerQuickView market="KR" code={row.ticker} /></span>
-        <Badges badges={krPositionBadges(row)} />
+        <PaperBadges bare badges={krPositionBadges(row)} />
       </span>
     ),
   },
@@ -541,7 +575,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
       const reject = krOrderRejectText(row.rejectReason);
       return (
         <span className="flex flex-wrap items-center gap-1">
-          <Badges badges={[orderStatusBadge(row.status)]} />
+          <PaperBadges bare badges={[orderStatusBadge(row.status)]} />
           {reject.label && <span className="text-xs font-semibold text-warn">{reject.label}</span>}
           {reject.detail && <span className="text-xs text-warn">{reject.detail}</span>}
         </span>
@@ -577,11 +611,12 @@ const KR_FILL_COLUMNS: readonly Column<PaperFill>[] = [
   {
     key: "ticker",
     header: "종목",
-    className: "min-w-[9rem]",
+    // 기업명은 낱말 사이에서만 꺾습니다('한화에어로스페이' / '스'가 되지 않게 — QA-817, 계좌 상세 표의 QA-776과 같은 규칙).
+    className: "min-w-[9rem] break-keep",
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
         <span><TickerName code={row.ticker} /></span>
-        <Badges badges={krFillBadges(row)} />
+        <PaperBadges bare badges={krFillBadges(row)} />
       </span>
     ),
   },
@@ -640,9 +675,8 @@ const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
     key: "final",
     header: "가격",
     cell: (row) => (
-      <span className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${row.pricesFinal
-        ? "border-ok/40 bg-ok-tint text-ok" : "border-warn/40 bg-warn-tint text-warn"}`}>
-        {row.pricesFinal ? "확정(금융위 종가)" : "잠정"}
+      <span className="whitespace-nowrap">
+        <Tag tone={row.pricesFinal ? "ok" : "warn"}>{row.pricesFinal ? "확정(금융위 종가)" : "잠정"}</Tag>
       </span>
     ),
   },
@@ -671,11 +705,14 @@ export function HoldingsSection({
   onChanged,
   initialBook = "",
   market = "US",
+  onOpenTab,
 }: {
   books: PaperBookSummary[];
   onChanged: () => void;
   /** 처음 고를 계좌 코드(개요의 계좌 상세에서 넘어올 때). 목록에 없으면 기본 계좌로 엽니다. */
   initialBook?: string;
+  /** 보유 검사 칸의 '결정 로그에서 보기' — 결정 로그 탭으로 바꾸며 이 계좌를 미리 고릅니다(PaperScreen openTab). 없으면 단추 없음. */
+  onOpenTab?: (tab: "holdings" | "decisions", code: string) => void;
   /**
    * 화면의 시장(2단계 명세 §4-16) — 한국은 원 단위 정수 칸·세 배지·확정 조정·실효 비용 bp·스탑 근거와 '순자산 기록'(잠정 사유) 카드가 더해지고,
    * 리셋 문구가 다릅니다(사후 체결 없음). 미국 화면은 예전 그대로.
@@ -683,7 +720,13 @@ export function HoldingsSection({
   market?: PaperMarketCode;
 }) {
   const korea = market === "KR";
+  const nameOf = useTickerName();
+  // 머리 '일시정지'·'재개'의 설명 글 id(aria-describedby — 확인 없이 바로 도는 동작이라 하는 일을 '계좌' 패널에 늘 보이는 글로 둠).
+  const pauseNoteId = `${useId()}-pause-note`;
   const [picked, setPicked] = useState(initialBook);
+  // 주문 상태·체결 방향 거르기(받은 최근 줄 안에서만 — 새 요청 없음).
+  const [orderFilter, setOrderFilter] = useState<OrderStatusFilter>("all");
+  const [fillFilter, setFillFilter] = useState<FillSideFilter>("all");
   const code = resolveBookCode(picked, books);
 
   const positions = useApi<PaperPositionsResponse>(code ? endpoints.paper.positions(code) : null, 60_000);
@@ -718,6 +761,18 @@ export function HoldingsSection({
   );
   // 계좌 초기화 확인 창. 입력 글자는 창 안에 있어 창을 닫으면 비워집니다(다시 열면 처음부터 — 계좌 코드를 다시 쳐야 함).
   const [confirmingReset, setConfirmingReset] = useState(false);
+  // 머리 '일시정지'·'재개'가 끝나면 그 동작(data-action=status — 바뀐 '재개'·'일시정지')으로 포커스를 되돌립니다. 보내는 동안 단추가 막혀(크롬은 막힌 단추의
+  // 포커스를 문서로 놓음) 잃은 포커스를 끝난 뒤에도 되돌리지 않아 다음 Tab이 문서 처음부터였습니다 — 결정 로그 머리 동작과 같은 규칙(QA-771), 포커스를
+  // 잃었을 때만 옮깁니다(QA-814).
+  const statusFocus = useRef(false);
+  useEffect(() => {
+    if (!statusFocus.current || toggle.busy) return;
+    const button = document.querySelector<HTMLButtonElement>(`button[data-action="${STATUS_ACTION}"]`);
+    if (!button || button.disabled) return;
+    statusFocus.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body || !active.isConnected) button.focus();
+  });
 
   const reloadAll = () => {
     void positions.reload();
@@ -733,11 +788,11 @@ export function HoldingsSection({
 
   if (!code) {
     return (
-      <Banner tone="info">
+      <Callout tone="neutral">
         {korea
           ? "아직 한국 계좌가 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 네 계좌가 생깁니다(쉬는 사유는 위 경고)."
           : "아직 계좌가 없습니다 — 개요 탭에서 초기화하면 생깁니다."}
-      </Banner>
+      </Callout>
     );
   }
 
@@ -759,7 +814,9 @@ export function HoldingsSection({
   const resetResult = reset.result?.book?.code === code ? resetResultView(reset.result) : null;
 
   const changeStatus = async () => {
-    if (action && (await toggle.run(code, action.next))) reloadAll();
+    if (!action) return;
+    statusFocus.current = true;
+    if (await toggle.run(code, action.next)) reloadAll();
   };
   const runReset = async (typed: string) => {
     // confirm은 사람이 친 글자 그대로입니다(확인 창은 계좌 코드와 같을 때만 부름) — 서버가 계좌 코드와 같은지 다시 봅니다(아니면 400).
@@ -770,108 +827,140 @@ export function HoldingsSection({
     if (ok) reloadAll();
   };
 
+  const meta = marketMeta(market);
+  const signedPercent = (value: number) => `${formatSignedMinus(value, 2).text}%`;
+  // 머리 동작(작업대 P6 — 명세 §7-1 '일시정지·계좌 초기화는 머리 동작'): 글·진행 글·막힘은 예전 단추 그대로. 일시정지·재개는 확인 없이 바로(예전과 같음 —
+  // 기본 의도, U1), 계좌 초기화는 확인 창(계좌 코드 입력)을 여는 위험 의도. 확인 창·결과 알림은 아래 '계좌' 패널에 남습니다.
+  const headerActions: ActionBarItem[] = [
+    ...(action
+      ? [{
+        id: STATUS_ACTION,
+        label: toggle.busy ? "바꾸는 중…" : action.label,
+        onSelect: () => void changeStatus(),
+        disabled: toggle.busy,
+        describedBy: pauseNoteId,
+      }]
+      : []),
+    {
+      id: "reset",
+      label: reset.busy ? "초기화 중…" : "계좌 초기화",
+      intent: "danger",
+      opensDialog: true,
+      onSelect: () => setConfirmingReset(true),
+      disabled: reset.busy,
+    },
+  ];
+  const decides = book?.kind === "RULES" || book?.kind === "CLAUDE";
+  const positionRows = positions.data?.available ? (positions.data.positions ?? []) : [];
+  const positionByTicker = new Map(positionRows.map((row) => [row.ticker, row]));
+  const allOrders = orders.data?.available ? (orders.data.orders ?? []) : [];
+  const allFills = fills.data?.available ? (fills.data.fills ?? []) : [];
+  // 주문 패널의 긴 설명(예전 부제 — 한국·계좌2만).
+  const ordersGuide: string | undefined = korea
+      ? "한국 주문은 '체결 시점' 칸의 시점에 체결합니다 — 시가는 다음 KR 거래일 시가(KRX 시가 단일가), 지정 시각·매시는 그 시각에 시작한 "
+        + "토스 1분봉 시가, 종가는 KRX 종가 단일가입니다(규칙 계좌의 시점은 설정 kr.rules.timing). 트레일링 스탑은 설정 kr.stopWatch.mode를 "
+        + "따릅니다 — 끔·기록만이면 밤 잠정 종가로 감지해 다음 거래일 시가에 팔고 체결 때 감지한 날의 금융위 확정 종가로 다시 판정하며(스탑가 "
+        + "위면 취소), 켬이면 정규장 5분 감시가 그 세션 안에 팔고(확정가 재판정 없음) 감시가 덮지 못한 종목만 밤에 감지해 다음 거래일 개장 "
+        + "10분 뒤 첫 분에 팝니다(금융위 재판정)."
+      : timed
+        ? "Claude 계좌2 주문은 다음 세션 하루짜리입니다(장중 확인이 장중에 낸 주문은 그 세션 하루 — 장중 시장가는 주문 생성 뒤 처음 시작하는 분(1분 안)이 "
+          + "기준 시각이고, 그 1분봉이 들어온 뒤 다른 시점과 같은 사다리로 체결) — 목표 시각은 고른 시점의 시각(KST), 계좌1식 대비는 같은 주문을 다음 시간별 관측치로 "
+          + "체결했다면의 원가격 대비 bp(실행 감사 — 양수면 고른 시점이 유리, 반사실이 아직 없거나 대체 체결이면 —)입니다. 1분봉에 그 시각 뒤 "
+          + "거래가 없으면 체결하지 않고 그날 마감 뒤 만료합니다(사유 NO_TRADE_AFTER_T 등)."
+        : undefined;
+
   return (
     <>
-      <Card
+      {/* 머리 칸(PaperTabHeader) — 계좌 고르기와 동작. */}
+      <PaperTabAccount value={code} options={bookOptions(books)} onChange={(value) => setPicked(value)} />
+      <PaperTabActions label="보유·체결 동작" actions={headerActions} />
+
+      <Panel
         title="계좌"
         source={ledgerSource}
         actions={<Freshness refreshError={positions.refreshError ?? orders.refreshError ?? fills.refreshError} />}
       >
-        <div className="flex flex-wrap items-end gap-4">
-          <Select
-            label="계좌 고르기"
-            value={code}
-            onChange={(value) => setPicked(value)}
-            options={bookOptions(books)}
-          />
-          {summary && (
-            <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
-              <div>
-                <dt className="text-text-3">상태</dt>
-                <dd><span className={`rounded-control border px-2 py-0.5 text-xs ${summary.status.className}`}>{summary.status.label}</span></dd>
-              </div>
-              <Pair label="순자산" value={summary.nav} />
-              <Pair label="수익률" value={summary.returnPct} tone={deltaColor(book?.returnPct)} />
-              <Pair label="현금" value={summary.cash} />
-              <Pair label="주식 노출" value={summary.exposure} />
-              <Pair label="출발" value={summary.startedOn} />
-            </dl>
-          )}
+        {/* 머리 동작의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안에 — 확인 창이 닫히면 초점이 머리의 '계좌 초기화' 단추로 돌아가므로, 이 영역이
+            없으면 낭독기 사용자는 성공·실패를 듣지 못합니다(영역이 먼저 있어야 새 내용을 읽음). 비어 있으면 높이·간격이 없습니다. */}
+        <div role="status" className="mb-3 flex flex-col gap-2 empty:mb-0">
+          {toggle.error && <Callout tone="warn">{toggle.error}</Callout>}
+          {toggleResult && <Callout tone="neutral">{statusResultText(toggleResult)}</Callout>}
+          {reset.error && <Callout tone="warn">{reset.error}</Callout>}
+          {resetResult && <Callout tone={resetResult.tone}>{resetResult.text}</Callout>}
         </div>
-
-        <div className="mt-4 grid gap-4 border-t border-border pt-4 md:grid-cols-2">
+        {summary && book && (
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-text">일시정지 · 재개</h3>
-            <p className="text-xs leading-relaxed text-text-3">
-              일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다.
-            </p>
-            {action ? (
-              <div>
-                <Button onClick={() => void changeStatus()} disabled={toggle.busy}>
-                  {toggle.busy ? "바꾸는 중…" : action.label}
-                </Button>
-              </div>
-            ) : (
-              <p className="text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
-            )}
-            {toggle.error && <Banner tone="warn">{toggle.error}</Banner>}
-            {toggleResult && <Banner tone="info">{statusResultText(toggleResult)}</Banner>}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-text-3">
+              <span>상태</span>
+              <PaperBadge badge={summary.status} />
+            </div>
+            <KpiStrip
+              label={`${book.label} 요약`}
+              items={[
+                // 출처는 바로 위 패널 머리의 '출처 ·' 줄과 같은 글이라 타일에 다시 적지 않습니다(작업대 P6 검토 — 좁은 화면에서 이 타일과 같은 줄 타일이 길어졌음).
+                { key: "nav", label: "순자산", value: book.nav, format: (value) => formatNumber(value, meta.moneyDigits), unit: meta.unitLabel },
+                { key: "return", label: "수익률(출발 이후)", value: book.returnPct, format: signedPercent },
+                { key: "cash", label: "현금", value: book.cash, format: (value) => formatNumber(value, meta.moneyDigits), unit: meta.unitLabel },
+                {
+                  key: "exposure",
+                  label: "주식 노출",
+                  value: book.exposurePct,
+                  format: (value) => formatNumber(value, 1),
+                  unit: "%",
+                  note: `현금성(${meta.cashLike}) 포함`,
+                },
+                { key: "started", label: "출발", value: summary.startedOn, valueKind: "label" },
+              ]}
+            />
           </div>
-
-          <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-text">계좌 초기화</h3>
-            {korea ? (
-              <p className="text-xs leading-relaxed text-text-3">
-                이 계좌의 체결·주문·보유·재진입 금지·확정 조정·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. {KR_RESET_NOTE}
-              </p>
-            ) : (
-              <p className="text-xs leading-relaxed text-text-3">
+        )}
+        {/* 머리 '일시정지'·'재개'는 확인 없이 바로 돕니다 — 하는 일을 접지 않고 늘 보이는 글로 두고 그 단추가 이 글을 설명으로 가리킵니다(개편 전에는 단추 바로 위
+            글 — 작업대 P6 검토). 시작 전이라 일시정지할 것이 없으면 머리에 그 단추가 없고 까닭을 보이는 글로 둡니다. */}
+        {action ? (
+          <p id={pauseNoteId} className="mt-3 text-xs leading-relaxed text-text-3">
+            일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
+        )}
+        <ReadingGuide topic="계좌 초기화">
+          계좌 초기화는{" "}
+          {korea
+            ? <>이 계좌의 체결·주문·보유·재진입 금지·확정 조정·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. {KR_RESET_NOTE}</>
+            : <>
                 이 계좌의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. 벤치마크 계좌는 출발일 종가로
                 다시 사후 체결하고(종가가 없으면 &quot;시작 전&quot;으로 남고 사유를 보입니다), 규칙·Claude 계좌는 현금만 든
                 &quot;시작 전&quot;으로 돌아갑니다.
+              </>}
+        </ReadingGuide>
+        {/* 머리의 '계좌 초기화'가 여는 확인 창 — 계좌 코드를 그대로 쳐야 확인이 열립니다(잘못 누르기를 먼저 막음). 서버도 confirm을 다시 봅니다. */}
+        <ConfirmDialog
+          open={confirmingReset}
+          onOpenChange={setConfirmingReset}
+          title={`${book?.label ?? code} 초기화`}
+          description={
+            <>
+              <p>
+                이 계좌(<code>{code}</code>)의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다.
               </p>
-            )}
-            <div>
-              {/* 누르면 확인 창 — 계좌 코드를 그대로 쳐야 확인이 열립니다(잘못 누르기를 먼저 막음). 서버도 confirm을 다시 봅니다. */}
-              <Button onClick={() => setConfirmingReset(true)} disabled={reset.busy}>
-                {reset.busy ? "초기화 중…" : "계좌 초기화"}
-              </Button>
-            </div>
-            <ConfirmDialog
-              open={confirmingReset}
-              onOpenChange={setConfirmingReset}
-              title={`${book?.label ?? code} 초기화`}
-              description={
-                <>
-                  <p>
-                    이 계좌(<code>{code}</code>)의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다.
-                  </p>
-                  <p className="mt-1">{korea
-                    ? KR_RESET_NOTE
-                    : book?.kind === "BENCHMARK"
-                      ? "벤치마크 계좌는 출발일 종가로 다시 사후 체결합니다(종가가 없으면 \"시작 전\"으로 남고 사유를 보입니다)."
-                      : timed
-                        ? "Claude 계좌2는 현금만 든 \"시작 전\"으로 돌아갑니다 — 다시 출발은 앞으로 체결 출발뿐입니다(사후 체결로 메우지 않음)."
-                        : "규칙·Claude 계좌는 현금만 든 \"시작 전\"으로 돌아갑니다."}</p>
-                </>
-              }
-              confirmLabel={reset.busy ? "초기화 중…" : "초기화 확인"}
-              tone="danger"
-              busy={reset.busy}
-              requireText={code}
-              onConfirm={(typed) => void runReset(typed)}
-            />
-            {/* 결과·오류는 늘 그려 둔 알림 영역(role=status) 안에 — 확인 창이 닫히면 초점이 '계좌 초기화' 단추로 돌아가므로, 이 영역이
-                없으면 낭독기 사용자는 성공·실패를 듣지 못합니다(영역이 먼저 있어야 새 내용을 읽음). 비어 있으면 높이·간격이 없습니다. */}
-            <div role="status" className="flex flex-col gap-2 empty:-mt-2">
-              {reset.error && <Banner tone="warn">{reset.error}</Banner>}
-              {resetResult && <Banner tone={resetResult.tone}>{resetResult.text}</Banner>}
-            </div>
-          </div>
-        </div>
-      </Card>
+              <p className="mt-1">{korea
+                ? KR_RESET_NOTE
+                : book?.kind === "BENCHMARK"
+                  ? "벤치마크 계좌는 출발일 종가로 다시 사후 체결합니다(종가가 없으면 \"시작 전\"으로 남고 사유를 보입니다)."
+                  : timed
+                    ? "Claude 계좌2는 현금만 든 \"시작 전\"으로 돌아갑니다 — 다시 출발은 앞으로 체결 출발뿐입니다(사후 체결로 메우지 않음)."
+                    : "규칙·Claude 계좌는 현금만 든 \"시작 전\"으로 돌아갑니다."}</p>
+            </>
+          }
+          confirmLabel={reset.busy ? "초기화 중…" : "초기화 확인"}
+          tone="danger"
+          busy={reset.busy}
+          requireText={code}
+          onConfirm={(typed) => void runReset(typed)}
+        />
+      </Panel>
 
-      <Card
+      <Panel
         title="보유"
         subtitle={korea
           ? "가격·평가액·비중·스탑은 장부가 계산한 값입니다(평가 가격은 토스증권 잠정 — 금융위 확정 종가가 들어온 날은 순자산 기록에서 확정). "
@@ -882,20 +971,46 @@ export function HoldingsSection({
       >
         {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
-        {positions.data && !positions.data.available && <Banner tone="warn">{positions.data.message}</Banner>}
+        {positions.data && !positions.data.available && <Callout tone="warn">{positions.data.message}</Callout>}
         {positions.data?.available && (
           <>
-            {korea && (positions.data.positions ?? []).length === 0 ? (
+            {korea && positionRows.length === 0 ? (
               <KrEmpty>보유가 없습니다 — 현금만 들고 있습니다.</KrEmpty>
             ) : (
-              <DataTable<PaperPosition>
-                columns={positionColumns}
-                rows={positions.data.positions ?? []}
-                rowKey={(row) => row.ticker}
-                caption="보유"
-                scrollHint="overflow"
-                emptyText="보유가 없습니다 — 현금만 들고 있습니다."
-              />
+              // 보유 표 + 검사 칸(작업대 P6 — 명세 §7-1 '보유: 목록-검사'). 틀 52rem부터 옆 18rem, 그 아래·좁은 화면은 위쪽 대화상자. 종목 이름은 시세 창
+              // 단추라 맨 앞 아이콘 줄 단추가 검사 칸을 엽니다(13F 보유 표와 같은 꼴). 검사 칸은 받은 보유 줄 그대로 — 새 요청 없음.
+              <InspectorFrame
+                label="보유 자세히"
+                layout="lg"
+                dialogFocus="title"
+                titleOf={(ticker) => (positionByTicker.has(ticker) ? `${nameOf(ticker)} 보유` : null)}
+                renderDetail={(ticker) => {
+                  const row = positionByTicker.get(ticker);
+                  return row ? (
+                    <HoldingInspector
+                      position={row}
+                      market={market}
+                      live={realtime.prices[liveKey(market, row.ticker)] ?? null}
+                      onOpenDecisions={decides && onOpenTab ? () => onOpenTab("decisions", code) : undefined}
+                    />
+                  ) : null;
+                }}
+                defaultKey={positionRows[0]?.ticker ?? null}
+              >
+                {(inspector) => (
+                  <DataTable<PaperPosition>
+                    columns={[inspectColumn(inspector, nameOf), ...positionColumns]}
+                    rows={positionRows}
+                    rowKey={(row) => row.ticker}
+                    caption="보유"
+                    count={(count) => `${count}종목`}
+                    // 열한 칸 표라 옆 검사 칸(18rem) 배치에서도 넘칠 수 있어 넘김 안내는 늘(넘칠 때만 보임 — overflow).
+                    scrollHint="overflow"
+                    selectedKey={inspector.shownKey}
+                    emptyText="보유가 없습니다 — 현금만 들고 있습니다."
+                  />
+                )}
+              </InspectorFrame>
             )}
             <p className="mt-2 text-xs text-text-3">
               {korea ? `현금 ${formatMoney(positions.data.cash, "KR")}` : `현금 ${formatNumber(positions.data.cash, 2)} 달러`}
@@ -909,10 +1024,10 @@ export function HoldingsSection({
             </p>
           </>
         )}
-      </Card>
+      </Panel>
 
       {positions.data?.available && (
-        <Card
+        <Panel
           title="재진입 금지"
           subtitle={korea
             ? "트레일링 스탑으로 판 종목은 체결한 날부터 정해진 KR 거래일 동안 다시 사지 않습니다."
@@ -924,50 +1039,82 @@ export function HoldingsSection({
             rows={positions.data.lockouts ?? []}
             rowKey={(row) => row.ticker}
             caption="재진입 금지"
+            dense
+            count={(count) => `${count}종목`}
             scrollHint="overflow"
             emptyText="재진입 금지 종목이 없습니다."
           />
-        </Card>
+        </Panel>
       )}
 
-      <Card
-        title={`주문 (최근 ${RECENT_LIMIT}건)`}
-        subtitle={korea
-          ? "한국 주문은 '체결 시점' 칸의 시점에 체결합니다 — 시가는 다음 KR 거래일 시가(KRX 시가 단일가), 지정 시각·매시는 그 시각에 시작한 "
-            + "토스 1분봉 시가, 종가는 KRX 종가 단일가입니다(규칙 계좌의 시점은 설정 kr.rules.timing). 트레일링 스탑은 설정 kr.stopWatch.mode를 "
-            + "따릅니다 — 끔·기록만이면 밤 잠정 종가로 감지해 다음 거래일 시가에 팔고 체결 때 감지한 날의 금융위 확정 종가로 다시 판정하며(스탑가 "
-            + "위면 취소), 켬이면 정규장 5분 감시가 그 세션 안에 팔고(확정가 재판정 없음) 감시가 덮지 못한 종목만 밤에 감지해 다음 거래일 개장 "
-            + "10분 뒤 첫 분에 팝니다(금융위 재판정)."
-          : timed
-            ? "Claude 계좌2 주문은 다음 세션 하루짜리입니다(장중 확인이 장중에 낸 주문은 그 세션 하루 — 장중 시장가는 주문 생성 + 60초 뒤 첫 분이 "
-              + "기준 시각이고, 그 1분봉이 들어온 뒤 다른 시점과 같은 사다리로 체결) — 목표 시각은 고른 시점의 시각(KST), 계좌1식 대비는 같은 주문을 다음 시간별 관측치로 "
-              + "체결했다면의 원가격 대비 bp(실행 감사 — 양수면 고른 시점이 유리, 반사실이 아직 없거나 대체 체결이면 —)입니다. 1분봉에 그 시각 뒤 "
-              + "거래가 없으면 체결하지 않고 그날 마감 뒤 만료합니다(사유 NO_TRADE_AFTER_T 등)."
-            : undefined}
-        source={ledgerSource}
-      >
+      <Panel title={`주문 (최근 ${RECENT_LIMIT}건)`} source={ledgerSource}>
         {orders.loading && !orders.data && <Loading label="주문을 읽는 중…" />}
         {orders.error && <ErrorState message={orders.error} onRetry={orders.reload} />}
-        {orders.data && !orders.data.available && <Banner tone="warn">{orders.data.message}</Banner>}
+        {orders.data && !orders.data.available && <Callout tone="warn">{orders.data.message}</Callout>}
         {orders.data?.available && (
-          korea && (orders.data.orders ?? []).length === 0 ? (
+          korea && allOrders.length === 0 ? (
             <KrEmpty>주문이 없습니다.</KrEmpty>
           ) : (
-            <DataTable<PaperOrder>
-              columns={orderColumns}
-              rows={orders.data.orders ?? []}
-              rowKey={(row) => String(row.id)}
-              caption="주문"
-              scrollHint="overflow"
-              emptyText="주문이 없습니다."
-            />
+            <>
+              {/* 받은 최근 줄 안에서 상태로 거르기(서버 거르기 없음 — 새 요청 없음). */}
+              <RowFilter label="주문 상태" options={orderStatusOptions(allOrders)} value={orderFilter} onChange={(key) => setOrderFilter(key as OrderStatusFilter)} />
+              <DataTable<PaperOrder>
+                columns={orderColumns}
+                rows={filterOrders(allOrders, orderFilter)}
+                rowKey={(row) => String(row.id)}
+                caption="주문"
+                dense
+                count={(count) => `${count}건`}
+                scrollHint="overflow"
+                emptyText={allOrders.length === 0 ? "주문이 없습니다." : "고른 상태의 주문이 없습니다."}
+              />
+            </>
           )
         )}
-      </Card>
+        {/* 긴 설명(체결 시점·스탑 규칙)은 '읽는 법' 접기로 — 글은 예전 부제 그대로(미국 규칙·Claude 계좌1·벤치마크는 없음). */}
+        {ordersGuide ? <ReadingGuide topic="주문">{ordersGuide}</ReadingGuide> : null}
+      </Panel>
 
-      <Card
-        title={`체결 (최근 ${RECENT_LIMIT}건)`}
-        subtitle={korea
+      <Panel title={`체결 (최근 ${RECENT_LIMIT}건)`} source={ledgerSource}>
+        {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
+        {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
+        {fills.data && !fills.data.available && <Callout tone="warn">{fills.data.message}</Callout>}
+        {fills.data?.available && (
+          <>
+            {totalText && <p className="mb-2 text-xs font-semibold tabular-nums text-text">{totalText}</p>}
+            {cautions.length > 0 && (
+              <div className="mb-2">
+                <Callout tone="warn">
+                  <strong>확정 조정 주의</strong> — 잠정 체결의 비용 칸이 그 판의 요율로 다시 센 값과 다릅니다(체결 처리 중에 설정이
+                  저장됨 등). 현금은 확정 기준으로 맞췄습니다.
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                    {cautions.map((note) => <li key={note}>{note}</li>)}
+                  </ul>
+                </Callout>
+              </div>
+            )}
+            {korea && allFills.length === 0 ? (
+              <KrEmpty>체결이 없습니다 — 한국 계좌는 출발 결정 다음 KR 거래일 시가에 처음 체결합니다.</KrEmpty>
+            ) : (
+              <>
+                {/* 받은 최근 줄 안에서 방향으로 거르기(서버 거르기 없음 — 새 요청 없음). */}
+                <RowFilter label="체결 방향" options={fillSideOptions(allFills)} value={fillFilter} onChange={(key) => setFillFilter(key as FillSideFilter)} />
+                <DataTable<PaperFill>
+                  columns={fillColumns}
+                  rows={filterFills(allFills, fillFilter)}
+                  rowKey={(row) => String(row.id)}
+                  caption="체결"
+                  dense
+                  count={(count) => `${count}건`}
+                  scrollHint="overflow"
+                  emptyText={allFills.length === 0 ? "체결이 없습니다." : "고른 방향의 체결이 없습니다."}
+                />
+              </>
+            )}
+          </>
+        )}
+        {/* 긴 설명(체결가·비용 규칙)은 '읽는 법' 접기로 — 글은 예전 부제 그대로. */}
+        <ReadingGuide topic="체결">{korea
           ? "잠정 체결가는 토스증권(KRX 시가 단일가 — 1분봉 개장 봉, 없으면 일봉 시가)이고, 금융위원회(공공데이터포털) 확정가가 들어오면 "
             + "체결 행은 그대로 둔 채 확정 조정 행으로 현금·평단을 맞춥니다(보통 다음 영업일 13시 뒤). 실효 비용 = (수수료 + 세금 + 슬리피지) "
             + "÷ (체결가 × 수량) — 서버 계산. 비용 칸은 수수료 · 세금 · 슬리피지(원)이고, 두 비용 칸은 잠정 체결의 값 — 확정 조정 행이 있으면 "
@@ -975,44 +1122,11 @@ export function HoldingsSection({
           : (timed
             ? "체결가는 고른 시각의 Yahoo 1분봉 시가(사다리 R1·R2) 또는 표시된 대체 체결가(R2b·R3·확정 종가 — '대체 체결' 배지)에 슬리피지를 얹은 "
               + "값입니다. 관측 시각은 장부가 그 체결을 반영한 관측치의 수집 시각, 체결 봉은 그 가격의 1분봉 시작입니다(종가·관측 종가 칸이면 —)."
-            : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다.") + US_COST_NOTE}
-        source={ledgerSource}
-      >
-        {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
-        {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
-        {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
-        {fills.data?.available && (
-          <>
-            {totalText && <p className="mb-2 text-xs font-semibold tabular-nums text-text">{totalText}</p>}
-            {cautions.length > 0 && (
-              <div className="mb-2">
-                <Banner tone="warn">
-                  <strong>확정 조정 주의</strong> — 잠정 체결의 비용 칸이 그 판의 요율로 다시 센 값과 다릅니다(체결 처리 중에 설정이
-                  저장됨 등). 현금은 확정 기준으로 맞췄습니다.
-                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
-                    {cautions.map((note) => <li key={note}>{note}</li>)}
-                  </ul>
-                </Banner>
-              </div>
-            )}
-            {korea && (fills.data.fills ?? []).length === 0 ? (
-              <KrEmpty>체결이 없습니다 — 한국 계좌는 출발 결정 다음 KR 거래일 시가에 처음 체결합니다.</KrEmpty>
-            ) : (
-              <DataTable<PaperFill>
-                columns={fillColumns}
-                rows={fills.data.fills ?? []}
-                rowKey={(row) => String(row.id)}
-                caption="체결"
-                scrollHint="overflow"
-                emptyText="체결이 없습니다."
-              />
-            )}
-          </>
-        )}
-      </Card>
+            : "체결가는 관측가에 슬리피지를 얹은 값입니다. 사후 체결은 그날 종가로 나중에 기록한 것입니다.") + US_COST_NOTE}</ReadingGuide>
+      </Panel>
 
       {korea && (
-        <Card
+        <Panel
           title={`순자산 기록 (최근 ${NAV_ROWS}거래일)`}
           subtitle={"거래일마다 한 줄 — 잠정 줄은 토스 잠정 평가이고, 그날까지 체결이 모두 확정되고 보유가 모두 금융위 그날 종가로 평가되고 "
             + "그날 이하 봉으로 체결될 수 있는 대기 주문이 없으면 확정(금융위 종가)으로 다시 씁니다. 잠정 사유는 리스크 점검 작업 기록(최근 30건)의 "
@@ -1021,7 +1135,7 @@ export function HoldingsSection({
         >
           {nav.loading && !nav.data && <Loading label="순자산 기록을 읽는 중…" />}
           {nav.error && <ErrorState message={nav.error} onRetry={nav.reload} />}
-          {nav.data && !nav.data.available && <Banner tone="warn">{nav.data.message}</Banner>}
+          {nav.data && !nav.data.available && <Callout tone="warn">{nav.data.message}</Callout>}
           {status.error && <p className="mb-2 text-xs text-warn">작업 기록을 읽지 못해 잠정 사유를 고르지 못했습니다 — {status.error}</p>}
           {nav.data?.available && ((nav.data.series ?? []).length === 0 ? (
             <KrEmpty>순자산 기록이 없습니다 — 출발일 줄(현금만, 확정)은 출발 결정 때 생깁니다.</KrEmpty>
@@ -1031,11 +1145,12 @@ export function HoldingsSection({
               rows={krNavRows(nav.data.series, jobs, code).slice(0, NAV_ROWS)}
               rowKey={(row) => row.tradingDate}
               caption="순자산 기록"
+              dense
               scrollHint="overflow"
               emptyText="순자산 기록이 없습니다."
             />
           ))}
-        </Card>
+        </Panel>
       )}
     </>
   );
@@ -1063,27 +1178,19 @@ function KrEmpty({ children }: { children: ReactNode }) {
   return <p className="py-2 text-sm leading-relaxed text-text-3">{children}</p>;
 }
 
-function Pair({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div>
-      <dt className="text-text-3">{label}</dt>
-      <dd className={`tabular-nums font-semibold ${tone ?? "text-text"}`}>{value}</dd>
-    </div>
-  );
-}
-
-function Badges({ badges }: { badges: Badge[] }) {
-  return (
-    <>
-      {badges.map((badge) => (
-        <span
-          key={badge.key}
-          title={badge.title}
-          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
-        >
-          {badge.label}
-        </span>
-      ))}
-    </>
-  );
+/**
+ * 보유 표 맨 앞의 검사 칸 단추(작업대 P6 — 13F 보유 표와 같은 꼴): 종목 이름은 시세 창 단추라, 아이콘 줄 단추(이름 '{종목} 보유 자세히')가 검사 칸을 엽니다.
+ * 머리 글은 낭독기에만(눈에는 빈 좁은 칸).
+ */
+function inspectColumn(inspector: InspectorContext, nameOf: (code: string) => string): Column<PaperPosition> {
+  return {
+    key: "inspect",
+    header: <span className="sr-only">자세히</span>,
+    cell: (row) => (
+      <InspectorTrigger inspector={inspector} itemKey={row.ticker} className="justify-center">
+        <PanelRightIcon size={16} />
+        <span className="sr-only">{nameOf(row.ticker)} 보유 자세히</span>
+      </InspectorTrigger>
+    ),
+  };
 }

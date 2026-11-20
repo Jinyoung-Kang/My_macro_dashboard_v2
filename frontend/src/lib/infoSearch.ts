@@ -12,7 +12,6 @@
 import { holderQuery, institutionHref, stockHref } from "./detail";
 import { EMPTY, formatKst } from "./format";
 import type { ReaderEntry } from "./info";
-import { singleKeyShortcut } from "./shortcuts";
 import type {
   SearchArticle,
   SearchArticleResponse,
@@ -107,7 +106,7 @@ export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
 // 수집기(search.py의 _KEY_PATTERNS)·백엔드(SearchService)와 같은 문법 — 어긋나면 수집기의 400이 '응답 없음'으로 보입니다.
 const KEY_PATTERNS: readonly RegExp[] = [/^us:[A-Z0-9][A-Z0-9.-]{0,14}$/, /^kr:\d{6}$/, /^cik:\d{10}$/, /^wd:Q[1-9]\d{0,11}$/];
 const TOPIC_MAX = 60;
-// eslint-disable-next-line no-control-regex -- 제어 글자를 막는 것이 목적
+// 제어 글자를 막는 것이 목적. 이 저장소 eslint 설정에서는 no-control-regex가 꺼져 있음(그 규칙은 \u 이스케이프도 잡음) — 켜면 이 줄에 끄기 주석을 다시 둘 것.
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 const codePoints = (text: string) => Array.from(text).length;
@@ -2044,6 +2043,16 @@ export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { la
   return out;
 }
 
+/**
+ * 대상 풀기 응답 전에 키만으로 아는 바로가기 이름 — 종목(us:·kr:)은 '종목 상세', 13F 기관(cik:)은 '기관 상세'(풀린 뒤 entityShortcuts가 거의 늘 그리는 것).
+ * 대상 머리가 응답 전 그 자리를 보이지 않게 잡아 두는 데만 씁니다(QA-930 — 링크를 만들지 않음). wd:·주제 키는 모름(null).
+ */
+export function shortcutLabelOfKey(key: string): string | null {
+  if (key.startsWith("us:") || key.startsWith("kr:")) return "종목 상세";
+  if (key.startsWith("cik:")) return "기관 상세";
+  return null;
+}
+
 const HANGUL = /[가-힣]/;
 
 /** 보유 탭의 13F 검색어와 무엇으로 찾는지 — 영문 이름(name)인지, 영문 이름이 없어 쓴 티커(ticker)인지(화면의 머리·0건 안내가 다름, QA-436). */
@@ -2085,31 +2094,6 @@ export function nextRowIndex(current: number, key: "ArrowUp" | "ArrowDown", leng
   if (length <= 0) return -1;
   if (current < 0) return 0;
   return key === "ArrowDown" ? Math.min(current + 1, length - 1) : Math.max(current - 1, 0);
-}
-
-type ShortcutTarget = { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown } | null;
-
-/**
- * '/'로 검색창에 갈 키인가 — 판정은 셸 단축키와 같습니다(lib/shortcuts singleKeyShortcut이 'filter'일 때): 수식키(Ctrl·⌘·Alt)·키 반복·
- * 한글 조합 중(isComposing·keyCode 229)이 아니고, 글을 쓰는 자리(입력칸·편집 영역·role textbox/combobox/searchbox)나 덮개(대화상자·경고 대화상자·
- * 메뉴) 안이 아닐 때만. 셸 처리기와 이 화면의 처리기가 같은 칸으로 함께 움직이므로(SearchBox) 판정이 갈리면 안 됩니다(QA-562 — 열린 계정 메뉴
- * 안의 '/'를 이 화면만 가로챘음). 상단 통합 검색의 ⌘K/Ctrl+K는 그대로 둡니다.
- */
-export function isSlashShortcut(event: {
-  key: string;
-  code?: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  altKey: boolean;
-  shiftKey?: boolean;
-  repeat?: boolean;
-  isComposing?: boolean;
-  keyCode?: number;
-  target: ShortcutTarget | EventTarget;
-}): boolean {
-  // 키 이벤트는 속성이 원형(prototype)의 접근자라 펼치기(...)로는 옮겨지지 않습니다 — 하나씩 읽어 넘깁니다(shiftKey가 없으면 false).
-  const { key, code, ctrlKey, metaKey, altKey, shiftKey = false, repeat, isComposing, keyCode, target } = event;
-  return singleKeyShortcut({ key, code, ctrlKey, metaKey, altKey, shiftKey, repeat, isComposing, keyCode, target }) === "filter";
 }
 
 /** 원문 주소 — http(s)만(javascript: 등은 링크로 두지 않음). */

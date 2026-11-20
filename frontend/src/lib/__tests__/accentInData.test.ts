@@ -15,7 +15,8 @@
  * InspectorFrame도 P5a), 그래프는 그 부품이 들어오는 단계(명세 §8-2 '새 부품을 만드는 단계' — P5·P7)에서 이 목록에 더합니다. 공용 표(DataTable)는 값 칸과 정렬 머리·누를 수 있는 행이 같은 파일에
  * 있어 파일 전체를 봅니다 — 누를 수 있는 부분도 데이터 영역이라 중립 바탕·밑줄·focus 링으로 그립니다.
  * 공용 키트(components/ui/index.tsx)는 단추·링크(강조 파랑을 쓰는 것)와 한 파일이라 파일 전체가 아니라 데이터를 그리는 함수 몸통만 봅니다(DATA_FUNCTIONS) —
- * 명세 §6이 DenseTable의 '지금'으로 꼽은 Table과 KpiStrip의 '지금'인 Metric(과 그 변화 값 색을 정하는 lib/format의 deltaColor). 화면 대부분이 이 둘을 씁니다.
+ * 명세 §6이 DenseTable의 '지금'으로 꼽은 옛 Table과 KpiStrip의 '지금'인 옛 Metric은 부르는 곳이 없어져 P8에서 지웠고(공용 표·KPI 띠는 위 DATA_FILES),
+ * 남은 것은 변화 값 색을 정하는 lib/format의 deltaColor입니다.
  * 함수 몸통 안에서 부르는 다른 함수(EmptyState·SourceLine 등)의 몸통은 보지 않습니다(한계).
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -53,6 +54,8 @@ const DATA_FILES = [
   "components/patterns/InspectorFrame.tsx",
   // 시각순 목록(시각 열·종류 태그·요약·배지 — 목록-검사 위, P5a 국면 판정 기록·P6 결정 로그).
   "components/patterns/Timeline.tsx",
+  // 로그·원문 글 상자(받은 글 그대로·'—'와 사유·빈 글 안내 — P7 저장소 상태 로그·AI 리포트 원문·AI 입력·토스 조회 JSON).
+  "components/patterns/LogPanel.tsx",
   // 칸 틀(SplitPane, P4)은 넣지 않습니다 — 색 클래스 없이 칸 자리만 정하는 틀이고, 칸 안의 데이터는 위 패턴들이 그립니다.
   // 긴 화면 목차(SectionIndex, P5a)도 넣지 않습니다 — 같은 화면 절로 가는 내비(누를 수 있는 것)라 지금 칸 막대·가로 줄 밑줄이 강조 파랑이고(셸의 현재 메뉴와
   // 같은 규칙 — 원칙 A1), 데이터 칸이 없습니다(개수는 보조 글색).
@@ -74,9 +77,6 @@ const DATA_FILES = [
  * 바뀌면 그 패턴 파일을 DATA_FILES에 더하고 여기서 뺍니다.
  */
 const DATA_FUNCTIONS = [
-  // 공용 키트의 표(값 칸·머리·행 hover)와 지표 칸(값·변화·캡션·출처 줄).
-  { path: "components/ui/index.tsx", name: "Table" },
-  { path: "components/ui/index.tsx", name: "Metric" },
   // 지표 칸 변화 값의 색(상승·하락·보합·없음).
   { path: "lib/format.ts", name: "deltaColor" },
 ] as const;

@@ -2,9 +2,10 @@
 
 import { Children, ReactNode, useId, useLayoutEffect, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
-import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, textDeltaDirection, withMinusSign, withoutLeadingIcon } from "@/lib/format";
+import { formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
+  FIELD_WIDTH,
   FOCUS_RING,
   inputClasses,
   TEXT_TARGET,
@@ -15,10 +16,16 @@ import {
   type UnderlineTabSize,
 } from "./classes";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon, XIcon } from "./icons";
+import { keepFocusNearby } from "./keepFocus";
+
+export { keepFocusNearby, useFocusAfterWrite } from "./keepFocus";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
   buttonClasses,
+  FIELD_INPUT,
+  FIELD_LABEL,
+  FIELD_WIDTH,
   filterChipClasses,
   FOCUS_RING,
   inputClasses,
@@ -134,7 +141,8 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
       <div className="min-w-0">
         <h1 className="text-heading text-text">{title}</h1>
-        {description ? <p className="mt-0.5 text-sm text-text-2">{description}</p> : null}
+        {/* 설명·'자세히' 글은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(공용 글 부품 규약 QA-568 — 390 '…산점|도' 꼴, QA-903). */}
+        {description ? <p className="mt-0.5 break-keep wrap-break-word text-sm text-text-2">{description}</p> : null}
         {details ? (
           <details className="group mt-0.5 text-sm text-text-2">
             <summary
@@ -143,69 +151,13 @@ export function PageHeader({
               자세히
               <ChevronDownIcon size={14} className="motion-safe:transition-transform group-open:rotate-180" />
             </summary>
-            <div className="mt-1 max-w-[72ch] leading-relaxed">{details}</div>
+            <div className="mt-1 max-w-[72ch] break-keep wrap-break-word leading-relaxed">{details}</div>
           </details>
         ) : null}
         {children}
       </div>
       {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
-  );
-}
-
-/** 지표 칸 (구버전 st.metric에 해당) — 4px·1px 경계·안쪽 12px, 값은 KPI 크기(20px, lg 24px — 작업대 실행 명세 §3-6)·tabular-nums. */
-export function Metric({
-  label,
-  value,
-  delta,
-  deltaText,
-  deltaDigits,
-  caption,
-  note,
-  source,
-  tone,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  delta?: number | null;
-  deltaText?: string;
-  /** deltaText에 찍는 소수 자릿수 — 색도 같은 자릿수로 판단합니다("0.00인데 파란색" 방지). */
-  deltaDigits?: number;
-  caption?: ReactNode;
-  note?: ReactNode;
-  /** 이 지표 하나의 출처 (카드 전체 출처와 다를 때) */
-  source?: ReactNode;
-  tone?: string;
-}) {
-  // 변화 줄 — 색만으로 등락을 전하지 않게 ▲▼(읽기에서 뺌, 12px)와 읽어 주는 방향 글을 붙이고, 음수 부호는 −(U+2212)로 그립니다(변화 칩과 같은 문법 — QA-525).
-  // 방향·색은 보이는 글의 첫 부호 숫자를 따르고(글을 다른 자릿수·단위로 찍은 칸 — 매크로 카드 '+0.004'·순유동성 '+40.0억 달러', QA-527), 부호 숫자가 없으면
-  // 값과 자릿수(deltaDigits)로 판정합니다. 글이 '—'(모름)이면 방향 표시를 두지 않습니다.
-  const shownDelta = deltaText ?? EMPTY;
-  const direction =
-    shownDelta.trim() === "" || shownDelta.trim() === EMPTY ? null : (textDeltaDirection(shownDelta) ?? deltaDirection(delta, deltaDigits));
-  const deltaTone =
-    direction === "up" ? "text-up" : direction === "down" ? "text-down" : direction === "flat" ? "text-text-2" : deltaColor(delta, deltaDigits);
-  return (
-    <div className="min-w-0 rounded-control border border-border bg-surface p-3">
-      <div className="text-[13px] font-medium text-text-2">{label}</div>
-      <div className={`mt-1 text-xl font-semibold tabular-nums lg:text-2xl ${tone ?? "text-text"}`}>
-        {value}
-      </div>
-      {(deltaText || delta !== undefined) && (
-        <div className={`mt-1 text-sm tabular-nums ${deltaTone}`}>
-          {direction === "up" || direction === "down" ? (
-            <span aria-hidden="true" className="mr-1 text-xs">
-              {direction === "up" ? "▲" : "▼"}
-            </span>
-          ) : null}
-          {direction ? <span className="sr-only">{direction === "up" ? "상승" : direction === "down" ? "하락" : "변화 없음"}</span> : null}
-          <span>{withMinusSign(shownDelta)}</span>
-        </div>
-      )}
-      {caption && <div className="mt-1 text-xs text-text-3">{caption}</div>}
-      {note && <div className="mt-2 text-xs leading-relaxed text-text-3">{note}</div>}
-      {source && <SourceLine>{source}</SourceLine>}
-    </div>
   );
 }
 
@@ -238,6 +190,7 @@ export function Freshness({
   ageSeconds,
   stale,
   refreshError,
+  pending = false,
 }: {
   /** 백엔드가 KST로 찍어 준 수집 시각 문자열 (collectedAtKst). */
   collectedAt?: string | null;
@@ -248,9 +201,23 @@ export function Freshness({
    * 지금 값이 아니라는 것을 알려야 합니다 — 예전에는 아무 표시가 없었습니다(QA-050).
    */
   refreshError?: string | null;
+  /**
+   * 첫 응답을 기다리는 중(hooks/useApi의 `firstLoadPending` — `loading && !data`는 실패 뒤 다시 읽는 동안에도 참이라 쓰지 않음, QA-895) — 값이 온 뒤의 평상시 배지('수집' + 'YYYY-MM-DD HH:MM')와 같은 폭의 보이지 않는 자리를 둡니다(낭독
+   * 없음). 머리·패널 동작 줄이 응답 뒤 배지만큼 넓어져 꺾이며 아래를 밀던 첫 적재 이동을 막습니다(QA-892 — 수급 레이더 머리). 주지 않으면 예전 그대로
+   * 값이 없을 때 아무것도 그리지 않습니다.
+   */
+  pending?: boolean;
 }) {
   if (!collectedAt && ageSeconds === undefined && !refreshError) {
-    return null;
+    return pending ? (
+      <span aria-hidden="true" className="invisible inline-flex flex-wrap items-center gap-1">
+        <span className="inline-flex items-center gap-1 text-xs">
+          <ClockIcon size={12} />
+          수집
+          <span className="tabular-nums">0000-00-00 00:00</span>
+        </span>
+      </span>
+    ) : null;
   }
   const age = formatAge(ageSeconds);
 
@@ -335,7 +302,8 @@ export function Callout({
     <div className={`flex items-start gap-2 rounded-control border p-3 text-sm leading-relaxed ${style.box}`}>
       {icon === false ? null : <LineIcon className={style.icon}>{icon ?? style.glyph}</LineIcon>}
       {style.srPrefix && <span className="sr-only">{style.srPrefix}</span>}
-      <div className={`min-w-0 flex-1 ${style.text}`}>
+      {/* 제목·본문은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(공용 글 부품 규약 QA-568 — 상속, QA-903). */}
+      <div className={`min-w-0 flex-1 break-keep wrap-break-word ${style.text}`}>
         {title ? <p className="font-semibold">{title}</p> : null}
         {children}
       </div>
@@ -387,8 +355,16 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         */}
         <span className="min-w-0 break-keep wrap-break-word">{message}</span>
       </p>
+      {/* 누르면 화면이 이 상자를 '불러오는 중'으로 바꿔 단추가 사라지므로, 포커스는 다시 읽는 자리의 제목으로(QA-901 — keepFocus 규칙). */}
       {onRetry && (
-        <button type="button" onClick={onRetry} className={`mt-2 ${buttonClasses("default", "sm")}`}>
+        <button
+          type="button"
+          onClick={(event) => {
+            keepFocusNearby(event.currentTarget);
+            onRetry();
+          }}
+          className={`mt-2 ${buttonClasses("default", "sm")}`}
+        >
           다시 시도
         </button>
       )}
@@ -396,6 +372,22 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
+/** 요청 중(busy) 단추 — 꺼진 단추(disabled:)와 같은 흐림·커서. busy일 때만 붙여 다른 단추의 클래스 글은 그대로입니다. */
+const BUSY_CLASSES = "aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
+
+/**
+ * 공용 단추.
+ *
+ * @param disabled 켜짐 조건(빈 입력·데모·권한 등)으로 누를 수 없을 때 — 진짜 disabled.
+ * @param busy 이 단추가 시작한 요청이 끝나지 않았을 때(`useAsyncAction`의 busy 등). 진짜 disabled가 아니라 aria-disabled로 알리고 누름을 무시합니다
+ *             (submit이면 폼 보내기도 막음). 누른 단추가 disabled가 되면 크롬이 포커스를 body로 보내 응답 뒤 Tab이 문서 처음부터 시작했습니다(QA-899 —
+ *             정보 수집 번역 단추 QA-887·알림 규칙 줄 QA-898과 같은 꼴). 모양은 꺼진 단추와 같습니다. 입력칸에서 Enter로 폼을 다시 보내는 길은 단추가 막지
+ *             못하므로(꺼진 submit 단추와 달리) 폼의 onSubmit도 busy면 돌아갑니다 — 부르는 쪽이 지킵니다.
+ * @param ariaLabel 낭독 이름(aria-label) — 보이는 글로 이름이 모자란 아이콘 단추 등에만. 보이는 글이 있으면 그 글로 시작하게 씁니다(WCAG 2.5.3).
+ * @param describedBy 낭독 설명이 될 요소의 id(aria-describedby, 빈칸으로 여럿) — 보이는 글·이름은 그대로 두고 덧붙여 읽힙니다. 표의 줄마다 같은 이름인
+ *                    쓰기 단추('다시 실행'·'지우기')가 그 줄의 이름 칸을 가리킵니다(QA-900). 이름은 그대로라 이름으로 찾는 쓰기 시험·음성 조작이 바뀌지 않고,
+ *                    설명 글을 단추 옆에 따로 두지 않아(보이는 줄 이름을 가리킴) 같은 글이 두 번 있지 않습니다.
+ */
 export function Button({
   children,
   onClick,
@@ -403,6 +395,9 @@ export function Button({
   size = "md",
   icon,
   disabled,
+  busy = false,
+  ariaLabel,
+  describedBy,
   type = "button",
   className = "",
   expanded,
@@ -415,6 +410,9 @@ export function Button({
   /** 글 앞 아이콘(장식 — components/ui/icons의 aria-hidden 아이콘). 뜻은 단추 글이 나릅니다. */
   icon?: ReactNode;
   disabled?: boolean;
+  busy?: boolean;
+  ariaLabel?: string;
+  describedBy?: string;
   type?: "button" | "submit";
   className?: string;
   /** 펼치고 접는 버튼이면 지금 펼쳐졌는지(aria-expanded). 아니면 넘기지 않습니다. */
@@ -423,10 +421,13 @@ export function Button({
   return (
     <button
       aria-expanded={expanded}
+      aria-disabled={busy || undefined}
+      aria-label={ariaLabel}
+      aria-describedby={describedBy || undefined}
       type={type}
-      onClick={onClick}
+      onClick={busy ? (event) => event.preventDefault() : onClick}
       disabled={disabled}
-      className={`${buttonClasses(variant, size)} ${className}`.trim()}
+      className={`${buttonClasses(variant, size)} ${busy ? `${BUSY_CLASSES} ` : ""}${className}`.trim()}
     >
       {icon}
       {children}
@@ -472,7 +473,7 @@ export function Select({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        wrapperClassName="block w-full sm:max-w-[22rem]"
+        wrapperClassName={`block ${FIELD_WIDTH}`}
       >
         {selectOptionGroups(options).map(({ group, items }) =>
           group === null ? (
@@ -539,87 +540,6 @@ export function NativeSelect({
       </select>
       <ChevronDownIcon size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3" />
     </span>
-  );
-}
-
-/**
- * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다. 조밀한 행(작업대 실행 명세 §3-7 — 행 32px: 14px 글 + 위아래 6px), 머리는 13px 보조 글과
- * 1px 경계, 행 사이는 옅은 구분선(border-subtle).
- *
- * @param label 표 이름 — 좌우 스크롤 상자(region)의 이름 "{label} (좌우 스크롤)"이 됩니다. 한 화면에 표가 여럿이면 이름을 줘야
- *              랜드마크 목록에서 서로 구별됩니다(주지 않으면 "표 (좌우 스크롤)" — 새 DataTable의 caption과 같은 규칙).
- */
-export function Table<T>({
-  columns,
-  rows,
-  emptyMessage = "표시할 데이터가 없습니다.",
-  rowKey,
-  label,
-}: {
-  columns: {
-    key: string;
-    header: ReactNode;
-    align?: "left" | "right";
-    render: (row: T, index: number) => ReactNode;
-    className?: string;
-  }[];
-  rows: T[];
-  emptyMessage?: string;
-  rowKey: (row: T, index: number) => string;
-  label?: string;
-}) {
-  if (rows.length === 0) {
-    return <EmptyState message={emptyMessage} />;
-  }
-
-  return (
-    <>
-      {/*
-        표는 좁은 화면에서 좌우로 스크롤됩니다. 스크롤바가 보이지 않는 기기에서는
-        오른쪽에 열이 더 있다는 사실을 알 수 없어, 폰에서만 안내를 한 줄 띄웁니다.
-      */}
-      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div className={`overflow-x-auto ${FOCUS_RING}`} tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
-        <table className="w-full min-w-[640px] border-collapse text-sm">
-          <thead>
-            {/* 머리는 13px 보조 글 — 대문자·자간은 한국어 머리에서 뜻이 없어 뺐습니다. 머리·칸은 낱말 사이에서만 줄을 바꿉니다(break-keep —
-                기본 줄바꿈은 좁은 칸에서 한글 낱말을 '기준/일'처럼 글자 사이에서 끊었음, QA-526). 낱말 안 꺾기(wrap-anywhere)는 넣지 않습니다 —
-                칸의 최소 폭을 한 글자로 줄여 같은 꺾임을 다시 냄. 칸이 넓어지면 아래 가로 스크롤 상자 안에서 넘깁니다. */}
-            <tr className="border-b border-border text-[13px] text-text-2">
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  className={`break-keep px-3 py-1.5 font-medium ${
-                    column.align === "right" ? "text-right" : "text-left"
-                  } ${column.className ?? ""}`}
-                >
-                  {column.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={rowKey(row, index)}
-                className="border-b border-border-subtle last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
-              >
-                {columns.map((column) => (
-                  <td
-                    key={column.key}
-                    className={`break-keep px-3 py-1.5 tabular-nums ${
-                      column.align === "right" ? "text-right" : "text-left"
-                    } ${column.className ?? ""}`}
-                  >
-                    {column.render(row, index)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 

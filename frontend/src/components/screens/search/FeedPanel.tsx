@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { ErrorState, Loading } from "@/components/ui";
-import { SELECTED_BAR } from "@/components/ui/classes";
+import { buttonClasses, LINK_CLASSES, PANEL_CLASSES, pillTabClasses, SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
 import { ArticleDialog, type ArticleEntry } from "./ArticleDialog";
@@ -53,7 +53,7 @@ import {
 import type { SearchEntity, SearchEntityKind, SearchFeedItem, SearchFeedTab, SearchRange } from "@/lib/types";
 import { AttributesPanel } from "./EntityParts";
 import { ENTITY_GRID, ENTITY_LEFT } from "./entityGrid";
-import { BUTTON, ItemKindTag, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from "./parts";
+import { ItemKindTag, PaneHeading, SourceStatusLine } from "./parts";
 import { PeriodBars } from "./PeriodBars";
 import { SummaryButton, SummaryPanel } from "./SummaryPanel";
 
@@ -400,7 +400,10 @@ export function FeedPanel({
     body = feed.error ? (
       <ErrorState message={feed.error} onRetry={() => void feed.reload()} />
     ) : (
-      <Loading label="결과를 모으는 중… (외부 출처를 부르면 몇 초 걸립니다)" />
+      // 첫 적재 자리 — 화면 높이 이상(QA-930, QA-892 순위와 같음): 한 줄이던 때는 결과가 오며 아래 칸(xl 미만은 속성 칸)을 밀었습니다.
+      <div className="min-h-dvh">
+        <Loading label="결과를 모으는 중… (외부 출처를 부르면 몇 초 걸립니다)" />
+      </div>
     );
   } else if (!data.available) {
     body = <p className="px-3 py-6 text-sm text-text-2">{data.message ?? "결과를 받지 못했습니다."}</p>;
@@ -442,21 +445,21 @@ export function FeedPanel({
         {empty.wider.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {empty.wider.map((wider) => (
-              <button key={wider.range} type="button" className={BUTTON} onClick={() => onRange(wider.range)}>
+              <button key={wider.range} type="button" className={buttonClasses("default")} onClick={() => onRange(wider.range)}>
                 {wider.label}으로 넓히기 ({wider.count}건)
               </button>
             ))}
           </div>
         ) : null}
         {empty.kind === "filtered" ? (
-          <button type="button" className={BUTTON} onClick={() => clearFilters("empty")}>
+          <button type="button" className={buttonClasses("default")} onClick={() => clearFilters("empty")}>
             거르기 모두 풀기
           </button>
         ) : null}
         {empty.kind === "period" ? (
           <button
             type="button"
-            className={BUTTON}
+            className={buttonClasses("default")}
             onClick={() => {
               periodClearedFromEmpty.current = true;
               setPeriod(null);
@@ -593,7 +596,7 @@ export function FeedPanel({
               type="button"
               aria-pressed={option.key === range}
               onClick={() => onRange(option.key)}
-              className={`${segmentClass(option.key === range)} forced-colors:border`}
+              className={`${pillTabClasses(option.key === range)} forced-colors:border`}
             >
               {option.label}{" "}
               <span className="text-xs text-text-3">{counts ? `${counts[option.key]}건` : EMPTY}</span>
@@ -605,7 +608,7 @@ export function FeedPanel({
       <FacetGroup title="출처" facets={facets.source} off={filters.source} onToggle={(key) => toggle("source", key)} />
       <FacetGroup title="언어" facets={facets.lang} off={filters.lang} onToggle={(key) => toggle("lang", key)} />
       {hasFilters(filters) ? (
-        <button type="button" className={BUTTON} onClick={() => clearFilters("pane")}>
+        <button type="button" className={buttonClasses("default")} onClick={() => clearFilters("pane")}>
           거르기 모두 풀기
         </button>
       ) : null}
@@ -640,9 +643,9 @@ export function FeedPanel({
   );
 
   return (
-    <div className={`${PANEL} flex flex-col`} style={sheet.height > 0 ? { marginBottom: sheet.height } : undefined}>
+    <div className={`${PANEL_CLASSES} flex flex-col`} style={sheet.height > 0 ? { marginBottom: sheet.height } : undefined}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 lg:hidden">
-        <button type="button" className={BUTTON} aria-expanded={drawer} aria-controls={drawerId} onClick={() => setDrawer((value) => !value)}>
+        <button type="button" className={buttonClasses("default")} aria-expanded={drawer} aria-controls={drawerId} onClick={() => setDrawer((value) => !value)}>
           거르기 · 기간 {SEARCH_RANGES.find((option) => option.key === range)?.label}
         </button>
         {data?.fetchedAt ? <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span> : null}
@@ -661,7 +664,7 @@ export function FeedPanel({
                   알리고 누름은 훅이 한 번만 보냅니다. */}
               <button
                 type="button"
-                className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
                 aria-disabled={feed.refreshing || undefined}
                 aria-busy={feed.refreshing || undefined}
                 onClick={() => {
@@ -719,7 +722,7 @@ export function FeedPanel({
                 // 읽는 동안 disabled로 바꾸지 않습니다(포커스가 body로 떨어짐) — aria-disabled로 알리고 누름은 훅이 한 번만 보냅니다.
                 <button
                   type="button"
-                  className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                  className={`${buttonClasses("default")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
                   aria-disabled={feed.rechecking || undefined}
                   onClick={(event) => {
                     if (feed.rechecking) return;
@@ -757,7 +760,7 @@ export function FeedPanel({
                 aria-checked={grouped}
                 aria-label="같은 사건 묶어 보기"
                 onClick={() => setGrouped((value) => !value)}
-                className={`${BUTTON} forced-colors:border`}
+                className={`${buttonClasses("default")} forced-colors:border`}
               >
                 같은 사건 묶어 보기 · <span className="font-semibold">{grouped ? "켬" : "끔"}</span>
               </button>
@@ -771,12 +774,16 @@ export function FeedPanel({
         </div>
         {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄(묶음 줄 포함)의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴
             옆(셸 변수 --shell-nav-w — 기본 220px·끌어서 206~320px, 접으면 48px), 본문 스크롤 막대 옆까지). */}
+        {/* 아래 시트는 덮개(명세 §3-3 — 바탕 surface-2·밝은 경계 border-overlay·그림자)이고, 고정된 동안(잰 높이가 있을 때)만 덮개 표지(data-overlay)를
+            붙여 안의 공용 단추·요약 상자·닫기 hover가 한 단계 위 면(surface-3)을 씁니다(QA-858). xl의 오른쪽 칸(흐름 안)은 패널 면 그대로(bg-surface·
+            왼쪽 경계 border-strong)이고 표지가 없습니다. */}
         <div
           ref={sheetRef}
           style={sheetStyle(sheet)}
+          data-overlay={previewOpen && sheet.height > 0 ? "" : undefined}
           className={`${
             previewOpen
-              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[var(--shell-nav-w)]"
+              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-overlay bg-surface-2 shadow-overlay lg:bottom-0 lg:left-[var(--shell-nav-w)] xl:border-border-strong xl:bg-surface"
               : "border-t border-border"
           } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >
@@ -843,7 +850,7 @@ function PreviewFrame({ onClose, onKeyDown, children }: PreviewClose & { childre
           type="button"
           onClick={onClose}
           aria-label="미리 보기 닫기"
-          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
+          className="inline-flex size-11 items-center justify-center rounded-control text-text-2 hover:bg-control-fill hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
         >
           <XIcon size={14} />
         </button>
@@ -953,13 +960,13 @@ function FeedPreview({
       <p className="text-sm font-semibold leading-snug text-text">{item.title}</p>
       <FactList rows={rows} />
       {item.summary ? (
-        <p className="whitespace-pre-wrap rounded-control bg-surface-2 p-2 text-sm leading-6 text-text-2">{item.summary}</p>
+        <p className="whitespace-pre-wrap rounded-control bg-control-fill p-2 text-sm leading-6 text-text-2">{item.summary}</p>
       ) : (
         <p className="text-xs text-text-3">출처가 준 요약이 없습니다.</p>
       )}
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {url ? (
-          <a href={url} target="_blank" rel="noopener noreferrer" className={`${LINK} gap-1`}>
+          <a href={url} target="_blank" rel="noopener noreferrer" className={`${LINK_CLASSES} gap-1`}>
             원문 열기
             <ExternalLinkIcon size={14} />
             <span className="sr-only">(새 창)</span>
@@ -968,11 +975,11 @@ function FeedPreview({
           <span className="text-xs text-text-3">원문 주소가 없습니다</span>
         )}
         {action.mode === "stored" ? (
-          <button type="button" className={BUTTON} onClick={onRead} aria-haspopup="dialog">
+          <button type="button" className={buttonClasses("default")} onClick={onRead} aria-haspopup="dialog">
             본문 보기
           </button>
         ) : action.mode === "fetch" ? (
-          <button type="button" className={BUTTON} onClick={() => onFetch(action.ref)} aria-haspopup="dialog">
+          <button type="button" className={buttonClasses("default")} onClick={() => onFetch(action.ref)} aria-haspopup="dialog">
             본문 보기
           </button>
         ) : action.note ? (

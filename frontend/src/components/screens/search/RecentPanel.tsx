@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { ErrorState, Loading } from "@/components/ui";
+import { PANEL_CLASSES } from "@/components/ui/classes";
 import { ExternalLinkIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst } from "@/lib/format";
 import { groupByKstDate, httpUrl, itemKindLabel, kstTime, sortFeed, sourceLabel } from "@/lib/infoSearch";
 import type { SearchRecentResponse } from "@/lib/types";
-import { PANEL, PaneHeading } from "./parts";
+import { PaneHeading } from "./parts";
 
 /**
  * 첫 화면의 최근 글(GET /api/search/recent — 계약 §6-4): 새 피드 묶음(중앙은행 보도자료·경제지 RSS 12곳)의 최근 30건, 운영자에게는 속보 최근 20건을
@@ -114,7 +115,7 @@ export function RecentPanel({ owner, version = 0 }: { owner: boolean; version?: 
   }
 
   return (
-    <section aria-labelledby="search-recent" className={`${PANEL} flex flex-col`}>
+    <section aria-labelledby="search-recent" className={`${PANEL_CLASSES} flex flex-col`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-3 py-2">
         <PaneHeading id="search-recent">최근 글 — 보도자료·경제지 피드{owner ? "와 속보" : ""}</PaneHeading>
         {data?.fetchedAt ? <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span> : null}

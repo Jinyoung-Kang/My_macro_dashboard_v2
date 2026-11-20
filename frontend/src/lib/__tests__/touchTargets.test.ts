@@ -4,7 +4,8 @@
  * components/ui/classes.ts와 정보 검색 조각(components/screens/search/parts.tsx)이 내보내는 것을 모두 '누르는 조각'과 '아닌 것'으로 나눠 둡니다.
  * 새로 내보낸 이름이 어느 쪽에도 없으면 실패합니다 — 새 조각을 만들 때 이 표에 넣으며 44px을 따지게 합니다. 누르는 조각은 받을 수 있는 인자를
  * 모두 넣어 본 클래스가 lg 미만 44px(`min-h-11`·`h-11`·`size-11` 등, lg: 이상 변형은 더 작아도 됨)을 갖는지 봅니다(touchTargetAudit).
- * 화면에서 그린 DOM의 누름 자리는 app/(dashboard)/__tests__/touchTargetsQa458.test.tsx가 봅니다.
+ * 화면에서 그린 DOM의 누름 자리는 app/(dashboard)/__tests__/touchTargetsQa458.test.tsx가 봅니다(정보 수집·수급 레이더 몫은 P7에서 화면별 파일로 나눔 —
+ * components/screens/info/__tests__/infoTouchTargetsQa458.test.tsx, app/(dashboard)/__tests__/radarTouchTargetsQa458.test.tsx).
  */
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +15,7 @@ import { belowLgTarget, smallTargets } from "./touchTargetAudit";
 
 const {
   buttonClasses,
+  FIELD_INPUT,
   filterChipClasses,
   inputClasses,
   LINK_CLASSES,
@@ -21,10 +23,10 @@ const {
   ROW_TRIGGER,
   segmentClasses,
   TEXT_TARGET,
+  TEXT_TARGET_SHORT,
   toggleClasses,
   underlineTabClasses,
 } = uiClasses;
-const { BUTTON, BUTTON_PRIMARY, LINK, segmentClass, toggleClass } = searchParts;
 
 const BOTH = [true, false] as const;
 
@@ -34,10 +36,12 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
     (["default", "primary", "danger", "minimal", "secondary", "ghost"] as const).flatMap((variant) =>
       (["md", "sm", "lg"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
   inputClasses: () => (["md", "sm", "lg"] as const).map((size): [string, string] => [size, inputClasses(size)]),
+  FIELD_INPUT: () => [["", FIELD_INPUT]],
   pillTabClasses: () => BOTH.map((active): [string, string] => [String(active), pillTabClasses(active)]),
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
   TEXT_TARGET: () => [["", TEXT_TARGET]],
+  TEXT_TARGET_SHORT: () => [["", TEXT_TARGET_SHORT]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) =>
       (["md", "sm"] as const).flatMap((size) =>
@@ -54,27 +58,21 @@ const UI_OTHERS: Record<string, string> = {
   ENTITY_FRAME: "대상 화면 칸 틀(격자) — 누르지 않음",
   ENTITY_FRAME_LEFT: "대상 화면 칸 틀의 왼쪽 칸 — 누르지 않음",
   FOCUS_RING: "포커스 링 조각 — 혼자 쓰지 않고 누르는 조각에 붙음",
+  FIELD_LABEL: "폼 이름표(위 글·아래 칸 배치) — 누르는 자리는 안의 입력칸",
+  FIELD_WIDTH: "폼 칸의 폭 조각 — 높이는 입력칸·고르기 상자 모양이 정함",
   SEGMENT_TRACK: "세그먼트의 트랙(바탕) — 누르는 칸은 segmentClasses",
   SELECTED_BAR: "고른 행의 장식 막대 — 누르는 자리는 감싼 행",
   SKELETON_BAR: "읽는 중 자리표시 막대(장식) — 누르지 않음",
 };
 
-const SEARCH_CONTROLS: Record<string, () => [string, string][]> = {
-  BUTTON: () => [["", BUTTON]],
-  BUTTON_PRIMARY: () => [["", BUTTON_PRIMARY]],
-  LINK: () => [["", LINK]],
-  segmentClass: () => BOTH.map((active): [string, string] => [String(active), segmentClass(active)]),
-  toggleClass: () =>
-    BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClass(pressed, compact)])),
-};
+/** 정보 검색 조각 — 조작 조각 별칭(BUTTON·LINK·segmentClass 등)은 P7에서 걷어 공용 키트 이름을 쓰므로 누르는 조각이 없습니다(위 UI_CONTROLS가 봄). */
+const SEARCH_CONTROLS: Record<string, () => [string, string][]> = {};
 
 const SEARCH_OTHERS: Record<string, string> = {
-  PANEL: "면(패널) 테두리 — 누르지 않음",
   PaneHeading: "구획 제목",
   KindIcon: "장식 아이콘",
   KindBadge: "종류 표지(글)",
   ItemKindTag: "결과 줄의 종류 표지(글)",
-  Tag: "별칭·식별자 꼬리표(글)",
   SourceStatusLine: "출처 상태 줄(글)",
 };
 
@@ -148,5 +146,14 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
       "a「근거 출처 이름」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
       "a「합성 출처 사이트」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
     ]);
+  });
+
+  // 짧은 글 단추(P7 — '번역'·'원문'·'읽음' 등 3글자 안팎): TEXT_TARGET은 높이만 44px이라 두 글자 단추의 폭은 글 폭뿐입니다(D2 QA에서 '접기' 28px). 짧은 글 단추용
+  // 클래스는 좁은 화면에서 높이와 폭 모두 44px(글은 가운데 — 포커스 링이 글 양쪽으로 고르게), 넓은 화면은 높이·폭 모두 글 크기로 돌아갑니다.
+  it("짧은 글 단추(TEXT_TARGET_SHORT)는 lg 미만 높이·폭 44px, lg 이상은 글 크기 — 기존 TEXT_TARGET은 그대로", () => {
+    const words = TEXT_TARGET_SHORT.split(/\s+/);
+    expect(words).toEqual(expect.arrayContaining(["inline-flex", "min-h-11", "min-w-11", "items-center", "justify-center", "lg:min-h-0", "lg:min-w-0"]));
+    expect(belowLgTarget(TEXT_TARGET_SHORT)).toBeNull();
+    expect(TEXT_TARGET).toBe("inline-flex min-h-11 items-center lg:min-h-0");
   });
 });

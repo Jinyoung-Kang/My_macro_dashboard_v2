@@ -32,6 +32,7 @@
 //   - 로그인 쿠키를 다루지 않습니다 — 로그인 없이 운영자로 여는 QA 스택(QA_NO_LOGIN=1 bash scripts/qa/qa-stack.sh up)에 씁니다.
 //
 // 끝 코드: 0 = 감사 끝(발견 개수와 무관), 1 = 스크립트 오류(Chrome·CDP 실패, 모든 경로 실패), 2 = 인자 오류.
+// 시험: node --test scripts/qa/ui-audit.test.js (순수 함수 — 본문 스크롤 상자 고르기 choosePageScroller).
 'use strict';
 
 const { spawn, execFileSync } = require('node:child_process');
@@ -462,6 +463,30 @@ async function settle(page, maxMs) {
 
 // ------------------------------------------------------------------ 페이지 안 감사(이 함수는 문자열로 페이지에 넘어가 그 안에서 돕니다 — 바깥 변수를 쓰지 않음)
 
+/**
+ * 본문 스크롤 상자 고르기(순수 함수 — 페이지 안에서도 돌도록 pageAudit과 함께 문자열로 보냄, 시험 scripts/qa/ui-audit.test.js).
+ * lg 이상 셸은 문서가 아니라 <main>이 세로로 스크롤해 문서 높이가 창 높이와 같습니다. 문서가 스크롤하면 고르지 않습니다(null).
+ * 후보는 세로 스크롤 상자(overflow-y auto|scroll) 가운데 창 높이의 절반·창 폭의 절반 이상인 것입니다.
+ *   1. 본문 뿌리 우선: <main>을 품은(자신 포함) 후보가 있으면 그 가운데에서만 고릅니다 — 세로로 넘친 것 가운데 가장 긴 것, 넘친 것이 없으면 null
+ *      (본문이 창에 다 들어감). 본문 안의 긴 스크롤 영역(예: /status의 로그 상자 LogPanel — 높이 한도 30rem·긴 로그)은 본문보다 글이 길어도
+ *      고르지 않습니다(예전 규칙은 가장 긴 상자를 골라 /status 넓은 화면 높이를 로그 길이로 적었음 — 진행 기록 '통합 판단 거리' 12).
+ *   2. <main>을 품은 후보가 없으면(<main>이 없거나 스크롤 상자 밖) 예전 규칙 — 세로로 넘친 후보 가운데 가장 긴 것.
+ * @param boxes  [{ node, clientHeight, clientWidth, scrollHeight, containsMain }] — 세로 스크롤 상자들(문서 차례)
+ * @param view   { innerHeight, width, docScrolls }
+ * @returns 고른 상자의 node 또는 null
+ */
+function choosePageScroller(boxes, view) {
+  if (view.docScrolls) return null;
+  const big = boxes.filter((box) => box.clientHeight >= view.innerHeight * 0.5 && box.clientWidth >= view.width * 0.5);
+  const roots = big.filter((box) => box.containsMain);
+  const pool = roots.length ? roots : big;
+  let chosen = null;
+  for (const box of pool) {
+    if (box.scrollHeight > box.clientHeight + 1 && (!chosen || box.scrollHeight > chosen.scrollHeight)) chosen = box;
+  }
+  return chosen ? chosen.node : null;
+}
+
 function pageAudit(opts) {
   const MAX = opts.sampleMax;
   const doc = document.documentElement;
@@ -728,10 +753,11 @@ function pageAudit(opts) {
     count: 0, escaping: 0, clipped: 0, bag: new Map(),
   };
   const flagged = new Set();
-  // 본문 스크롤 상자 — lg 이상 셸은 문서가 아니라 <main>이 세로로 스크롤해 문서 높이가 창 높이와 같습니다. 문서가 스크롤하지 않을 때만,
-  // 창 높이의 절반·창 폭의 절반 이상이고 세로로 넘친 상자 가운데 가장 긴 것을 본문으로 보고 그 넘친 만큼을 더한 값을 화면 높이(contentHeight)로 적습니다.
+  // 본문 스크롤 상자 — 세로 스크롤 상자를 모아 choosePageScroller(위 — <main>을 품은 상자 우선)로 고르고, 그 넘친 만큼을 더한 값을 화면 높이
+  // (contentHeight)로 적습니다.
   const docScrolls = doc.scrollHeight > window.innerHeight + 1;
-  let pageScroller = null;
+  const mainRoot = document.querySelector('main');
+  const scrollBoxes = [];
   const shape = { pills: 0, pillsPainted: 0, circles: 0, roundedOver4: 0, pillByKind: {}, radiusOver4: {}, bag: new Map() };
   const isFull = (value) => {
     if (!value) return false;
@@ -746,8 +772,12 @@ function pageAudit(opts) {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     if (hiddenByTree(el)) continue;
-    if (!docScrolls && (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.clientHeight >= window.innerHeight * 0.5 && el.clientWidth >= vw * 0.5
-      && el.scrollHeight > el.clientHeight + 1 && (!pageScroller || el.scrollHeight > pageScroller.scrollHeight)) pageScroller = el;
+    if (!docScrolls && (s.overflowY === 'auto' || s.overflowY === 'scroll')) {
+      scrollBoxes.push({
+        node: el, clientHeight: el.clientHeight, clientWidth: el.clientWidth, scrollHeight: el.scrollHeight,
+        containsMain: Boolean(mainRoot && el.contains(mainRoot)),
+      });
+    }
     // (e)
     const corners = [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius];
     if (isFull(corners[0]) && isFull(corners[2])) {
@@ -799,7 +829,9 @@ function pageAudit(opts) {
     }
   }
 
-  const main = document.querySelector('main');
+  // 페이지 안에서는 auditRoute가 함께 보낸 choosePageScroller(위)입니다.
+  const pageScroller = choosePageScroller(scrollBoxes, { innerHeight: window.innerHeight, width: vw, docScrolls });
+  const main = mainRoot;
   const h1 = document.querySelector('h1');
   return {
     url: location.href,
@@ -935,7 +967,9 @@ async function auditRoute(page, opts, route, width, shotFile) {
   const nav = await page.send('Page.navigate', { url: opts.base + route }, 30000);
   if (nav.errorText) return { error: `이동 실패: ${nav.errorText}` };
   const settleInfo = await settle(page, opts.settleMax);
-  const audit = await page.evaluate(`(${pageAudit.toString()})(${JSON.stringify({ viewportWidth: width, mobileBelow: MOBILE_BELOW, sampleMax: SAMPLE_MAX })})`, 60000);
+  // pageAudit은 페이지 안에서 돌므로 쓰는 순수 함수(choosePageScroller)를 같은 감싸기 안에 함께 보냅니다.
+  const probe = `(() => { const choosePageScroller = ${choosePageScroller.toString()}; return (${pageAudit.toString()})(${JSON.stringify({ viewportWidth: width, mobileBelow: MOBILE_BELOW, sampleMax: SAMPLE_MAX })}); })()`;
+  const audit = await page.evaluate(probe, 60000);
   const st = page.state;
   const result = {
     route, width, mobile: width < MOBILE_BELOW, docStatus: st.docStatus, settle: settleInfo, elapsedMs: Date.now() - started,
@@ -1114,7 +1148,12 @@ async function main() {
   return rows.length && rows.every((row) => row.error) ? 1 : 0;
 }
 
-main().then((code) => { process.exitCode = code; }, (error) => {
-  process.stderr.write(`오류: ${error && error.stack ? error.stack : error}\n`);
-  process.exitCode = 1;
-});
+// 시험(scripts/qa/ui-audit.test.js — node --test)이 순수 함수만 가져갈 때는 감사를 돌리지 않습니다.
+if (require.main === module) {
+  main().then((code) => { process.exitCode = code; }, (error) => {
+    process.stderr.write(`오류: ${error && error.stack ? error.stack : error}\n`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { choosePageScroller };

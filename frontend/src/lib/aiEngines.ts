@@ -9,8 +9,7 @@ import type { AiEngine, AiQuota } from "./types";
 
 /** 못 쓰는 이유별 라벨 꼬리. 이유를 모르는(예전 백엔드) 경우는 예전 문구 "키 없음"입니다. */
 function unavailableSuffix(engine: AiEngine): string {
-  if (engine.available) return "";
-  return engine.unavailableReason === "not_allowed" ? " (이 배포에서 사용 안 함)" : " (키 없음)";
+  return engine.available ? "" : ` (${engineAvailability(engine)})`;
 }
 
 /**
@@ -21,13 +20,23 @@ export function engineLabel(engine: Pick<AiEngine, "id" | "label">): string {
   return withoutLeadingIcon(engine.label ?? "") || engine.id;
 }
 
-/** 엔진 선택지 — 고르기 전에 속도를 보여 주고, 못 쓰는 엔진은 이유를 붙여 막습니다. */
+/**
+ * 엔진 선택지 — 엔진 이름과 못 쓰는 이유 꼬리('(키 없음)'·'(이 배포에서 사용 안 함)')만, 못 쓰는 엔진은 막습니다. 속도 안내는 선택지 글에 싣지 않습니다 —
+ * '{이름} · {속도 안내}'가 넓은 화면 22rem 고르기 상자에서 잘렸습니다(QA-850). 고른 엔진의 속도·모델·쓸 수 있는지는 화면이 고르기 아래에 보입니다
+ * (`engineAvailability`).
+ */
 export function engineOptions(engines: readonly AiEngine[]): { value: string; label: string; disabled: boolean }[] {
   return engines.map((engine) => ({
     value: engine.id,
-    label: `${engineLabel(engine)}${engine.speedHint ? ` · ${engine.speedHint}` : ""}${unavailableSuffix(engine)}`,
+    label: `${engineLabel(engine)}${unavailableSuffix(engine)}`,
     disabled: !engine.available,
   }));
+}
+
+/** 엔진을 쓸 수 있는지의 글 — 쓸 수 있음 · 이 배포에서 사용 안 함 · 키 없음(이유를 모르는 예전 백엔드도 '키 없음'). */
+export function engineAvailability(engine: Pick<AiEngine, "available" | "unavailableReason">): string {
+  if (engine.available) return "쓸 수 있음";
+  return engine.unavailableReason === "not_allowed" ? "이 배포에서 사용 안 함" : "키 없음";
 }
 
 /**

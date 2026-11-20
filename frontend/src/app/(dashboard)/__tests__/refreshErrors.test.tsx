@@ -23,7 +23,7 @@ import { endpoints } from "@/lib/endpoints";
 import AlertsPage from "../alerts/page";
 import { SpotFuturesCard } from "../krx/SpotFuturesCard";
 import KrxPage from "../krx/page";
-import { MarketFlowsPanel, StockFlowsPanel } from "../radar/FlowPanels";
+import { MarketFlowsPanel, StockFlowsPanel, useStockFlows } from "../radar/FlowPanels";
 import RadarPage from "../radar/page";
 import StatusPage from "../status/page";
 
@@ -140,6 +140,12 @@ describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_
   });
 });
 
+/** 수급 지속성 패널은 화면이 읽은 응답을 받아 그립니다(P7 — 화면처럼 useStockFlows로 한 번 읽어 넘김). */
+function StockFlowsHarness() {
+  const flows = useStockFlows(["005930"]);
+  return <StockFlowsPanel rows={[{ code: "005930", name: "삼성전자" }]} flows={flows} />;
+}
+
 describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다", () => {
   // QA-067이 고친 8곳 밖에서 refreshMs>0으로 자동 갱신하면서 refreshError를 받지도 그리지도 않던 9곳.
   // 원천(수집기·외부 API) 실패는 200 {available:false}로 와서 배너가 뜨므로, 여기서는 백엔드에 닿지 못한 경우로 재현합니다.
@@ -147,7 +153,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
     { name: "레이더 공통 순매수", make: () => <RadarPage />, card: "외국인·기관 공통 순매수",
       bodies: { [endpoints.positioning.radarConsensus({ market: "KOSPI", tradeType: "순매수", intervalType: "TODAY", topN: "30" })]:
         { available: false, rows: [], message: "공통 종목이 없습니다." } } },
-    { name: "종목 수급 지속성", make: () => <StockFlowsPanel rows={[{ code: "005930", name: "삼성전자" }]} />,
+    { name: "종목 수급 지속성", make: () => <StockFlowsHarness />,
       card: "수급 지속성 — 며칠째 사고 있나 (종목별 20거래일)",
       bodies: { [endpoints.positioning.stockFlows("005930")]: { stocks: [], message: "아직 수집되지 않았습니다." } } },
     { name: "알림함", make: () => <AlertsPage />, card: "알림함",

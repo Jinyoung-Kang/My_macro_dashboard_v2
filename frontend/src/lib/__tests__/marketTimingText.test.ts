@@ -6,8 +6,7 @@
  * 분으로 내린 뒤'·'감지 2분 뒤')이 화면 소스(src의 .ts·.tsx — 시험·자가 검증 폴더 제외, 주석 포함 전체 글)에 남으면 실패합니다. 늦은 주문 가드
  * 글('생성 + 60초보다 늦지 않음' — LATE_FOR_TIMING 설명)은 이 문구들에 걸리지 않아 그대로 둡니다.
  *
- * 허용 목록은 작업대 개편(P6)이 고치고 있는 보유 화면 한 줄뿐입니다(ADR 0044 결정 D15 (나′)). 그 줄이 다른 파일로 옮겨 가거나 횟수가 달라지면
- * 실패해, 옛 글이 조용히 되살아나지 않습니다. P6이 main에 합쳐진 뒤 그 줄을 새 정의로 고치고 허용 목록을 비웁니다.
+ * 허용 목록은 비어 있습니다 — 작업대 개편(P6)이 고치던 보유 화면 한 줄을 P6이 main에 합쳐진 뒤 새 정의로 고쳤습니다(ADR 0044 결정 D15 (나′)).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -16,8 +15,8 @@ import { describe, expect, it } from "vitest";
 const SRC = resolve(__dirname, "../..");
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
 const OLD_PHRASES = ["60초 뒤 첫 분", "감지 + 60초", "60초가 지난 첫 분", "60초)를 분으로 내린", "감지 2분 뒤"];
-/** 아직 옛 글이 남아 있어도 되는 파일과 그 횟수(src 기준 경로). */
-const ALLOWED: Record<string, number> = { "components/screens/paper/HoldingsSection.tsx": 1 };
+/** 아직 옛 글이 남아 있어도 되는 파일과 그 횟수(src 기준 경로) — 없음. */
+const ALLOWED: Record<string, number> = {};
 
 function sources(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {

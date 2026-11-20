@@ -2,7 +2,8 @@
 app/services/info_text.py
 정보 수집(ADR 0035)의 글자 다루기 — HTML을 글로, 글 페이지에서 본문 고르기, 원문 주소 정규화와 글 id. 네트워크를 모릅니다.
 
-  - 본문은 글자만 남깁니다(문단 사이는 빈 줄 하나). 스크립트·스타일·그림·양식·내비게이션·머리말·꼬리말·옆 칸은 버립니다.
+  - 본문은 글자만 남깁니다(문단 사이는 빈 줄 하나). 스크립트·스타일·그림·양식·내비게이션·머리말·꼬리말·옆 칸은 버리고, 같은 역할(ARIA)의
+    요소와 화면에 보이지 않는 요소도 버립니다.
   - 워드프레스 피드가 끝에 붙이는 "The post … appeared first on …" 줄은 본문이 아니라 지웁니다.
   - 글 id는 정규화한 주소(https·소문자 호스트·앞의 www. 없음·추적 인자와 조각 없음·끝의 / 없음)의 해시 앞 24자입니다 — waedge 해외 블로그 목록과
     원문 피드가 같은 글을 같은 행으로 모읍니다.
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
@@ -26,6 +28,10 @@ SUMMARY_CHARS = 300
 
 _DROP_TAGS = ("script", "style", "noscript", "svg", "form", "nav", "header", "footer", "aside", "iframe", "button",
               "figure", "template", "select", "input", "textarea", "picture", "video", "audio", "canvas", "object")
+# 태그로 버리는 것(_DROP_TAGS)과 같은 자리를 역할(ARIA)로 표시한 요소와 화면에 보이지 않는 요소도 버립니다(QA-391 후속 — Marginal Revolution
+# 글 페이지의 구독 완료 안내 상자 <section role="banner">가 짧은 글 앞에 붙어 본문 기준을 넘김, 2026-11).
+_DROP_ROLES = frozenset({"banner", "navigation", "complementary", "contentinfo", "dialog", "alertdialog"})
+_HIDDEN_STYLE = re.compile(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", re.IGNORECASE)
 _BLOCK_TAGS = ("p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre", "tr", "dd", "dt", "figcaption", "div")
 # 글 페이지에서 본문을 담는 자리로 흔한 것(앞의 것부터). 글자가 MIN_BODY_CHARS 넘는 첫 자리를 씁니다.
 _BODY_SELECTORS = ("[itemprop=articleBody]", ".entry-content", ".post-content", ".article-content", ".post-body",
@@ -59,9 +65,24 @@ def _clean_lines(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-def _node_text(node) -> str:
+def _is_noise(tag) -> bool:
+    """역할이 머리말·내비게이션·옆 칸·꼬리말·대화상자이거나, 화면에 보이지 않는(hidden·aria-hidden·display:none) 요소."""
+    if tag.has_attr("hidden") or str(tag.get("aria-hidden") or "").strip().lower() == "true":
+        return True
+    if _DROP_ROLES.intersection(str(tag.get("role") or "").lower().split()):
+        return True
+    return bool(_HIDDEN_STYLE.search(str(tag.get("style") or "")))
+
+
+def _drop_noise(node) -> None:
     for tag in node.find_all(_DROP_TAGS):
         tag.decompose()
+    for tag in node.find_all(_is_noise):
+        tag.decompose()
+
+
+def _node_text(node) -> str:
+    _drop_noise(node)
     for br in node.find_all("br"):
         br.replace_with("\n")
     for block in node.find_all(_BLOCK_TAGS):
@@ -79,21 +100,35 @@ def html_to_text(markup: str | None) -> str:
     return _node_text(BeautifulSoup(markup, "lxml"))
 
 
-def extract_article(markup: str | None) -> str:
+@dataclass(frozen=True)
+class Article:
+    """
+    글 페이지에서 고른 결과 — ``text``는 본문(MIN_BODY_CHARS 이상, 못 고르면 빈 문자열). ``region_chars``는 본문 자리에서 얻은 글자 수로,
+    짧아도 셉니다(앞의 본문 자리 가운데 글이 있는 첫 것, 없으면 문단이 가장 많이 모인 상자 — 그것도 없으면 0). 짧은 글(자리는 있고 글이
+    짧음)과 본문 자리를 못 찾은 페이지를 가르는 데 씁니다(QA-391 후속).
+    """
+
+    text: str
+    region_chars: int
+
+
+def read_article(markup: str | None) -> Article:
     """
     글 페이지 HTML에서 본문 글을 고릅니다. 흔한 본문 자리(_BODY_SELECTORS)에서 MIN_BODY_CHARS를 넘는 첫 것을 쓰고, 없으면 문단(<p>)이
-    가장 많이 모인 상자를 씁니다. 못 고르면 빈 문자열입니다(0으로 채우듯 엉뚱한 글을 본문으로 내지 않음).
+    가장 많이 모인 상자를 씁니다. 못 고르면 본문은 빈 문자열입니다(0으로 채우듯 엉뚱한 글을 본문으로 내지 않음).
     """
     if not markup:
-        return ""
+        return Article("", 0)
     soup = BeautifulSoup(markup, "lxml")
-    for tag in soup.find_all(_DROP_TAGS):
-        tag.decompose()
+    _drop_noise(soup)
+    region_chars = None
     for selector in _BODY_SELECTORS:
         for node in soup.select(selector):
             text = _node_text(node)
             if len(text) >= MIN_BODY_CHARS:
-                return text
+                return Article(text, len(text))
+            if text and region_chars is None:
+                region_chars = len(text)
     scores: dict[int, tuple[object, int]] = {}
     for paragraph in soup.find_all("p"):
         parent = paragraph.parent
@@ -102,11 +137,17 @@ def extract_article(markup: str | None) -> str:
         node, score = scores.get(id(parent), (parent, 0))
         scores[id(parent)] = (node, score + len(paragraph.get_text(strip=True)))
     if not scores:
-        return ""
+        return Article("", region_chars or 0)
     node, score = max(scores.values(), key=lambda pair: pair[1])
+    text = _node_text(node)
     if score < MIN_BODY_CHARS:
-        return ""
-    return _node_text(node)
+        return Article("", region_chars if region_chars is not None else len(text))
+    return Article(text, len(text))
+
+
+def extract_article(markup: str | None) -> str:
+    """글 페이지 HTML의 본문 글(:func:`read_article`의 ``text``) — 못 고르면 빈 문자열."""
+    return read_article(markup).text
 
 
 def summarize(text: str, limit: int = SUMMARY_CHARS) -> str | None:

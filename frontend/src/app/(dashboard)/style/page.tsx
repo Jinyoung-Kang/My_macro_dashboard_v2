@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { HorizontalBars } from "@/components/charts";
-import { DataTable, Empty, HeatmapTable, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList } from "@/components/patterns";
+import { DataTable, Empty, HeatmapTable, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList, ReadingGuide } from "@/components/patterns";
 import {
   Button,
   buttonClasses,
@@ -20,7 +20,6 @@ import {
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
-import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit } from "@/lib/format";

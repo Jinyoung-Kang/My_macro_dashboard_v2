@@ -4,7 +4,7 @@
  * 백엔드 `GET /api/info/*`가 수집기 저장본(글·네이버 매매동향·waedge 거장)과 출처 판정을 그대로 내려 줍니다. 비공식 출처를 차단 통과 수집으로
  * 받은 참고 자료라, 없는 값은 만들지 않고 '—'로 둡니다(0과 다름). 장중 추정 순위의 금액은 출처가 주지 않아 '—'입니다.
  */
-import { EMPTY, formatKst, formatNumber, formatSigned } from "@/lib/format";
+import { EMPTY, formatKst, formatNumber, formatSignedMinus } from "@/lib/format";
 
 /** 상태 톤 — components/ui/icons의 StatusTone과 같은 네 값(lib는 화면 모듈을 가져오지 않음). */
 export type InfoTone = "ok" | "warn" | "danger" | "neutral";
@@ -157,9 +157,17 @@ export function parseInfoTab(value: string | null | undefined): InfoTab | null {
   return INFO_TAB_SLUGS.includes(value as InfoTab) ? (value as InfoTab) : null;
 }
 
-/** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 카드는 그보다 적게. */
+/** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 분류 탭의 출처도 작업대 P7부터 카드(8장) 대신 표 10줄. */
 export const PAGE_SIZE = 10;
-export const CARD_PAGE_SIZE = 8;
+
+/**
+ * 정보 수집 화면이 위 읽기의 첫 응답을 기다리는 상한(ms) — InfoHub AfterSettled(아래 패널을 숨기는 동안, QA-897)와 뉴스 탭의 catalog 읽는 중 한 줄(QA-929)이
+ * 함께 씁니다. 화면의 읽기(hooks/useApi)에는 시간 제한이 없어, 응답이 오지 않고 연결도 끊기지 않으면 이미 받은 것이 끝없이 숨었습니다. 상한 2초는 잰 값에서
+ * 정했습니다 — QA 스택에서 위 패널의 응답은 KRX 약 0.01초·뉴스 catalog 약 0.3초(catalog는 수집기 상태를 묻는 길이라 가장 느림 — 16개 동시 요청 최대
+ * 0.65초)라, 보통은 상한 안에 답해 QA-893·894의 이득(밀리지 않음)을 지키고, 운영 서버의 왕복·수집기 지연에 세 배쯤 여유를 둡니다. 상한을 넘겨 답하면
+ * 그때는 예전처럼 밀릴 수 있습니다.
+ */
+export const FIRST_ANSWER_CAP_MS = 2_000;
 
 // ------------------------------------------------------------------ 쪽 나누기
 export type Paged = { page?: number; size?: number; total?: number; pages?: number };
@@ -263,6 +271,15 @@ export function catalogStatus(source: Pick<CatalogSource, "access" | "incident" 
   return "기록 없음";
 }
 
+/**
+ * 출처 표·검사 칸의 상태 글 — 상태 글({@link catalogStatus})에, 차단 통과 수집 출처가 정상이 아닌 판정을 두 번 넘게 이어 받았으면 '(연속 n회)'.
+ * 예전 출처 카드가 상태 줄에 붙이던 꼬리와 같은 조건입니다.
+ */
+export function catalogStatusText(source: Pick<CatalogSource, "access" | "incident" | "politeStatus" | "lastStatus" | "streak">): string {
+  const streak = source.streak && source.streak > 1 && source.politeStatus !== "ok" ? ` (연속 ${source.streak}회)` : "";
+  return `${catalogStatus(source)}${streak}`;
+}
+
 /** 그 탭의 색별 수를 한 줄로("정상 12 · 주의 1 · 위험 0 · 기록 없음 2"). */
 export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
   return `정상 ${tones.ok ?? 0} · 주의 ${tones.warn ?? 0} · 위험 ${tones.danger ?? 0} · 기록 없음 ${tones.neutral ?? 0}`;
@@ -364,11 +381,6 @@ export type KrxResponse = {
   investors: string[];
 };
 
-/** KRX 부분의 기준일 글 — 이번에 받지 못해 이어받은 것이면 표시. */
-export function partBasis(part: { asOf: string; isStale?: boolean } | null | undefined): string {
-  if (!part) return "받은 자료 없음";
-  return `기준일 ${part.asOf}${part.isStale ? " · 이번에 받지 못해 이전 값" : ""}`;
-}
 
 // ------------------------------------------------------------------ 메커니즘
 export type MechanismResponse = {
@@ -691,14 +703,16 @@ export const NAVER_MARKETS: readonly { key: NaverMarket; label: string }[] = [
   { key: "KOSDAQ", label: "코스닥" },
 ];
 
-/** 억 원 — 부호를 붙여(순매수 +, 순매도 −). 모르면 '—'. */
+/**
+ * 억 원 — 부호를 붙여(순매수 +, 순매도 −). 음수 부호는 −(U+2212 — 작업대 P7, 부호 있는 비등락 값은 본문 잉크 + U+2212, P5b 선례), 0은 부호 없이. 모르면 '—'.
+ */
 export function eokText(value: number | null | undefined): string {
-  return value === null || value === undefined ? EMPTY : `${formatSigned(value, 1)}억`;
+  return value === null || value === undefined || !Number.isFinite(value) ? EMPTY : `${formatSignedMinus(value, 1).text}억`;
 }
 
-/** 순매수 주식 수 — 부호를 붙여. 모르면 '—'. */
+/** 순매수 주식 수 — 부호를 붙여(음수는 U+2212). 모르면 '—'. */
 export function sharesText(value: number | null | undefined): string {
-  return value === null || value === undefined ? EMPTY : `${formatSigned(value, 0)}주`;
+  return value === null || value === undefined || !Number.isFinite(value) ? EMPTY : `${formatSignedMinus(value, 0).text}주`;
 }
 
 /** 순위 표의 기준 글 — 확정이면 기간, 장중 추정이면 '장중 추정 · 순위 시각'. */
@@ -718,16 +732,9 @@ export function rankingBasis(part: RankingPart | null | undefined): string {
 }
 
 // ------------------------------------------------------------------ 거장
-/** 견해의 색 — 강세 ok, 약세 danger, 중립·모름 neutral. */
-export function stanceTone(stance: Guru["stance"]): InfoTone {
-  if (stance === "강세") return "ok";
-  if (stance === "약세") return "danger";
-  return "neutral";
-}
-
-/** 점수 글(+95·−60). 모르면 '—'. */
+/** 점수 글(+95·−60 — 음수 부호는 U+2212). 모르면 '—'. */
 export function scoreText(score: number | null | undefined): string {
-  return score === null || score === undefined ? EMPTY : formatSigned(score, 0);
+  return score === null || score === undefined || !Number.isFinite(score) ? EMPTY : formatSignedMinus(score, 0).text;
 }
 
 /** 강세·중립·약세 나눔 한 줄("강세 95 · 중립 5 · 약세 0"). 하나라도 모르면 '—'. */

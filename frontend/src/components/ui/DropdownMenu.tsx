@@ -3,7 +3,7 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { useId, type ReactElement, type ReactNode } from "react";
-import { CheckIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, CheckIcon } from "@/components/ui/icons";
 import { Tooltip } from "./Tooltip";
 
 /*
@@ -55,9 +55,9 @@ const DESCRIPTION = "-mx-1 mt-1 flex flex-col gap-1.5 border-t border-border px-
  * - 여는 단추(`trigger`, 요소 하나)를 Radix Trigger로 감쌉니다 — aria-haspopup="menu"·aria-expanded가 붙고, Enter·Space·아래 화살표로 엽니다.
  * - 열린 동안은 모달입니다(Radix 기본): 포커스가 메뉴 안에 갇히고, 화살표로 항목을 옮기고(끝에서 처음으로 돌아감), Esc·바깥 누르기로 닫히며,
  *   닫히면 여는 단추로 포커스가 돌아옵니다. 뒤 화면은 보조 기술에서 가려집니다(aria-hidden).
- * - 글자 찾기(typeahead — 글자를 치면 그 글자로 시작하는 항목으로)는 한국어 항목에 듣지 않습니다(한계). Radix는 키 한 번의 글자(event.key)와 항목 글의
- *   첫 글자를 견주는데, 한글 자판의 키 한 번은 자모(ㄷ)나 로마자(e)라 완성 음절('단축키'의 '단')과 맞지 않습니다. 항목이 둘셋인 지금(계정 메뉴)은
- *   화살표로 충분하고, 항목이 많은 메뉴(P6 '동작')를 만들 때 Radix Item의 textValue에 초성 같은 별칭을 넣을지 정합니다.
+ * - 글자 찾기(typeahead — 글자를 치면 그 글자로 시작하는 항목으로)는 한국어 항목에 그대로는 듣지 않습니다. Radix는 키 한 번의 글자(event.key)와 항목 글의
+ *   첫 글자를 견주는데, 한글 자판의 키 한 번은 자모(ㄷ)나 로마자(e)라 완성 음절('단축키'의 '단')과 맞지 않습니다. 항목이 둘셋인 메뉴(계정 메뉴)는
+ *   화살표로 충분하고, 별칭이 필요한 항목은 `DropdownMenuItem`의 `textValue`(Radix Item textValue — 로마자·초성 등)로 찾게 합니다(작업대 P6).
  * - 상자에 덮개 범위 표지(data-overlay)를 붙여, 안의 조작 바탕(bg-control-fill)이 한 단계 위(surface-3)가 되게 합니다(명세 §3-4 2026-11-16 결정).
  * - `label`을 주면 메뉴의 이름이 됩니다(없으면 여는 단추의 이름 — Radix가 aria-labelledby로 잇습니다).
  * - `description`은 항목이 아닌 글(상태·안내 — 계정 메뉴의 읽기 모드·빌드 정보 등)을 두는 자리입니다. 항목 아래 구분선 다음에 그리고 메뉴의 설명
@@ -145,21 +145,39 @@ export function DropdownMenu({
 /**
  * 메뉴 항목(단추 꼴) — 고르면(누르기·Enter·Space) `onSelect`가 불리고 메뉴가 닫힙니다. 닫지 않으려면 `onSelect`에서 event.preventDefault().
  * 결과 안내(실패 글 등)는 메뉴 안에 두지 않습니다(위 DropdownMenu 설명 — 역할 있는 요소 금지). `keyshortcuts`는 같은 일을 하는 단축키
- * (aria-keyshortcuts — 예: "?"). `disabled`(막힌 항목 — 화살표가 건너뜀)는 P6 '동작' 메뉴(데모 열람의 막힌 동작)가 처음 씁니다.
+ * (aria-keyshortcuts — 예: "?"). `disabled`(막힌 항목 — 화살표·글자 찾기가 건너뜀)는 P6 '동작' 메뉴(ui/ActionBar)가 처음 씁니다.
+ * - `textValue`(작업대 P6): 글자 찾기가 견줄 글 — 항목 글 대신 이 글의 첫 글자로 찾습니다(한국어 항목에 로마자·초성 별칭, 예 '계좌 초기화' → 'gyejwa').
+ *   이름(낭독 글)은 항목 글 그대로입니다.
+ * - `tone="danger"`(작업대 P6): 확인 대화상자를 거치는 파괴적 동작의 표지 — 글 앞에 경고 삼각형 아이콘(장식, 글자색 currentColor)을 둡니다. 글자색은
+ *   다른 항목과 같은 text입니다(가리킨 항목 바탕 surface-3 위 danger 글자는 4.5:1 미만 — 금지 쌍). 항목에 data-tone="danger"가 붙습니다.
  */
 export function DropdownMenuItem({
   onSelect,
   disabled = false,
   keyshortcuts,
+  textValue,
+  tone,
   children,
 }: {
   onSelect?: (event: Event) => void;
   disabled?: boolean;
   keyshortcuts?: string;
+  /** 글자 찾기가 견줄 글(별칭). 없으면 항목 글. */
+  textValue?: string;
+  /** 위험 표지(경고 삼각형 아이콘) — 확인을 거치는 파괴적 동작에만. */
+  tone?: "danger";
   children: ReactNode;
 }) {
   return (
-    <DropdownMenuPrimitive.Item onSelect={onSelect} disabled={disabled} aria-keyshortcuts={keyshortcuts} className={ITEM}>
+    <DropdownMenuPrimitive.Item
+      onSelect={onSelect}
+      disabled={disabled}
+      aria-keyshortcuts={keyshortcuts}
+      textValue={textValue}
+      data-tone={tone}
+      className={ITEM}
+    >
+      {tone === "danger" ? <AlertTriangleIcon size={16} className="shrink-0" /> : null}
       {children}
     </DropdownMenuPrimitive.Item>
   );

@@ -24,7 +24,7 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 recharts가 크기 0이라 아무것도 그리지 않습니다 — 차트 이름·계열 이름·색·행 수를 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
-  // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
+  // 개요 검사 칸의 곡선 패널(선 차트) — 이 시험은 그 그림을 보지 않습니다.
   LineChart: () => null,
   MultiLineSeries: ({
     data,
@@ -34,7 +34,7 @@ vi.mock("@/components/charts", () => ({
     tooltipSeriesColors,
   }: {
     data: unknown[];
-    series: { key: string; name: string; color?: string }[];
+    series: { key: string; name: string; color?: string; dashed?: boolean }[];
     ariaLabel?: string;
     tooltipOrder?: string;
     tooltipSeriesColors?: boolean;
@@ -45,7 +45,7 @@ vi.mock("@/components/charts", () => ({
       data-tooltip-order={tooltipOrder ?? ""}
       data-tooltip-colors={String(Boolean(tooltipSeriesColors))}
     >
-      {series.map((entry) => <li key={entry.key} data-color={entry.color}>{entry.name}</li>)}
+      {series.map((entry) => <li key={entry.key} data-color={entry.color} data-dashed={String(Boolean(entry.dashed))}>{entry.name}</li>)}
     </ul>
   ),
   DonutChart: () => null,
@@ -465,7 +465,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const table = screen.getByRole("table", { name: "체결 시점 실험" });
     expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/books/claude2/execution?limit=1", 0);
     expect(headersOf(table)).toEqual(["시점", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
-    expect(within(table).getAllByRole("rowheader").map((th) => th.textContent)).toEqual(["다음 거래일 시가대리값", "다음 거래일 10:00 ET"]);
+    expect(within(table).getAllByRole("rowheader").map((th) => th.textContent)).toEqual(["다음 거래일 시가주의: 대리값", "다음 거래일 10:00 ET"]);   // 대리값은 주의 태그(공용 Tag — 낭독 '주의: ')
     expect(rowsOf(table)).toEqual([
       // 모르는 칸은 표가 "—"(Empty — 낭독기는 "값 없음")로 그립니다.
       ["3건", "2일", "—값 없음", "—값 없음", "판단 보류 — 표본 부족(주문 3/10건 · 결정일 2/5일)", "기준 없음 0 · 값 없음 0"],
@@ -492,7 +492,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const chosen = screen.getByRole("table", { name: "고른 시점(M1 — 주 판정)" });
     expect(headersOf(chosen)).toEqual(["구분", "주문", "결정일", "평균(계좌1식 대비)", "90% 구간", "판단", "뺀 주문"]);
     expect(within(chosen).getAllByRole("rowheader").map((th) => th.textContent))
-      .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)대리값", "대체 체결(따로 셈)"]);
+      .toEqual(["고른 시점 대비 계좌1식(M1 — 주 판정)주의: 대리값", "대체 체결(따로 셈)"]);
     expect(rowsOf(chosen)).toEqual([
       ["31건", "9일", "+12.5bp", "+1.3bp ~ +24.0bp", "구간 참고(판정은 8주 뒤)", "기준 없음 2 · 대체 체결 3(아래 줄) · 체결 없음 4"],
       ["3건", "2일", "—값 없음", "—값 없음", "판정에 쓰지 않음 — 표본 부족(주문 3/10건 · 결정일 2/5일)", "기준 없음 0"],
@@ -541,7 +541,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(within(table).getByText("놓침")).toBeTruthy();
     expect(within(table).getByText("호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)")).toBeTruthy();
     // 부르지 않은 행 — 확인 결정·응답 칸은 '—' 하나(둘이 아님), 지연은 라벨 뒤 값 없음.
-    expect(rowsOf(table)[0]).toEqual(["놓침호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)",
+    expect(rowsOf(table)[0]).toEqual(["주의: 놓침호출 창(확인 시각 +2~+20분)을 놓침 — 서버 꺼짐·늦게 켜짐 (WINDOW_MISSED)",
       "감시 1분봉(5분 수집, 잰 지연)지연 —값 없음", "—값 없음", "—값 없음"]);
 
     fireEvent.click(within(screen.getByRole("group", { name: "실행 감사 계좌" })).getByRole("button", { name: "Claude 계좌1" }));
@@ -618,11 +618,13 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
 
     expect(screen.getByText(/아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어/)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "차트 S = 100 같은 구간" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /펼치기/ }));
-    const limits = screen.getByRole("region", { name: "Claude 계좌2의 한계" });
+    // 한계는 머리 단추로 여는 서랍(작업대 P6) — 계좌2 한계 영역은 그 안의 서버 목록 아래.
+    fireEvent.click(screen.getByRole("button", { name: /^이 장부의 한계 \(\d+줄\)$/ }));
+    const limits = within(screen.getByRole("dialog", { name: "이 장부의 한계" })).getByRole("region", { name: "Claude 계좌2의 한계" });
     expect(within(limits).getAllByRole("listitem")).toHaveLength(5);
     expect(within(limits).getByText(/위 2번\(최대 1시간 묵은 지연 시세\) 대신/)).toBeTruthy();
     expect(within(limits).getByText(/장중 확인은 세션당 최대 한 번/)).toBeTruthy();
+    fireEvent.keyDown(limits, { key: "Escape" });
     // 순자산 곡선의 계좌2 색(검증한 자주색).
     const nav = screen.getByRole("list", { name: "차트 순자산 곡선" });
     expect(within(nav).getByText("Claude 계좌2").getAttribute("data-color")).toBe("#ba5db3");
@@ -650,6 +652,12 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     const exposure = screen.getByRole("list", { name: "차트 Claude 노출 추이(목표 대비 실제)" });
     expect(within(exposure).getAllByRole("listitem").map((li) => li.textContent))
       .toEqual(["목표 노출(Claude가 정함)", "실제 노출(장부)", "계좌2 실제 노출(장부)"]);
+    // 색 = 계좌(순자산 곡선과 같은 색 — 진행 기록 exposure-chart-colour-mapping): 계좌1 목표·실제는 계좌1 주황(목표는 점선), 계좌2 실제는 계좌2 자주.
+    expect(within(exposure).getAllByRole("listitem").map((li) => [li.getAttribute("data-color"), li.getAttribute("data-dashed")])).toEqual([
+      ["#d95926", "true"], ["#d95926", "false"], ["#ba5db3", "false"],
+    ]);
+    const navColors = within(screen.getByRole("list", { name: "차트 순자산 곡선" })).getAllByRole("listitem");
+    expect(navColors.find((li) => li.textContent === "Claude 계좌1")?.getAttribute("data-color")).toBe("#d95926");
     expect(screen.queryByRole("button", { name: "계좌2 시작" })).toBeNull();
   });
 
@@ -800,7 +808,7 @@ describe("보유·체결 — 계좌2 칸", () => {
       "관측 시각·봉 날짜", "종목", "방향", "수량", "체결가·관측가(달러)", "체결 봉·사다리", "계좌1식 대비", "금액(달러)·슬리피지·비용", "가격 출처",
     ]);
     expect(rowsOf(fills)).toEqual([[
-      "2026-11-04 01:10봉 2026-11-03", "AAA대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
+      "2026-11-04 01:10봉 2026-11-03", "AAA주의: 대체 체결", "매수", "80", "100.0500관측 100.0000", "2026-11-04 00:00R2b · 그 세션 T 뒤 첫 거래 봉 시가",
       "+12.3bp", "8,004.00슬리피지 5.0bp", "—값 없음",
     ]]);
   });
@@ -868,7 +876,7 @@ describe("보유·체결 — 계좌2 칸", () => {
       "대기Claude · 만료 2026-11-03체결 —값 없음", "—값 없음근거 [사실] · 무효화: 조건",
     ]]);
     expect(rowsOf(fills)).toEqual([[
-      "2026-11-04 02:10봉 2026-11-03", "BBB대체 체결", "매수", "10", "100.0500관측 100.0000", "—값 없음R3 · 관측 종가(1분봉 없음)",
+      "2026-11-04 02:10봉 2026-11-03", "BBB주의: 대체 체결", "매수", "10", "100.0500관측 100.0000", "—값 없음R3 · 관측 종가(1분봉 없음)",
       "—값 없음", "1,000.50슬리피지 —값 없음", "—값 없음",
     ]]);
   });
@@ -1000,14 +1008,15 @@ describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·�
       fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
       await settled();
       expect(screen.getByLabelText("오늘 장중 확인").textContent).toContain("예정");
-      // 두 줄 모두 이름이 '기준일 종류'(2026-10-30 장중 확인)라 요약 글로 고릅니다.
-      expect(screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })).toHaveLength(2);
-      const byText = (text: string) => screen.getAllByRole("row").find((tr) => tr.textContent?.includes(text)) as HTMLElement;
+      // 두 줄 모두 같은 거래일 묶음(2026-10-30)의 '장중 확인'이라 요약 글로 고릅니다(시각순 목록 줄 단추).
+      const day = screen.getByRole("list", { name: "거래일 2026-10-30" });
+      expect(within(day).getAllByRole("button").filter((button) => within(button).queryByText("장중 확인") !== null)).toHaveLength(2);
+      const byText = (text: string) => within(day).getAllByRole("button").find((button) => button.textContent?.includes(text)) as HTMLElement;
       expect(within(byText("API 오류 — 장중 확인 재시도 없음")).getByText("API 오류(재시도 없음)")).toBeTruthy();
 
       const row = byText("AAPL 갭 메움 — 대신함");
       expect(within(row).getByText("장중 확인")).toBeTruthy();
-      fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+      fireEvent.click(row);
       await settled();
       const part = screen.getByRole("region", { name: "장중 확인" });
       expect(within(part).getByText("대신함(REPLACE)")).toBeTruthy();
@@ -1046,8 +1055,8 @@ describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·�
 
     fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
     await settled();
-    const row = screen.getAllByRole("row", { name: "2026-10-30 장중 확인" })[0];
-    fireEvent.click(within(row).getByRole("button", { name: "상세 펼치기" }));
+    const day = screen.getByRole("list", { name: "거래일 2026-10-30" });
+    fireEvent.click(within(day).getAllByRole("button").find((button) => within(button).queryByText("장중 확인") !== null) as HTMLElement);
     await settled();
     const judged = screen.getByRole("region", { name: "판단" });
     expect(within(judged).getByText("계획대로")).toBeTruthy();

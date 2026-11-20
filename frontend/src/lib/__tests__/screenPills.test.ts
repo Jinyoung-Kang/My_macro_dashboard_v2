@@ -21,7 +21,6 @@ const SCAN_DIRS = [resolve(SRC, "components"), resolve(SRC, "app")];
 const TRUE_CIRCLES: readonly { file: string; size: string; count: number; why: string }[] = [
   { file: "components/patterns/Avatar.tsx", size: "size-8", count: 1, why: "아바타(계좌·종목 머리글자 — 공용 패턴, 장식)" },
   { file: "components/shell/AccountBox.tsx", size: "size-8", count: 1, why: "계정 머리글자 아바타(장식)" },
-  { file: "components/shell/MoreMenu.tsx", size: "size-10", count: 1, why: "더보기 메뉴의 메뉴 아이콘 원판(장식 — 줄 전체가 링크)" },
   { file: "components/shell/SearchCommand.tsx", size: "size-8", count: 2, why: "통합 검색 결과·정보 검색 줄의 종류 원판(아바타와 같은 꼴, 장식)" },
 ];
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);

@@ -74,6 +74,16 @@ export function formatPercent(
 export const MINUS = "−";
 
 /**
+ * 차트가 그리는 숫자(눈금·툴팁·막대 끝 값·극값 표지) — `formatNumber`와 같은 자릿수·천 단위 쉼표에 음수 부호만 −(U+2212)로(화면 전체 규칙 — 변화 칩·KPI·표 칸과
+ * 같은 부호, QA-941). 반올림 뒤 0이면 부호가 없습니다(formatNumber와 같음). `formatNumber` 자체는 바꾸지 않습니다 — 여러 화면이 쓰고 그 글이
+ * formatSigned·formatPercent와 복사 글로 이어지므로, 차트 서식만 좁혀 바꿉니다.
+ */
+export function formatChartNumber(value: number | null | undefined, digits = 2): string {
+  const text = formatNumber(value, digits);
+  return text.startsWith("-") ? `${MINUS}${text.slice(1)}` : text;
+}
+
+/**
  * 부호를 붙인 숫자 — 양수 "+", 음수 "−"(U+2212). 반올림 뒤 0이면 부호를 붙이지 않습니다("+0.00"·"−0.00"을 만들지 않음).
  *
  * @param value 유한한 숫자 — 값을 모르는 경우(null·NaN)는 부르는 쪽이 먼저 거릅니다
@@ -197,6 +207,14 @@ export function formatSignedKrw(value: number | null | undefined): string {
   const text = formatKrw(value);
   // 0.4원은 "0 원"으로 찍히는데 원래 값이 양수라고 "+0 원"을 만들면 안 됩니다(roundForDisplay와 같은 이유).
   return !missing(value) && value > 0 && hasNonZeroDigit(text) ? `+${text}` : text;
+}
+
+/**
+ * 부호 있는 원화 금액의 표 칸 글(순매수처럼 오르내린 값이 아닌 부호 값 — 본문 잉크로 그림): formatSignedKrw에 음수 부호를 U+2212(−)로. 모르면 null
+ * (표가 '—'로 그림). 수급 레이더 시장 전체·국내 파생 현물선물 표가 같은 일을 따로 적던 것을 모았습니다(P7 검토).
+ */
+export function signedKrwText(value: number | null): string | null {
+  return value === null ? null : withMinusSign(formatSignedKrw(value));
 }
 
 /**

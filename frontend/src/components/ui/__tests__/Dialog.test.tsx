@@ -8,13 +8,14 @@
  *  - Trigger 없이 연 창도 닫으면 연 단추로 포커스가 돌아간다
  *  - 움직임은 motion-safe: 안에만(움직임 줄이기면 없음)
  *  - 모양은 덮개 3층(작업대 명세 §3-3): 바탕 surface-2·안쪽 밝은 경계(border-overlay)·그림자, 닫기 단추의 덮개 안 hover는 surface-3(그 위 text-3 금지)
- *  - 범위 표지(scope): 기본은 없고(앱 테마 그대로), scope나 DialogScope로 주면 대화상자 상자에 data-scope가 붙는다(포털이라 화면의 범위 토큰이 닿지 않음)
+ *  - 범위 표지 없음: 정보 검색의 범위 장치(scope prop·DialogScope)를 P7에서 걷어 대화상자 상자에 data-scope를 붙이지 않는다(토큰은 :root 한 벌)
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Dialog, DialogScope } from "../Dialog";
+import * as DialogModule from "../Dialog";
+import { Dialog } from "../Dialog";
 
 afterEach(() => cleanup());
 
@@ -170,23 +171,97 @@ describe("움직임 줄이기", () => {
   });
 });
 
-describe("범위 표지(scope)", () => {
-  it("기본은 data-scope가 없다 — 기존 대화상자는 앱 테마 그대로", () => {
+describe("data-scope를 붙이지 않음(정보 검색 범위 장치를 P7에서 걷어 냄)", () => {
+  it("대화상자 상자에 data-scope가 없다 — 덮개 표지(data-overlay)만", () => {
     render(<Dialog open onOpenChange={() => {}} title="확인">내용</Dialog>);
-    expect(screen.getByRole("dialog").hasAttribute("data-scope")).toBe(false);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.hasAttribute("data-scope")).toBe(false);
+    expect(dialog.hasAttribute("data-overlay")).toBe(true);
+    expect(document.querySelector("[data-scope]")).toBeNull();
   });
 
-  it("scope를 주면 대화상자 상자에 data-scope — 정보 검색 화면의 어두운 토큰이 포털에도 닿는다", () => {
-    render(<Dialog open onOpenChange={() => {}} title="원문" scope="search">내용</Dialog>);
-    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
+  it("범위 문맥(DialogScope)을 내보내지 않는다 — 대화상자 모듈의 내보낸 이름은 Dialog 하나", () => {
+    expect(Object.keys(DialogModule).sort()).toEqual(["Dialog"]);
   });
+});
 
-  it("DialogScope 안에서 연 대화상자는 그 표지를 이어받는다 — 대화상자를 감싼 부품(원문 팝업)을 고치지 않고", () => {
-    render(
-      <DialogScope value="search">
-        <Dialog open onOpenChange={() => {}} title="원문">내용</Dialog>
-      </DialogScope>,
+// 작업대 P6 선택 prop — placement="end"(오른쪽 세로 패널, 서랍 ui/Drawer가 씀)·initialFocus="title"(목록-검사의 검사 대화상자). 기본값이면 지금 그대로입니다.
+describe("기본값 고정(작업대 P6 선택 prop을 더하기 전과 같은 클래스 글)", () => {
+  const FADE = "motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0";
+
+  it("가운데(기본)·md — 상자 클래스 글이 그대로이고 제목에는 tabindex가 없다", () => {
+    render(<Dialog open onOpenChange={() => {}} title="계좌 초기화">내용</Dialog>);
+    expect(screen.getByRole("dialog", { name: "계좌 초기화" }).getAttribute("class")).toBe(
+      "fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 top-1/2 max-h-[calc(100dvh-2rem)] -translate-y-1/2 overflow-y-auto rounded-card "
+        + `border border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE}`,
     );
-    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
+    const heading = screen.getByRole("heading", { name: "계좌 초기화" });
+    expect(heading.getAttribute("class")).toBe("min-w-0 break-keep wrap-anywhere text-heading text-text pr-10");
+    expect(heading.hasAttribute("tabindex")).toBe(false);
+  });
+
+  it("위쪽 고정·lg — 상자 클래스 글이 그대로", () => {
+    render(<Dialog open onOpenChange={() => {}} title="검사" size="lg" placement="top">내용</Dialog>);
+    expect(screen.getByRole("dialog", { name: "검사" }).getAttribute("class")).toBe(
+      "fixed left-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 top-4 max-h-[calc(100dvh-2rem)] sm:top-[12dvh] sm:max-h-[calc(88dvh-1rem)] overflow-y-auto "
+        + `rounded-card border border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE}`,
+    );
+  });
+});
+
+describe("placement=\"end\" — 오른쪽 끝 세로 패널(서랍)", () => {
+  it("화면 높이·오른쪽 끝에 붙고 좁은 화면은 전체 폭(그 위는 크기 이름의 폭) — 덮개 3층·범위 표지·닫기 단추 그대로, 모서리는 둥글리지 않음", () => {
+    render(<Dialog open onOpenChange={() => {}} title="이 장부의 한계" placement="end">내용</Dialog>);
+    const dialog = screen.getByRole("dialog", { name: "이 장부의 한계" });
+    const box = (dialog.getAttribute("class") ?? "").split(/\s+/);
+    expect(box).toEqual(
+      expect.arrayContaining(["fixed", "inset-y-0", "right-0", "w-full", "sm:max-w-md", "overflow-y-auto", "border-l", "border-border-overlay", "bg-surface-2", "shadow-overlay"]),
+    );
+    expect(box).not.toContain("rounded-card");
+    expect(box).not.toContain("-translate-x-1/2");
+    expect(box).not.toContain("left-1/2");
+    expect(dialog.hasAttribute("data-overlay")).toBe(true);
+    expect(screen.getByRole("button", { name: "닫기" })).toBeTruthy();
+  });
+
+  it("크기 이름으로 폭을 정한다 — lg면 sm:max-w-2xl", () => {
+    render(<Dialog open onOpenChange={() => {}} title="서랍" placement="end" size="lg">내용</Dialog>);
+    expect((screen.getByRole("dialog").getAttribute("class") ?? "").split(/\s+/)).toContain("sm:max-w-2xl");
+  });
+});
+
+describe("initialFocus=\"title\" — 첫 포커스를 제목에", () => {
+  function TitleOpener({ initialFocus }: { initialFocus?: "content" | "title" }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>검사 열기</button>
+        <Dialog open={open} onOpenChange={setOpen} title="SPY 계좌" initialFocus={initialFocus}>
+          <button type="button">안쪽 단추</button>
+        </Dialog>
+      </>
+    );
+  }
+
+  it("열면 제목(h2 — tabIndex -1, 링 없음)에 포커스하고, 닫으면 연 단추로 돌아온다", async () => {
+    render(<TitleOpener initialFocus="title" />);
+    const opener = screen.getByRole("button", { name: "검사 열기" });
+    opener.focus();
+    fireEvent.click(opener);
+    const heading = await screen.findByRole("heading", { name: "SPY 계좌" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(heading.tagName).toBe("H2");
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(heading.className.split(/\s+/)).toContain("outline-none");
+
+    fireEvent.keyDown(heading, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("기본(content)은 지금처럼 내용의 첫 조작에 포커스", async () => {
+    render(<TitleOpener />);
+    fireEvent.click(screen.getByRole("button", { name: "검사 열기" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "안쪽 단추" })));
   });
 });

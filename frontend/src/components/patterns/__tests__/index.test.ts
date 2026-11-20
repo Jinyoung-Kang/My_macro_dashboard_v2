@@ -20,9 +20,11 @@ import * as Hero from "../Hero";
 import * as patterns from "../index";
 import * as InspectorFrame from "../InspectorFrame";
 import * as KpiStrip from "../KpiStrip";
+import * as LogPanel from "../LogPanel";
 import * as MasterDetail from "../MasterDetail";
 import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
+import * as ReadingGuide from "../ReadingGuide";
 import * as SectionIndex from "../SectionIndex";
 import * as Skeleton from "../Skeleton";
 import * as Sparkline from "../Sparkline";
@@ -43,9 +45,11 @@ const MODULES: Record<string, Record<string, unknown>> = {
   Hero,
   InspectorFrame,
   KpiStrip,
+  LogPanel,
   MasterDetail,
   PropertyList,
   RangeTabs,
+  ReadingGuide,
   SectionIndex,
   Skeleton,
   Sparkline,
@@ -90,12 +94,16 @@ describe("components/patterns 배럴", () => {
         "HeatmapTable",
         "Hero",
         "InspectorFrame",
+        "InspectorHeadingScope",
+        "InspectorSubheading",
         "InspectorTrigger",
         "KpiStrip",
+        "LogPanel",
         "MasterDetail",
         "PropertyList",
         "ProvenanceBadge",
         "RangeTabs",
+        "ReadingGuide",
         "SectionAnchor",
         "SectionIndex",
         "Skeleton",
@@ -106,6 +114,7 @@ describe("components/patterns 배럴", () => {
         "StatTile",
         "Timeline",
         "TimelineSkeleton",
+        "useScrollRegion",
       ].sort(),
     );
     expect(names).not.toContain("LineChart");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card, Freshness } from "@/components/ui";
+import { Button, Callout, Freshness, Panel } from "@/components/ui";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -49,7 +49,7 @@ export function Claude2StartSection({
   const elapsed = useElapsedSeconds(start.busy);
   const label = view?.bookLabel ?? "Claude 계좌2";
   const result = start.result ? claude2StartResultView(start.result, label) : null;
-  const resultBanner = result && <Banner tone={result.tone}>{result.text}</Banner>;
+  const resultBanner = result && <Callout tone={result.tone}>{result.text}</Callout>;
 
   if (!view) return resultBanner || null;
 
@@ -61,7 +61,7 @@ export function Claude2StartSection({
   };
 
   return (
-    <Card
+    <Panel
       title={`${view.bookLabel} — ${view.title}`}
       subtitle="앞으로 체결 출발 — 마감이 끝난 최근 미국 세션 기준 출발 결정 · 다음 세션에 고른 시점으로 체결 · 사후 체결·미리보기 없음"
       source={PAPER_SOURCES.decisions}
@@ -71,7 +71,7 @@ export function Claude2StartSection({
     >
       <p className="text-sm leading-relaxed text-text-2">{view.body}</p>
       <div className="mt-3">
-        <Banner tone={view.armTone}>{view.armNote}</Banner>
+        <Callout tone={view.armTone}>{view.armNote}</Callout>
       </div>
       <Claude2WindowList lines={view.lines} className="mt-3" />
       <Claude2CheckpointLine line={claude2CheckpointLine(status?.available ? status.claude2 : null)} />
@@ -103,9 +103,9 @@ export function Claude2StartSection({
       )}
 
       {/* 서버 문구(창 밖·설정 꺼짐·호출 상한·개장 전 컷오프·관측치 사슬 준비 중)를 그대로 — 무엇을 기다려야 하는지 서버가 적어 보냅니다. */}
-      {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
+      {start.error && <div className="mt-3"><Callout tone="warn">{start.error}</Callout></div>}
       {resultBanner && <div className="mt-3">{resultBanner}</div>}
-    </Card>
+    </Panel>
   );
 }
 

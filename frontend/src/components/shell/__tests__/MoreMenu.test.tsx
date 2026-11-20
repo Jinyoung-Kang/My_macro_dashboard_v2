@@ -63,7 +63,7 @@ describe("더보기 화면", () => {
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
   });
 
-  it("한국 시장 묶음: 회원·데모·운영자 모두 수급 레이더·파생·투기세력 두 행, '메뉴' 묶음 다음 자리, 원 안 아이콘", () => {
+  it("한국 시장 묶음: 회원·데모·운영자 모두 수급 레이더·파생·투기세력 두 행, '메뉴' 묶음 다음 자리, 장식 아이콘", () => {
     for (const user of [
       { email: "member@test.local", role: "MEMBER", tier: "FREE" },
       { email: null, role: "MEMBER", tier: "PRO", demo: true },
@@ -74,30 +74,34 @@ describe("더보기 화면", () => {
       const sections = screen.getAllByRole("region").map((section) => section.getAttribute("aria-labelledby"));
       expect(sections.indexOf("more-kr")).toBe(sections.indexOf("more-menus") + 1);
       for (const link of within(screen.getByRole("region", { name: "한국 시장" })).getAllByRole("link")) {
-        expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+        expect(link.querySelector("span[aria-hidden='true'] svg")).toBeTruthy();
       }
       cleanup();
     }
   });
 
-  it("행마다 왼쪽 원 안 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로", () => {
+  // 작업대 P7: 원판(40px 원) 없이 20px 아이콘만 — 장식(aria-hidden)이라는 뜻은 그대로, 줄은 좁은 화면 48px·넓은 화면 40px.
+  it("행마다 왼쪽 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로, 줄은 좁은 화면 48px·넓은 화면 40px", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
     const links = within(screen.getByRole("region", { name: "메뉴" })).getAllByRole("link");
     expect(links).toHaveLength(6);
     for (const link of links) {
-      expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+      expect(link.querySelector("span[aria-hidden='true'] svg")).toBeTruthy();
+      expect(link.querySelector(".rounded-full")).toBeNull();
+      expect(link.className).toContain("min-h-12");
+      expect(link.className).toContain("lg:min-h-10");
     }
     expect(screen.getByRole("link", { name: "데이터 저장소 상태" }).getAttribute("href")).toBe("/status");
   });
 
   // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로 — 한국 시장 묶음과 같은 꼴(제목 아래 화면마다 행).
-  it("운영자: '한국 시장' 다음 '정보 수집' 묶음 — 여덟 분류 행(주소 /info/<분류> 그대로), 원 안 아이콘", () => {
+  it("운영자: '한국 시장' 다음 '정보 수집' 묶음 — 여덟 분류 행(주소 /info/<분류> 그대로), 장식 아이콘", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
     expect(rows("정보 수집")).toEqual(INFO_ROWS);
     const sections = screen.getAllByRole("region").map((section) => section.getAttribute("aria-labelledby"));
     expect(sections.slice(0, 3)).toEqual(["more-menus", "more-kr", "more-info"]);
     for (const link of within(screen.getByRole("region", { name: "정보 수집" })).getAllByRole("link")) {
-      expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+      expect(link.querySelector("span[aria-hidden='true'] svg")).toBeTruthy();
     }
   });
 
