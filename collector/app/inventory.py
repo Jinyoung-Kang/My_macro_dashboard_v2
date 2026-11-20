@@ -12,10 +12,12 @@ app/inventory.py
   component  <구역>  <생태계>  <이름>  <버전>  <원본 | ->
   pending    <패키지>  <아키텍처 | ->  <설치 버전>  <후보 버전>  <저장소(쉼표로 여럿)>
 
-  - 구역: 소문자·숫자·``_``·``-``(host·apt·postgres·backend·frontend·collector·browser·caddy 등). 구역마다 한 줄. component는 상태가 ok인 구역에만,
-    pending은 ok인 ``apt`` 구역이 있을 때만 받습니다. 호스트 구역 포함이 0이면 host·apt 구역은 ok일 수 없습니다.
-  - 생태계: deb·apk(배포판 패키지 — 원본은 source 패키지 이름), maven·npm·pypi(프로젝트 의존성), runtime(서버·런타임 — 원본은 배포처,
-    예: Java의 IMPLEMENTOR), kernel, os.
+  - 구역: 소문자·숫자·``_``·``-``. 지금 쓰는 것은 일곱 — host(서버 OS 패키지·커널·Docker·Compose·Tailscale·apt 보류)·postgres·backend·
+    frontend·collector·browser·caddy(컨테이너 OS 패키지도 그 컨테이너의 구역). 구역마다 한 줄. component는 상태가 ok인 구역에만,
+    pending은 ok인 ``host`` 구역이 있을 때만 받습니다. 호스트 구역 포함이 0이면 host 구역은 ok일 수 없습니다.
+  - 생태계: dpkg·apk(배포판 패키지 — 원본 칸에 source 패키지 이름을 **반드시**: dpkg ``${source:Package}``, apk ``o:``), maven·npm·pypi
+    (프로젝트 의존성), runtime(서버·런타임 — 이름 postgres·jdk·node·python·chrome·caddy·docker·compose·tailscale·kernel, jdk의 원본 칸은
+    배포처(release 파일의 IMPLEMENTOR)). 판정(백엔드 feature/security)이 이 이름들에 기댑니다.
   - 이름·버전은 원문 그대로 두고 해석하지 않습니다(판정은 백엔드 — ADR 0046 결정 5). 같은 줄이 두 번 오면 한 번으로 셉니다.
   - 보안 여부는 저장소 이름 가운데 하나가 ``-security``로 끝나는지로 가립니다(Ubuntu ``noble-security``, Ubuntu Pro ESM ``noble-infra-security``·
     ``noble-apps-security``).
@@ -33,8 +35,10 @@ from app import store
 
 FORMAT_VERSION = "1"
 STATUSES = ("ok", "failed", "skipped")
-ECOSYSTEMS = ("deb", "apk", "maven", "npm", "pypi", "runtime", "kernel", "os")
-HOST_SECTIONS = ("host", "apt")
+ECOSYSTEMS = ("runtime", "dpkg", "apk", "maven", "npm", "pypi")
+# 원본(source 패키지) 칸을 반드시 채우는 생태계 — 배포판 공지(openssl·openssh·curl·glibc·커널) 맞추기가 여기에 기댑니다.
+NEEDS_ORIGIN = ("dpkg", "apk")
+HOST_SECTIONS = ("host",)
 MAX_LINES = 100_000
 MAX_FIELD_CHARS = 300
 MAX_REASON_CHARS = 200
@@ -163,14 +167,14 @@ def parse(text: str) -> Inventory:
             raise InvalidInventory(f"줄 {number}: 모르는 생태계")
         name = _field(cells[3], number, "이름")
         version = _field(cells[4], number, "버전")
-        origin = _field(cells[5], number, "원본", optional=True)
+        origin = _field(cells[5], number, "원본", optional=cells[2] not in NEEDS_ORIGIN)
         key = (source, cells[2], name, version)
         if key in seen:
             continue
         seen.add(key)
         inventory.components.append((source, cells[2], name, version, origin))
-    if raw_pending and inventory.sections.get("apt", {}).get("status") != "ok":
-        raise InvalidInventory("pending 줄이 있는데 ok인 apt 구역이 없음")
+    if raw_pending and inventory.sections.get("host", {}).get("status") != "ok":
+        raise InvalidInventory("pending 줄이 있는데 ok인 host 구역이 없음")
     packages: set[tuple[str, str]] = set()
     for number, cells in raw_pending:
         package = _field(cells[1], number, "패키지")
@@ -187,7 +191,9 @@ def parse(text: str) -> Inventory:
         counts[source] = counts.get(source, 0) + 1
     for name, entry in inventory.sections.items():
         if entry["status"] == "ok":
-            entry["count"] = len(inventory.pending) if name == "apt" else counts.get(name, 0)
+            entry["count"] = counts.get(name, 0)
+            if name == "host":
+                entry["pending"] = len(inventory.pending)
     return inventory
 
 
