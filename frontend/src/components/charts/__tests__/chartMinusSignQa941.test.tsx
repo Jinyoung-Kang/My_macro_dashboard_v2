@@ -50,7 +50,7 @@ const SPREAD = [
 ];
 
 describe("QA-941 차트 음수는 U+2212(−)", () => {
-  it.fails("LineSeries — Y 눈금과 툴팁", async () => {
+  it("LineSeries — Y 눈금과 툴팁", async () => {
     observeAs(600, 260);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       left: 0, top: 0, x: 0, y: 0, width: 600, height: 260, right: 600, bottom: 260, toJSON: () => ({}),
@@ -66,7 +66,7 @@ describe("QA-941 차트 음수는 U+2212(−)", () => {
     expect(await within(tooltip).findByText("−1.50%p")).toBeTruthy();
   });
 
-  it.fails("LineChart 기본 서식 — Y 눈금", () => {
+  it("LineChart 기본 서식 — Y 눈금", () => {
     observeAs(600, 260);
     const { container } = render(
       <LineChart data={SPREAD.map((row) => ({ date: row.date, v: row.value }))} series={[{ key: "v", label: "합성", color: SERIES_COLORS.blue }]} includeZero />,
@@ -76,7 +76,7 @@ describe("QA-941 차트 음수는 U+2212(−)", () => {
     expect(unicodeNegative(ticks).length).toBeGreaterThan(0);
   });
 
-  it.fails("MultiLineSeries — 왼쪽·오른쪽 축 눈금", () => {
+  it("MultiLineSeries — 왼쪽·오른쪽 축 눈금", () => {
     observeAs(600, 300);
     const { container } = render(
       <MultiLineSeries
@@ -94,7 +94,7 @@ describe("QA-941 차트 음수는 U+2212(−)", () => {
     expect(unicodeNegative(ticks).length).toBeGreaterThan(1);
   });
 
-  it.fails("HorizontalBars — 막대 끝 값", () => {
+  it("HorizontalBars — 막대 끝 값", () => {
     observeAs(600, 360);
     const { container } = render(<HorizontalBars data={[{ name: "가상 하나", value: 120.5 }, { name: "가상 둘", value: -40.2 }]} unit="억" />);
     const labels = texts(container.querySelectorAll("text"));
@@ -102,7 +102,7 @@ describe("QA-941 차트 음수는 U+2212(−)", () => {
     expect(asciiNegative(labels)).toEqual([]);
   });
 
-  it.fails("SignedBars — 값 축 눈금", () => {
+  it("SignedBars — 값 축 눈금", () => {
     observeAs(600, 300);
     const { container } = render(<SignedBars data={[{ name: "1월", value: 3 }, { name: "2월", value: -2 }]} unit="%" />);
     const ticks = yTicks(container);
@@ -110,7 +110,7 @@ describe("QA-941 차트 음수는 U+2212(−)", () => {
     expect(unicodeNegative(ticks).length).toBeGreaterThan(0);
   });
 
-  it.fails("ScatterPlot — 두 축 눈금", () => {
+  it("ScatterPlot — 두 축 눈금", () => {
     observeAs(600, 300);
     const { container } = render(
       <ScatterPlot data={[{ x: 1, y: 2, date: "a" }, { x: -1, y: -0.5, date: "b" }]} xLabel="합성 가로" yLabel="합성 세로" />,
