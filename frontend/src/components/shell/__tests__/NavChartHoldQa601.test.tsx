@@ -33,19 +33,27 @@ const ROWS = [
 ];
 const CHART_WIDTH = 600;
 
-let frames: FrameRequestCallback[] = [];
+/**
+ * 프레임 대역 — requestAnimationFrame이 맡긴 콜백을 번호로 쥐고 있다가 시험이 runFrames로 돌립니다. cancelAnimationFrame은 그 번호를 걷습니다
+ * (걷힌 프레임은 돌지 않음 — 브라우저와 같음). 시험이 끝나면 tidy가 남은 프레임을 비웁니다(QA-974).
+ */
+const frames = new Map<number, FrameRequestCallback>();
+let lastFrameId = 0;
 
 function rect(width: number, height: number): DOMRect {
   return { left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}) } as DOMRect;
 }
 
 beforeEach(() => {
-  frames = [];
+  frames.clear();
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
-    frames.push(callback);
-    return frames.length;
+    lastFrameId += 1;
+    frames.set(lastFrameId, callback);
+    return lastFrameId;
   });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id: number) => {
+    frames.delete(id);
+  });
   // jsdom 29에는 setPointerCapture가 없습니다(SideNavResize.test와 같은 대역).
   Object.defineProperty(Element.prototype, "setPointerCapture", { value: vi.fn(), configurable: true, writable: true });
   vi.stubGlobal(
@@ -69,9 +77,18 @@ beforeEach(() => {
   });
 });
 
-/** 시험 하나의 뒷정리 — afterEach가 부르고, QA-974 시험은 '정리한 뒤'를 보려고 먼저 한 번 더 부릅니다(두 번 불러도 같음). */
+/**
+ * 시험 하나의 뒷정리 — afterEach가 부르고, QA-974 시험은 '정리한 뒤'를 보려고 먼저 한 번 더 부릅니다(두 번 불러도 같음).
+ *
+ * 언마운트 뒤 프레임 대역에 남은 콜백을 한 번 돌려 비웁니다(QA-974). 남는 것은 차트 저장소(redux-toolkit 자동 묶음)가 미룬 알림입니다 — 화면 코드의
+ * 프레임(끌기·차트 맞춤 확인)은 언마운트가 스스로 걷습니다. 알림이 돌면 함께 걸린 100ms 대체 타이머(Node setTimeout — 환경 해제 뒤에도 살아 있음)를
+ * 스스로 걷어, 파일이 끝난 뒤 터질 타이머가 남지 않습니다. 알림은 걷을 때 대역의 프레임 번호와 (가짜 타이머를 쓴 시험이면) 가짜 타이머 번호를 쓰므로
+ * 둘을 되돌리기 전에 돌립니다. 돌린 뒤에도 프레임이 남으면(프레임이 다음 프레임을 맡김) 나머지 정리를 마친 다음 시험을 실패시킵니다.
+ */
 function tidy() {
   cleanup();
+  runFrames();
+  const leftoverFrames = frames.size;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -80,6 +97,7 @@ function tidy() {
   resetNavCollapsedForTest();
   resetNavWidthForTest();
   document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
+  expect(leftoverFrames).toBe(0);
 }
 
 afterEach(tidy);
@@ -101,7 +119,8 @@ const up = (clientX: number) => fireEvent.pointerUp(handle(), { pointerId: 1, cl
 
 function runFrames() {
   act(() => {
-    const pending = frames.splice(0);
+    const pending = [...frames.values()];
+    frames.clear();
     pending.forEach((callback) => callback(0));
   });
 }
@@ -198,7 +217,7 @@ async function uncaughtAfterEnvironmentTeardown(): Promise<string[]> {
 describe("QA-974: 시험이 끝난 뒤 차트 저장소의 대체 타이머가 남지 않음", () => {
   // 재현 커밋 실패 값: AssertionError: expected [ …(6) ] to deeply equal [] — 여섯 모두 "ReferenceError: cancelAnimationFrame is not defined"
   // (앞 시험 '끌기'·'메뉴만 사라지면'이 남긴 타이머 둘씩 + 이 시험 둘 — 저장소마다 자동 묶음이 둘이라 둘씩. 이 시험만 돌리면 2건).
-  it.fails("정리한 뒤 jsdom 전역이 걷혀도 대체 타이머가 cancelAnimationFrame을 찾다 터지지 않음", async () => {
+  it("정리한 뒤 jsdom 전역이 걷혀도 대체 타이머가 cancelAnimationFrame을 찾다 터지지 않음", async () => {
     render(<Page />);
     down(220);
     move(260);
