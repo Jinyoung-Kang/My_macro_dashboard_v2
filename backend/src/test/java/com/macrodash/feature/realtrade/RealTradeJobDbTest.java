@@ -2507,21 +2507,22 @@ class RealTradeJobDbTest {
         verify(client, times(1)).placeOrder(anyString());   // 먼저 보낸 C 매도뿐 — 묶음은 보낼 것이 없음
     }
 
+    // QA-949 전(2026-11-09 결정)에는 VI로 빠진 책의 종목 A의 몫을 세지 않아 B 30%만으로 묶음을 만들고 'BUY 000660 DAY 150'을 보냈다.
     @Test
-    @DisplayName("QA-376 고정: 회전율 보완은 책의 종목을 세지 않는다 — VI로 빠진 책의 종목(보유 2주, 목표까지 매수 49%)의 몫은 예전처럼 회전율에 들지 않아, 나머지(B 30%)만으로 묶음을 만든다")
-    void restrictedBookSymbolStaysOutOfTurnover() {
-        RealTradeFixtures.live(store, false, d("10000000"));   // 회전율 예외 없음 — A까지 세면 79%로 이상 멈춤
+    @DisplayName("QA-949: 회전율 보완은 책의 종목도 센다 — VI로 빠진 책의 종목(보유 2주, 목표까지 매수 49%)의 몫까지 79%라 이상 멈춤, 묶음·주문 없음")
+    void restrictedBookSymbolCountsTowardTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));   // 회전율 예외 없음
         timedTargets(Map.of(A, 50.0, B, 30.0), List.of(), List.of());
         preflight("9900000", Map.of(A, new String[]{"2", "50000"}), Map.of(B, "20000"));   // 책의 종목 A를 이미 2주 들고 있음(E = 1,000만)
         restrictions(Set.of(A), null);
 
         run("09:10:05");
 
-        assertThat(cfg().state()).isEqualTo("LIVE");
-        assertThat(events("HALT")).isEmpty();
-        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 150");
-        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
-        assertThat(RealTradeJob.liquidations(batch)).as("책의 종목은 전량 매도 대상이 아님").isEmpty();
+        verify(client, never()).placeOrder(anyString());
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(cfg().haltDetail().path("turnoverPct").decimalValue()).isEqualByComparingTo("79.00");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
     }
 
     @Test
@@ -2556,7 +2557,6 @@ class RealTradeJobDbTest {
     // QA-949 — 수정 전(재현 커밋에서는 @Disabled): A·D가 VI라 계획에서 빠지면 판정 회전율이 B의 20%뿐이라 이상 멈춤 없이 묶음을 만들고
     // 'BUY 000660 DAY 100'을 보냄(그 뒤 VI가 풀리면 같은 창 마무리가 A 매수·D 매도 70%를 회전율 검사 없이 보냄).
     @Test
-    @org.junit.jupiter.api.Disabled("QA-949 재현 — 고치기 전에는 VI로 빠진 책의 종목 몫을 회전율에 세지 않아 묶음이 나감")
     @DisplayName("QA-949: 시각 맞추기 날 책의 종목 둘(A 매수 30%·D 매도 40%)이 VI — 판정 회전율은 VI가 아니었을 때와 같은 90%라 이상 멈춤, 묶음·주문 없음")
     void restrictedBookSymbolsCountTowardTurnover() {
         RealTradeFixtures.live(store, false, d("10000000"));   // 켠 뒤 첫 묶음이 아님 — 회전율 예외 없음
@@ -2571,6 +2571,42 @@ class RealTradeJobDbTest {
         assertThat(cfg().haltReason()).isEqualTo("turnover");
         assertThat(cfg().haltDetail().path("turnoverPct").decimalValue()).as("VI가 아니었을 때와 같은 값").isEqualByComparingTo("90.00");
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-949 고정: VI로 빠진 책의 종목이 대기 STOP 종목이면 그 몫은 세지 않는다(QA-302) — D 매도 40%를 빼고 A·B 50%라 묶음을 만듦")
+    void restrictedBookSymbolThatIsPendingStopStaysOutOfTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 30.0, B, 20.0, D, 10.0), List.of(), List.of(661L));
+        preflight("5000000", Map.of(D, new String[]{"50", "100000"}), Map.of(A, "50000", B, "20000"));
+        restrictions(Set.of(D), null);
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(D));
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(D));
+    }
+
+    @Test
+    @DisplayName("QA-949 고정: VI로 빠진 현금성(책의 종목) 매수를 셀 때도 스탑 대금까지는 빼고 센다(QA-302) — 스탑 A·B 90% + 현금성 매수 90%는 VI가 아니었을 때처럼 멈춤 없음")
+    void restrictedCashLikeBuyIsFundedByStopsLikeUnrestricted() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(CASH_LIKE, 90.0), List.of(), List.of(661L, 662L));
+        stoppedAccount();
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A, B));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(661, A, "AT_MINUTE", SYNC_AT),
+                stopDue(662, B, "AT_MINUTE", SYNC_AT)));
+        restrictions(Set.of(CASH_LIKE), null);
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).as("현금성 매수 90%를 막는 종목으로 둔 채 빼면 스탑 대금과 맞추지 못해 90%로 멈춤").isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(CASH_LIKE));
     }
 
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
@@ -4055,7 +4091,7 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @DisplayName("S1b — 8종목 교체 + 새 종목 K가 09:10 VI: 지금 멈춤 판정은 146.7%(K 빠짐)지만 판정 회전율은 156.5%(K 셈) → over-cap, 묶음·주문 없음")
+    @DisplayName("S1b — 8종목 교체 + 새 종목 K가 09:10 VI: 멈춤 판정도 판정 회전율도 156.5%(K 셈 — QA-949 전에는 멈춤 판정 146.7%) → over-cap, 묶음·주문 없음")
     void rebalanceRestrictedNewNameStillCapped() {
         rebalanceDay(P2, H2, merged(pcts(CASH_LIKE, 1, "A", 9.8, "B", 9.8), each("KLMNOPQR", 9.8)), Set.of());
         restrictions(Set.of(r("K")), null);
@@ -4063,14 +4099,13 @@ class RealTradeJobDbTest {
         run("09:10:05");
 
         assertHalted("S1b", "over-cap");
-        assertThat(haltDetail().path("turnoverPct").asDouble()).isEqualTo(146.7);
+        assertThat(haltDetail().path("turnoverPct").asDouble()).isEqualTo(156.5);
         assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(156.5);
     }
 
     // QA-949 — 수정 전(재현 커밋에서는 @Disabled): 새 종목 F~I(매수 40%)가 VI라 지금 멈춤 판정이 153130 매도 40%뿐이어서 재선정 예외 판정(열두 확인)을
     // 거치지 않고 묶음을 보냄 — 예외 이벤트 없음('expected size 1 but was 0').
     @Test
-    @org.junit.jupiter.api.Disabled("QA-949 재현 — 고치기 전에는 VI로 빠진 새 종목 몫이 멈춤 판정에 없어 예외 판정 없이 묶음이 나감")
     @DisplayName("QA-949: N1(153130 → 종목 넷) 새 종목 넷이 모두 VI — 멈춤 판정 80%(VI 몫 셈)라 재선정 예외 판정으로 가서 보냄, 멈춤 판정과 판정 회전율이 같은 80%(두 번 세지 않음)")
     void rebalanceRestrictedNewNamesGoThroughExemption() {
         rebalanceDay(P1, H1, NOW1, Set.of());

@@ -574,7 +574,7 @@ class RealTradeJob {
 
     /**
      * 사전 조회와 그것으로 낸 계획. {@code restricted}는 이번 계획에서 매매 제한(VI·거절 대기)으로 뺀 종목, {@code ownBlocked}는 그것을 더하기 전의
-     * 이 기능 미종료 주문 종목({@link Fresh#blocked}) — 묶음의 회전율이 기다리는 전량 매도 대상을 셀 때 씁니다({@link #withWaitingLiquidations}).
+     * 이 기능 미종료 주문 종목({@link Fresh#blocked}) — 묶음의 회전율이 매매 제한으로 기다리는 몫을 셀 때 씁니다({@link #withWaitingLiquidations}).
      */
     private record Planned(Fresh fresh, Plan plan, Set<String> restricted, Set<String> ownBlocked) {
     }
@@ -888,7 +888,8 @@ class RealTradeJob {
 
     /**
      * 그날 시가 맞추기 묶음을 만들고(목표 비중·흡수한 모의 주문·E 고정) 보냅니다. 목표가 없거나 불완전하면 보내지 않습니다(빈 목표로 '모두 팔기'를 하지 않게).
-     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)를 빼고 셉니다
+     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 매매 제한으로 지금 빠진 책의 종목·전량 매도 대상의 몫을 더하고({@link #withWaitingLiquidations},
+     * QA-376·QA-949), 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)를 빼고 셉니다
      * ({@link RealTradePlanner#withoutStops}, QA-302 — 보내는 주문에는 그대로 있음), 예외는 {@link #turnoverHalt}(켜기·방식 바꾸기·멈춤 해제 뒤 첫
      * 묶음, 그리고 남은 몫으로 이어 준 묶음 중 목표가 앞 묶음과 거의 같은 것), 그 뒤 규칙 계좌 재선정 다음 묶음({@link #rebalanceCheck} — 입구와 열두
      * 확인을 모두 지나면 보내고 {@code TURNOVER_EXEMPT} 이벤트, 어긋나면 HALT detail에 판정 코드, 판정 오류면 그 주기 건너뜀). 묶음을 만들면서(같은
@@ -922,8 +923,9 @@ class RealTradeJob {
         Fresh f = planned0.fresh();
         Plan plan = planned0.plan();
         Optional<Instant> start = c.cfg.syncPending() ? followStart() : Optional.empty();
-        // 회전율에는 매매 제한으로 기다리는 전량 매도 대상의 몫도 셈(QA-376 — 풀리면 그날 나감). 그런 종목이 없으면 plan 그대로.
-        Plan turnover = withWaitingLiquidations(c, planned0, weightPct);
+        // 회전율에는 매매 제한으로 기다리는 책의 종목·전량 매도 대상의 몫도 셈(QA-376·QA-949 — 풀리면 그날 창 안에서 나감). 그런 종목이 없으면 plan 그대로.
+        Judged judged = withWaitingLiquidations(c, planned0, weightPct);
+        Plan turnover = judged.plan();
         Set<String> stops = null;
         BigDecimal proceeds = null;
         Map<String, Object> exemptDetail = null;
@@ -933,7 +935,8 @@ class RealTradeJob {
             // 멈춤을 걸면 같은 주기의 스탑 매도 경로까지 서서 손절이 사라짐. 보낼 주문은 그대로(묶음도 스탑 종목을 목표 0으로 팖 — 겹쳐도 더 팔 수 없음).
             stops = paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
             proceeds = stopProceeds(c, stops);
-            Plan counted = RealTradePlanner.withoutStops(turnover, weightPct, f.account(), f.blocked(), rules(c, f), true, stops, proceeds);
+            Plan counted = RealTradePlanner.withoutStops(turnover, weightPct, f.account(), judged.blocked(), rules(c, f), true, stops,
+                    proceeds);
             if (counted.turnoverExceeded()) {
                 Map<String, Object> halt = turnoverHalt(c.cfg, start, counted, weightPct, stops, c.cashLike);
                 if (halt != null) {
@@ -1279,32 +1282,43 @@ class RealTradeJob {
     }
 
     /**
-     * 회전율 판정용 계획(QA-376) — {@code plan}의 회전율 금액에, 매매 제한(VI·종목 거절 대기)으로 지금은 빠졌지만 풀리면 그날 창 안에서 나갈
-     * <b>전량 매도 대상</b>(책의 목표에 없는 정수 보유 — {@link #batchTargets})의 몫을 더한 계획을 돌려줍니다. 예전에는 그 종목이 그날 다시 보이지 않아
-     * 셀 필요가 없었지만, 이제 묶음 뒤에 팔리므로 세지 않으면 엉망인 목표('모두 팔기')가 VI와 겹친 날 그 몫이 회전율 멈춤을 비켜 갑니다. 대기 STOP 종목은
-     * 뺍니다(스탑 매도는 회전율에 세지 않음 — QA-302). 책의 종목이 매매 제한으로 빠진 몫은 예전 그대로 세지 않습니다(2026-11-09 결정의 동작). 주문·건너뜀은
-     * 바꾸지 않습니다.
+     * 회전율 판정용 계획과 그 계획의 막는 종목(QA-376·QA-949). {@code blocked}는 {@link RealTradePlanner#withoutStops}에 같은 기준으로 넘길 막는 종목 —
+     * 판정 계획이 센 종목은 막지 않습니다.
      */
-    private Plan withWaitingLiquidations(Cycle c, Planned planned, Map<String, Double> weightPct) {
+    private record Judged(Plan plan, Set<String> blocked) {
+    }
+
+    /**
+     * 회전율 판정용 계획(QA-376·QA-949) — {@code plan}의 회전율 금액에, 매매 제한(VI·종목 거절 대기)으로 지금은 빠졌지만 풀리면 그날 창 안에서 나갈
+     * 몫을 더한 계획을 돌려줍니다. 더하는 종목은 이번 계획에서 매매 제한으로 뺀 종목 가운데 <b>책의 종목</b>(목표 비중에 있는 것 — 2026-11-20 결정으로
+     * 셈, 그 전에는 세지 않음)과 <b>전량 매도 대상</b>(책의 목표에 없는 정수 보유 — {@link #batchTargets})이고, 금액은 그 종목이 제한이 아니었다면 계획이
+     * 냈을 매수·매도 금액({@link RealTradePlanner#sync}를 그 종목만의 범위로 — 1% 문턱도 같음)입니다. 세지 않으면 VI가 많은 날 판정 회전율이 한도 아래로
+     * 내려가 묶음이 나가고, 제한이 풀린 뒤 같은 창 마무리가 그 몫을 회전율 검사 없이 보냅니다. 대기 STOP 종목은 뺍니다(스탑 매도는 회전율에 세지 않음 —
+     * QA-302). 이 기능의 미종료 주문 종목({@code Planned.ownBlocked})은 세지 않습니다. 주문·건너뜀은 바꾸지 않고, 더할 종목이 없으면 {@code plan}과
+     * {@link Fresh#blocked} 그대로입니다.
+     */
+    private Judged withWaitingLiquidations(Cycle c, Planned planned, Map<String, Double> weightPct) {
         Fresh f = planned.fresh();
         Plan plan = planned.plan();
         Set<String> waiting = new TreeSet<>();
         for (String symbol : planned.restricted()) {
-            if (!weightPct.containsKey(symbol) && !planned.ownBlocked().contains(symbol)
-                    && f.account().held(symbol).compareTo(BigDecimal.ONE) >= 0) {
+            if (!planned.ownBlocked().contains(symbol)
+                    && (weightPct.containsKey(symbol) || f.account().held(symbol).compareTo(BigDecimal.ONE) >= 0)) {
                 waiting.add(symbol);
             }
         }
         if (waiting.isEmpty()) {
-            return plan;
+            return new Judged(plan, f.blocked());
         }
         waiting.removeAll(paper.pendingStopSymbols(c.cfg.sourceBook(), c.today));
         if (waiting.isEmpty()) {
-            return plan;
+            return new Judged(plan, f.blocked());
         }
         BigDecimal extra = RealTradePlanner.sync(weightPct, plan.equity(), f.account(), planned.ownBlocked(), BigDecimal.ZERO, rules(c, f),
                 true, waiting, null).turnoverAmount();
-        return new Plan(plan.orders(), plan.skipped(), plan.turnoverAmount().add(extra), plan.equity());
+        Set<String> blocked = new HashSet<>(f.blocked());
+        blocked.removeAll(waiting);
+        return new Judged(new Plan(plan.orders(), plan.skipped(), plan.turnoverAmount().add(extra), plan.equity()), blocked);
     }
 
     // ------------------------------------------------------------------ 매매 제한 대기(시각 맞추기)
