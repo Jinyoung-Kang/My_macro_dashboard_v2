@@ -8,7 +8,7 @@ import { IsaSection } from "@/components/screens/isa/IsaSection";
 import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
-import { Button, Callout, ErrorState, Loading, Tabs } from "@/components/ui";
+import { Button, Callout, ErrorState, Loading, SKELETON_BAR, Tabs, underlineTabClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
@@ -192,7 +192,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
         />
 
         {/* 시장 고르기(미국 | 한국 두 링크)는 넓은 화면은 머리의 세그먼트(PaperHeader), 좁은 화면은 셸의 하위 메뉴 줄(lib/nav)이 맡습니다. */}
-        {loading && !data && <Loading label="장부를 읽는 중…" />}
+        {/* 실제 계좌 탭은 개요를 읽는 동안 탭 줄 꼴의 자리(RealTabRowPending — 개요가 오면 그 자리에 탭 줄), 그 밖의 탭은 읽는 중 글. */}
+        {loading && !data && (current.key === "real" ? <RealTabRowPending /> : <Loading label="장부를 읽는 중…" />)}
         {error && <ErrorState message={error} onRetry={reload} />}
         {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
         {data && !data.available && <Callout tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Callout>}
@@ -291,6 +292,26 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
         <ScrollTopButton />
       </div>
     </PaperHeaderSlotsProvider>
+  );
+}
+
+/**
+ * 실제 계좌 탭에서 개요를 읽는 동안의 자리 — 개요가 오면 같은 자리에 생기는 탭 줄과 같은 높이(공용 밑줄 탭 sm과 같은 클래스 — 좁은 화면 45px·넓은 화면 31px)의
+ * 글 없는 막대 줄입니다(QA-964). 예전에는 읽는 중 글(68px)이 탭 줄로 바뀌며 아래 실제 매매 칸이 위로 37px 올라갔습니다. 탭이 아니라(역할·누르기 없음 — 탭 줄은
+ * 개요가 온 뒤에만, SEC-6) 읽는 중 상태만 읽힙니다. 개요가 실패·읽을 수 없음이면 탭 줄 없이 이 자리가 빠집니다(예전 읽는 중 글과 같음).
+ */
+function RealTabRowPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="장부를 읽는 중" className="flex overflow-hidden border-b border-border">
+      <span className="sr-only">장부를 읽는 중</span>
+      {["w-8", "w-14", "w-14", "w-14", "w-10", "w-8", "w-14", "w-14"].map((width, index) => (
+        <span key={index} aria-hidden="true" className={underlineTabClasses(false, "sm")}>
+          <span className="flex h-lh items-center">
+            <span className={`block h-3 ${width} ${SKELETON_BAR}`} />
+          </span>
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StaleBadge } from "@/components/patterns";
-import { Banner, Button, ErrorState, Loading } from "@/components/ui";
-import { LockIcon } from "@/components/ui/icons";
+import { Banner, Button, ErrorState, SKELETON_BAR } from "@/components/ui";
+import { LockIcon, SpinnerIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import {
@@ -26,6 +26,57 @@ import { BrokerageHoldings, BrokerageOrders } from "./BrokerageTables";
 
 /** 화면이 기다리는 한도 — 백엔드가 수집기를 기다리는 35초(수집기 갱신 예산 12초 + 끊지 않는 토큰 발급 최대 16초)보다 조금 길게. */
 const TIMEOUT_MS = 40_000;
+
+/** 자리표시 막대 — 공용 Skeleton 막대와 같은 모양(ui/classes SKELETON_BAR). */
+const BAR = `block ${SKELETON_BAR}`;
+
+/** 글줄 하나 높이(그 글 크기의 줄 높이 — h-lh)의 막대 줄. */
+function BarLine({ text, width }: { text: string; width: string }) {
+  return (
+    <span className={`flex h-lh items-center ${text}`}>
+      <span className={`h-3 ${width} ${BAR}`} />
+    </span>
+  );
+}
+
+/**
+ * 실제 계좌를 읽는 중 — 값이 온 뒤 맨 위에 오는 요약 카드(카드 머리 — 제목·부제·출처 줄, 타일 다섯)와 같은 꼴의 자리(QA-964). 예전에는 읽는 중 글 한 줄이었습니다.
+ * 읽는 중 글은 그대로 첫 줄에 남기고 막대는 읽기에서 뺍니다. 막대에 숫자·종목을 넣지 않습니다.
+ */
+function AccountPending() {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex items-center gap-2 text-sm text-text-3">
+        <SpinnerIcon size={16} className="motion-safe:animate-spin" />
+        실제 계좌를 읽는 중…
+      </p>
+      <div aria-hidden="true" data-pending="summary" className="rounded-card border border-border bg-surface">
+        <div className="border-b border-border px-3 py-2.5 lg:px-4">
+          <BarLine text="text-heading-sm" width="w-40" />
+          <span className="mt-0.5 block">
+            <BarLine text="text-[13px] leading-5" width="w-56 max-w-full" />
+          </span>
+          <span className="mt-1 block">
+            <BarLine text="text-xs leading-4" width="w-28" />
+          </span>
+        </div>
+        <div className="grid min-w-0 grid-cols-2 gap-2 p-3 md:grid-cols-3 lg:p-4">
+          {["w-16", "w-16", "w-16", "w-16", "w-24"].map((width, index) => (
+            <div key={index} data-pending="tile" className="min-w-0 rounded-control border border-border bg-surface px-3 py-2.5">
+              <BarLine text="text-caption" width={width} />
+              <span className="mt-0.5 flex h-lh items-center text-2xl">
+                <span className={`h-6 w-24 max-w-full ${BAR}`} />
+              </span>
+              <span className="mt-1 block text-xs leading-4">
+                <BarLine text="" width="w-3/4" />
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * 모의매매 화면의 '실제 계좌' 탭(ADR 0025, 명세 docs/specs/2026-11-05-toss-account-readonly.md §5) — 토스증권 실제 계좌를 읽기만 합니다.
@@ -90,7 +141,7 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
         </div>
       )}
 
-      {loading && !data && <Loading label="실제 계좌를 읽는 중…" />}
+      {loading && !data && <AccountPending />}
       {/* 요청 자체가 실패(권한·백엔드 오류·시간 초과)하면 빈 표가 아니라 이유를 보입니다 — 앞서 받은 값이 있으면 아래 '이전 값'으로. */}
       {error && <ErrorState message={`실제 계좌를 읽지 못했습니다 — ${error}`} onRetry={reload} />}
 

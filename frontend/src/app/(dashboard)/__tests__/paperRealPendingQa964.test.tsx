@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("QA-964 한국 실제 계좌 탭의 읽는 중 자리표시는 값이 온 뒤의 꼴", () => {
   // 수정 전(재현 커밋에서는 it.fails): 개요를 읽는 동안은 읽는 중 글 하나('장부를 읽는 중…' — 상태 역할 없음)였습니다.
-  it.fails("개요를 읽는 동안 탭 줄과 같은 높이(공용 밑줄 탭 sm 클래스)의 자리 — 탭 줄(tablist)은 개요가 온 뒤에만", () => {
+  it("개요를 읽는 동안 탭 줄과 같은 높이(공용 밑줄 탭 sm 클래스)의 자리 — 탭 줄(tablist)은 개요가 온 뒤에만", () => {
     render(<PaperScreen market="KR" initialTab="real" />);
     const slot = screen.getByRole("status", { name: "장부를 읽는 중" });
     const tabs = Array.from(slot.children).filter((child) => child.getAttribute("aria-hidden") === "true");
@@ -53,7 +53,7 @@ describe("QA-964 한국 실제 계좌 탭의 읽는 중 자리표시는 값이 �
   });
 
   // 수정 전(재현 커밋에서는 it.fails): 실제 매매 칸은 읽는 중 글 하나뿐이었습니다(자리 칸 0).
-  it.fails("실제 매매 상태를 읽는 동안 칸 안에 읽는 중 글과 값이 온 뒤의 꼴(타일 셋·표 둘 — 읽기에서 빠짐), 끄기 단추는 그대로", () => {
+  it("실제 매매 상태를 읽는 동안 칸 안에 읽는 중 글과 값이 온 뒤의 꼴(타일 셋·표 둘 — 읽기에서 빠짐), 끄기 단추는 그대로", () => {
     render(<PaperScreen market="KR" initialTab="real" />);
     const region = screen.getByRole("region", { name: "실제 매매" });
     expect(within(region).getByText("실제 매매 상태를 읽는 중…")).toBeTruthy();
@@ -63,7 +63,7 @@ describe("QA-964 한국 실제 계좌 탭의 읽는 중 자리표시는 값이 �
   });
 
   // 수정 전(재현 커밋에서는 it.fails): 실제 계좌는 읽는 중 글 하나뿐이었습니다.
-  it.fails("실제 계좌를 읽는 동안 읽는 중 글과 요약 카드 꼴(타일 다섯 — 읽기에서 빠지고 숫자·종목 없음)", () => {
+  it("실제 계좌를 읽는 동안 읽는 중 글과 요약 카드 꼴(타일 다섯 — 읽기에서 빠지고 숫자·종목 없음)", () => {
     render(<PaperScreen market="KR" initialTab="real" />);
     expect(screen.getByText("실제 계좌를 읽는 중…")).toBeTruthy();
     const card = document.querySelector('[data-pending="summary"]');
