@@ -34,7 +34,7 @@ const missing = (text: Element, box: Element) => ["break-keep", "wrap-break-word
 const forbidden = (text: Element, box: Element) => ["wrap-anywhere", "break-all"].filter((cls) => chainHas(text, box, cls));
 
 describe("공용 글 부품의 한국어 줄바꿈(QA-903)", () => {
-  it.fails("안내 상자(Callout) 본문과 제목", () => {
+  it("안내 상자(Callout) 본문과 제목", () => {
     const { container } = render(
       <Callout tone="warn" title="가격 대용 안내">
         <p>선물 가격을 받지 못해 현물 지수를 대용으로 씁니다.</p>
@@ -47,7 +47,7 @@ describe("공용 글 부품의 한국어 줄바꿈(QA-903)", () => {
     }
   });
 
-  it.fails("화면 머리(PageHeader) 설명과 '자세히' 글", () => {
+  it("화면 머리(PageHeader) 설명과 '자세히' 글", () => {
     const { container } = render(<PageHeader title="상관" description="두 계열의 산점도와 이동 상관" details="상관계수는 인과를 뜻하지 않습니다." />);
     const box = container.firstElementChild as HTMLElement;
     for (const text of [screen.getByText("두 계열의 산점도와 이동 상관"), screen.getByText("상관계수는 인과를 뜻하지 않습니다.")]) {
@@ -56,7 +56,7 @@ describe("공용 글 부품의 한국어 줄바꿈(QA-903)", () => {
     }
   });
 
-  it.fails("검사 칸(InspectorFrame) 안내 글", () => {
+  it("검사 칸(InspectorFrame) 안내 글", () => {
     vi.stubGlobal(
       "matchMedia",
       (query: string) =>

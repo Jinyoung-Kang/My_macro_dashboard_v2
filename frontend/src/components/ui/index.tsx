@@ -137,7 +137,8 @@ export function PageHeader({
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
       <div className="min-w-0">
         <h1 className="text-heading text-text">{title}</h1>
-        {description ? <p className="mt-0.5 text-sm text-text-2">{description}</p> : null}
+        {/* 설명·'자세히' 글은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(공용 글 부품 규약 QA-568 — 390 '…산점|도' 꼴, QA-903). */}
+        {description ? <p className="mt-0.5 break-keep wrap-break-word text-sm text-text-2">{description}</p> : null}
         {details ? (
           <details className="group mt-0.5 text-sm text-text-2">
             <summary
@@ -146,7 +147,7 @@ export function PageHeader({
               자세히
               <ChevronDownIcon size={14} className="motion-safe:transition-transform group-open:rotate-180" />
             </summary>
-            <div className="mt-1 max-w-[72ch] leading-relaxed">{details}</div>
+            <div className="mt-1 max-w-[72ch] break-keep wrap-break-word leading-relaxed">{details}</div>
           </details>
         ) : null}
         {children}
@@ -353,7 +354,8 @@ export function Callout({
     <div className={`flex items-start gap-2 rounded-control border p-3 text-sm leading-relaxed ${style.box}`}>
       {icon === false ? null : <LineIcon className={style.icon}>{icon ?? style.glyph}</LineIcon>}
       {style.srPrefix && <span className="sr-only">{style.srPrefix}</span>}
-      <div className={`min-w-0 flex-1 ${style.text}`}>
+      {/* 제목·본문은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(공용 글 부품 규약 QA-568 — 상속, QA-903). */}
+      <div className={`min-w-0 flex-1 break-keep wrap-break-word ${style.text}`}>
         {title ? <p className="font-semibold">{title}</p> : null}
         {children}
       </div>
