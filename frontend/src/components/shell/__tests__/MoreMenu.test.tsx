@@ -84,7 +84,7 @@ describe("더보기 화면", () => {
   it("행마다 왼쪽 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로, 줄은 좁은 화면 48px·넓은 화면 40px", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
     const links = within(screen.getByRole("region", { name: "메뉴" })).getAllByRole("link");
-    expect(links).toHaveLength(6);
+    expect(links).toHaveLength(7);
     for (const link of links) {
       expect(link.querySelector("span[aria-hidden='true'] svg")).toBeTruthy();
       expect(link.querySelector(".rounded-full")).toBeNull();
@@ -135,10 +135,10 @@ describe("더보기 화면", () => {
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
   });
 
-  it("로컬 운영자: '메뉴'는 운영자 화면까지 여섯 행(정보 수집 행 없음), 로그아웃 대신 '로컬 · 로그인 없음', 수동 새로고침", () => {
+  it("로컬 운영자: '메뉴'는 운영자 화면까지 일곱 행(정보 수집 행 없음), 로그아웃 대신 '로컬 · 로그인 없음', 수동 새로고침", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
 
-    expect(rows().map(([, href]) => href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
+    expect(rows().map(([, href]) => href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/security", "/admin/users", "/account"]);
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("로컬 · 로그인 없음");
     expect(screen.getByRole("button", { name: "데이터 수동 새로고침" })).toBeTruthy();

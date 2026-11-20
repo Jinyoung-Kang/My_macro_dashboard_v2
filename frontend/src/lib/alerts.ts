@@ -38,13 +38,14 @@ const KIND_TAG: Record<AlertKind, string> = {
   FOREIGN_STREAK: "연속 순매수",
   INSTITUTION_NEW: "13F 신규",
   SEARCH_WATCH: "관심 대상 새 글",
+  SECURITY_NOTICE: "보안 공지",
 };
 
 export function alertKindTag(kind: AlertKind | string): string {
   return KIND_TAG[kind as AlertKind] ?? "알림";
 }
 
-/** 받은 알림의 종류(태그 차례 — 국면 전환·연속 순매수·13F 신규·관심 대상 새 글, 그 밖은 뒤에 받은 차례). 거르기 목록에 받은 종류만 둡니다. */
+/** 받은 알림의 종류(태그 차례 — 국면 전환·연속 순매수·13F 신규·관심 대상 새 글·보안 공지, 그 밖은 뒤에 받은 차례). 거르기 목록에 받은 종류만 둡니다. */
 export function inboxKinds(items: readonly { kind: AlertKind }[]): AlertKind[] {
   const order = Object.keys(KIND_TAG) as AlertKind[];
   const seen = [...new Set(items.map((item) => item.kind))];

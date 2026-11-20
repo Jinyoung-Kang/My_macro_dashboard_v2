@@ -1,5 +1,5 @@
 /**
- * 더보기 화면(저장소 상태·수급 레이더·국내 파생·알림·AI 리포트·연결 테스트·사용자 관리·내 계정)의 공용 조밀 표는 모두 넘김 안내(`scrollHint`)를 둡니다
+ * 더보기 화면(저장소 상태·수급 레이더·국내 파생·알림·AI 리포트·연결 테스트·보안 공지·사용자 관리·내 계정)의 공용 조밀 표는 모두 넘김 안내(`scrollHint`)를 둡니다
  * (작업대 P7 — 표는 스크롤 상자 안에서만 넘치고, 넘치면 늘 안내가 보임). 갈래 끝 브라우저 확인(자기 빌드 390)에서 안내 없이 넘친 표 다섯(스냅샷 신선도 292px·
  * 시장 전체 151px·누적 이력 55px·선물 수급 112px — 알림 규칙·공공 API는 자료에 따라)이 나와, 화면 소스의 `<DataTable` 여는 태그마다 이 속성을 봅니다.
  */
@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(__dirname, "..");
-const DIRS = ["status", "radar", "krx", "alerts", "ai", "connections", "admin", "account"];
+const DIRS = ["status", "radar", "krx", "alerts", "ai", "connections", "security", "admin", "account"];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

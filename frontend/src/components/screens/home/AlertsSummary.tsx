@@ -8,6 +8,7 @@ import { StatusText } from "@/components/ui/icons";
 import { homeReadFailed, KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
+import { securityInboxHref } from "@/lib/security";
 import type { StatusIssuesResponse } from "@/lib/types";
 import { HOME_LINK, SectionError } from "./HomeCard";
 import { StoreStatusLine } from "./StoreStatusLine";
@@ -32,6 +33,7 @@ const SUBHEAD = "text-caption font-semibold text-text-2";
  * 자동 갱신이 다시 읽음), 응답에 수가 없으면 '—'. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고 "지난 사건"으로 적습니다(/alerts와 같음).
  *
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 제목이 그 대상의 타임라인으로 가는 링크입니다(/alerts와 같음 — 정보 검색 화면 안쪽 주소만).
+ * 보안 공지 해당 알림(SECURITY_NOTICE)은 제목이 그 공지의 검사 칸을 연 보안 공지 화면으로 가는 링크입니다(lib/security — 그 화면 안쪽 주소만).
  *
  * 끊긴 출처는 셸의 수집 끊김 안내 띠와 같은 응답(/api/info/sources)이고, 띠를 닫았는지와 상관없이 지금 끊긴 출처를 모두 적습니다(lib/home
  * sourceIncidentsModel — 판정 기록이 없으면 '없다'고 적지 않음). 홈에서는 셸이 그 띠를 그리지 않아 이 칸이 대신합니다(QA-613). 수집 상태 줄은 상태 화면의 오류·경고·누락 수(StoreStatusLine).
@@ -110,8 +112,8 @@ function UnreadValue({ unread }: { unread: HomeAlertsRead["unread"] }) {
 /** 최근 알림 세 건 — 줄마다 점·제목(관심 대상 새 글이면 링크)·발생일·읽음 글. */
 function AlertRows({ inbox, labelledBy }: { inbox: HomeAlertsRead["inbox"]; labelledBy?: string }) {
   const rows = latestAlerts(inbox.data);
-  // 줄 번호 → 가는 주소(SEARCH_WATCH만). latestAlerts는 종류·payload를 넘기지 않아 받은 줄에서 찾습니다.
-  const hrefs = new Map((inbox.data?.items ?? []).map((item) => [item.id, searchWatchInboxHref(item)] as const));
+  // 줄 번호 → 가는 주소(SEARCH_WATCH — 정보 검색, SECURITY_NOTICE — 보안 공지). latestAlerts는 종류·payload를 넘기지 않아 받은 줄에서 찾습니다.
+  const hrefs = new Map((inbox.data?.items ?? []).map((item) => [item.id, searchWatchInboxHref(item) ?? securityInboxHref(item)] as const));
 
   if (!inbox.data) {
     return inbox.error ? <SectionError message={inbox.error} onRetry={() => void inbox.reload()} /> : <Skeleton lines={3} label="알림을 불러오는 중" />;

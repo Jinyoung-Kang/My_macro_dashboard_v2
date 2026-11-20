@@ -67,6 +67,7 @@
 /ai/report
 /status
 /connections
+/security
 /admin/users
 /account
 /radar

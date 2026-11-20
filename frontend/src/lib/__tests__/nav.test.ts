@@ -58,7 +58,7 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     // 묶음 차례: 묶음 없는 화면 → 한국 시장 → 정보 수집(2026-11-18 — 운영자 전용 여덟 칸을 맨 뒤에).
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
-      "사용자 관리 /admin/users", "내 계정 /account", "수급 레이더 /radar", "파생·투기세력(KRX) /krx",
+      "보안 공지 /security", "사용자 관리 /admin/users", "내 계정 /account", "수급 레이더 /radar", "파생·투기세력(KRX) /krx",
       "개요 /info/overview", "뉴스·글 /info/news", "국내 시장·수급 /info/kr", "해외 시장·거시 /info/global", "기관·공시 /info/filings",
       "모의매매 입력 /info/paper", "출처 상태 /info/status", "정보(메커니즘) /info/mechanism",
     ]);
@@ -72,7 +72,7 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
       expect(other.items.every((item) => item.group === undefined)).toBe(true);
     }
     expect(tab("more").items.filter((item) => !item.group).map((item) => item.href)).toEqual([
-      "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account",
+      "/alerts", "/ai/report", "/status", "/connections", "/security", "/admin/users", "/account",
     ]);
   });
 
@@ -179,12 +179,12 @@ describe("보이는 탭·하위 화면(lib/access 앞부분 일치)", () => {
     }
   });
 
-  it("더보기의 운영자 화면(저장소 상태·연결 테스트·사용자 관리·정보 수집 묶음)은 운영자에게만, 내 계정은 데모 열람에게 없다", () => {
+  it("더보기의 운영자 화면(저장소 상태·연결 테스트·보안 공지·사용자 관리·정보 수집 묶음)은 운영자에게만, 내 계정은 데모 열람에게 없다", () => {
     expect(visibleItems(tab("more"), MEMBER).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), DEMO).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), undefined).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), OWNER).map((item) => item.href)).toEqual([
-      "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account", "/radar", "/krx",
+      "/alerts", "/ai/report", "/status", "/connections", "/security", "/admin/users", "/account", "/radar", "/krx",
       ...INFO_TAB_SLUGS.map((slug) => `/info/${slug}`),
     ]);
   });
@@ -236,7 +236,7 @@ describe("하위 메뉴 줄", () => {
     expect(info?.current).toBe("/info/news");
     expect(info?.currentAria).toBe("page");
     // 반대로 더보기·한국 시장 화면의 줄에는 정보 수집 화면이 없다.
-    expect(subNav("/alerts", OWNER)?.items.map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
+    expect(subNav("/alerts", OWNER)?.items.map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/security", "/admin/users", "/account"]);
     expect(subNav("/radar", OWNER)?.items.map((item) => item.href)).toEqual(["/radar", "/krx"]);
   });
 
@@ -252,7 +252,7 @@ describe("하위 메뉴 줄", () => {
     expect(subNav("/alerts", MEMBER)?.label).toBe("더보기");
     expect(subNav("/more", OWNER)?.current).toBeNull();
     expect(subNav("/more", OWNER)?.currentAria).toBeNull();
-    expect(subNav("/more", OWNER)?.items).toHaveLength(6);
+    expect(subNav("/more", OWNER)?.items).toHaveLength(7);
   });
 });
 
@@ -351,7 +351,7 @@ describe("통합 검색의 메뉴 항목", () => {
     expect(items.find((item) => item.href === "/paper/us")?.label).toBe("모의매매(미국)");
     expect(items.find((item) => item.href === "/paper/kr")?.label).toBe("모의매매(한국)");
     expect(navSearchItems(MEMBER).map((item) => item.href)).not.toContain("/paper/kr");
-    expect(items.map((item) => item.href)).toEqual(expect.arrayContaining(["/status", "/connections", "/admin/users"]));
+    expect(items.map((item) => item.href)).toEqual(expect.arrayContaining(["/status", "/connections", "/security", "/admin/users"]));
     expect(navSearchItems(DEMO).map((item) => item.href)).not.toContain("/status");
     expect(navSearchItems(DEMO).map((item) => item.href)).not.toContain("/account");
   });

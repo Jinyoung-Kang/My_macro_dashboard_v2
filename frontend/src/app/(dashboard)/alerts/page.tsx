@@ -14,6 +14,7 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
+import { securityInboxHref } from "@/lib/security";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
@@ -32,6 +33,8 @@ const RULE_BUTTON = `${buttonClasses("default", "sm")} aria-disabled:cursor-not-
  * 규칙을 만든 날 이후의 사건만 들어오고, 사건은 수집이 확정된 데이터로만 만듭니다(잠정치 제외).
  * 데모 열람(ADR 0013)은 읽기 전용이라 읽음 처리·규칙 만들기·켜기/끄기·지우기를 막습니다(백엔드도 403).
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH — 그 대상에서 켠 것, 규칙 없음)은 제목을 누르면 그 대상의 타임라인으로 갑니다(정보 검색 화면 안쪽 주소만).
+ * 보안 공지 해당 알림(SECURITY_NOTICE — 운영자, 규칙 없음, ADR 0046)은 검사 칸의 '보안 공지에서 보기'가 그 공지의 검사 칸을 연 보안 공지 화면으로 갑니다
+ * (`/security?ntt=<번호>` — 보안 공지 화면 안쪽 주소만, lib/security).
  * 그 알림은 규칙 없이 들어오므로 빈 알림함과 규칙 만들기(알림 종류 목록 아래)에 어디서 켜고 끄는지 적습니다(QA-443 — 데모 열람은 관심 대상을 읽지 않아 빼고).
  *
  * 작업대 P7(실행 명세 §7 7행 '알림: 타임라인과 필터 태그'): 알림함은 시각순 목록(Timeline — 발생일 열·종류 태그·제목 + '새 알림'·'지난 사건' 태그) + 화면 안
@@ -460,7 +463,9 @@ function InboxDetail({
   readError: string | null;
   onRead: (id: number) => Promise<void>;
 }) {
-  const href = searchWatchInboxHref(item);
+  const watchHref = searchWatchInboxHref(item);
+  const securityHref = watchHref ? null : securityInboxHref(item);
+  const href = watchHref ?? securityHref;
   return (
     <div data-inbox-detail={item.id} className="flex min-w-0 flex-col gap-3">
       <PropertyList
@@ -477,7 +482,7 @@ function InboxDetail({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {href ? (
             <Link href={href} className={LINK_CLASSES}>
-              정보 검색에서 보기
+              {securityHref ? "보안 공지에서 보기" : "정보 검색에서 보기"}
             </Link>
           ) : null}
           {!item.read && !demo ? (

@@ -123,6 +123,8 @@ export const TABS: readonly NavTab[] = [
       { href: "/ai/report", label: "AI 종합 분석", keywords: ["AI 종합 데이터 분석"] },
       { href: "/status", label: "데이터 저장소 상태" },
       { href: "/connections", label: "외부 API 연결 테스트" },
+      // 보안 공지(ADR 0046 결정 9의 5) — 보호나라 보안공지를 운영 환경의 실제 버전과 대조. 운영자 전용(lib/access OWNER_ONLY_MENUS의 /security).
+      { href: "/security", label: "보안 공지", keywords: ["보호나라", "KISA", "취약점", "CVE", "보안 업데이트"] },
       { href: "/admin/users", label: "사용자 관리" },
       { href: "/account", label: "내 계정" },
       // 옛 한국 탭(ADR 0041 결정 1) — 주소는 그대로. 탭 이름이 검색어였으므로 '한국'을 검색어로 직접 둡니다.

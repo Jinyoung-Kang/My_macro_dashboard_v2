@@ -40,6 +40,12 @@ const CASES: Case[] = [
   { name: "info.krx", before: `/api/info/krx?market=KOSDAQ&investor=${encodeURIComponent("연기금")}&tradeType=${encodeURIComponent("순매도")}`,
     after: endpoints.info.krx("KOSDAQ", "연기금", "순매도") },
   { name: "info.item", before: "/api/info/items/0123456789abcdef01234567", after: endpoints.info.item("0123456789abcdef01234567") },
+  // 보안 공지(ADR 0046) — 거르기가 없으면 인자를 빼고(전체), 검색어는 앞뒤 공백을 떼어 값 하나로.
+  { name: "security.notices 전체", before: "/api/security/notices?page=1&size=20",
+    after: endpoints.security.notices({ verdict: undefined, reason: undefined, q: "", page: 1, size: 20 }) },
+  { name: "security.notices 판정·사유·검색", before: `/api/security/notices?verdict=check&reason=NO_INVENTORY&q=${encodeURIComponent("CVE-2099 & 가짜")}&page=2&size=20`,
+    after: endpoints.security.notices({ verdict: "check", reason: "NO_INVENTORY", q: " CVE-2099 & 가짜 ", page: 2, size: 20 }) },
+  { name: "security.notice", before: "/api/security/notices/900001", after: endpoints.security.notice("900001") },
   { name: "detail.quote", before: `/api/detail/quote?market=us&code=${encodeURIComponent("BRK-B")}`,
     after: endpoints.detail.quote("us", "BRK-B") },
   { name: "detail.news 종목·검색어", before: `/api/detail/news?market=kr&code=005930&q=${encodeURIComponent("삼성전자")}`,
@@ -362,6 +368,7 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+\/undo$/, "/api/manual/isa/trades/{id}/undo")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+$/, "/api/manual/isa/trades/{id}")
   .replace(/^\/api\/info\/items\/[^/]+$/, "/api/info/items/{id}")
+  .replace(/^\/api\/security\/notices\/[^/]+$/, "/api/security/notices/{nttId}")
   .replace(/^\/api\/search\/watch\/[^/]+\/seen$/, "/api/search/watch/{id}/seen")
   .replace(/^\/api\/search\/watch\/[^/]+$/, "/api/search/watch/{id}")
   .replace(/^\/api\/search\/excludes\/[^/]+$/, "/api/search/excludes/{id}");
@@ -377,6 +384,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(79);
+    expect(functions).toBe(81);
   });
 });

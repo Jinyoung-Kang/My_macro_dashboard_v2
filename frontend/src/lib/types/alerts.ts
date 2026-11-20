@@ -1,5 +1,6 @@
 /** 알림 규칙 — GET /api/alerts/rules. */
-export type AlertKind = "REGIME_CHANGE" | "FOREIGN_STREAK" | "INSTITUTION_NEW" | "SEARCH_WATCH";
+/** SECURITY_NOTICE는 보안 공지 해당 알림(ADR 0046 — 운영자, 규칙 없음, payload.href `/security?ntt=<번호>`). */
+export type AlertKind = "REGIME_CHANGE" | "FOREIGN_STREAK" | "INSTITUTION_NEW" | "SEARCH_WATCH" | "SECURITY_NOTICE";
 
 export interface AlertRule {
   id: number;
@@ -27,7 +28,7 @@ export interface InboxItem {
   late: boolean;
   createdAt: string;
   read: boolean;
-  /** 화면 안 주소(SEARCH_WATCH — 정보 검색 관심 대상 알림, 단계 6). 없으면 null(옛 응답에는 칸이 없음). */
+  /** 화면 안 주소(SEARCH_WATCH — 정보 검색 관심 대상 알림, 단계 6 · SECURITY_NOTICE — 보안 공지). 없으면 null(옛 응답에는 칸이 없음). */
   payload?: { href?: string } | null;
 }
 
