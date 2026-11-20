@@ -93,6 +93,26 @@
     },
     {
       "m": "GET",
+      "p": "/api/security/notices",
+      "q": {
+        "verdict": "str",
+        "reason": "str",
+        "q": "str"
+      }
+    },
+    {
+      "m": "GET",
+      "p": "/api/security/notices/{nttId}",
+      "path": {
+        "nttId": "int"
+      }
+    },
+    {
+      "m": "GET",
+      "p": "/api/security/inventory"
+    },
+    {
+      "m": "GET",
       "p": "/api/macro/spread",
       "q": {
         "longId": "str",
