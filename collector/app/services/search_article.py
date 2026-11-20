@@ -93,6 +93,8 @@ SCHEDULED_DOMAINS = (
     "ritholtz.com", "marginalrevolution.com", "humbledollar.com", "econbrowser.com", "conversableeconomist.com", "awealthofcommonsense.com",
     "alphaarchitect.com", "abnormalreturns.com", "theirrelevantinvestor.com", "substack.com", "blogspot.com", "beehiiv.com", "wikidata.org",
     "gleif.org",
+    # 보안 공지(ADR 0046)의 보호나라 보안공지 목록·상세(flex 태스크 kisa_security_notices).
+    "boho.or.kr",
 )
 # 정보 검색 자체 피드(services/search_feeds — 정기 수집이지만 그 피드가 막혀도 정보 검색의 그 피드 하나만 영향)만 부르는 등록 도메인은 받습니다 —
 # 결과에 자주 나오는 매체라 막으면 본문 보기가 대부분 '없음'이 됩니다. 대조 시험이 이 목록 밖의 새 주소를 잡습니다.
