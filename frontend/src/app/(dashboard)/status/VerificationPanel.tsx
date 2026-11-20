@@ -48,7 +48,7 @@ export function VerificationPanel() {
       title="데이터 교차 검증 (KRX · KIS · 토스)" source="KRX Open API · 한국투자증권(KIS) Open API · 토스증권 Open API · Yahoo Finance (항목별 출처는 표 안에)"
       subtitle="같은 수치를 서로 다른 출처가 같게 말하는지 대조합니다. '확인 못 함'과 '일치'는 절대 섞지 않습니다."
       actions={
-        <Button variant="primary" onClick={run} disabled={running}>
+        <Button variant="primary" onClick={run} busy={running}>
           {running ? "검증 중…" : "지금 교차 검증 실행"}
         </Button>
       }

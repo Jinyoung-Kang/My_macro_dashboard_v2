@@ -282,7 +282,8 @@ export function InspectorFrame({
       </>
     );
   } else {
-    panelBody = <p className="text-sm text-text-2">{vanished ? VANISHED : inspectorHint}</p>;
+    // 안내 글은 낱말 사이에서만 줄바꿈(공용 글 부품 규약 QA-568 — 좁은 옆 칸에서 음절 사이가 갈렸음, QA-903).
+    panelBody = <p className="break-keep wrap-break-word text-sm text-text-2">{vanished ? VANISHED : inspectorHint}</p>;
   }
 
   return (

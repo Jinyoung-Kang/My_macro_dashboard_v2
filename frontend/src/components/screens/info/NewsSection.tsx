@@ -8,6 +8,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  FIELD_LABEL,
   Loading,
   NativeSelect,
   SELECTED_BAR,
@@ -154,7 +155,7 @@ export function NewsSection({ onSettled }: { onSettled?: () => void } = {}) {
               }}
             >
               {choices.length > 0 && (
-                <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
+                <label className={FIELD_LABEL}>
                   출처
                   <NativeSelect
                     value={source}
@@ -172,7 +173,7 @@ export function NewsSection({ onSettled }: { onSettled?: () => void } = {}) {
                   </NativeSelect>
                 </label>
               )}
-              <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
+              <label className={FIELD_LABEL}>
                 {searchLabel(view)}
                 {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. */}
                 <input

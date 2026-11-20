@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { DataTable, PropertyList } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, PageHeader, Panel } from "@/components/ui";
+import { Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusDot, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -31,10 +31,6 @@ import type { LoginSession, SessionResponse } from "@/lib/types";
  * (포커스가 있던 단추가 사라져 <body>로 떨어졌음).
  */
 
-/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
-const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
-/** 한 줄 입력칸 — 고르기 상자와 같은 폭 상한(sm 이상 22rem). */
-const FIELD_INPUT = `w-full sm:max-w-[22rem] ${inputClasses()}`;
 
 /** 결과·오류를 낭독기에 알리는 조용한 영역 — 눈에 보이지 않고(sr-only — 절대 위치라 flex 간격에 들지 않음) 늘 있어 글이 바뀔 때 읽힙니다. */
 function ResultAnnouncer({ text }: { text: string | null | undefined }) {
@@ -80,7 +76,8 @@ export default function AccountPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (mismatch) return;
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (mismatch || change.busy) return;
     // 실패하면(지금 비밀번호 틀림 등) 입력을 남겨 고쳐 다시 보낼 수 있게 합니다(QA-051).
     if (await change.run(current, next)) {
       setCurrent("");
@@ -164,7 +161,8 @@ export default function AccountPage() {
           <Button
             variant="primary"
             type="submit"
-            disabled={change.busy || !current || !next || mismatch}
+            disabled={!current || !next || mismatch}
+            busy={change.busy}
           >
             {change.busy ? "바꾸는 중…" : "비밀번호 바꾸기"}
           </Button>
@@ -186,6 +184,7 @@ export default function AccountPage() {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                if (remove.busy) return;
                 if (window.confirm("계정을 지울까요? 되돌릴 수 없습니다.")) void remove.run(deletePassword);
               }}
               className="flex max-w-sm flex-col gap-3"
@@ -205,7 +204,7 @@ export default function AccountPage() {
                   <Callout tone="warn">{remove.error}</Callout>
                 </div>
               )}
-              <Button type="submit" disabled={remove.busy || !deletePassword}>
+              <Button type="submit" disabled={!deletePassword} busy={remove.busy}>
                 {remove.busy ? "지우는 중…" : "계정 지우기"}
               </Button>
             </form>
@@ -224,7 +223,7 @@ export default function AccountPage() {
                 await others.run();
                 void sessions.reload();
               }}
-              disabled={others.busy}
+              busy={others.busy}
             >
               {others.busy ? "처리 중…" : "다른 기기 모두 로그아웃"}
             </Button>

@@ -14,7 +14,7 @@ import {
   SectionIndex,
   type SectionIndexItem,
 } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel, Select, Tag } from "@/components/ui";
+import { Button, Callout, ErrorState, FIELD_WIDTH, inputClasses, Loading, NativeSelect, Panel, Select, Tag } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PanelRightIcon } from "@/components/ui/icons";
 import { SELECTED_BAR } from "@/components/ui/classes";
@@ -581,7 +581,7 @@ function SettingInput({
           aria-labelledby={labelledBy}
           aria-describedby={describedBy}
           onChange={(event) => onChange(event.target.value)}
-          wrapperClassName="block w-full sm:max-w-[22rem]"
+          wrapperClassName={`block ${FIELD_WIDTH}`}
         >
           {row.options.map((option) => (
             <option key={option} value={option}>{option}</option>
