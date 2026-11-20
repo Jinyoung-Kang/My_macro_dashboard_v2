@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Loading } from "@/components/ui";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Loading, Tabs, tabId } from "@/components/ui";
 import { PANEL_CLASSES } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
@@ -16,7 +16,6 @@ import {
   findWatch,
   isListedEntity,
   kindOfKey,
-  revealScrollDelta,
   tabFor,
   tabsFor,
   watchKeyOf,
@@ -36,11 +35,8 @@ import { WatchButton, WatchPane } from "./WatchPane";
 /** 대상 풀기 응답에 errors가 없을 때 — 그릴 때마다 새 객체를 만들지 않게(연결 탭 상태의 useMemo 의존값). */
 const NO_ERRORS: Readonly<Record<string, string>> = {};
 
-const TAB_CLASS =
-  "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-sm lg:min-h-[30px] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus motion-safe:transition-colors";
-
 /**
- * 대상 하나의 화면 — 머리(종류·이름·식별자·별칭·바로가기·관심 대상 등록), 탭(타임라인·뉴스·공시(주제 밖)·리서치(상장 기업)·글·논평(운영자)·
+ * 대상 하나의 화면 — 머리(종류·이름·식별자·별칭·바로가기·관심 대상 등록 — 공용 패턴 EntityHeader), 탭(공용 Tabs — 작업대 P8 U2, 타임라인·뉴스·공시(주제 밖)·리서치(상장 기업)·글·논평(운영자)·
  * 보유(기업·기관)·연결), 탭 내용. 대상 풀기(GET /api/search/entity)와 결과(GET /api/search/feed)는 따로 부릅니다 — 키로 종류를 아는 대상
  * (us:·kr:·cik:·topic:)은 결과를 함께 받기 시작하고, wd: 키는 종류(공시·리서치·보유 탭이 있는지)를 안 뒤에 탭을 정합니다.
  * 연결 탭은 열었을 때만 연결 보강(GET /api/search/links — 내부자 명단·법인 관계, 계약 §7-5)을 부르고 대상 풀기의 links와 합쳐 보이며,
@@ -54,7 +50,7 @@ const TAB_CLASS =
  *
  * 주소의 탭을 이 대상에서 고를 수 없으면(주제 + 공시 등) 타임라인을 보이고 주소의 탭도 바꿔 씁니다(기록에 쌓지 않음) — 종류를 아는 때만
  * (풀린 대상이나 키 앞부분, wd: 키를 풀지 못해 사람으로 짐작한 때는 그대로). 모르는 탭 값(tab=bogus 등)은 주소 훅(useInfoSearchUrl)이 바꿔 씁니다. 좁은 화면에서 탭 줄이 가로로 넘치면 고른 탭이 보이게 줄을 옮깁니다
- * (주소로 연 탭 포함 — 세로로는 화면을 움직이지 않음).
+ * (주소로 연 탭 포함 — 세로로는 화면을 움직이지 않음 — 공용 Tabs의 useScrollStripActive). 화살표·Home·End는 포커스만 옮기고 여는 것은 누르기·Enter·Space입니다(탭마다 결과를 부르므로).
  */
 export function EntityView({
   entityKey,
@@ -97,25 +93,13 @@ export function EntityView({
   const errors = resolved.data?.errors ?? NO_ERRORS;
   const links = useInfoSearchLinks(current === "links" ? entityKey : null, entity, settled, errors);
   const baseId = useId();
-  const tabId = (key: SearchTabKey) => `${baseId}-tab-${key}`;
+  const tabIdPrefix = `${baseId}-tab`;
   const panelId = `${baseId}-panel`;
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const tablistRef = useRef<HTMLDivElement>(null);
 
   // 주소의 탭을 고를 수 없어 타임라인으로 보였으면 주소도 맞춰 바꿔 씁니다(뒤로 가기에 남지 않게 — onTab은 바꿔 쓰기).
   useEffect(() => {
     if (known !== null && current !== null && current !== tab) onTab(current);
   }, [known, current, tab, onTab]);
-
-  // 고른 탭이 탭 줄 밖(가로)이면 줄을 옮깁니다. scrollIntoView는 세로로 화면 전체를 움직일 수 있어 줄의 가로 스크롤만 바꿉니다.
-  const tabsKey = tabs.join(",");
-  useEffect(() => {
-    const list = tablistRef.current;
-    const selected = current ? tabRefs.current[current] : null;
-    if (!list || !selected) return;
-    const delta = revealScrollDelta(list.getBoundingClientRect(), selected.getBoundingClientRect());
-    if (delta !== 0) list.scrollLeft += delta;
-  }, [current, tabsKey]);
 
   // 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음' — 이 화면에서 대상마다 한 번(목록을 다시 읽어도 또 보내지 않음).
   const [timelineShown, setTimelineShown] = useState(false);
@@ -139,15 +123,6 @@ export function EntityView({
     ? (reloadFeed?: () => void) => <AliasEditor watch={watch} item={watched} demo={demo} onSaved={reloadFeed} />
     : null;
 
-  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    // 화살표는 포커스만 옮기고, 탭을 여는 것은 누르기·Enter·Space입니다(탭마다 결과를 부르므로 지나가며 부르지 않게).
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return;
-    event.preventDefault();
-    const next =
-      event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-    tabRefs.current[tabs[next]]?.focus();
-  };
-
   return (
     <div className="flex flex-col gap-3">
       <EntityHeader
@@ -164,33 +139,15 @@ export function EntityView({
 
       {kind && current ? (
         <>
-          <div ref={tablistRef} role="tablist" aria-label="결과 탭" className="flex overflow-x-auto border-b border-border">
-            {tabs.map((key, index) => {
-              const selected = key === current;
-              return (
-                <button
-                  key={key}
-                  ref={(element) => {
-                    tabRefs.current[key] = element;
-                  }}
-                  id={tabId(key)}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  aria-controls={panelId}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => onTab(key)}
-                  onKeyDown={(event) => onTabKeyDown(event, index)}
-                  className={`${TAB_CLASS} ${
-                    selected ? "border-accent font-semibold text-text" : "border-transparent text-text-2 hover:text-text forced-colors:border-b-0"
-                  }`}
-                >
-                  {SEARCH_TABS.find((entry) => entry.key === key)?.label}
-                </button>
-              );
-            })}
-          </div>
-          <div id={panelId} role="tabpanel" aria-labelledby={tabId(current)}>
+          <Tabs
+            label="결과 탭"
+            items={tabs.map((key) => ({ key, label: SEARCH_TABS.find((entry) => entry.key === key)?.label ?? key }))}
+            value={current}
+            onChange={onTab}
+            idPrefix={tabIdPrefix}
+            panelId={panelId}
+          />
+          <div id={panelId} role="tabpanel" aria-labelledby={tabId(tabIdPrefix, current)}>
             {feedTab ? (
               <FeedPanel
                 key={`${entityKey}:${feedTab}`}
