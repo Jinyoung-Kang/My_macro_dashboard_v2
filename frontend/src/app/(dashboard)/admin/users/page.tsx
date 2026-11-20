@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { DataTable, InspectorFrame, InspectorSubheading, InspectorTrigger, PropertyList } from "@/components/patterns";
-import { Banner, Button, Callout, ErrorState, inputClasses, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
+import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, inputClasses, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { CheckIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -13,11 +13,6 @@ import { formatKst } from "@/lib/format";
 import type { AdminUser, AuditEntry } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
-
-/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 회원 만들기 몫 — 예전 12px text-3). */
-const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
-/** 한 줄 입력칸 — 고르기 상자와 같은 폭 상한(sm 이상 22rem). */
-const FIELD_INPUT = `w-full sm:max-w-[22rem] ${inputClasses()}`;
 
 const ROLE_LABEL: Record<string, string> = { OWNER: "운영자", MEMBER: "회원" };
 const TIER_LABEL: Record<string, string> = { FREE: "무료", PRO: "유료" };

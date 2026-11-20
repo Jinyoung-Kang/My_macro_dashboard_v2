@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useId, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
-import { Button, buttonClasses, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -24,8 +24,6 @@ type RuleAction = "toggle" | "delete";
 /** 규칙 표 안 작은 단추 — 공용 Button(sm)과 같은 모양에, 요청 중(aria-disabled)이면 꺼진 단추처럼 보임(QA-898 — 원문 번역 단추 QA-887과 같은 꼴). */
 const RULE_BUTTON = `${buttonClasses("default", "sm")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`;
 
-/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
-const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
 
 /**
  * 알림 — 화면 알림함과 알림 규칙(명세 C, D2: 화면 알림함만).
@@ -252,7 +250,7 @@ export default function AlertsPage() {
                 <label className={FIELD_LABEL}>
                   종목코드(6자리)
                   <input value={code} onChange={(event) => setCode(event.target.value.trim())} placeholder="005930"
-                    className={`w-full sm:max-w-[22rem] ${inputClasses()}`} />
+                    className={FIELD_INPUT} />
                 </label>
               )}
               <Select label="연속 일수" value={days} onChange={setDays}

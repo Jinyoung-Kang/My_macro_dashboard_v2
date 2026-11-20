@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-import { Button, Callout, ErrorState, inputClasses, Loading, PageHeader, Panel, Select, SourceBadge } from "@/components/ui";
+import { Button, Callout, ErrorState, FIELD_LABEL, inputClasses, Loading, PageHeader, Panel, Select, SourceBadge } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -132,7 +132,7 @@ export default function AiReportPage() {
         </p>
 
         {/* 이름표는 공용 고르기 상자와 같은 13px 보조 글(text-2 — 예전 12px text-3). */}
-        <label className="mt-4 flex flex-col gap-1 text-[13px] text-text-2">
+        <label className={`mt-4 ${FIELD_LABEL}`}>
           추가 지시 (선택)
           <textarea
             value={extra}

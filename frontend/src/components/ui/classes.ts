@@ -84,6 +84,17 @@ export function inputClasses(size: InputSize = "md"): string {
 }
 
 /*
+ * 폼 칸(이름표 위·칸 아래) — 화면마다 같은 글로 따로 적던 상수를 모읍니다(form-label-styles-mixed — P7 알림 규칙·회원 만들기·내 계정·AI 리포트·정보 수집 고르기,
+ * P6 모의매매 메모·설정의 고르기 폭). 인증 화면 카드의 큰 칸(lg)은 따로입니다.
+ */
+/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(예전 12px text-3). */
+export const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
+/** 폼 칸의 폭 — 좁은 화면 한 줄 전체, sm 이상 22rem까지(고르기 상자 Select와 같은 상한). 고르기 상자를 감싼 칸(wrapperClassName)은 앞에 block을 붙입니다. */
+export const FIELD_WIDTH = "w-full sm:max-w-[22rem]";
+/** 한 줄 입력칸 — 공용 입력칸 모양(md)에 폼 칸의 폭. */
+export const FIELD_INPUT = `${FIELD_WIDTH} ${inputClasses()}`;
+
+/*
  * 고르기 조각(기간 고르기·세그먼트·밑줄 탭·거르기 칩·켜고 끄는 단추) — 실행 명세 §3-7·§3-8·§6. 모서리 4px, lg 이상 30px(세그먼트 칸은 트랙 안
  * 24px), lg 미만 44px. 고른 것은 색만이 아니라 굵기로도 다르고, 고대비(forced-colors) 모드에서는 바탕색·그림자(ring)가 지워지므로 고른 칸에만
  * 1px 테두리를 더합니다(명세 D9). 나머지 칸에는 테두리를 두지 않습니다 — 투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보입니다.

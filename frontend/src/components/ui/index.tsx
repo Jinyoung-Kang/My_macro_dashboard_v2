@@ -5,6 +5,7 @@ import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
+  FIELD_WIDTH,
   FOCUS_RING,
   inputClasses,
   TEXT_TARGET,
@@ -22,6 +23,9 @@ export { keepFocusNearby } from "./keepFocus";
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
   buttonClasses,
+  FIELD_INPUT,
+  FIELD_LABEL,
+  FIELD_WIDTH,
   filterChipClasses,
   FOCUS_RING,
   inputClasses,
@@ -469,7 +473,7 @@ export function Select({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        wrapperClassName="block w-full sm:max-w-[22rem]"
+        wrapperClassName={`block ${FIELD_WIDTH}`}
       >
         {selectOptionGroups(options).map(({ group, items }) =>
           group === null ? (

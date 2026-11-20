@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { DataTable, PropertyList } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, PageHeader, Panel } from "@/components/ui";
+import { Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusDot, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -31,10 +31,6 @@ import type { LoginSession, SessionResponse } from "@/lib/types";
  * (포커스가 있던 단추가 사라져 <body>로 떨어졌음).
  */
 
-/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
-const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
-/** 한 줄 입력칸 — 고르기 상자와 같은 폭 상한(sm 이상 22rem). */
-const FIELD_INPUT = `w-full sm:max-w-[22rem] ${inputClasses()}`;
 
 /** 결과·오류를 낭독기에 알리는 조용한 영역 — 눈에 보이지 않고(sr-only — 절대 위치라 flex 간격에 들지 않음) 늘 있어 글이 바뀔 때 읽힙니다. */
 function ResultAnnouncer({ text }: { text: string | null | undefined }) {
