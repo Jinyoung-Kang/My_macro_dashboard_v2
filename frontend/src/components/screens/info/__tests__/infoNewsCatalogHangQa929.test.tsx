@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("정보 수집 뉴스 탭 catalog가 답하지 않을 때(QA-929)", () => {
-  it.fails("catalog가 2초 안에 답하지 않으면 검색 칸·글 목록이 보이고, catalog가 오면 출처 고르기가 채워진다", async () => {
+  it("catalog가 2초 안에 답하지 않으면 검색 칸·글 목록이 보이고, catalog가 오면 출처 고르기가 채워진다", async () => {
     render(<InfoHub tab="news" />);
     await advance(1_999);
     // 상한 전 — 예전처럼 읽는 중 한 줄(QA-894).
