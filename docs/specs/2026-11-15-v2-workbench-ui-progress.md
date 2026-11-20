@@ -3623,3 +3623,13 @@ P6 모의매매 busy 단추(시험이 `disabled`를 고정 — 바꾸면 P6 쓰�
 속성 줄 이름 12px·값 왼쪽 약 26px → 이름 13px·값 오른쪽·줄마다 구분선·lg 이상 32px(상세 화면 셋과 같음), 탭 줄 gap-1·고를 때 색 전환·넘칠 때 고른 탭 옮김 공용 훅(390 `tab=links` scrollLeft 122 → 138), xl 미만 속성 칸 위치 그대로.
 QA 스택에서 `wb-p8`(`4dcbf0c0`)과 `wb-p8` + U2(확인용 가지 `wb-p8-u2-try` `35ff205f`)를 차례로 빌드해 `/search?e=us:NVDA`(타임라인·연결)·`/search?e=cik:0001045810` × 390·1024·1440을 찍어 사용자에게 보임(캡처는 커밋하지 않음) —
 감사 수치(12px·넘침·대비·누름 자리)는 전후 같음. 사용자 승인(2026-11-20 21시대) 뒤 `48921dc0`으로 합침. 번들(정보 갈래 자기 빌드) `/search` +2.2 KiB·`/info/news` +0.7 KiB gzip.
+
+## D7 배포 (2026-11-20 21:25~21:28 KST, Vultr `main@09972bd1` — main `637a0cec` → `09972bd1` fast-forward)
+- 담은 것: 위 §P8 전부(다섯 갈래·통합 뒤 고침·독립 검토 반영 QA-905~907·U2). 화면·감사 스크립트·Makefile·CI 파일·문서만 바뀜(백엔드·수집기·DB 변경 0). 다른 세션의 커밋은 들지 않음.
+- 사용자 결정: 배포 시기 '오늘 밤 올림'(2026-11-20 21시대 — 작업 2 배포 예약(11-21)보다 먼저).
+- 배포 전: 통합 끝에서 전체 vitest 489파일·4,895건·tsc·lint 경고 0·check·build·감사 스크립트 시험 9건 통과. Tailscale SSH 추가 확인을 사용자가 승인(21:25). 운영 DB `paper_job_runs`를 읽기만 함 —
+  21:18 `risk`·21:19 `exec-audit`·21:23 `kr.risk`·21:24 텔레그램 OK, 도는 작업 없음. 실제 매매 창·22:45 미국 결정과 떨어진 시각, 매시 :17~:19 피함.
+- `scripts/vultr/deploy.sh`(2분 30초): 화면·caddy 컨테이너만 다시 띄움(백엔드·수집기·postgres는 그대로). 스키마 최신, 디스크 57%, 재부팅 필요 없음 · Livepatch 정상.
+- GET 확인: /·모의매매 두 시장과 탭 셋·/macro·/institutions·/more·/search·`/search?e=us:NVDA`·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account·/sector·/cot·/info 8탭·/login 200(/paper는 307),
+  /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@09972bd1`.
+- 배포 뒤 5분(21:33): 서버 HEAD `09972bd1`, 백엔드 ERROR 0·수집기 오류 0·화면 오류 0. main CI(`09972bd1`) 여섯 job 통과.
