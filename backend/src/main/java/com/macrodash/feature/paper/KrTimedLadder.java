@@ -31,8 +31,10 @@ import java.util.Map;
  *   <li><b>매시</b>({@code AT_1000}~{@code AT_1500}, T = hh:00): R1 {@value #SOURCE_AT} — 라벨 hh:01 봉 시가(거래량 &gt; 0) → R2 {@value #SOURCE_NEXT} —
  *       창(라벨 hh:02~hh:05) 안 첫 거래 봉 시가(경고) → R2b {@value #SOURCE_LATE} — 그날 마감 봉 라벨 이하에서 T 뒤 첫 거래 봉 시가(대체). 셋 다 없으면
  *       기다림(멈춘 가격으로 채우지 않음 — 만료까지).</li>
- *   <li><b>장중 시장가</b>({@code MARKET} — 장중 확인 응답만, 단계 2b): T = 그 주문의 기준 분({@link ExecutionAudit#marketTarget} — (생성 + 60초)를 분으로
- *       내린 뒤 + 1분, 미국과 같은 식), 사다리는 매시와 같음(창 키 'HH:MM' — 수집기가 그 주문의 창을 더함). T가 목표 세션 날짜가 아니면 체결하지 않습니다.</li>
+ *   <li><b>장중 시장가</b>({@code MARKET} — 장중 확인·판단 응답, 장중 감시 STOP, 밤 대체 STOP 가운데 장중에 내는 것(QA-317), 단계 2b): T = 그 주문의
+ *       기준 분({@link ExecutionAudit#marketTarget} — 생성 뒤 처음 시작하는 분, 생성을 분으로 내린 뒤 + 1분, 미국과 같은 식 — ADR 0044), 사다리는 매시와
+ *       같음(창 키 'HH:MM' — 수집기가 그 주문의 창을 더함 — R1은 라벨 T+1 봉이라 봉 구간이 생성 뒤). 고른 봉의 라벨은 장부가 다시 봅니다({@link #recheck}).
+ *       T가 목표 세션 날짜가 아니면 체결하지 않습니다.</li>
  *   <li><b>종가</b>({@code NEXT_CLOSE}): {@value #SOURCE_CLOSE} — 마감 단일가 봉 종가(거래량 &gt; 0). 라벨은 그날 마감 시각(그 실행 달력 — 장 시간 변경일
  *       포함)에 NXT 종목이면 + 1분(G2: NXT 15:31, NXT 미지원 표시 주식·ETF 15:30). NXT 여부를 모르면 기다림. 토스 일봉 종가로 채우지 않습니다(G2 — 20:00까지
  *       체결이 섞여 18/21 다름). 금융위 종가가 들어오면 확정 조정이 그 값으로 고칩니다.</li>
@@ -66,7 +68,17 @@ final class KrTimedLadder {
     /** 마감 단일가 시간 — 정규장 마감 이만큼 전부터(보통 날 15:20~15:30). 매시 시점이 여기 걸리면 받지 않습니다. */
     static final Duration CLOSING_AUCTION = SessionWindows.KR_CLOSING_AUCTION;
     /** 기준 시각이 지금 + 이만큼 안이면 늦은 주문(미국 계좌2와 같은 60초 — 주문은 검증 직후 같은 트랜잭션에서 만들어짐). */
-    static final Duration LATE_MARGIN = Duration.ofSeconds(60);
+    static final Duration LATE_MARGIN = ExecutionAudit.AFTER_CREATED;
+
+    /**
+     * 토스 1분봉 라벨이 무엇인가 — 늘 봉 <b>끝</b>입니다(라벨 hh:mm = 봉 hh:mm−1분 ~ hh:mm, 개장 봉 09:01). 수집기 {@code paper_watch_kr.BAR_LABEL}·
+     * {@code paper_stopwatch}의 한국 {@code barLabel}과 같은 글자(시험이 대조). 그래서 기준 시각 T의 봉은 라벨 T + 1분이고, 장중 시장가의 T가 생성 뒤
+     * 처음 시작하는 분(ADR 0044)이어도 고른 봉은 생성 뒤 구간입니다.
+     */
+    static final String BAR_LABEL = "END";
+
+    /** 창 하나의 봉 수 — 창 키 T의 봉은 라벨 T+1 ~ T+{@value}(수집기 {@code kr_paper_timed.KR_TIMED_WINDOW}와 같음). */
+    static final int WINDOW_BARS = 5;
 
     /**
      * 사다리 결과 — 체결 또는 기다림 사유.
@@ -132,7 +144,7 @@ final class KrTimedLadder {
      * 그 결정에서 닫힌 한국 매시 시점(검증기 {@link OrderValidator.Market#closed} — 명세 §2): 목표 세션 E(기준 거래일 다음 KRX 거래일)의 기준 시각 T가
      * 그날 정규장 개장 전이거나 마감 단일가 시간(마감 10분 전부터 — {@link #CLOSING_AUCTION})에 걸리면 MALFORMED(장 시간 변경일 —
      * {@code kr.calendar.openTimeOverrides}), T가 지금 + 60초 이전이면 LATE_FOR_TIMING. 장중 시장가(MARKET — 장중 확인 응답, 단계 2b)는 지금 만들 주문의
-     * 기준 분({@link ExecutionAudit#marketTarget})이 그 세션 정규장 밖이거나 종가 단일가 시간이면 MALFORMED. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다.
+     * 기준 분({@link ExecutionAudit#marketTarget} — 지금 뒤 처음 시작하는 분)이 그 세션 정규장 밖이거나 종가 단일가 시간이면 MALFORMED. 보통 날 밤 결정에서는 아무것도 닫히지 않습니다.
      * 시가·종가는 닫지 않습니다.
      *
      * @param timings 받는 체결 시점(계좌 프로필)
@@ -247,8 +259,13 @@ final class KrTimedLadder {
         }
         List<Bar1m> window = timed.windows().getOrDefault(key, List.of());
         String first = label(at.plusMinutes(1));
+        String last = label(at.plusMinutes(WINDOW_BARS));
         for (Bar1m bar : window) {
             if (bar.traded()) {
+                String wrong = recheck(head, key, bar, first, last);
+                if (wrong != null) {
+                    return new Result(null, wrong);
+                }
                 boolean exact = first.equals(bar.label());
                 return new Result(new Choice(session, bar.open(), exact ? SOURCE_AT : SOURCE_NEXT,
                         exact ? null : key + " 봉(라벨 " + first + ") 거래 없음 → 라벨 " + bar.label() + " 봉 시가(창 안 첫 거래 봉)"), null);
@@ -256,10 +273,31 @@ final class KrTimedLadder {
         }
         Bar1m late = timed.firstAfter().get(key);
         String closeLabel = label(close.plusMinutes(1));
+        String wrongLate = late != null && late.traded() ? recheck(head, key, late, first, null) : null;
+        if (wrongLate != null) {
+            return new Result(null, wrongLate);
+        }
         if (late != null && late.traded() && late.label().compareTo(closeLabel) <= 0) {
             return new Result(new Choice(session, late.open(), SOURCE_LATE,
                     key + " 창(라벨 " + first + "~) 안 거래 없음 → 그날 T 뒤 첫 거래 봉(라벨 " + late.label() + ") 시가(대체)"), null);
         }
         return new Result(null, head + " — 그날 " + key + " 뒤 정규장 거래 없음(거래 정지·무거래 가능) · 체결하지 않음(만료까지)", true);
+    }
+
+    /**
+     * 장부 재검사(미국 {@link UsTimedFills#recheck}의 짝 — ADR 0044) — 고른 봉의 라벨이 기준 시각 T 뒤 구간인가: 창 봉은 라벨 T+1 ~ T+{@value #WINDOW_BARS},
+     * 창 뒤 첫 거래 봉은 라벨 ≥ T+1(봉 끝 라벨 — {@link #BAR_LABEL}이라 라벨 T 봉은 T−1분~T로 T 앞, 장중 시장가면 생성 앞 거래가 섞임). 지키면 null,
+     * 어기면(수집기 저장본의 값이 틀림) 체결하지 않고 기다리는 사유. 창을 만드는 수집기 {@code kr_paper_timed.summarize_windows} 한 곳에만 기대지
+     * 않게 둡니다.
+     *
+     * @param last 창 봉의 라벨 상한(창 뒤 첫 거래 봉이면 null — 아래쪽만 봄)
+     */
+    static String recheck(String head, String key, Bar1m bar, String first, String last) {
+        String label = bar.label();
+        if (label == null || label.compareTo(first) < 0 || (last != null && label.compareTo(last) > 0)) {
+            return head + " — 1분봉 저장본의 " + key + (last == null ? " 창 뒤 첫 거래 봉" : " 창 봉") + "(라벨 " + label + ")이 기준 시각 뒤 구간(라벨 "
+                    + first + (last == null ? " 이후" : "~" + last) + ")이 아님 · 장부 재검사 — 체결하지 않고 기다림";
+        }
+        return null;
     }
 }

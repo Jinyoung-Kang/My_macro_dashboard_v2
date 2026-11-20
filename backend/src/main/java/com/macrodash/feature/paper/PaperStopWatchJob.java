@@ -66,7 +66,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 프로세스가 세션 첫 판정 전 회차를 놓친 것은 재기동이 아니므로 첫 판정 격자부터 판정합니다(QA-306). 한 종목에서 처음 걸린 격자로 주문을 냅니다.
  *
  * <p><b>주문</b>(ON): 매도·수량 없음(체결 때 보유 전량)·출처 {@code STOP}·대기, 결정 없음, 기준 거래일 = 그 세션 전 거래일(목표 세션 = 그 세션), 생성 =
- * 이 작업의 시각, 만료 = 그 세션, 시점은 {@link StopWatch#target}(감지 + 60초 뒤 첫 분 — 보통 장중 시장가, 장 끝 여유 안이면 종가). 근거에
+ * 이 작업의 시각(µs로 자름), 만료 = 그 세션, 시점은 {@link StopWatch#target}(감지 뒤 처음 시작하는 분 — ADR 0044, 보통 장중 시장가, 장 끝 여유 안이면 종가). 근거에
  * {@code stopMode = }{@value #STOP_MODE}·최고가·스탑가·두 격자의 가격과 봉 시각·감시 저장본 시각·감지 시각·기준 시각과 사람이 읽는 한 줄({@code note} —
  * 텔레그램 '근거')을 남깁니다. 체결은 기존 1분봉 사다리가 합니다(미국 다음 관측치, 한국 그날 밤 — 장부). 같은 종목에 대기 STOP이 있거나, 전량 매도
  * 대기 주문의 기준 시각이 이 STOP의 기준 시각 이전이면 내지 않습니다(멱등 — 대기 STOP이 곧 '이미 냄'의 표시라 상태 표가 없음).
@@ -570,7 +570,9 @@ public class PaperStopWatchJob {
             if (hit == null || stopPending.contains(ticker)) {
                 continue;
             }
-            Instant now = clock.instant();
+            // DB가 µs까지만 담으므로 시각을 µs로 잘라 T 계산과 생성 시각(created_at)에 같이 씁니다 — 분 경계에서 저장 때 반올림이 갈려 근거의
+            // targetAt과 장부가 다시 센 T가 1분 다르지 않게(ADR 0044).
+            Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
             StopWatch.Target target = StopWatch.target(now, session, calendar, korea);
             if (fullSellBefore(pending, ticker, target.at(), calendar, korea)) {
                 continue;

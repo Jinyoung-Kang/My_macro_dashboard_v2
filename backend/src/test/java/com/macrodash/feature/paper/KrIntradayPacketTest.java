@@ -44,16 +44,41 @@ class KrIntradayPacketTest {
     }
 
     @Test
+    @DisplayName("패킷 1_basis.atMinute의 첫 분은 검증(FreeTiming.validation)이 받고 그 1분 앞은 LATE_FOR_TIMING — 장중 시장가 기준 분은 그보다 1분 앞(ADR 0044)")
+    void freeMinutesFirstIsAcceptedByTheValidator() {
+        List<String> timings = FreeTiming.INTRADAY_TIMINGS;
+        Map<String, String> names = new java.util.LinkedHashMap<>();
+        Map<String, Integer> ranks = new java.util.LinkedHashMap<>();
+        timings.forEach(t -> {
+            names.put(t, t);
+            ranks.put(t, ranks.size());
+        });
+        com.macrodash.analytics.OrderValidator.Market base = new com.macrodash.analytics.OrderValidator.Market(timings, timings.get(0),
+                names, KrPaperMarket.INSTANCE.money(), ranks);
+        for (Instant now : List.of(kst("09:14"), Instant.parse("2026-12-02T10:31:20+09:00"), Instant.parse("2026-12-02T11:59:59.999999+09:00"),
+                Instant.parse("2026-12-02T13:10:42+09:00"), Instant.parse("2026-12-02T15:16:30+09:00"))) {
+            Instant[] minutes = KrCheckpointPacket.freeMinutes(E, KR, now);
+            java.time.LocalTime first = minutes[0].atZone(KrxCalendar.SEOUL).toLocalTime();
+            java.time.LocalTime before = first.minusMinutes(1);
+            com.macrodash.analytics.OrderValidator.Market market = FreeTiming.validation(base, List.of(before, first), E, now, KR, true, true);
+            assertThat(market.closed()).as(now + " 첫 분 " + first).doesNotContainKey(FreeTiming.key(first));
+            assertThat(market.closed().get(FreeTiming.key(before)).reason()).as(now + " 그 1분 앞")
+                    .isEqualTo(com.macrodash.analytics.OrderValidator.LATE_FOR_TIMING);
+            assertThat(ExecutionAudit.marketTarget(now)).as("장중 시장가 기준 분은 첫 분보다 1분 앞").isEqualTo(minutes[0].minusSeconds(60));
+        }
+    }
+
+    @Test
     @DisplayName("남은 시점: 장중에는 셋 모두, 개장 10분 전에는 장중 시장가 없음, 종가 단일가 시간 직전에는 장중 시장가·지정 시각이 닫히고 종가만, 휴장일에는 없음")
     void remainingTimings() {
         assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("09:14"))).containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
         assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("14:55"))).containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
-        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("15:18"))).as("기준 분 15:20 — 종가 단일가 시간")
+        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("15:19"))).as("기준 분 15:20 — 종가 단일가 시간")
                 .containsExactly("NEXT_CLOSE");
         assertThat(KrCheckpointPacket.freeRemainingTimings(D, LocalDate.of(2026, 12, 5), KR, kst("10:00"))).isEmpty();
-        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("09:05"))).as("기준 분 09:07 — 개장 10분 뒤(09:10) 앞이라 시장가 없음")
+        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, kst("09:05"))).as("기준 분 09:06 — 개장 10분 뒤(09:10) 앞이라 시장가 없음")
                 .containsExactly("AT_MINUTE", "NEXT_CLOSE");
-        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, Instant.parse("2026-12-02T09:08:30+09:00"))).as("기준 분 09:10부터")
+        assertThat(KrCheckpointPacket.freeRemainingTimings(D, E, KR, Instant.parse("2026-12-02T09:09:30+09:00"))).as("기준 분 09:10부터")
                 .containsExactly("MARKET", "AT_MINUTE", "NEXT_CLOSE");
     }
 }

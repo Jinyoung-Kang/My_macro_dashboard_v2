@@ -788,7 +788,7 @@ class PaperCheckpointJobTest {
         Order market = accepted.stream().filter(o -> "CCC".equals(o.ticker())).findFirst().orElseThrow();
         assertThat(market.timing()).isEqualTo(PaperBooks.MARKET);
         assertThat(ExecutionAudit.targetAt(market, E, UsPaperMarket.INSTANCE.calendar()))
-                .as("10:03:20 생성 → 10:05 ET").isEqualTo(T.plus(Duration.ofMinutes(5)));
+                .as("10:03:20 생성 → 10:04 ET(생성 뒤 처음 시작하는 분)").isEqualTo(T.plus(Duration.ofMinutes(4)));
     }
 
     @Test
@@ -927,7 +927,7 @@ class PaperCheckpointJobTest {
     }
 
     @Test
-    @DisplayName("⑨ 단언 — 확인 주문의 created_at(응답 뒤 DB now())은 패킷 asOfInstant보다 늦고, MARKET 기준 시각은 그보다 60초 넘게 뒤")
+    @DisplayName("⑨ 단언 — 확인 주문의 created_at(응답 뒤 DB now())은 패킷 asOfInstant보다 늦고, MARKET 기준 시각은 그 생성보다 뒤")
     void ordersCreatedAfterThePacketInstant() {
         universe();
         store.dbNow = T.plus(Duration.ofMinutes(3));
@@ -943,7 +943,7 @@ class PaperCheckpointJobTest {
         Instant asOfInstant = Instant.parse(d.packet().path("1_basis").path("asOfInstant").asString());
         Order order = store.ordersByStatus(PaperBooks.CLAUDE2, PaperBooks.ORDER_PENDING).get(0);
         assertThat(order.createdAt()).isAfter(asOfInstant);
-        assertThat(ExecutionAudit.marketTarget(order.createdAt())).isAfter(asOfInstant.plusSeconds(60));
+        assertThat(ExecutionAudit.marketTarget(order.createdAt())).isAfter(order.createdAt());
     }
 
     @Test
@@ -963,9 +963,9 @@ class PaperCheckpointJobTest {
         assertThat(verdict(d, "BBB").path("accepted").asBoolean()).isTrue();
         assertThat(verdict(d, "CCC").path("accepted").asBoolean()).as("예상 현금 20,000 안").isTrue();
 
-        // 장부: 11:00 ET 관측치 — AAA 09:30 봉으로 먼저 체결(약 9,000), BBB·CCC는 MARKET T(10:05) 봉.
+        // 장부: 11:00 ET 관측치 — AAA 09:30 봉으로 먼저 체결(약 9,000), BBB·CCC는 MARKET T(10:04) 봉.
         Instant w = ExecutionAuditFixtures.et(E, 11, 0);
-        ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60)).market(LocalTime.of(10, 5));
+        ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60)).market(LocalTime.of(10, 4));
         for (String ticker : List.of("AAA", "BBB", "CCC", "ZZZ", "SPY")) {
             double base = switch (ticker) {
                 case "AAA" -> 50;

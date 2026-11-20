@@ -321,31 +321,80 @@ class StopWatchTest {
     }
 
     @Nested
-    @DisplayName("주문 시점 — T = 감지 + 60초 뒤 첫 분")
+    @DisplayName("주문 시점 — T = 감지 뒤 처음 시작하는 분(ADR 0044)")
     class Targets {
 
         @Test
-        @DisplayName("장중 감지는 T = G+2분 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
+        @DisplayName("장중 감지는 T = 감지를 분으로 내린 뒤 + 1분(감지 뒤 처음 시작하는 분) 시장가, 첫 분 앞이면 그 첫 분 지정 시각, 장 끝 여유 안이면 종가")
         void us() {
             StopWatch.Target mid = StopWatch.target(et(DAY, 10, 15, 25), DAY, US, false);
             assertThat(mid.timing()).isEqualTo(PaperBooks.MARKET);
-            assertThat(mid.at()).isEqualTo(et(10, 17));
+            assertThat(mid.at()).isEqualTo(et(10, 16));
             StopWatch.Target early = StopWatch.target(et(DAY, 9, 37, 30), DAY, US, false);
             assertThat(early.timing()).isEqualTo(PaperBooks.AT_MINUTE);
             assertThat(early.targetLocal()).isEqualTo(LocalTime.of(9, 40));
             StopWatch.Target close = StopWatch.target(et(DAY, 15, 55, 20), DAY, US, false);
             assertThat(close.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
-            assertThat(StopWatch.target(et(DAY, 15, 52, 20), DAY, US, false).timing()).as("T 15:54").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 52, 20), DAY, US, false).timing()).as("T 15:53").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 53, 59), DAY, US, false).timing()).as("T 15:54").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(et(DAY, 15, 54, 0), DAY, US, false).timing()).as("T 15:55").isEqualTo(PaperBooks.NEXT_CLOSE);
         }
 
         @Test
         @DisplayName("한국은 15:20부터 종가, 수능일 첫 분은 10:10")
         void kr() {
-            assertThat(StopWatch.target(kst(DAY, 15, 17, 20), DAY, KR, true).timing()).as("T 15:19").isEqualTo(PaperBooks.MARKET);
-            assertThat(StopWatch.target(kst(DAY, 15, 18, 20), DAY, KR, true).timing()).as("T 15:20").isEqualTo(PaperBooks.NEXT_CLOSE);
+            assertThat(StopWatch.target(kst(DAY, 15, 17, 20), DAY, KR, true).timing()).as("T 15:18").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(kst(DAY, 15, 18, 20), DAY, KR, true).timing()).as("T 15:19").isEqualTo(PaperBooks.MARKET);
+            assertThat(StopWatch.target(kst(DAY, 15, 19, 20), DAY, KR, true).timing()).as("T 15:20").isEqualTo(PaperBooks.NEXT_CLOSE);
             StopWatch.Target exam = StopWatch.target(kst(EXAM, 10, 5, 30), EXAM, KR, true);
             assertThat(exam.timing()).isEqualTo(PaperBooks.AT_MINUTE);
             assertThat(exam.targetLocal()).isEqualTo(LocalTime.of(10, 10));
+        }
+
+        @Test
+        @DisplayName("갈래 성질(ADR 0044) — 무작위 감지 시각(µs·분 경계 포함, 미국·한국·수능일)에서 첫 분 AT_MINUTE 갈래면 늘 첫 분 > 감지 + 60초"
+                + "(늦은 주문 가드 ⑤를 통과), 시장가 갈래면 감지 < T ≤ 감지 + 60초이고 T가 그 세션 첫 분 이상·장 끝 여유 앞, 종가 갈래면 T가 장 끝 여유 안")
+        void atMinuteBranchAlwaysPassesTheLateGuard() {
+            java.util.Random random = new java.util.Random(20261118L);
+            int[] seen = new int[3];
+            for (Object[] market : List.<Object[]>of(new Object[]{US, DAY, false}, new Object[]{KR, DAY, true}, new Object[]{KR, EXAM, true})) {
+                TradingCalendar calendar = (TradingCalendar) market[0];
+                LocalDate session = (LocalDate) market[1];
+                boolean korea = (Boolean) market[2];
+                Instant open = calendar.openInstant(session);
+                Instant first = com.macrodash.analytics.SessionWindows.first(calendar, session);
+                Instant end = com.macrodash.analytics.SessionWindows.end(calendar, session, korea);
+                long span = Duration.between(open, calendar.closeInstant(session)).toSeconds();
+                for (int i = 0; i < 3_000; i++) {
+                    Instant minute = open.plusSeconds(60L * random.nextInt((int) (span / 60)));
+                    Instant created = switch (i % 3) {
+                        case 0 -> minute;
+                        case 1 -> minute.minusNanos(1_000);
+                        default -> minute.plusNanos(1_000L * random.nextInt(60_000_000));
+                    };
+                    StopWatch.Target target = StopWatch.target(created, session, calendar, korea);
+                    switch (target.timing()) {
+                        case PaperBooks.AT_MINUTE -> {
+                            seen[0]++;
+                            assertThat(target.at()).as("첫 분 갈래 " + created).isEqualTo(first)
+                                    .isAfter(created.plus(ExecutionAudit.AFTER_CREATED));
+                        }
+                        case PaperBooks.MARKET -> {
+                            seen[1]++;
+                            assertThat(target.at()).as("시장가 갈래 " + created).isAfter(created).isBeforeOrEqualTo(created.plusSeconds(60))
+                                    .isAfterOrEqualTo(first).isBefore(end);
+                        }
+                        default -> {
+                            seen[2]++;
+                            assertThat(target.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
+                            assertThat(ExecutionAudit.marketTarget(created)).as("종가 갈래 " + created).isAfterOrEqualTo(end);
+                        }
+                    }
+                }
+            }
+            assertThat(seen[0]).as("첫 분 갈래를 재 봄").isPositive();
+            assertThat(seen[1]).as("시장가 갈래를 재 봄").isPositive();
+            assertThat(seen[2]).as("종가 갈래를 재 봄").isPositive();
         }
     }
 }

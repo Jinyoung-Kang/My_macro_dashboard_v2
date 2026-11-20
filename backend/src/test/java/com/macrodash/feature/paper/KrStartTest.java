@@ -1399,6 +1399,53 @@ class KrStartTest {
         assertThat(judged.response().path("checkpoint").path("origin").asString()).isEqualTo("EVENT");
     }
 
+    @Test
+    @DisplayName("고정본: 한국 자유 시점 판 장중 판단 패킷(kr.stopWatch.mode ON) 글자 — 켠 판 계좌1의 밤 결정(09:10 판단 예약·13:30 매수 대기) 뒤 09:14에 "
+            + "조립한 패킷을 바이트로 얼림(지시문의 MARKET 문장·1_basis.stopWatch.rule·1_basis.atMinute), 보낸 글자는 결정 행의 동결본과 같음")
+    void goldenKrFreeIntradayPacketWithStopWatch() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("stopWatch")).put("mode", "ON");
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "13:30")),
+                        "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        fake.answer(intradayReply("KEEP", null));
+
+        intradayJob().run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        String sent = fake.requests.get(calls).user();
+        com.macrodash.Golden.assertMatches("packet-kr-ft-intraday-stopwatch.json", sent);
+        Decision judged = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        assertThat(judged.packetText()).as("결정 행 동결본 = 보낸 패킷 글자").isEqualTo(sent);
+        JsonNode basis = judged.packet().path("1_basis");
+        assertThat(basis.path("variant").asString()).isEqualTo(PacketBuilder.VARIANT_FREE);
+        assertThat(basis.path("stopWatch").path("rule").asString()).isEqualTo(StopWatch.rule(true));
+    }
+
+    @Test
+    @DisplayName("ADR 0044: 한국 자유 시점 판 장중 판단 패킷(감시 ON) 고정본에서 바뀐 것은 지시문의 MARKET 문장과 스탑 문장의 체결 시점 구절(12_hardRules·"
+            + "1_basis.stopWatch.rule)뿐 — 되돌리면 ADR 0044 전 고정본(같은 시험이 지금 글로 처음 만든 것)과 바이트까지 같다")
+    void onlyTheMarketAndStopSentencesChangedInTheKrIntradayPacket() {
+        String now = new String(com.macrodash.Golden.resourceBytes("paper/golden/packet-kr-ft-intraday-stopwatch.json"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        String market = "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가(그 분이 마감 10분 전 이후면 거절)";
+        String stop = "감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다";
+        assertThat(now.split(java.util.regex.Pattern.quote(market), -1)).as("MARKET 문장 한 번").hasSize(2);
+        assertThat(now.split(java.util.regex.Pattern.quote(stop), -1)).as("스탑 구절 두 번").hasSize(3);
+        assertThat(now).doesNotContain("생성 + 60초가 지난 첫 분").doesNotContain("감지 + 60초 뒤 첫 분");
+        String before = now.replace(market, "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가(그 분이 마감 10분 전 이후면 거절)")
+                .replace(stop, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다");
+        assertThat(com.macrodash.Golden.sha256(before)).isEqualTo("6ee31d655da6f3ee2504246f765382b4f6bbdae974acc1dcd2e5368d7e9895c2");
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

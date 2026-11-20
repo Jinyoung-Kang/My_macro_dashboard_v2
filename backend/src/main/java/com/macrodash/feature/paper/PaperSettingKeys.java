@@ -219,8 +219,8 @@ final class PaperSettingKeys {
             integer("lockoutTradingDays", 0, 250, true, "스탑 뒤 재진입 금지 거래일(D10)"),
             choice(StopWatchMode.US_KEY, StopWatchMode.OPTIONS, true,
                     "미국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 보고 트레일링 "
-                            + "스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음). OFF는 감시·수집 없음(시간별 관측치 "
-                            + "스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+                            + "스탑선 아래가 두 번 이어지면 감지 뒤 처음 시작하는 분(1분 안)에 시장가로 매도(개장 10분 전에는 팔지 않음). "
+                            + "OFF는 감시·수집 없음(시간별 관측치 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
             integer("maxDiscretionaryOrdersPerMonth", 0, 200, false, "Claude 재량 주문 월 상한(C9)"),
             integer("minHoldTradingDaysForSell", 0, 60, false, "Claude 재량 매도 전 최소 보유 거래일(C9, 스탑 제외)"),
             number("minOrderNotional", 0, 100_000, true, "주문 최소 금액(달러) — Claude 검증기·규칙 계좌 매수(C9)"),
@@ -398,8 +398,8 @@ final class PaperSettingKeys {
             integer("kr.lockoutTradingDays", 0, 250, true, "한국 스탑 뒤 재진입 금지(KRX 거래일)"),
             choice(StopWatchMode.KR_KEY, StopWatchMode.OPTIONS, true,
                     "한국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 토스 1분봉으로 "
-                            + "보고 트레일링 스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음, 실제 계좌·ISA도 따름 — "
-                            + "ADR 0033). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+                            + "보고 트레일링 스탑선 아래가 두 번 이어지면 감지 뒤 처음 시작하는 분(1분 안)에 시장가로 매도(개장 10분 전에는 팔지 않음, "
+                            + "실제 계좌·ISA도 따름 — ADR 0033). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
             integer("kr.rulesMaxNames", 1, 50, true, "한국 규칙 계좌 매수 종목 수 상한(K7 — 후보가 모자란 만큼은 153130)"),
             choice("kr.rules.weighting", List.of("EQUAL", "SCORE"), true,
                     "한국 규칙 계좌 배분 — 동일비중(EQUAL)·점수 비례(SCORE, 점수 = 20일 외국인·기관 순매수 주 ÷ 상장주식수)"),

@@ -57,14 +57,14 @@ class KrTimedLadderTest {
     }
 
     @Test
-    @DisplayName("장중 시장가(MARKET, 단계 2b) — 기준 분 = (생성 + 60초)를 분으로 내린 뒤 + 1분의 창, 창이 저장본에 없으면 기다림, 기준 분이 목표 세션이 아니면 체결하지 않음")
+    @DisplayName("장중 시장가(MARKET, 단계 2b) — 기준 분 = 생성 뒤 처음 시작하는 분(생성을 분으로 내린 뒤 + 1분 — ADR 0044)의 창, 창이 저장본에 없으면 기다림, 기준 분이 목표 세션이 아니면 체결하지 않음")
     void marketMinute() {
-        Instant created = Instant.parse("2026-11-03T01:31:20Z");                 // 10:31:20 KST → 기준 분 10:33
+        Instant created = Instant.parse("2026-11-03T01:32:20Z");                 // 10:32:20 KST → 기준 분 10:33
         Quote quote = quote(true, ok(Map.of("10:33", List.of(bar("10:34", 71_034, 0), bar("10:35", 71_035, 300))), Map.of(), Map.of()));
         KrTimedLadder.Result market = KrTimedLadder.price(PaperBooks.MARKET, created, quote, E, NIGHT, CALENDAR, DEADLINE);
         assertThat(market.choice().price()).isEqualByComparingTo("71035");
         assertThat(market.choice().source()).isEqualTo(KrTimedLadder.SOURCE_NEXT);
-        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-03T01:40:00Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
+        assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-03T01:41:00Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
                 .reason()).contains("10:42 창이 없음").contains("기다림");
         assertThat(KrTimedLadder.price(PaperBooks.MARKET, Instant.parse("2026-11-02T01:31:20Z"), quote, E, NIGHT, CALENDAR, DEADLINE)
                 .reason()).contains("목표 세션이 아님");
@@ -122,13 +122,120 @@ class KrTimedLadderTest {
     }
 
     @Test
+    @DisplayName("룩어헤드 성질(ADR 0044, 미국 marketNeverFillsBeforeTargetOrCreation의 짝) — 무작위 생성 시각과 끝 라벨 봉으로 수집기 규칙대로 창을 만들어도 "
+            + "고른 봉의 시작(라벨 − 1분) ≥ T > 생성이고 체결가 = 그 봉 시가. 라벨 ≤ T 봉을 일부러 창·창 뒤 첫 거래 봉에 넣은 저장본으로는 체결하지 않고 기다림")
+    void marketNeverFillsWithABarStartingBeforeCreation() {
+        java.util.Random random = new java.util.Random(20261118L);
+        int filled = 0;
+        for (int round = 0; round < 500; round++) {
+            Instant created = kst("2026-11-03T09:10").plusSeconds(random.nextInt(60 * 365))
+                    .plusNanos(1_000L * random.nextInt(1_000_000));
+            Instant target = ExecutionAudit.marketTarget(created);
+            LocalTime t = target.atZone(KrxCalendar.SEOUL).toLocalTime();
+            // 그날 봉 — 라벨(봉 끝) 09:01~15:30 가운데 무작위로 빠지고, 일부는 거래 없음. 시가 = 라벨 분 수(봉마다 다름).
+            java.util.TreeMap<String, Bar1m> day = new java.util.TreeMap<>();
+            for (LocalTime label = LocalTime.of(9, 1); !label.isAfter(LocalTime.of(15, 30)); label = label.plusMinutes(1)) {
+                if (random.nextInt(4) > 0) {
+                    long open = 70_000L + label.toSecondOfDay() / 60;
+                    day.put(KrTimedLadder.label(label), bar(KrTimedLadder.label(label), open, random.nextInt(3) == 0 ? 0 : 100));
+                }
+            }
+            String key = KrTimedLadder.label(t);
+            List<Bar1m> window = new java.util.ArrayList<>();
+            for (int minute = 1; minute <= KrTimedLadder.WINDOW_BARS; minute++) {
+                Bar1m b = day.get(KrTimedLadder.label(t.plusMinutes(minute)));
+                if (b != null) {
+                    window.add(b);
+                }
+            }
+            String firstLabel = KrTimedLadder.label(t.plusMinutes(1));
+            Bar1m after = day.tailMap(firstLabel, true).values().stream().filter(Bar1m::traded).findFirst().orElse(null);
+            Map<String, Bar1m> firstAfter = new LinkedHashMap<>();
+            firstAfter.put(key, after);
+            KrTimedLadder.Result result = KrTimedLadder.price(PaperBooks.MARKET, created,
+                    quote(true, ok(Map.of(key, window), firstAfter, Map.of())), E, NIGHT, CALENDAR, DEADLINE);
+            if (result.choice() == null) {
+                continue;
+            }
+            filled++;
+            assertThat(target).as("생성 " + created).isAfter(created);
+            String chosen = day.entrySet().stream().filter(e -> e.getValue().traded()
+                    && e.getValue().open().compareTo(result.choice().price()) == 0).map(Map.Entry::getKey).findFirst().orElseThrow();
+            Instant start = ZonedDateTime.of(E, LocalTime.parse(chosen).minusMinutes(1), KrxCalendar.SEOUL).toInstant();
+            assertThat(start).as("생성 " + created + " → 라벨 " + chosen).isAfterOrEqualTo(target);
+        }
+        assertThat(filled).as("성질을 실제로 재 봄").isGreaterThan(100);
+
+        // 저장본이 틀린 경우(라벨 T 봉 — 봉 구간 T−1분~T, 생성 앞 거래가 섞임) — 장부 재검사가 체결하지 않고 기다림.
+        Instant created = kst("2026-11-03T13:10:42");                                    // T 13:11 — R1 라벨 13:12
+        KrTimedLadder.Result inWindow = KrTimedLadder.price(PaperBooks.MARKET, created, quote(true, ok(Map.of("13:11",
+                List.of(bar("13:11", 69_000, 300), bar("13:12", 70_000, 300))), Map.of(), Map.of())), E, NIGHT, CALENDAR, DEADLINE);
+        assertThat(inWindow.choice()).isNull();
+        assertThat(inWindow.unfillable()).as("기다림").isFalse();
+        assertThat(inWindow.reason()).contains("라벨 13:11").contains("13:12~13:16").contains("장부 재검사");
+        KrTimedLadder.Result late = KrTimedLadder.price(PaperBooks.MARKET, created, quote(true, ok(Map.of("13:11", List.of()),
+                Map.of("13:11", bar("13:11", 69_000, 300)), Map.of())), E, NIGHT, CALENDAR, DEADLINE);
+        assertThat(late.choice()).isNull();
+        assertThat(late.reason()).contains("창 뒤 첫 거래 봉").contains("13:12 이후");
+        KrTimedLadder.Result beyond = KrTimedLadder.price(PaperBooks.MARKET, created, quote(true, ok(Map.of("13:11",
+                List.of(bar("13:17", 70_500, 300))), Map.of(), Map.of())), E, NIGHT, CALENDAR, DEADLINE);
+        assertThat(beyond.choice()).as("창 위쪽(라벨 T+6)도 창 봉이 아님").isNull();
+        KrTimedLadder.Result right = KrTimedLadder.price(PaperBooks.MARKET, created, quote(true, ok(Map.of("13:11",
+                List.of(bar("13:12", 70_000, 300))), Map.of(), Map.of())), E, NIGHT, CALENDAR, DEADLINE);
+        assertThat(right.choice().price()).as("사용자 예 — 13:10:42 생성 → 라벨 13:12 봉(13:11~13:12) 시가").isEqualByComparingTo("70000");
+        assertThat(right.choice().source()).isEqualTo(KrTimedLadder.SOURCE_AT);
+    }
+
+    private static final java.nio.file.Path COLLECTOR_KR_TIMED_TEST = java.nio.file.Path.of("../collector/tests/test_kr_paper_timed.py");
+
+    @Test
+    @DisplayName("장중 시장가 기준 분·R1 라벨 = 수집기 시험의 예시 표(KR_MARKET_KEYS — 생성, 창 키 T, R1 라벨 T+1)와 같은 값(Java·Python, ADR 0044)")
+    void marketKeyMatchesTheCollectorTable() throws java.io.IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(COLLECTOR_KR_TIMED_TEST),
+                "collector/tests/test_kr_paper_timed.py를 찾을 수 없습니다");
+        String text = java.nio.file.Files.readString(COLLECTOR_KR_TIMED_TEST);
+        java.util.regex.Matcher block = java.util.regex.Pattern.compile("KR_MARKET_KEYS = \\[(.*?)\\n\\]", java.util.regex.Pattern.DOTALL)
+                .matcher(text);
+        assertThat(block.find()).as("수집기 시험의 KR_MARKET_KEYS 표").isTrue();
+        java.util.regex.Matcher row = java.util.regex.Pattern.compile("\\(\"([^\"]+)\", \"([^\"]+)\", \"([^\"]+)\"\\)").matcher(block.group(1));
+        int rows = 0;
+        while (row.find()) {
+            Instant created = java.time.OffsetDateTime.parse(row.group(1)).toInstant();
+            Instant target = KrTimedLadder.targetOn(PaperBooks.MARKET, created, E, CALENDAR);
+            LocalTime at = target.atZone(KrxCalendar.SEOUL).toLocalTime();
+            assertThat(KrTimedLadder.label(at)).as(row.group(1) + " 창 키").isEqualTo(row.group(2));
+            assertThat(KrTimedLadder.label(at.plusMinutes(1))).as(row.group(1) + " R1 라벨").isEqualTo(row.group(3));
+            assertThat(target).isAfter(created).isBeforeOrEqualTo(created.plusSeconds(60));
+            rows++;
+        }
+        assertThat(rows).as("예시 넷(사용자 예·정각·-1µs·UTC 입력)").isEqualTo(4);
+    }
+
+    private static final java.nio.file.Path COLLECTOR_WATCH_KR = java.nio.file.Path.of("../collector/app/tasks/paper_watch_kr.py");
+    private static final java.nio.file.Path COLLECTOR_STOPWATCH = java.nio.file.Path.of("../collector/app/tasks/paper_stopwatch.py");
+
+    @Test
+    @DisplayName("한국 1분봉 라벨 END = 수집기 paper_watch_kr.BAR_LABEL·paper_stopwatch 한국 저장본의 barLabel, 창 봉 수 5 = kr_paper_timed.KR_TIMED_WINDOW")
+    void barLabelMatchesTheCollector() throws java.io.IOException {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(COLLECTOR_WATCH_KR) && java.nio.file.Files.exists(COLLECTOR_STOPWATCH),
+                "수집기 원본을 찾을 수 없습니다");
+        assertThat(KrTimedLadder.BAR_LABEL).isEqualTo("END");
+        assertThat(java.nio.file.Files.readString(COLLECTOR_WATCH_KR)).contains("BAR_LABEL = \"" + KrTimedLadder.BAR_LABEL + "\"");
+        String stopwatch = java.nio.file.Files.readString(COLLECTOR_STOPWATCH);
+        assertThat(stopwatch).contains("한국 {contract, source, market \"KR\", barLabel \"" + KrTimedLadder.BAR_LABEL + "\"")
+                .contains("\"barLabel\": \"" + KrTimedLadder.BAR_LABEL + "\",");
+        assertThat(java.nio.file.Files.readString(java.nio.file.Path.of("../collector/app/tasks/kr_paper_timed.py")))
+                .contains("KR_TIMED_WINDOW = " + KrTimedLadder.WINDOW_BARS);
+    }
+
+    @Test
     @DisplayName("장중 시장가(MARKET) 닫힘(단계 2b) — 지금 만들 주문의 기준 분이 정규장 안·종가 단일가 전이면 열림, 15:20 이후·다른 날이면 MALFORMED")
     void closedMarket() {
         LocalDate asOf = LocalDate.of(2026, 11, 2);
         List<String> menu = List.of(PaperBooks.MARKET, PaperBooks.AT_1400, PaperBooks.NEXT_CLOSE);
         assertThat(KrTimedLadder.closedTimings(menu, asOf, kst("2026-11-03T11:03"), CALENDAR)).isEmpty();
         Map<String, com.macrodash.analytics.OrderValidator.Closed> late = KrTimedLadder.closedTimings(menu, asOf,
-                kst("2026-11-03T15:18:30"), CALENDAR);
+                kst("2026-11-03T15:19:30"), CALENDAR);
         assertThat(late).containsOnlyKeys(PaperBooks.MARKET, PaperBooks.AT_1400);
         assertThat(late.get(PaperBooks.MARKET).reason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
         assertThat(late.get(PaperBooks.MARKET).detail()).contains("15:20").contains("종가 단일가");

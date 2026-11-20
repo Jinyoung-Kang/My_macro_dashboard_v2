@@ -6,6 +6,8 @@
   **장중 확인(단계 2 — `CHECKPOINT`·`MARKET`·V18·`paper_watch_us`·`PaperCheckpointJob`)도 구현했습니다(배포 전)** — 2026-10-31 사용자 결정("모든 일정을
   10월 31일 안에")으로 단계 1과 함께 시작합니다(T8 앞당김 — 아래 '결과'). 설정 `claude2.checkpoints`는 기본 꺼짐이고, 끄면 결정이 단계 1과 바이트까지 같습니다.
   미국 네 계좌(ADR 0018)의 결정·패킷·시스템 프롬프트·응답 스키마·장부 순서·체결 조건은 바뀌지 않습니다 — 이 문서는 계좌2 때문에 **고치는 기존 결정**과 **출발 뒤에는 되돌리기 어려운 것**만 적습니다.
+  **단계 2 `MARKET` 기준 시각 식 일부 개정 — [ADR 0044](0044-market-first-minute-after-creation.md)(2026-11-18 결정, 배포 전)**: 명세 §16-4의 엄격한 식 '(생성 + 60초)를 분으로 내린 뒤 + 1분'을
+  '생성을 분으로 내린 뒤 + 1분'(생성 뒤 처음 시작하는 분 — 늦은 주문 가드 ⑤의 60초는 메뉴 시점에 그대로)으로 바꿈 · 나머지는 그대로.
 - 근거: [계좌2 명세](../specs/2026-10-30-claude-book2-timing-design.md) §3·§4(§4-3 고치는 기존 결정)·§5-3·§6·§7·§8·§10·§11·§12·§14·§16·§18 **T4·T6·T7·T10·T12·T15·T17·T18** ·
   [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(v2 프로그램, 장중 평가) · [ADR 0021](0021-kr-paper-prices-fills-start.md)(한국 책 — 앞으로 체결 출발의 선례) ·
   [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(테이블마다 쓰는 쪽 하나) · [ADR 0017](0017-macro-card-delay-and-realtime-sources.md)(모르는 지연은 '실시간'으로 적지 않음)

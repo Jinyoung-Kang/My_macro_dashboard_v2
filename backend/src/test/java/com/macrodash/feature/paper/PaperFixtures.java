@@ -132,4 +132,14 @@ final class PaperFixtures {
     static PaperConfig config() {
         return new PaperConfig(true, FRI, 100_000);
     }
+
+    /**
+     * DB에 쓴 시각을 다시 읽은 값 — {@code timestamptz}는 µs까지만 담고, pgjdbc(42.7.14 {@code TimestampUtils.toString(Calendar, Timestamp, boolean)})는
+     * {@code Timestamp}를 글로 보낼 때 µs 아래(ns)를 반올림합니다(500ns 이상 올림, 999,999,500ns 이상이면 다음 초). 가짜 저장소는 받은 값을 그대로
+     * 두므로, 생성 시각을 µs로 자르는지(ADR 0044 결정 5) 보는 시험이 이것으로 운영 저장의 값을 흉내 냅니다.
+     */
+    static Instant dbRounded(Instant at) {
+        Instant micros = at.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        return at.getNano() % 1_000 >= 500 ? micros.plus(1, java.time.temporal.ChronoUnit.MICROS) : micros;
+    }
 }

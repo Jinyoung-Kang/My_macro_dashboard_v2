@@ -247,7 +247,7 @@ final class KrCheckpointPacket {
                         + CheckpointPacket.PENDING_AHEAD + "')만 취소되고 새 주문을 받는다 — 기준 시각이 지난 주문은 체결 예정으로 남고, "
                         + "4_portfolio.expected가 그 주문을 체결로 본 예상 장부다.",
                 "주문 timing은 1_basis.remainingTimings 가운데 하나다(장중 판단이 받는 시점 — 12_hardRules의 timings는 밤 결정의 것이다). "
-                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가(그 분이 마감 10분 전 이후면 거절), AT_MINUTE이면 atLocal(한국 시간 "
+                        + "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가(그 분이 마감 10분 전 이후면 거절), AT_MINUTE이면 atLocal(한국 시간 "
                         + "HH:MM)을 1_basis.atMinute 범위 안에서 적고, NEXT_CLOSE는 오늘 종가 단일가다. 주문마다 executionNote를 쓰고, 주문이 없으면 "
                         + "noTradeReason을 쓴다. 한도·유니버스는 12_hardRules(밤 결정과 같음)이고 검증 문맥은 예상 장부다.",
                 "다음 판단이 필요하면 nextCheckpoint에 시각을 적는다(1_basis.nextCheckpoint — available이 false면 적어도 버려진다). 필요 없으면 null로 둔다.",
@@ -332,7 +332,7 @@ final class KrCheckpointPacket {
             return null;
         }
         FreeTiming.Window window = FreeTiming.window(session, calendar, true);
-        Instant first = ExecutionAudit.marketTarget(now);
+        Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
             first = window.first();
         }
