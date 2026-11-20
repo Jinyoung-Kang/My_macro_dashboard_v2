@@ -463,38 +463,38 @@ describe("QA-647 판정 기록·성과 부제는 모르는 수를 지어내지 �
 // 기대 높이는 자기 빌드에서 판정 다섯 글(백엔드 Regime.java의 고정 글)로 잰 값이 온 뒤의 부분 높이(설명 + 4 + 주 값 줄 36 + 4 + 배지 줄)이고,
 // 글마다 다르면 다섯 글 가운데 셋 이상이 갖는 높이입니다: 390(기본) 60+36+74 · 640(sm) 40+36+58 · 768(md) 20+36+42 · 1024(lg) 40+36+58 · 1280 이상(xl) 20+36+20.
 // 값이 오면 자라는 글은 뺐습니다 — 390 후퇴·침체 경계와 768 후퇴 경계·회복 +20px, 1280~1439 판정 불가 +26px(배지 줄이 두 줄).
-// jsdom은 배치를 계산하지 않으므로 자리표시의 높이 클래스(h-*·min-h-*, 폭 앞머리)로 폭마다 잡는 높이를 셉니다.
-describe("QA-650 대상 머리의 읽는 중 자리표시는 값이 온 뒤의 머리와 같은 높이", () => {
-  const STEPS = ["", "sm:", "md:", "lg:", "xl:"] as const;
-  /** 클래스의 높이 값(px) — 'h-15' 60, 'h-[74px]' 74, 'min-h-40' 160. 폭 앞머리가 그 폭 이하인 것 가운데 가장 큰 앞머리의 값. */
-  function heightAt(element: Element, step: number, kind: "h" | "min-h"): number | null {
-    const tokens = (element.getAttribute("class") ?? "").split(/\s+/);
-    let found: number | null = null;
-    STEPS.slice(0, step + 1).forEach((prefix) => {
-      for (const token of tokens) {
-        const match = token.startsWith(prefix) ? new RegExp(`^${kind}-(?:(\\d+(?:\\.\\d+)?)|\\[(\\d+)px\\])$`).exec(token.slice(prefix.length)) : null;
-        if (match) found = match[1] !== undefined ? Number(match[1]) * 4 : Number(match[2]);
-      }
-    });
-    return found;
-  }
-  /** 자리표시가 그 폭에서 잡는 높이 — 자기 최소 높이와, 높이가 정해진 자식들의 합(+ gap) 가운데 큰 쪽. */
-  function reserved(root: Element, step: number): number {
-    const gapToken = (root.getAttribute("class") ?? "").split(/\s+/).find((token) => /^gap-\d+$/.test(token));
-    const gap = gapToken ? Number(gapToken.slice(4)) * 4 : 0;
-    const parts = Array.from(root.children).map((child) => heightAt(child, step, "h")).filter((value): value is number => value !== null);
-    const sum = parts.length > 0 ? parts.reduce((total, value) => total + value, 0) + gap * (parts.length - 1) : 0;
-    return Math.max(heightAt(root, step, "min-h") ?? 0, sum);
-  }
+// QA-966부터는 창 폭 단계의 높이 클래스 대신 값이 온 뒤와 같은 글꼴·꼴의 보이지 않는 글이 머리 칸 안에서 높이를 정합니다(메뉴 폭·글꼴이 달라도 같은 줄 수).
+// 그래서 이 시험은 높이 클래스가 아니라 자리표시 세 줄(설명 글·주 값 줄·배지 줄)이 값이 온 뒤 머리의 같은 줄과 같은 배치 클래스(색·보이지 않음 빼고)인지 봅니다.
+describe("QA-650 대상 머리의 읽는 중 자리표시는 값이 온 뒤의 머리와 같은 꼴", () => {
+  /** 줄 수·폭을 정하는 클래스 — 글자색(text-text…)·보이지 않음·위치(relative·block)·빈 칸 숨김(empty:hidden)은 뺍니다. */
+  const layout = (element: Element | null | undefined) =>
+    (element?.getAttribute("class") ?? "").split(/\s+/).filter((token) => token !== "" && !/^(?:text-text|invisible$|relative$|block$|empty:hidden$)/.test(token)).sort();
 
-  it("폭마다(기본·sm·md·lg·xl) 설명 글 + 주 값 줄 + 배지 줄 높이 178·142·106·142·84px를 잡는다", () => {
+  it("설명 글·주 값 줄(캡션·28px 값)·배지 줄 자리가 값이 온 뒤 머리의 같은 줄과 같은 배치 클래스", async () => {
     render(<RegimePage />);
-    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
-    const status = within(header).getByRole("status", { name: "국면을 판정하는 중" });
-    // EntityHeader가 자리표시를 감싸는 칸(div.min-w-0)의 첫 자식이 자리표시입니다.
-    let slot: HTMLElement = status;
-    while (slot.parentElement && !(slot.parentElement.className === "min-w-0")) slot = slot.parentElement;
-    expect(STEPS.map((_, step) => reserved(slot, step))).toEqual([178, 142, 106, 142, 84]);
+    const pendingHeader = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    const rows = Array.from(within(pendingHeader).getByRole("status", { name: "국면을 판정하는 중" }).children).filter(
+      (child) => child.getAttribute("aria-hidden") === "true",
+    );
+    const pending = {
+      description: layout(rows[0].querySelector("p")),
+      valueRow: layout(rows[1].querySelector(".invisible")),
+      value: layout(rows[1].querySelector(".text-value-lg")),
+      badgeRow: layout(rows[2].querySelector(".invisible")),
+    };
+    cleanup();
+
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const header = (await screen.findByRole("heading", { level: 1, name: "시장 국면" })).closest("header") as HTMLElement;
+    await within(header).findByText("확장 (Expansion)");
+    const valueRow = within(header).getByText("지금 판정").parentElement;
+    expect(pending).toEqual({
+      description: layout(within(header).getByText(regimeExpansion().verdict?.summary ?? "")),
+      valueRow: layout(valueRow),
+      value: layout(within(header).getByText("확장 (Expansion)")),
+      badgeRow: layout(valueRow?.nextElementSibling),
+    });
   });
 });
 
@@ -691,7 +691,7 @@ describe("QA-965 판정 근거의 읽는 중 자리표시는 값이 온 뒤의 �
 // 합니다(글꼴이 달라도 같음).
 describe("QA-966 대상 머리 자리표시의 높이는 창 폭이 아니라 머리 칸 안의 보이지 않는 글이 정한다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 세 자리 모두 폭 단계 높이 클래스(h-15·h-9·h-[74px] …)였고 보이지 않는 글이 없었습니다.
-  it.fails("설명 글·주 값 줄·배지 줄 자리에 높이 클래스가 없고, 값이 온 뒤와 같은 글꼴의 보이지 않는 글(설명 14px·값 28px·출처 배지와 축 태그 둘)", () => {
+  it("설명 글·주 값 줄·배지 줄 자리에 높이 클래스가 없고, 값이 온 뒤와 같은 글꼴의 보이지 않는 글(설명 14px·값 28px·출처 배지와 축 태그 둘)", () => {
     render(<RegimePage />);
     const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
     const status = within(header).getByRole("status", { name: "국면을 판정하는 중" });
