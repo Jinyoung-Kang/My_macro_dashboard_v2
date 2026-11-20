@@ -41,7 +41,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("운영자로 올리기 — 다시 읽는 동안(QA-906)", () => {
-  it.fails("쓰기가 끝나고 목록을 다시 읽는 동안 다시 누르거나 보내도 요청은 한 번이고 단추·입력칸은 요청 중", async () => {
+  it("쓰기가 끝나고 목록을 다시 읽는 동안 다시 누르거나 보내도 요청은 한 번이고 단추·입력칸은 요청 중", async () => {
     render(<AdminUsersPage />);
     fireEvent.change(await screen.findByLabelText("m@test.local 역할"), { target: { value: "OWNER" } });
     const dialog = within(await screen.findByRole("dialog", { name: "운영자로 올리기" }));

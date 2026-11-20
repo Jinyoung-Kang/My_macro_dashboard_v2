@@ -31,7 +31,8 @@ const INPUT_BUSY = "aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
  *
  * 운영자로 올리기 대화상자의 오류(틀린 비밀번호·연속 실패 지연)는 대화상자를 열 때부터 있는 알림 영역(role="alert") 안에 그리고, 비밀번호 입력칸이 그 글로
  * 설명됩니다(QA-868 — 예전에는 보낸 뒤 붙는 보통 상자라 낭독되지 않았음). 보내는 동안 입력칸은 읽기 전용 + aria-disabled, 보내기 단추는 공용 Button busy
- * (aria-disabled)라 포커스가 남고, 실패하면 포커스를 비운 비밀번호 칸으로 옮깁니다(QA-909 — 예전에는 진짜 disabled라 body로). 경로·본문·문구·비밀번호 단계는
+ * (aria-disabled)라 포커스가 남고, 실패하면 포커스를 비운 비밀번호 칸으로 옮깁니다(QA-909 — 예전에는 진짜 disabled라 body로). '보내는 동안'은 쓰기 뒤 사용자
+ * 목록을 다시 읽기까지입니다(QA-906). 경로·본문·문구·비밀번호 단계는
  * 그대로입니다. '운영자 비밀번호' 이름표는 이 화면의 다른 폼 칸과 같은 공용 FIELD_LABEL·FIELD_INPUT(13px text-2 — 예전 12px text-3, form-label-styles-mixed의
  * 남은 한 자리)입니다.
  */
@@ -61,8 +62,12 @@ export default function AdminUsersPage() {
   // 창을 열기 전 다른 변경의 오류 글이 창 안에 보이지 않게 합니다.
   const [promote, setPromote] = useState<{ row: AdminUser; tier: string; tried: boolean } | null>(null);
   const [promotePassword, setPromotePassword] = useState("");
+  // 운영자로 올리기의 쓰기와 뒤따른 목록 다시 읽기(save)가 끝날 때까지 대화상자는 요청 중입니다(QA-906 — update.busy는 쓰기가 끝나면 거짓이고 비밀번호는
+  // save가 끝난 뒤에야 비워져, 다시 읽는 동안 단추를 다시 누르거나 Enter를 치면 같은 POST가 한 번 더 갔음).
+  const [promoting, setPromoting] = useState(false);
+  const promoteBusy = update.busy || promoting;
   // 대화상자 안 오류 — 이 창에서 보낸 뒤에만(창을 열기 전 다른 변경의 오류는 보이지 않게).
-  const promoteError = promote?.tried && !update.busy ? update.error : null;
+  const promoteError = promote?.tried && !promoteBusy ? update.error : null;
   const promoteErrorId = useId();
   const promoteInput = useRef<HTMLInputElement>(null);
   const save = async (row: AdminUser, role: string, nextTier: string, ownerPassword?: string): Promise<boolean> => {
@@ -87,10 +92,16 @@ export default function AdminUsersPage() {
   };
   const confirmPromote = async (event: FormEvent) => {
     event.preventDefault();
-    if (!promote || !promotePassword || update.busy) return;
+    if (!promote || !promotePassword || promoteBusy) return;
     setPromote({ ...promote, tried: true });
+    setPromoting(true);
     // 성공하면 닫고, 실패(틀린 비밀번호·연속 실패 지연)면 창을 둔 채 오류를 보입니다 — 비밀번호는 다시 치게 비웁니다.
-    const ok = await save(promote.row, "OWNER", promote.tier, promotePassword);
+    let ok = false;
+    try {
+      ok = await save(promote.row, "OWNER", promote.tier, promotePassword);
+    } finally {
+      setPromoting(false);
+    }
     setPromotePassword("");
     if (ok) setPromote(null);
     // 실패면 다시 칠 비밀번호 칸으로 — 비운 칸이라 보내기 단추가 켜짐 조건으로 꺼지고, 그 단추에 있던 포커스가 body로 떨어졌습니다(QA-909).
@@ -143,7 +154,7 @@ export default function AdminUsersPage() {
       <Dialog
         open={promote !== null}
         onOpenChange={(open) => {
-          if (!open && !update.busy) setPromote(null);
+          if (!open && !promoteBusy) setPromote(null);
         }}
         title="운영자로 올리기"
         description={
@@ -153,19 +164,19 @@ export default function AdminUsersPage() {
           </>
         }
         size="sm"
-        dismissible={!update.busy}
+        dismissible={!promoteBusy}
         showClose={false}
       >
-        <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={update.busy}>
+        <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={promoteBusy}>
           {/* 입력칸과 알림 영역을 한 칸으로 묶어, 빈 영역이 폼 간격(gap-3)을 하나 더 만들지 않게 합니다 — 오류가 있을 때만 12px 위 여백(예전 간격과 같음). */}
           <div className="flex flex-col">
             <label className={FIELD_LABEL}>
               운영자 비밀번호
               <input ref={promoteInput} type="password" autoComplete="off" value={promotePassword}
-                readOnly={update.busy} aria-disabled={update.busy || undefined}
+                readOnly={promoteBusy} aria-disabled={promoteBusy || undefined}
                 aria-describedby={promoteError ? promoteErrorId : undefined}
                 onChange={(event) => setPromotePassword(event.target.value)}
-                className={`${FIELD_INPUT}${update.busy ? ` ${INPUT_BUSY}` : ""}`} />
+                className={`${FIELD_INPUT}${promoteBusy ? ` ${INPUT_BUSY}` : ""}`} />
             </label>
             <div role="alert">
               {promoteError && (
@@ -176,9 +187,9 @@ export default function AdminUsersPage() {
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" type="button" disabled={update.busy} onClick={() => setPromote(null)}>취소</Button>
-            <Button variant="primary" type="submit" busy={update.busy} disabled={!promotePassword}>
-              {update.busy ? "확인하는 중…" : "운영자로 올리기"}
+            <Button variant="secondary" type="button" disabled={promoteBusy} onClick={() => setPromote(null)}>취소</Button>
+            <Button variant="primary" type="submit" busy={promoteBusy} disabled={!promotePassword}>
+              {promoteBusy ? "확인하는 중…" : "운영자로 올리기"}
             </Button>
           </div>
         </form>
