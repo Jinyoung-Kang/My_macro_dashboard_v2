@@ -147,14 +147,14 @@ describe("불러오는 중", () => {
 
 // QA-944(작업대 D5 전 QA 관찰 — P8 문구 결정 거리, 사용자 결정 '둘 다 고침'): 한국 머리 '자세히' 설명이 '네 계좌 — 규칙 · Claude · KODEX 200 · 한국 60/40'
 // (개편 전 글 그대로)였다 — 한국은 같은 돈·같은 날 출발한 다섯 계좌(백엔드 PaperBooks KR — 계좌2는 계좌1의 출발일로 출발, ClaudeBookService.startKrClaude2).
-// 미국 글은 그대로(같은 날 출발한 네 계좌 + 늦게 출발한 계좌2 줄). 재현 커밋에서는 첫 사례가 it.fails — 'expected '…네 계좌…' to contain '다섯 계좌…''.
+// 미국 글은 그대로(같은 날 출발한 네 계좌 + 늦게 출발한 계좌2 줄). 재현 커밋에서는 첫 사례가 it.fails였다 — 'expected '…네 계좌…' to contain '다섯 계좌…''.
 describe("QA-944 머리 '자세히' 설명의 계좌 수", () => {
   const description = () => {
     const toggle = screen.getByRole("button", { name: "자세히" });
     return (document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement).textContent ?? "";
   };
 
-  it.fails("한국은 같은 날 출발한 다섯 계좌 — 규칙 · Claude 계좌1 · Claude 계좌2 · KODEX 200 · 한국 60/40", () => {
+  it("한국은 같은 날 출발한 다섯 계좌 — 규칙 · Claude 계좌1 · Claude 계좌2 · KODEX 200 · 한국 60/40", () => {
     render(<PaperPage market="KR" />);
     expect(description()).toContain("같은 돈·같은 날 출발한 다섯 계좌 — 규칙 · Claude 계좌1 · Claude 계좌2 · KODEX 200(069500) · 한국 60/40(069500 60%·153130 40%)");
     expect(description()).not.toContain("네 계좌");
