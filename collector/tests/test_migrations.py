@@ -244,3 +244,40 @@ def test_본문_보기_예산은_store의_한_함수로_센다(store):
     assert [store.take_search_budget("*", "article", day, 2) for _ in range(3)] == [True, True, False]
     assert store.take_search_budget("news.example.com", "article", day, 20) is True
     assert store.take_search_budget("*", "article", date(2026, 11, 18), 2) is True, "날짜가 바뀌면 1부터"
+
+
+def test_V40_보안_공지_표_여섯은_두_번_적용해도_되고_틀을_지킨다(conn):
+    """보안 공지(ADR 0046) — 수집기 표 다섯(공지 둘·버전 목록 셋)과 백엔드 알림 기록 하나. 값은 가짜(공개 저장소)."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v40 = next(m for m in found if m.version == 40)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 40])
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 40]) == [40]
+    conn.execute(v40.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v40.sql)
+
+    tables = {r["table_name"] for r in conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")}
+    assert {"security_notices", "security_notice_rows", "env_inventory", "env_components", "env_pending_updates",
+            "security_alerts"} <= tables
+
+    conn.execute("INSERT INTO security_notices (ntt_id, title, posted_on, url) VALUES (1, '합성 공지', '2026-11-01', 'https://example.org/1')")
+    row = conn.execute("SELECT detail_status, detail_attempts, pinned, layout, products, notes FROM security_notices").fetchone()
+    assert row == {"detail_status": "pending", "detail_attempts": 0, "pinned": False, "layout": None, "products": [], "notes": []}
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("UPDATE security_notices SET detail_status = 'done'")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("UPDATE security_notices SET layout = 'table'")
+    conn.execute("INSERT INTO security_notice_rows (ntt_id, row_no, cve, product, affected, fixed) "
+                 "VALUES (1, 0, 'CVE-0000-0001', '합성 제품', '1.0 미만', '1.0 이상')")
+    conn.execute("DELETE FROM security_notices WHERE ntt_id = 1")
+    assert conn.execute("SELECT count(*) AS n FROM security_notice_rows").fetchone()["n"] == 0, "공지를 지우면 행도"
+
+    conn.execute("INSERT INTO env_inventory (collected_at, host_included) VALUES ('2026-11-21T00:00:00Z', false)")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO env_inventory (id, collected_at, host_included) VALUES (2, now(), true)")
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO env_inventory (collected_at, host_included) VALUES (now(), true)")
+    conn.execute("INSERT INTO env_components (source, ecosystem, name, version) VALUES ('host', 'deb', 'fake-pkg', '1.0-1')")
+    conn.execute("INSERT INTO env_pending_updates (package, installed, candidate, repos, security) "
+                 "VALUES ('fake-pkg', '1.0-1', '1.0-2', 'fake-security', true)")
+    conn.execute("INSERT INTO security_alerts (ntt_id, alerted_at) VALUES (1, now())")
