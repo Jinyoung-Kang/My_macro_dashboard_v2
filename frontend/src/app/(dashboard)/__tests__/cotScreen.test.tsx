@@ -23,7 +23,7 @@ vi.mock("@/components/charts", () => ({
   }: {
     ariaLabel?: string;
     grid?: boolean;
-    series: { color: string }[];
+    series: { color: string; valueDigits?: number }[];
     tooltipOrder?: string;
     tooltipSeriesColors?: boolean;
   }) => (
@@ -32,6 +32,7 @@ vi.mock("@/components/charts", () => ({
       data-name={ariaLabel ?? ""}
       data-grid={grid ? "yes" : "no"}
       data-colors={series.map((entry) => entry.color).join(",")}
+      data-digits={series.map((entry) => (entry.valueDigits === undefined ? "기본" : String(entry.valueDigits))).join(",")}
       data-tooltip-order={tooltipOrder ?? ""}
       data-tooltip-colors={String(Boolean(tooltipSeriesColors))}
     />
@@ -219,6 +220,17 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(chart.dataset.grid).toBe("yes");
     expect(chart.dataset.colors).toBe("#3987e5,#d95926,#8B949E");
     expect(screen.getByText("계약 코드 13874A")).toBeTruthy();
+  });
+
+  // QA-942(결정 거리 chart-negative-ascii-hyphen-cot-correlation — P8): 순포지션은 계약 수(정수)인데 세 계열에 valueDigits가 없어 툴팁이 공용 기본
+  // 소수 둘째 자리('-134,368.00 계약')였다. 세 계열 모두 0이어야 한다(눈금은 precision 0 그대로). 재현 커밋에서는 it.fails —
+  // 'expected '기본,기본,기본' to be '0,0,0''.
+  it.fails("포지셔닝 추이 툴팁의 계약 수는 정수 — 세 계열 모두 valueDigits 0", async () => {
+    const { container } = render(<CotPage />);
+    await screen.findByRole("region", { name: `${S_AND_P} 포지셔닝 요약` });
+
+    const chart = container.querySelector<HTMLElement>("[data-chart='lines']")!;
+    expect(chart.dataset.digits).toBe("0,0,0");
   });
 
   // 2026-11-18 사용자 요구: 툴팁 줄은 그 주 순포지션이 큰 차례(부호 포함 — 롱이 위), 글자는 선 색(차례·색 자체는 components/charts/__tests__/seriesTooltip.test.tsx).
