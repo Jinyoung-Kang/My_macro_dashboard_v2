@@ -37,11 +37,13 @@ export type ScrollRegionProps =
  * - 상자에 포커스가 있는 동안 넘침이 풀려도(창을 넓힘) 정지점을 떼지 않습니다 — 떼면 포커스가 <body>로 떨어집니다. 포커스가 떠날 때 다시 잽니다.
  *
  * 돌려주는 `overflow`는 잰 넘침(모르면 null) — 넘칠 때만 띄우는 안내(DataTable scrollHint="overflow"의 '좌우로 넘겨 보세요')에 씁니다.
+ * `label`은 글 또는 잰 넘침(모르면 null)을 받아 이름을 돌려주는 함수입니다 — 두 방향을 보는 상자가 넘치는 방향에 맞춘 이름을 붙일 때(DataTable 세로 한도 —
+ * QA-907). 함수도 재기 전에는 null을 받으므로 서버 그리기·첫 그리기의 이름은 부르는 쪽이 정한 '모름' 이름 그대로입니다.
  * `enabled`가 거짓이면(상자를 그리지 않는 빈 상태) 재지 않고, 참이 되면(상자가 생김) 다시 관찰합니다.
  */
 export function useScrollRegion(
   ref: RefObject<HTMLElement | null>,
-  label: string,
+  label: string | ((overflow: ScrollOverflow | null) => string),
   { axis, enabled = true, watch }: { axis: ScrollAxis; enabled?: boolean; watch?: unknown },
 ): { overflow: ScrollOverflow | null; regionProps: ScrollRegionProps } {
   const [overflow, setOverflow] = useState<ScrollOverflow | null>(null);
@@ -90,6 +92,6 @@ export function useScrollRegion(
   const stop = overflow === null || overflowsOn(overflow, axis);
   return {
     overflow,
-    regionProps: stop ? { tabIndex: 0, role: "region", "aria-label": label } : { tabIndex: -1 },
+    regionProps: stop ? { tabIndex: 0, role: "region", "aria-label": typeof label === "function" ? label(overflow) : label } : { tabIndex: -1 },
   };
 }

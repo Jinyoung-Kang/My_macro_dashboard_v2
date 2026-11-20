@@ -82,14 +82,14 @@ function renderTable(maxHeight?: number) {
 }
 
 describe("DataTable 스크롤 영역 이름 — 넘침 방향(QA-907)", () => {
-  it.fails("세로 한도가 있고 세로로만 넘치면 '(스크롤)'", () => {
+  it("세로 한도가 있고 세로로만 넘치면 '(스크롤)'", () => {
     boxSize = TALL;
     renderTable(480);
     const region = screen.getByRole("region", { name: "합성 표 (스크롤)" });
     expect(region.tabIndex).toBe(0);
   });
 
-  it.fails("세로 한도가 있고 두 방향 모두 넘치면 '(스크롤)'", () => {
+  it("세로 한도가 있고 두 방향 모두 넘치면 '(스크롤)'", () => {
     boxSize = BOTH;
     renderTable(480);
     expect(screen.getByRole("region", { name: "합성 표 (스크롤)" }).tabIndex).toBe(0);
