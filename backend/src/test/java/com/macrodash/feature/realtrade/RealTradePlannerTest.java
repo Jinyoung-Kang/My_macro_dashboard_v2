@@ -356,7 +356,7 @@ class RealTradePlannerTest {
     @DisplayName("QA-376 고정: 범위를 전량 매도 대상으로 좁힌 계획의 회전율 금액 = 정수 보유 × 현재가 — 매도 가능 수량을 몰라 주문은 못 내도 세고, "
             + "이 기능 주문 진행 중이면 0. 책 밖 보유는 1% 문턱이 없지만 비중 0을 비중 맵에 넣으면 문턱에 걸린다(묶음의 비중 0 표시는 범위로만)")
     void scopedLiquidationTurnover() {
-        // 묶음의 회전율 보완(RealTradeJob.withWaitingLiquidations)이 부르는 모양 — 책 A 10%(목표대로), 책에 없는 C 175주 × 40,000 = 700만
+        // 묶음의 회전율 보완(RealTradeJob.withRestricted)이 부르는 모양 — 책 A 10%(목표대로), 책에 없는 C 175주 × 40,000 = 700만
         Account account = new Acct().cash("0").hold(A, "20", "50000").hold(C, "175", "40000").sellable(C, null).build();
         Plan waiting = RealTradePlanner.sync(Map.of(A, 10.0), E, account, Set.of(), BigDecimal.ZERO, RULES, true, Set.of(C), null);
         assertThat(waiting.turnoverAmount()).isEqualByComparingTo("7000000");

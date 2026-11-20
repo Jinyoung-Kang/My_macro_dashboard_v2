@@ -574,7 +574,7 @@ class RealTradeJob {
 
     /**
      * 사전 조회와 그것으로 낸 계획. {@code restricted}는 이번 계획에서 매매 제한(VI·거절 대기)으로 뺀 종목, {@code ownBlocked}는 그것을 더하기 전의
-     * 이 기능 미종료 주문 종목({@link Fresh#blocked}) — 묶음의 회전율이 매매 제한으로 기다리는 몫을 셀 때 씁니다({@link #withWaitingLiquidations}).
+     * 이 기능 미종료 주문 종목({@link Fresh#blocked}) — 묶음의 회전율이 매매 제한으로 기다리는 몫을 셀 때 씁니다({@link #withRestricted}).
      */
     private record Planned(Fresh fresh, Plan plan, Set<String> restricted, Set<String> ownBlocked) {
     }
@@ -888,7 +888,7 @@ class RealTradeJob {
 
     /**
      * 그날 시가 맞추기 묶음을 만들고(목표 비중·흡수한 모의 주문·E 고정) 보냅니다. 목표가 없거나 불완전하면 보내지 않습니다(빈 목표로 '모두 팔기'를 하지 않게).
-     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 매매 제한으로 지금 빠진 책의 종목·전량 매도 대상의 몫을 더하고({@link #withWaitingLiquidations},
+     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 매매 제한으로 지금 빠진 책의 종목·전량 매도 대상의 몫을 더하고({@link #withRestricted},
      * QA-376·QA-949), 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)를 빼고 셉니다
      * ({@link RealTradePlanner#withoutStops}, QA-302 — 보내는 주문에는 그대로 있음), 예외는 {@link #turnoverHalt}(켜기·방식 바꾸기·멈춤 해제 뒤 첫
      * 묶음, 그리고 남은 몫으로 이어 준 묶음 중 목표가 앞 묶음과 거의 같은 것), 그 뒤 규칙 계좌 재선정 다음 묶음({@link #rebalanceCheck} — 입구와 열두
@@ -924,7 +924,7 @@ class RealTradeJob {
         Plan plan = planned0.plan();
         Optional<Instant> start = c.cfg.syncPending() ? followStart() : Optional.empty();
         // 회전율에는 매매 제한으로 기다리는 책의 종목·전량 매도 대상의 몫도 셈(QA-376·QA-949 — 풀리면 그날 창 안에서 나감). 그런 종목이 없으면 plan 그대로.
-        Judged judged = withWaitingLiquidations(c, planned0, weightPct);
+        Judged judged = withRestricted(c, planned0, weightPct);
         Plan turnover = judged.plan();
         Set<String> stops = null;
         BigDecimal proceeds = null;
@@ -1297,7 +1297,7 @@ class RealTradeJob {
      * QA-302). 이 기능의 미종료 주문 종목({@code Planned.ownBlocked})은 세지 않습니다. 주문·건너뜀은 바꾸지 않고, 더할 종목이 없으면 {@code plan}과
      * {@link Fresh#blocked} 그대로입니다.
      */
-    private Judged withWaitingLiquidations(Cycle c, Planned planned, Map<String, Double> weightPct) {
+    private Judged withRestricted(Cycle c, Planned planned, Map<String, Double> weightPct) {
         Fresh f = planned.fresh();
         Plan plan = planned.plan();
         Set<String> waiting = new TreeSet<>();
