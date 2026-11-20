@@ -49,7 +49,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("쪽을 넘겨 새로 읽는 동안의 포커스(QA-902)", () => {
-  it.fails("합성 목록 — 쪽 번호를 누르면 목록 패널 제목으로, 값이 와도 거기 남는다", async () => {
+  it("합성 목록 — 쪽 번호를 누르면 목록 패널 제목으로, 값이 와도 거기 남는다", async () => {
     let finish: (value: unknown) => void = () => {};
     api.apiGetShared.mockImplementation((path: string) =>
       path.endsWith("page=1") ? Promise.resolve({ page: 1, pages: 3 }) : new Promise((resolve) => (finish = resolve)),
@@ -66,7 +66,7 @@ describe("쪽을 넘겨 새로 읽는 동안의 포커스(QA-902)", () => {
     expect(document.activeElement).toBe(heading);
   });
 
-  it.fails("정보 수집 뉴스 목록 — '다음'을 누르면 '뉴스·글' 패널 제목으로", async () => {
+  it("정보 수집 뉴스 목록 — '다음'을 누르면 '뉴스·글' 패널 제목으로", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/info/catalog")) return Promise.resolve(CATALOG);
       if (path.startsWith("/api/info/items?kind=blog") && path.includes("page=1")) {
