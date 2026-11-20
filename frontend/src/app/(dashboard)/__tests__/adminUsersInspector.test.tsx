@@ -4,7 +4,8 @@
  * - 이메일이 검사를 여는 줄 단추(좁은 화면 대화상자). 검사 칸: 이메일·역할·등급·메일 인증·가입·사용자 번호(속성 목록) + 그 사용자의 최근 감사 기록(이미 읽은
  *   100건 안, 최근 다섯 줄) — 검사를 열어도 새 요청 0. 기록이 없으면 그 사실.
  * - 메일 인증은 아이콘 + 글(인증됨·대기). 감사 기록 표는 조밀 표·개수 줄, 동작은 고정폭.
- * - 회원 만들기 폼 이름표는 공용 고르기 상자와 같은 13px text-2, 입력칸 폭 상한 22rem(form-label-styles-mixed).
+ * - 회원 만들기 폼 이름표는 공용 고르기 상자와 같은 13px text-2, 입력칸 폭 상한 22rem(form-label-styles-mixed). 운영자로 올리기 대화상자의 '운영자 비밀번호'
+ *   이름표도 같은 공용 FIELD_LABEL·FIELD_INPUT(P8 — 예전 12px text-3).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,7 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { FIELD_INPUT, FIELD_LABEL } from "@/components/ui";
 import AdminUsersPage from "../admin/users/page";
 
 const USERS = [
@@ -77,5 +79,16 @@ describe("사용자 관리 — 표와 검사 칸", () => {
       expect(tierLabel.className, cls).toContain(cls);
     }
     expect(email.className).toContain("sm:max-w-[22rem]");
+  });
+
+  it("운영자로 올리기 대화상자의 '운영자 비밀번호' 이름표·입력칸은 공용 폼 칸(FIELD_LABEL·FIELD_INPUT) — 12px text-3 아님", async () => {
+    render(<AdminUsersPage />);
+    fireEvent.change(await screen.findByLabelText("m@test.local 역할"), { target: { value: "OWNER" } });
+    const dialog = await screen.findByRole("dialog", { name: "운영자로 올리기" });
+    const input = within(dialog).getByLabelText("운영자 비밀번호");
+    const label = input.closest("label") as HTMLElement;
+    expect(label.className).toBe(FIELD_LABEL);
+    expect(label.className).not.toContain("text-text-3");
+    expect(input.className).toBe(FIELD_INPUT);
   });
 });

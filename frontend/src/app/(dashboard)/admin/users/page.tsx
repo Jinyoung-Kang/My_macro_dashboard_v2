@@ -2,7 +2,7 @@
 
 import { FormEvent, useId, useRef, useState } from "react";
 import { DataTable, InspectorFrame, InspectorSubheading, InspectorTrigger, PropertyList } from "@/components/patterns";
-import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, inputClasses, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
+import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { CheckIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -18,7 +18,7 @@ const ROLE_LABEL: Record<string, string> = { OWNER: "운영자", MEMBER: "회원
 const TIER_LABEL: Record<string, string> = { FREE: "무료", PRO: "유료" };
 /** 검사 칸에 보일 그 사용자의 감사 기록 줄 수(이미 읽은 최근 100건 안에서). */
 const AUDIT_LINES = 5;
-/** 요청 중 입력칸 — 꺼진 입력칸(inputClasses의 disabled:)과 같은 흐림·커서. 읽기 전용 + aria-disabled일 때만 붙습니다(QA-909). */
+/** 요청 중 입력칸 — 꺼진 입력칸(공용 inputClasses의 disabled:)과 같은 흐림·커서. 읽기 전용 + aria-disabled일 때만 붙습니다(QA-909). */
 const INPUT_BUSY = "aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
 
 /**
@@ -32,7 +32,8 @@ const INPUT_BUSY = "aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
  * 운영자로 올리기 대화상자의 오류(틀린 비밀번호·연속 실패 지연)는 대화상자를 열 때부터 있는 알림 영역(role="alert") 안에 그리고, 비밀번호 입력칸이 그 글로
  * 설명됩니다(QA-868 — 예전에는 보낸 뒤 붙는 보통 상자라 낭독되지 않았음). 보내는 동안 입력칸은 읽기 전용 + aria-disabled, 보내기 단추는 공용 Button busy
  * (aria-disabled)라 포커스가 남고, 실패하면 포커스를 비운 비밀번호 칸으로 옮깁니다(QA-909 — 예전에는 진짜 disabled라 body로). 경로·본문·문구·비밀번호 단계는
- * 그대로입니다.
+ * 그대로입니다. '운영자 비밀번호' 이름표는 이 화면의 다른 폼 칸과 같은 공용 FIELD_LABEL·FIELD_INPUT(13px text-2 — 예전 12px text-3, form-label-styles-mixed의
+ * 남은 한 자리)입니다.
  */
 export default function AdminUsersPage() {
   const users = useApi<{ users: AdminUser[] }>(endpoints.admin.users, 0);
@@ -153,13 +154,13 @@ export default function AdminUsersPage() {
         <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={update.busy}>
           {/* 입력칸과 알림 영역을 한 칸으로 묶어, 빈 영역이 폼 간격(gap-3)을 하나 더 만들지 않게 합니다 — 오류가 있을 때만 12px 위 여백(예전 간격과 같음). */}
           <div className="flex flex-col">
-            <label className="text-xs text-text-3">
+            <label className={FIELD_LABEL}>
               운영자 비밀번호
               <input ref={promoteInput} type="password" autoComplete="off" value={promotePassword}
                 readOnly={update.busy} aria-disabled={update.busy || undefined}
                 aria-describedby={promoteError ? promoteErrorId : undefined}
                 onChange={(event) => setPromotePassword(event.target.value)}
-                className={`mt-1 w-full ${inputClasses()}${update.busy ? ` ${INPUT_BUSY}` : ""}`} />
+                className={`${FIELD_INPUT}${update.busy ? ` ${INPUT_BUSY}` : ""}`} />
             </label>
             <div role="alert">
               {promoteError && (
