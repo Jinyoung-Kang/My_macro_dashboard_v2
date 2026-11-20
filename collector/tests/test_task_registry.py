@@ -16,8 +16,8 @@ from app import tasks
 # 차단 통과 수집 계층(ADR 0026, polite)의 econ_calendar_tradingview, 장중 스탑 감시(ADR 0032)의 paper_stopwatch_us·paper_stopwatch_kr,
 # 정보 수집(ADR 0035, polite)의 블로그 14·waedge 3·네이버 1, KRX 정보데이터시스템(ADR 0036)의 info_krx_daily,
 # 속보(ADR 0037)의 info_wire_financialjuice, BLS 공식 발표치(ADR 0040)의 us_bls_actuals, 발표 직후 실제치(ADR 0040 단계 2)의 us_consensus_release,
-# 정보 검색(ADR 0041 단계 3)의 새 피드 묶음 search_feeds(flex)·관심 대상 search_watch(polite)까지.
-EXPECTED_TASKS = 68
+# 정보 검색(ADR 0041 단계 3)의 새 피드 묶음 search_feeds(flex)·관심 대상 search_watch(polite), 보안 공지(ADR 0046)의 kisa_security_notices(flex)까지.
+EXPECTED_TASKS = 69
 
 
 def test_태스크_수와_이름():

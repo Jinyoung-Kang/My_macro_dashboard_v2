@@ -105,6 +105,7 @@ public final class InfoSources {
             new Source("dart_fundamentals", "dart_fundamentals", "국내 종목 재무", "filings", "data", "https://opendart.fss.or.kr/", "금융감독원 Open DART", "official", "/radar"),
             new Source("paper_price_history", "paper_price_history", "미국 유니버스 10년 종가", "paper", "data", "https://finance.yahoo.com/", "Yahoo(yfinance)", "unofficial", "/paper/us"),
             new Source("kr_paper_price_history", "kr_paper_price_history", "한국 계좌 종가 이력", "paper", "data", "https://tossinvest.com/", "토스증권 Open API", "official", "/paper/kr"),
+            new Source("kisa_security_notices", "kisa_security_notices", "보호나라 보안공지(보안 공지)", "ops", "data", "https://www.boho.or.kr/kr/bbs/list.do?menuNo=205020&bbsId=B0000133", "KISA 보호나라·KrCERT/CC", "unofficial", null),
             new Source("run_log_retention", "run_log_retention", "실행 기록·수집 글 정리", "ops", "internal", "", "외부 호출 없음", "internal", "/status"),
             new Source("econ_calendar_tradingview", "calendar.tradingview", "TradingView 경제 캘린더", "global", "calendar", "https://www.tradingview.com/economic-calendar/", "TradingView", "bypass", "/macro"),
             new Source("info_blog_wolfstreet", "blog.wolfstreet", "Wolf Street", "news", "blog", "https://wolfstreet.com/", "Wolf Street", "bypass", "/info/news"),

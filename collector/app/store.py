@@ -1784,6 +1784,120 @@ def source_state(task: str) -> dict | None:
         return conn.execute("SELECT * FROM fetch_source_state WHERE task = %s", (task,)).fetchone()
 
 
+# ------------------------------------------------------------------ 보안 공지 (ADR 0046, V40)
+# security_notices·security_notice_rows는 태스크 kisa_security_notices가 이 함수들로만 씁니다(tests/test_table_ownership.py가 봄).
+def upsert_security_notices(items: Iterable[Any], *, first_page: bool, detail_since: date) -> int:
+    """
+    목록에서 읽은 글을 넣거나 고칩니다 → 처음 넣은 글 수.
+
+    처음 보는 글은 게시일이 ``detail_since`` 이후면 상세 '받을 것'(pending), 그보다 오래면 '받지 않음'(skipped)으로 넣습니다. 이미 있는 글은
+    제목·게시일·번호 칸(비어 있던 때만)을 고치고 상세 상태는 그대로 둡니다. 고정 공지 여부는 목록 1쪽(``first_page``)이 정합니다 — 1쪽을 읽으면
+    그 쪽의 고정 공지만 참이고 나머지는 거짓, 다른 쪽에서는 참으로 바꾸기만 합니다.
+
+    :param items: ``services.kisa_notices.ListItem``
+    """
+    items = list(items)
+    inserted = 0
+    with connection() as conn:
+        for item in items:
+            status = "pending" if item.posted_on >= detail_since else "skipped"
+            row = conn.execute(
+                """
+                INSERT INTO security_notices (ntt_id, list_no, title, posted_on, url, pinned, detail_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ntt_id) DO UPDATE SET
+                    list_no    = COALESCE(EXCLUDED.list_no, security_notices.list_no),
+                    title      = EXCLUDED.title,
+                    posted_on  = EXCLUDED.posted_on,
+                    url        = EXCLUDED.url,
+                    pinned     = CASE WHEN %s THEN EXCLUDED.pinned ELSE security_notices.pinned OR EXCLUDED.pinned END,
+                    updated_at = now()
+                RETURNING (xmax = 0) AS inserted
+                """,
+                (int(item.ntt_id), item.list_no, item.title, item.posted_on, item.url, bool(item.pinned), status, bool(first_page)),
+            ).fetchone()
+            inserted += 1 if row and row["inserted"] else 0
+        if first_page:
+            pinned = [int(item.ntt_id) for item in items if item.pinned]
+            conn.execute("UPDATE security_notices SET pinned = false, updated_at = now() WHERE pinned AND NOT (ntt_id = ANY(%s))",
+                         (pinned,))
+    return inserted
+
+
+def security_list_bounds() -> dict:
+    """
+    목록 메우기의 기준 → {maxNo, minNo, oldestNumbered}: 번호 칸이 있는 글의 가장 큰·작은 번호와 그 가운데 가장 오래된 게시일(없으면 None).
+    """
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT max(list_no) AS max_no, min(list_no) AS min_no, min(posted_on) FILTER (WHERE list_no IS NOT NULL) AS oldest "
+            "FROM security_notices"
+        ).fetchone()
+    return {"maxNo": row["max_no"], "minNo": row["min_no"], "oldestNumbered": row["oldest"]}
+
+
+def security_pending_details(limit: int, *, max_attempts: int, since: date) -> list[int]:
+    """
+    상세를 받을 글 번호 — 게시일이 ``since`` 이후이고 아직 받지 않았거나(pending) 받지 못한(failed) 글 가운데 시도가 ``max_attempts``보다 적은 것,
+    최근 글부터 ``limit``건.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ntt_id FROM security_notices WHERE detail_status IN ('pending', 'failed') AND detail_attempts < %s "
+            "AND posted_on >= %s ORDER BY posted_on DESC, ntt_id DESC LIMIT %s",
+            (int(max_attempts), since, int(limit)),
+        ).fetchall()
+    return [int(r["ntt_id"]) for r in rows]
+
+
+def save_security_detail(ntt_id: int, detail: Any, *, now: datetime | None = None) -> None:
+    """
+    상세 한 건을 적습니다 — 틀·제품명·'※' 문장·본문 글자와 4열 표의 행(그 공지의 행을 통째로 바꿈)을 한 트랜잭션으로.
+
+    :param detail: ``services.kisa_notices.Detail``
+    """
+    when = now or datetime.now(timezone.utc)
+    with transaction(), connection() as conn:
+        updated = conn.execute(
+            """
+            UPDATE security_notices SET detail_status = 'ok', detail_attempts = detail_attempts + 1, detail_error = NULL,
+                   layout = %s, products = %s, notes = %s, body_text = %s, detail_fetched_at = %s, updated_at = now()
+            WHERE ntt_id = %s
+            """,
+            (detail.layout, Jsonb(list(detail.products)), Jsonb(list(detail.notes)), detail.body_text, when, int(ntt_id)),
+        ).rowcount
+        if not updated:
+            raise ValueError(f"목록에 없는 공지: {ntt_id}")
+        conn.execute("DELETE FROM security_notice_rows WHERE ntt_id = %s", (int(ntt_id),))
+        if detail.rows:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO security_notice_rows (ntt_id, row_no, cve, product, affected, fixed) VALUES (%s, %s, %s, %s, %s, %s)",
+                    [(int(ntt_id), index, row.cve, row.product, row.affected, row.fixed) for index, row in enumerate(detail.rows)],
+                )
+
+
+def mark_security_detail_failed(ntt_id: int, reason: str) -> None:
+    """상세를 받지 못했거나 틀이 깨짐 — 시도 수를 올리고 사유 한 줄(주소·본문 없음)을 남깁니다. 받아 둔 내용은 그대로."""
+    with connection() as conn:
+        conn.execute(
+            "UPDATE security_notices SET detail_status = CASE WHEN detail_status = 'ok' THEN 'ok' ELSE 'failed' END, "
+            "detail_attempts = detail_attempts + 1, detail_error = %s, updated_at = now() WHERE ntt_id = %s",
+            ((reason or "")[:300] or None, int(ntt_id)),
+        )
+
+
+def security_notice(ntt_id: int) -> dict | None:
+    """공지 한 행과 표 행(시험·진단용)."""
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM security_notices WHERE ntt_id = %s", (int(ntt_id),)).fetchone()
+        if row is None:
+            return None
+        rows = conn.execute("SELECT cve, product, affected, fixed FROM security_notice_rows WHERE ntt_id = %s ORDER BY row_no",
+                            (int(ntt_id),)).fetchall()
+    return {**row, "rows": [dict(r) for r in rows]}
+
+
 # ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)
 # search_watches·search_media_excludes는 백엔드 표라 읽기만 합니다(ADR 0008 — paper_settings 선례). search_watch_items·fetch_budgets는
 # 수집기 표라 여기서만 씁니다(tests/test_table_ownership.py가 봄).
