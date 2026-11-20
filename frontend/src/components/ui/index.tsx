@@ -2,7 +2,7 @@
 
 import { Children, ReactNode, useId, useLayoutEffect, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
-import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, textDeltaDirection, withMinusSign, withoutLeadingIcon } from "@/lib/format";
+import { formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
   FOCUS_RING,
@@ -154,62 +154,6 @@ export function PageHeader({
       </div>
       {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </header>
-  );
-}
-
-/** 지표 칸 (구버전 st.metric에 해당) — 4px·1px 경계·안쪽 12px, 값은 KPI 크기(20px, lg 24px — 작업대 실행 명세 §3-6)·tabular-nums. */
-export function Metric({
-  label,
-  value,
-  delta,
-  deltaText,
-  deltaDigits,
-  caption,
-  note,
-  source,
-  tone,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  delta?: number | null;
-  deltaText?: string;
-  /** deltaText에 찍는 소수 자릿수 — 색도 같은 자릿수로 판단합니다("0.00인데 파란색" 방지). */
-  deltaDigits?: number;
-  caption?: ReactNode;
-  note?: ReactNode;
-  /** 이 지표 하나의 출처 (카드 전체 출처와 다를 때) */
-  source?: ReactNode;
-  tone?: string;
-}) {
-  // 변화 줄 — 색만으로 등락을 전하지 않게 ▲▼(읽기에서 뺌, 12px)와 읽어 주는 방향 글을 붙이고, 음수 부호는 −(U+2212)로 그립니다(변화 칩과 같은 문법 — QA-525).
-  // 방향·색은 보이는 글의 첫 부호 숫자를 따르고(글을 다른 자릿수·단위로 찍은 칸 — 매크로 카드 '+0.004'·순유동성 '+40.0억 달러', QA-527), 부호 숫자가 없으면
-  // 값과 자릿수(deltaDigits)로 판정합니다. 글이 '—'(모름)이면 방향 표시를 두지 않습니다.
-  const shownDelta = deltaText ?? EMPTY;
-  const direction =
-    shownDelta.trim() === "" || shownDelta.trim() === EMPTY ? null : (textDeltaDirection(shownDelta) ?? deltaDirection(delta, deltaDigits));
-  const deltaTone =
-    direction === "up" ? "text-up" : direction === "down" ? "text-down" : direction === "flat" ? "text-text-2" : deltaColor(delta, deltaDigits);
-  return (
-    <div className="min-w-0 rounded-control border border-border bg-surface p-3">
-      <div className="text-[13px] font-medium text-text-2">{label}</div>
-      <div className={`mt-1 text-xl font-semibold tabular-nums lg:text-2xl ${tone ?? "text-text"}`}>
-        {value}
-      </div>
-      {(deltaText || delta !== undefined) && (
-        <div className={`mt-1 text-sm tabular-nums ${deltaTone}`}>
-          {direction === "up" || direction === "down" ? (
-            <span aria-hidden="true" className="mr-1 text-xs">
-              {direction === "up" ? "▲" : "▼"}
-            </span>
-          ) : null}
-          {direction ? <span className="sr-only">{direction === "up" ? "상승" : direction === "down" ? "하락" : "변화 없음"}</span> : null}
-          <span>{withMinusSign(shownDelta)}</span>
-        </div>
-      )}
-      {caption && <div className="mt-1 text-xs text-text-3">{caption}</div>}
-      {note && <div className="mt-2 text-xs leading-relaxed text-text-3">{note}</div>}
-      {source && <SourceLine>{source}</SourceLine>}
-    </div>
   );
 }
 
@@ -592,87 +536,6 @@ export function NativeSelect({
       </select>
       <ChevronDownIcon size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3" />
     </span>
-  );
-}
-
-/**
- * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다. 조밀한 행(작업대 실행 명세 §3-7 — 행 32px: 14px 글 + 위아래 6px), 머리는 13px 보조 글과
- * 1px 경계, 행 사이는 옅은 구분선(border-subtle).
- *
- * @param label 표 이름 — 좌우 스크롤 상자(region)의 이름 "{label} (좌우 스크롤)"이 됩니다. 한 화면에 표가 여럿이면 이름을 줘야
- *              랜드마크 목록에서 서로 구별됩니다(주지 않으면 "표 (좌우 스크롤)" — 새 DataTable의 caption과 같은 규칙).
- */
-export function Table<T>({
-  columns,
-  rows,
-  emptyMessage = "표시할 데이터가 없습니다.",
-  rowKey,
-  label,
-}: {
-  columns: {
-    key: string;
-    header: ReactNode;
-    align?: "left" | "right";
-    render: (row: T, index: number) => ReactNode;
-    className?: string;
-  }[];
-  rows: T[];
-  emptyMessage?: string;
-  rowKey: (row: T, index: number) => string;
-  label?: string;
-}) {
-  if (rows.length === 0) {
-    return <EmptyState message={emptyMessage} />;
-  }
-
-  return (
-    <>
-      {/*
-        표는 좁은 화면에서 좌우로 스크롤됩니다. 스크롤바가 보이지 않는 기기에서는
-        오른쪽에 열이 더 있다는 사실을 알 수 없어, 폰에서만 안내를 한 줄 띄웁니다.
-      */}
-      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
-      <div className={`overflow-x-auto ${FOCUS_RING}`} tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
-        <table className="w-full min-w-[640px] border-collapse text-sm">
-          <thead>
-            {/* 머리는 13px 보조 글 — 대문자·자간은 한국어 머리에서 뜻이 없어 뺐습니다. 머리·칸은 낱말 사이에서만 줄을 바꿉니다(break-keep —
-                기본 줄바꿈은 좁은 칸에서 한글 낱말을 '기준/일'처럼 글자 사이에서 끊었음, QA-526). 낱말 안 꺾기(wrap-anywhere)는 넣지 않습니다 —
-                칸의 최소 폭을 한 글자로 줄여 같은 꺾임을 다시 냄. 칸이 넓어지면 아래 가로 스크롤 상자 안에서 넘깁니다. */}
-            <tr className="border-b border-border text-[13px] text-text-2">
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  className={`break-keep px-3 py-1.5 font-medium ${
-                    column.align === "right" ? "text-right" : "text-left"
-                  } ${column.className ?? ""}`}
-                >
-                  {column.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={rowKey(row, index)}
-                className="border-b border-border-subtle last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
-              >
-                {columns.map((column) => (
-                  <td
-                    key={column.key}
-                    className={`break-keep px-3 py-1.5 tabular-nums ${
-                      column.align === "right" ? "text-right" : "text-left"
-                    } ${column.className ?? ""}`}
-                  >
-                    {column.render(row, index)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 
