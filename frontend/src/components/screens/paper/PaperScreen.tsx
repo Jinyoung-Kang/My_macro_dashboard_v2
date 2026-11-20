@@ -9,7 +9,7 @@ import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
 import { Button, Callout, ErrorState, Loading, Tabs } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
 import { isTimedBook, PAPER_SOURCES, paperTabInMarket, paperTabsFor, type PaperTabKey } from "@/lib/paper";
@@ -92,7 +92,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
   // 머리 칸 둘(작업대 P6 — PaperTabHeader 계약): 탭의 섹션이 계좌 고르기·동작을 이 칸으로 보냅니다(포털). 칸 요소는 콜백 ref로 받아 공급자에 넘깁니다.
   const [accountSlot, setAccountSlot] = useState<HTMLElement | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
-  const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
+  const { data, loading, error, reload, refreshError, failedAt } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
   // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로). 시장 제한 칸('ISA 계좌')은 한국에만.
   const tabs = paperTabsFor(market).map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
@@ -186,6 +186,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
               : null
           }
           refreshError={refreshError}
+          // 개요를 처음 읽는 동안 머리의 계좌 칸·한계 단추 자리(QA-956) — 계좌 칸은 그 칸을 채우는 탭(개요·보유·체결·결정 로그)만.
+          reserve={firstLoadPending({ data, loading, failedAt }) ? { account: accountReserveText(current.key, korea), limits: true } : null}
           realMarker={current.key === "real" || current.key === "isa"}
           onAccountSlot={setAccountSlot}
           onActionsSlot={setActionsSlot}
@@ -292,6 +294,18 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       </div>
     </PaperHeaderSlotsProvider>
   );
+}
+
+/**
+ * 머리 계좌 칸 자리의 글(QA-956) — 개요가 오기 전에는 선택지를 모르므로, 그 칸을 채우는 탭의 흔한 가장 긴 선택지 꼴로 폭을 잡습니다(보이지 않음 — 화면에
+ * 내지 않는 글): 개요 탭은 계좌 이름(백엔드 PaperBooks 이름 — 'Claude 계좌1'·'한국 Claude 계좌1'), 보유·체결·결정 로그는 이름 + 상태('· 운용 중' — lib/paper
+ * bookOptions). 계좌 칸이 없는 탭은 null.
+ */
+function accountReserveText(tab: PaperTabKey, korea: boolean): string | null {
+  const name = korea ? "한국 Claude 계좌1" : "Claude 계좌1";
+  if (tab === "overview") return name;
+  if (tab === "holdings" || tab === "decisions") return `${name} · 운용 중`;
+  return null;
 }
 
 /** 한국 계좌마다의 처음 현금(원 정수) — 개요 책 목록의 값(배포 설정). 모르면 null(문장에서 뺌 — 1억 원을 지어내지 않음). */

@@ -52,13 +52,14 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const settled = () => act(async () => {});
-const header = () => screen.getByRole("banner");
+/** 모의매매 머리(제목 h1의 header — 패널 머리도 header라 banner 이름으로 고르지 않음). */
+const header = () => screen.getByRole("heading", { level: 1 }).closest("header") as HTMLElement;
 const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 const reserve = (name: string) => header().querySelector(`[data-paper-header-reserve="${name}"]`);
 
 describe("모의매매 머리 첫 적재 자리(QA-956)", () => {
   for (const tab of ["overview", "holdings", "decisions"] as PaperTabKey[]) {
-    it.fails(`${tab}: 개요를 읽는 동안 계좌 칸 자리와 한계 단추 자리 — 보이지 않고 읽히지 않음, 개요가 오면 빠짐`, async () => {
+    it(`${tab}: 개요를 읽는 동안 계좌 칸 자리와 한계 단추 자리 — 보이지 않고 읽히지 않음, 개요가 오면 빠짐`, async () => {
       render(<PaperScreen market="US" initialTab={tab} />);
       await settled();
       const account = reserve("account");
@@ -83,7 +84,7 @@ describe("모의매매 머리 첫 적재 자리(QA-956)", () => {
     });
   }
 
-  it.fails("계좌 고르기가 없는 탭(프레임)은 한계 단추 자리만", async () => {
+  it("계좌 고르기가 없는 탭(프레임)은 한계 단추 자리만", async () => {
     render(<PaperScreen market="US" initialTab="framework" />);
     await settled();
     expect(reserve("account")).toBeNull();
