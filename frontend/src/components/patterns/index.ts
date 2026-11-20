@@ -37,3 +37,4 @@ export { Sparkline } from "./Sparkline";
 export { SplitPane } from "./SplitPane";
 export { StatGrid, StatTile } from "./StatTile";
 export { Timeline, TimelineSkeleton, type TimelineEntry, type TimelineKind } from "./Timeline";
+export { type ScrollAxis, type ScrollOverflow, type ScrollRegionProps, useScrollRegion } from "./useScrollRegion";

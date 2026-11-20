@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   deltaColor, deltaDirection, textDeltaDirection, withMinusSign, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
+  formatChartNumber,
   formatKstSeconds,
   formatLatency,
   formatSignedMinus,
@@ -200,6 +201,20 @@ describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
   it("천 단위 구분과 자릿수", () => {
     expect(formatSignedMinus(-12345.678, 1).text).toBe(`${MINUS}12,345.7`);
     expect(formatSignedMinus(1500, 0).text).toBe("+1,500");
+  });
+});
+
+describe("QA-941 차트 숫자(formatChartNumber) — formatNumber와 같은 글에 음수 부호만 U+2212", () => {
+  it("음수는 −, 양수·0·반올림 뒤 0은 부호 없음, 모르면 —, 천 단위·자릿수는 formatNumber 그대로", () => {
+    expect(formatChartNumber(-1.5, 1)).toBe(`${MINUS}1.5`);
+    expect(formatChartNumber(-12345.678, 0)).toBe(`${MINUS}12,346`);
+    expect(formatChartNumber(2.25)).toBe("2.25");
+    expect(formatChartNumber(0)).toBe("0.00");
+    expect(formatChartNumber(-0.004)).toBe("0.00");
+    expect(formatChartNumber(null)).toBe("—");
+    expect(formatChartNumber(Number.NaN)).toBe("—");
+    // formatNumber 자체는 그대로(여러 화면·복사 글이 씀).
+    expect(formatNumber(-1.5, 1)).toBe("-1.5");
   });
 });
 

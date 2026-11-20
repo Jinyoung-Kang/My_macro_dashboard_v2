@@ -149,6 +149,9 @@ export default function SectorPage() {
       >
         {loading && !data ? (
           <Loading label="섹터 데이터를 불러오는 중…" />
+        ) : error && !data ? (
+          // 값 없이 실패 — 빈 차트의 '표시할 데이터가 없습니다.'(자료 없음)를 그리지 않습니다. 이유·다시 시도는 위 오류 상자 하나(QA-943).
+          <p className="py-6 text-sm text-text-2 break-keep">섹터 데이터를 읽지 못해 막대를 그리지 않았습니다 — 위 안내에서 다시 시도할 수 있습니다.</p>
         ) : (
           <HorizontalBars
             data={chartData}
