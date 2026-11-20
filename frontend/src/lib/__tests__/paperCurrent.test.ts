@@ -88,6 +88,15 @@ describe("단계 표기 — 한 함수", () => {
 });
 
 describe("'오늘' 이름과 기준 글", () => {
+  // QA-945(작업대 D5 전 QA 관찰 — P8 문구 결정 거리, 사용자 결정 '둘 다 고침'): 개요 계좌 줄의 기준 한 줄이 '-0.41%'(formatPercent — ASCII 하이픈)이고
+  // 같은 화면 KPI 띠·변화 칩은 '−0.41%'(U+2212)라 기호가 섞였다. 변화 한 줄의 음수도 U+2212여야 한다(양수 '+'·0은 그대로).
+  // 재현 커밋에서는 it.fails — 'expected '오늘 -0.41% · 10-29 잠정 대비' to be '오늘 −0.41% · 10-29 잠정 대비''.
+  it.fails("QA-945 변화 한 줄의 음수 부호는 U+2212 — 양수 '+'·반올림 뒤 0은 부호 없음", () => {
+    expect(dayChange(current({ dayChangePct: -0.41 }), REGULAR).text).toBe("오늘 \u22120.41% · 10-29 잠정 대비");
+    expect(dayChange(current({ dayChangePct: 0.42 }), REGULAR).text).toBe("오늘 +0.42% · 10-29 잠정 대비");
+    expect(dayChange(current({ dayChangePct: -0.004 }), REGULAR).text).toBe("오늘 0.00% · 10-29 잠정 대비");
+  });
+
   it("정규장·마감 뒤의 같은 세션만 '오늘' — 휴장(직전 거래일)·개장 전은 'MM-DD 변화', 거래일을 모르면 '변화'", () => {
     expect(dayLabel("2026-10-30", REGULAR)).toBe("오늘");
     expect(dayLabel("2026-10-30", AFTER)).toBe("오늘");
