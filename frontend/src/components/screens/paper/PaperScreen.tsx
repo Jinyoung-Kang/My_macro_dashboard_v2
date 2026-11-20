@@ -194,8 +194,11 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
         />
 
         {/* 시장 고르기(미국 | 한국 두 링크)는 넓은 화면은 머리의 세그먼트(PaperHeader), 좁은 화면은 셸의 하위 메뉴 줄(lib/nav)이 맡습니다. */}
-        {/* 실제 계좌 탭은 개요를 읽는 동안 탭 줄 꼴의 자리(RealTabRowPending — 개요가 오면 그 자리에 탭 줄), 그 밖의 탭은 읽는 중 글. */}
-        {loading && !data && (current.key === "real" ? <RealTabRowPending /> : <Loading label="장부를 읽는 중…" />)}
+        {/* 실제 계좌 탭은 개요를 처음 읽는 동안 탭 줄 꼴의 자리(RealTabRowPending — 개요가 오면 그 자리에 탭 줄), 그 밖의 탭과 실패 뒤 다시 읽는 동안은
+            읽는 중 글(오류 상자와 번갈아 높이가 오르내리지 않게 — QA-970, QA-655 규약). */}
+        {loading && !data && (current.key === "real" && firstLoadPending({ data, loading, failedAt })
+          ? <RealTabRowPending />
+          : <Loading label="장부를 읽는 중…" />)}
         {error && <ErrorState message={error} onRetry={reload} />}
         {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
         {data && !data.available && <Callout tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Callout>}

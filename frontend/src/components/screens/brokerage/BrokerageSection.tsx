@@ -4,9 +4,9 @@ import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StaleBadge } from "@/components/patterns";
-import { Banner, Button, ErrorState, SKELETON_BAR } from "@/components/ui";
+import { Banner, Button, ErrorState, Loading, SKELETON_BAR } from "@/components/ui";
 import { LockIcon, SpinnerIcon } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import {
   brokerageBasisText,
@@ -102,7 +102,7 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
   const [seconds] = useLiveSeconds();
   // 꺼짐(DISABLED) 응답을 받았으면 고른 주기와 상관없이 다시 읽지 않습니다(운영 서버에서만 켜는 기능 — 켜질 때까지 같은 안내).
   const [disabled, setDisabled] = useState(false);
-  const { data, loading, error, reload, refreshError } = useApi<BrokerageAccountResponse>(
+  const { data, loading, error, reload, refreshError, failedAt } = useApi<BrokerageAccountResponse>(
     endpoints.brokerage.account(market),
     disabled ? 0 : brokerageRefreshMs(seconds),
     { followRefresh: false, timeoutMs: TIMEOUT_MS },
@@ -141,7 +141,8 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
         </div>
       )}
 
-      {loading && !data && <AccountPending />}
+      {/* 처음 읽는 동안만 요약 카드 꼴 자리 — 실패 뒤 다시 읽는 동안은 읽는 중 한 줄(오류 상자와 번갈아 높이가 오르내리지 않게 — QA-970, QA-655 규약). */}
+      {loading && !data && (firstLoadPending({ data, loading, failedAt }) ? <AccountPending /> : <Loading label="실제 계좌를 읽는 중…" />)}
       {/* 요청 자체가 실패(권한·백엔드 오류·시간 초과)하면 빈 표가 아니라 이유를 보입니다 — 앞서 받은 값이 있으면 아래 '이전 값'으로. */}
       {error && <ErrorState message={`실제 계좌를 읽지 못했습니다 — ${error}`} onRetry={reload} />}
 

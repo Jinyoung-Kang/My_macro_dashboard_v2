@@ -50,7 +50,7 @@ afterEach(() => {
 
 describe("QA-970 실패 뒤 다시 읽는 동안은 큰 자리표시 대신 한 줄", () => {
   // 수정 전(재현 커밋에서는 it.fails): 다시 시도로 다시 읽는 동안 요약 카드 꼴 자리(타일 다섯)가 다시 나왔습니다.
-  it.fails("실제 계좌 — 실패 뒤 다시 시도하는 동안 요약 카드 꼴 자리 없이 읽는 중 한 줄", async () => {
+  it("실제 계좌 — 실패 뒤 다시 시도하는 동안 요약 카드 꼴 자리 없이 읽는 중 한 줄", async () => {
     failOnceThenPending("/api/brokerage/account", "실제 계좌 응답 500");
     render(<PaperScreen market="KR" initialTab="real" />);
     expect(document.querySelector('[data-pending="summary"]')).not.toBeNull();   // 처음 읽는 동안은 큰 자리(QA-964 그대로)
@@ -62,7 +62,7 @@ describe("QA-970 실패 뒤 다시 읽는 동안은 큰 자리표시 대신 한 
   });
 
   // 수정 전(재현 커밋에서는 it.fails): 개요를 다시 읽는 동안 탭 줄 꼴 자리가 다시 나왔습니다.
-  it.fails("모의 개요 — 실패 뒤 다시 시도하는 동안 탭 줄 꼴 자리 없이 '장부를 읽는 중…' 한 줄", async () => {
+  it("모의 개요 — 실패 뒤 다시 시도하는 동안 탭 줄 꼴 자리 없이 '장부를 읽는 중…' 한 줄", async () => {
     failOnceThenPending("/api/paper/overview", "개요 응답 500");
     render(<PaperScreen market="KR" initialTab="real" />);
     expect(screen.getByRole("status", { name: "장부를 읽는 중" })).toBeTruthy();   // 처음 읽는 동안은 탭 줄 꼴 자리(QA-964 그대로)
