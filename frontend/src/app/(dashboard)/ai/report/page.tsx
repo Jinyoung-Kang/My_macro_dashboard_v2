@@ -148,7 +148,8 @@ export default function AiReportPage() {
           <Button
             variant="primary"
             onClick={generate}
-            disabled={busy || !engines.data?.enabled}
+            disabled={!engines.data?.enabled}
+            busy={busy}
           >
             {busy ? `생성 중… ${elapsed}초 경과` : "리포트 생성"}
           </Button>

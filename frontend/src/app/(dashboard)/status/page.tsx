@@ -156,7 +156,8 @@ export default function StatusPage() {
       header: <span className="sr-only">동작</span>,
       align: "right",
       cell: (row) => (
-        <Button size="sm" onClick={() => runTask(row.task)} disabled={running !== null}>
+        // 실행 중인 줄의 단추는 꺼지지 않고 요청 중(busy — aria-disabled, 누름 무시)이라 누른 단추에 포커스가 남습니다(QA-899). 다른 줄은 예전처럼 꺼짐.
+        <Button size="sm" onClick={() => runTask(row.task)} disabled={running !== null && running !== row.task} busy={running === row.task}>
           {running === row.task ? "실행 중…" : "다시 실행"}
         </Button>
       ),

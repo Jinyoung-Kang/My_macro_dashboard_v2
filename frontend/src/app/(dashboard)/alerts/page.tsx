@@ -106,7 +106,8 @@ export default function AlertsPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (demo) return;
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (demo || create.busy) return;
     const params: Record<string, unknown> =
       kind === "FOREIGN_STREAK" ? { target, n: Number(days), ...(target === "STOCK" ? { code } : {}) }
         : kind === "INSTITUTION_NEW" ? { cik }
@@ -134,7 +135,7 @@ export default function AlertsPage() {
           <span className="flex items-center gap-2">
             {/* 자동 갱신(5분)이 실패하면 새 알림이 들어오지 않은 채 남으므로 '새로 읽지 못함'을 붙입니다(QA-104). */}
             <Freshness refreshError={inbox.refreshError} />
-            <Button onClick={async () => { await read.run(null); void inbox.reload(); notifyAlertsRead(); }} disabled={demo || read.busy || !inbox.data?.unread}>
+            <Button onClick={async () => { await read.run(null); void inbox.reload(); notifyAlertsRead(); }} disabled={demo || !inbox.data?.unread} busy={read.busy}>
               모두 읽음
             </Button>
           </span>
@@ -265,7 +266,7 @@ export default function AlertsPage() {
           {create.error && <Callout tone="warn">{create.error}</Callout>}
           {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}
           <Button variant="primary" type="submit"
-            disabled={demo || create.busy || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))}>
+            disabled={demo || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))} busy={create.busy}>
             {create.busy ? "만드는 중…" : "규칙 만들기"}
           </Button>
           {demo && <p className="text-xs text-text-3">{DEMO_READ_ONLY}</p>}

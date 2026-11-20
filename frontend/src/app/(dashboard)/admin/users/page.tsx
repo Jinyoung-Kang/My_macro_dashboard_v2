@@ -90,6 +90,8 @@ export default function AdminUsersPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (create.busy) return;
     // 성공했을 때만 비밀번호 칸을 비웁니다. 실패(메일 중복·형식 오류·연결 끊김)에도 지워 고쳐 다시 보내려면 처음부터
     // 다시 쳐야 했습니다(QA-105, 내 계정의 QA-051과 같음).
     if (await create.run(email, password, tier)) setPassword("");
@@ -173,7 +175,7 @@ export default function AdminUsersPage() {
             options={[{ value: "FREE", label: "무료" }, { value: "PRO", label: "유료" }]} />
           {create.error && <Callout tone="warn">{create.error}</Callout>}
           {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}
-          <Button variant="primary" type="submit" disabled={create.busy || !email || !password}>
+          <Button variant="primary" type="submit" disabled={!email || !password} busy={create.busy}>
             {create.busy ? "만드는 중…" : "회원 만들기"}
           </Button>
         </form>

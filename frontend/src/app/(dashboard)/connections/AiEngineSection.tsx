@@ -119,7 +119,7 @@ export function AiEngineSection() {
         />
 
         <div className="mt-3">
-          <Button variant="primary" onClick={run} disabled={busy || !engines.data?.enabled}>
+          <Button variant="primary" onClick={run} disabled={!engines.data?.enabled} busy={busy}>
             {busy ? "호출 중…" : "선택 모델 호출"}
           </Button>
         </div>

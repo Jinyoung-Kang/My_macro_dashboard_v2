@@ -103,19 +103,19 @@ async function expectBusyKeepsFocus(control: HTMLElement) {
 }
 
 describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
-  it.fails("저장소 상태 '다시 실행'", async () => {
+  it("저장소 상태 '다시 실행'", async () => {
     reads = { [endpoints.status.overview]: STATUS };
     renderAs(OWNER, <StatusPage />);
     await expectBusyKeepsFocus(await screen.findByRole("button", { name: "다시 실행" }));
   });
 
-  it.fails("저장소 상태 '지금 교차 검증 실행'", async () => {
+  it("저장소 상태 '지금 교차 검증 실행'", async () => {
     reads = { [endpoints.status.overview]: STATUS };
     renderAs(OWNER, <StatusPage />);
     await expectBusyKeepsFocus(await screen.findByRole("button", { name: "지금 교차 검증 실행" }));
   });
 
-  it.fails("알림 '규칙 만들기'(폼 — 다시 보내도 한 번)", async () => {
+  it("알림 '규칙 만들기'(폼 — 다시 보내도 한 번)", async () => {
     reads = {
       [endpoints.alerts.inbox(50)]: { available: true, unread: 0, items: [] },
       [endpoints.alerts.rules]: { available: true, limit: 5, rules: [] },
@@ -127,7 +127,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     await expectBusyKeepsFocus(create);
   });
 
-  it.fails("알림 '모두 읽음'", async () => {
+  it("알림 '모두 읽음'", async () => {
     reads = {
       [endpoints.alerts.inbox(50)]: {
         available: true, unread: 1,
@@ -142,7 +142,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     await expectBusyKeepsFocus(screen.getByRole("button", { name: "모두 읽음" }));
   });
 
-  it.fails("AI 리포트 '리포트 생성'", async () => {
+  it("AI 리포트 '리포트 생성'", async () => {
     reads = {
       [endpoints.ai.engines]: ENGINES,
       [endpoints.ai.reportTypes]: { types: ["종합 매크로 브리핑"] },
@@ -154,7 +154,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     await expectBusyKeepsFocus(screen.getByRole("button", { name: "리포트 생성" }));
   });
 
-  it.fails("연결 테스트 '선택 모델 호출'", async () => {
+  it("연결 테스트 '선택 모델 호출'", async () => {
     reads = { [endpoints.ai.engines]: ENGINES };
     renderAs(OWNER, <AiEngineSection />);
     await screen.findByRole("button", { name: "선택 모델 호출" });
@@ -162,7 +162,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     await expectBusyKeepsFocus(screen.getByRole("button", { name: "선택 모델 호출" }));
   });
 
-  it.fails("연결 테스트 토스 '환율 조회' — 옆 '지수 시세 조회'도 요청 동안 누름 무시", async () => {
+  it("연결 테스트 토스 '환율 조회' — 옆 '지수 시세 조회'도 요청 동안 누름 무시", async () => {
     renderAs(OWNER, <TossSection />);
     await expectBusyKeepsFocus(await screen.findByRole("button", { name: "환율 조회 (USD → KRW)" }));
     const other = screen.getByRole("button", { name: "지수 시세 조회" });
@@ -171,7 +171,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     expect(api.apiGet).toHaveBeenCalledTimes(1);
   });
 
-  it.fails("내 계정 '비밀번호 바꾸기'(폼)·'계정 지우기'(폼)·'다른 기기 모두 로그아웃'", async () => {
+  it("내 계정 '비밀번호 바꾸기'(폼)·'계정 지우기'(폼)·'다른 기기 모두 로그아웃'", async () => {
     reads = {
       [endpoints.auth.session]: { authenticated: true, readMode: "auto", noLogin: false, user: MEMBER },
       [endpoints.auth.sessions]: { sessions: [] },
@@ -196,7 +196,7 @@ describe("요청 동안 누른 단추의 포커스(QA-899)", () => {
     vi.restoreAllMocks();
   });
 
-  it.fails("사용자 관리 '회원 만들기'(폼)", async () => {
+  it("사용자 관리 '회원 만들기'(폼)", async () => {
     reads = {
       [endpoints.admin.users]: { users: [{ id: 7, email: "m@test.local", role: "MEMBER", tier: "FREE", verified: true, createdAt: "2026-10-01T00:00:00Z" }] },
       [endpoints.admin.audit(100)]: { entries: [] },

@@ -80,7 +80,8 @@ export default function AccountPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (mismatch) return;
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (mismatch || change.busy) return;
     // 실패하면(지금 비밀번호 틀림 등) 입력을 남겨 고쳐 다시 보낼 수 있게 합니다(QA-051).
     if (await change.run(current, next)) {
       setCurrent("");
@@ -164,7 +165,8 @@ export default function AccountPage() {
           <Button
             variant="primary"
             type="submit"
-            disabled={change.busy || !current || !next || mismatch}
+            disabled={!current || !next || mismatch}
+            busy={change.busy}
           >
             {change.busy ? "바꾸는 중…" : "비밀번호 바꾸기"}
           </Button>
@@ -186,6 +188,7 @@ export default function AccountPage() {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                if (remove.busy) return;
                 if (window.confirm("계정을 지울까요? 되돌릴 수 없습니다.")) void remove.run(deletePassword);
               }}
               className="flex max-w-sm flex-col gap-3"
@@ -205,7 +208,7 @@ export default function AccountPage() {
                   <Callout tone="warn">{remove.error}</Callout>
                 </div>
               )}
-              <Button type="submit" disabled={remove.busy || !deletePassword}>
+              <Button type="submit" disabled={!deletePassword} busy={remove.busy}>
                 {remove.busy ? "지우는 중…" : "계정 지우기"}
               </Button>
             </form>
@@ -224,7 +227,7 @@ export default function AccountPage() {
                 await others.run();
                 void sessions.reload();
               }}
-              disabled={others.busy}
+              busy={others.busy}
             >
               {others.busy ? "처리 중…" : "다른 기기 모두 로그아웃"}
             </Button>

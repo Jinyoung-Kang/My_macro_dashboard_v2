@@ -411,6 +411,18 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
+/** 요청 중(busy) 단추 — 꺼진 단추(disabled:)와 같은 흐림·커서. busy일 때만 붙여 다른 단추의 클래스 글은 그대로입니다. */
+const BUSY_CLASSES = "aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
+
+/**
+ * 공용 단추.
+ *
+ * @param disabled 켜짐 조건(빈 입력·데모·권한 등)으로 누를 수 없을 때 — 진짜 disabled.
+ * @param busy 이 단추가 시작한 요청이 끝나지 않았을 때(`useAsyncAction`의 busy 등). 진짜 disabled가 아니라 aria-disabled로 알리고 누름을 무시합니다
+ *             (submit이면 폼 보내기도 막음). 누른 단추가 disabled가 되면 크롬이 포커스를 body로 보내 응답 뒤 Tab이 문서 처음부터 시작했습니다(QA-899 —
+ *             정보 수집 번역 단추 QA-887·알림 규칙 줄 QA-898과 같은 꼴). 모양은 꺼진 단추와 같습니다. 입력칸에서 Enter로 폼을 다시 보내는 길은 단추가 막지
+ *             못하므로(꺼진 submit 단추와 달리) 폼의 onSubmit도 busy면 돌아갑니다 — 부르는 쪽이 지킵니다.
+ */
 export function Button({
   children,
   onClick,
@@ -418,6 +430,7 @@ export function Button({
   size = "md",
   icon,
   disabled,
+  busy = false,
   type = "button",
   className = "",
   expanded,
@@ -430,6 +443,7 @@ export function Button({
   /** 글 앞 아이콘(장식 — components/ui/icons의 aria-hidden 아이콘). 뜻은 단추 글이 나릅니다. */
   icon?: ReactNode;
   disabled?: boolean;
+  busy?: boolean;
   type?: "button" | "submit";
   className?: string;
   /** 펼치고 접는 버튼이면 지금 펼쳐졌는지(aria-expanded). 아니면 넘기지 않습니다. */
@@ -438,10 +452,11 @@ export function Button({
   return (
     <button
       aria-expanded={expanded}
+      aria-disabled={busy || undefined}
       type={type}
-      onClick={onClick}
+      onClick={busy ? (event) => event.preventDefault() : onClick}
       disabled={disabled}
-      className={`${buttonClasses(variant, size)} ${className}`.trim()}
+      className={`${buttonClasses(variant, size)} ${busy ? `${BUSY_CLASSES} ` : ""}${className}`.trim()}
     >
       {icon}
       {children}

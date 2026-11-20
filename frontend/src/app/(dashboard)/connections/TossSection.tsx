@@ -63,13 +63,13 @@ export function TossSection() {
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => call(endpoints.toss.exchangeRate("USD", "KRW"))}
-            disabled={busy}
+            busy={busy}
           >
             환율 조회 (USD → KRW)
           </Button>
           <Button
             onClick={() => call(endpoints.toss.indices("KOSPI,KOSDAQ"))}
-            disabled={busy}
+            busy={busy}
           >
             지수 시세 조회
           </Button>

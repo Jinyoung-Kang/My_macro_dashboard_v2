@@ -105,7 +105,8 @@ describe("AI 엔진 테스트", () => {
         "/api/ai/test?engineId=auto&prompt=" +
           encodeURIComponent("한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요."),
       );
-      expect((screen.getByRole("button", { name: "호출 중…" }) as HTMLButtonElement).disabled).toBe(true);
+      // 요청 중은 진짜 disabled가 아니라 aria-disabled(누름 무시 — 누른 단추에 포커스가 남음, QA-899).
+      expect(screen.getByRole("button", { name: "호출 중…" }).getAttribute("aria-disabled")).toBe("true");
     });
     await act(async () => reply.resolve({ status: true, response: "정상입니다", provider: "cerebras", latencyMs: 120, pipelineStep: "직접" }));
     expect(await screen.findByText("정상입니다")).toBeTruthy();
@@ -209,7 +210,8 @@ describe("AI 리포트", () => {
     expect(api.apiPost).toHaveBeenCalledWith("/api/ai/report", {
       engineId: "auto", reportType: "종합 매크로 브리핑", extraInstruction: "",
     });
-    expect((screen.getByRole("button", { name: "생성 중… 0초 경과" }) as HTMLButtonElement).disabled).toBe(true);
+    // 요청 중은 진짜 disabled가 아니라 aria-disabled(누름 무시 — 누른 단추에 포커스가 남음, QA-899).
+    expect(screen.getByRole("button", { name: "생성 중… 0초 경과" }).getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       vi.advanceTimersByTime(2_000);
     });
