@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { pickActiveSection, pickEndSection, scrolledToEnd } from "@/lib/sectionIndex";
+import { pickActiveSection, pickEndSection, scrolledToEnd, sectionsBelowBand } from "@/lib/sectionIndex";
 
 /**
  * 지금 절을 보는 띠 — 뷰포트 위 96px 아래부터 위쪽 34%까지(아래 66%를 뺌). 띠에 조금이라도 걸친 절이 후보입니다.
@@ -14,7 +14,8 @@ const SPY_ROOT_MARGIN = "-96px 0px -66% 0px";
 
 /**
  * 긴 화면 목차(components/patterns/SectionIndex)의 지금 절 — 절 닻(id)들이 화면 위쪽 띠(SPY_ROOT_MARGIN)에 걸치는지 IntersectionObserver(root 뷰포트)로 보고,
- * 고르는 차례(`ids` — lib/sectionIndex `sectionOrder`, 하위 칸이 부모보다 앞)로 하나를 고릅니다(`pickActiveSection`). 걸친 절이 없으면 앞 값을 둡니다.
+ * 고르는 차례(`ids` — lib/sectionIndex `sectionOrder`, 하위 칸이 부모보다 앞)로 하나를 고릅니다(`pickActiveSection`). 걸친 절이 없으면 앞 값을 두되, 모든 절이
+ * 띠 아래면(첫 절에 닿기 전 — 화면 맨 위) 처음 연 화면처럼 null입니다(QA-968 — 뒤로 가기로 맨 위에 와도 옮긴 절이 남았음).
  *
  * - root는 뷰포트입니다 — 넓은 화면은 본문(main)이 스크롤 상자이고 좁은 화면은 창이 스크롤하지만, 뷰포트 기준 교차는 두 경우 모두 맞습니다.
  * - 닻을 담은 스크롤 상자(창 또는 main — 문서의 scroll 이벤트를 capture로 받아 그 상자가 닻을 담는지 봄)가 끝까지 내려가 있으면 띠 대신 위 끝이 화면 안인
@@ -32,6 +33,13 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
     const intersecting = new Set<string>();
     // 스크롤 상자가 끝이면 그때 고른 절(아니면 null — 띠로 고름).
     let endPick: string | null = null;
+    // 띠에 걸친 절이 없을 때 모든 절이 띠 아래인가(첫 절에 닿기 전 — 화면 맨 위) — 그때는 앞 값이 아니라 처음 연 화면처럼 지금 칸 없음(QA-968).
+    const aboveAll = () =>
+      intersecting.size === 0 &&
+      sectionsBelowBand(
+        order.map((id) => document.getElementById(id)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY),
+        window.innerHeight,
+      );
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -39,7 +47,7 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
           if (entry.isIntersecting) intersecting.add(id);
           else intersecting.delete(id);
         }
-        setActive((previous) => endPick ?? pickActiveSection(order, intersecting, previous));
+        setActive((previous) => endPick ?? pickActiveSection(order, intersecting, previous, aboveAll()));
       },
       { root: null, rootMargin: SPY_ROOT_MARGIN },
     );
@@ -60,7 +68,7 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
         : null;
       if (next === endPick) return;
       endPick = next;
-      setActive((previous) => next ?? pickActiveSection(order, intersecting, previous));
+      setActive((previous) => next ?? pickActiveSection(order, intersecting, previous, aboveAll()));
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     return () => {

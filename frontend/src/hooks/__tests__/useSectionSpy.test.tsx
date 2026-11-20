@@ -135,7 +135,7 @@ describe("QA-968 화면 맨 위(모든 절이 띠 아래)로 돌아오면 지금
   }
 
   // 수정 전(재현 커밋에서는 it.fails)에는 옮긴 절이 남았습니다(expected 'risk' to be null).
-  it.fails("옮긴 절이 띠를 떠나고 모든 절의 위 끝이 띠(창 높이의 34%) 아래면 null — 처음 연 화면과 같음", () => {
+  it("옮긴 절이 띠를 떠나고 모든 절의 위 끝이 띠(창 높이의 34%) 아래면 null — 처음 연 화면과 같음", () => {
     const made = stubObserver();
     anchors(["ind", "fx", "risk"]);
     const { result } = renderHook(() => useSectionSpy(["ind", "fx", "risk"]));
@@ -146,5 +146,18 @@ describe("QA-968 화면 맨 위(모든 절이 띠 아래)로 돌아오면 지금
     placeAt({ ind: 509, fx: 3846, risk: 7151 });
     fire(made[0], [["risk", false]]);
     expect(result.current).toBeNull();
+  });
+
+  it("절 사이 빈 곳(위에 지나간 절이 있음)이나 마지막 절 뒤는 앞 값 그대로", () => {
+    const made = stubObserver();
+    anchors(["ind", "fx", "risk"]);
+    const { result } = renderHook(() => useSectionSpy(["ind", "fx", "risk"]));
+    placeAt({ ind: -2000, fx: 40, risk: 3000 });
+    fire(made[0], [["fx", true]]);
+    expect(result.current).toBe("fx");
+    // fx의 꼬리가 띠를 지나 위로 — 다음 절은 아직 띠 아래, 지나간 절이 위에 있음.
+    placeAt({ ind: -2600, fx: -560, risk: 500 });
+    fire(made[0], [["fx", false]]);
+    expect(result.current).toBe("fx");
   });
 });
