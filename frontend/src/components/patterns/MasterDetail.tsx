@@ -1,6 +1,17 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type JSX,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
@@ -68,6 +79,12 @@ const GROUP_HEADING = "px-3 pb-1 text-xs font-semibold tabular-nums text-text-2"
  * - `autoSelectFirst`의 첫 줄은 보이는 고름일 뿐 `onSelectedKeyChange`를 부르지 않습니다(사용자가 고르거나 닫으면 그때부터 부름). Esc로 닫은 뒤에는 다시 저절로
  *   고르지 않습니다.
  * - 줄이 없으면 `emptyText`, 불러오는 중·오류면 `placeholder`(목록 대신). `count`는 목록 위 개수 줄('12건' — 함수면 그 글).
+ * - 다시 읽기로 줄이 빠질 때의 포커스(QA-940): 포커스가 이 목록(줄 단추·옆 검사 칸·대화상자) 안에 있다가 그 요소가 사라져 <body>로 떨어지면 목록으로
+ *   옮깁니다 — 옆 검사 칸 배치면 지금 고른 줄, 아니면 그 줄(아직 있으면)·빠진 줄의 다음 줄(없으면 앞 줄), 줄이 하나도 없으면 목록 머리(빈 안내 글 — 스크립트
+ *   포커스 자리). 좁은 화면 대화상자는 그 줄이 빠지면 닫히고 여는 단추가 없어 공용 대화상자의 되돌리기가 하지 못했고, 옆 검사 칸은 내용이 바뀌어 그 안의
+ *   요소가 사라졌습니다. 읽기가 바꾼 것이라 화면을 굴리지 않고(preventScroll), 부르는 쪽이 같은 차례에 옮기면(알림함 QA-866·QA-884) 그쪽이 먼저라
+ *   한 차례 늦게 봅니다. 포커스가 목록 밖이거나 빈 곳을 눌러 떠났으면 옮기지 않습니다. 빠진 줄의 대화상자는 닫은 것으로 칩니다 — 같은 줄이 다시 와도
+ *   저절로 다시 열지 않습니다. 불러오는 중·오류 자리표시(placeholder) 동안은 보지 않습니다.
  *
  * 작업대 P6이 더한 선택 prop(모두 기본값이면 위 동작 그대로):
  * - `inspectorWidth="wide"`: 틀 48rem부터 왼쪽 목록(16~22rem) + 오른쪽 넓은 검사 칸, 그 아래 폭은 대화상자(같은 넓은 폭·위쪽 고정)입니다.
@@ -154,6 +171,8 @@ export function MasterDetail<T>({
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [dialogKey, setDialogKey] = useState<string | null>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const inspectorRef = useRef<HTMLElement>(null);
+  const emptyRef = useRef<HTMLDivElement>(null);
 
   const keys = items.map(itemKey);
   const chosen = selectedKey !== undefined ? selectedKey : ownSelected;
@@ -226,6 +245,86 @@ export function MasterDetail<T>({
     onSelectedKeyChange?.(seen);
   }, [inline, dialogKey, current, selectedKey, onSelectedKeyChange, focusKey]);
 
+  // 다시 읽기로 줄이 빠질 때의 포커스(QA-940 — 위 설명). 이 목록 안에서 마지막으로 포커스를 받은 요소와 그 줄(대화상자는 DOM이 이 틀 밖이지만 React 이벤트는
+  // 포털을 건너 이 틀까지 올라옴). 그 줄이 빠지면 빠진 차례의 다음 줄(없으면 앞 줄)을 함께 적어 둡니다(next — 타이머가 돌 때는 차례가 이미 바뀜).
+  const lastFocus = useRef<{ element: Element; key: string | null; next: string | null } | null>(null);
+  const hasPlaceholder = placeholder !== undefined && placeholder !== null && placeholder !== false;
+  const onFrameFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const target: Element = event.target;
+    const frame = frameRef.current;
+    let key: string | null;
+    if (frame !== null && frame.contains(target)) {
+      const rowKey = target.getAttribute("data-item-key");
+      if (rowKey !== null && buttons.current.get(rowKey) === target) key = rowKey;
+      else if (inspectorRef.current?.contains(target)) key = current;
+      else {
+        lastFocus.current = null;
+        return;
+      }
+    } else {
+      key = dialogKey;
+    }
+    lastFocus.current = { element: target, key, next: null };
+  };
+  const onFrameBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const record = lastFocus.current;
+    if (record === null || record.element !== event.target) return;
+    // 다른 요소로 옮김 — 이 목록 안이면 onFocus가 새로 적습니다.
+    if (event.relatedTarget !== null) {
+      lastFocus.current = null;
+      return;
+    }
+    // 옮겨 간 곳이 없음 — 요소가 사라졌거나(지킬 것), 빈 곳을 눌렀거나(<body> — 지움), 창 전환(포커스 요소 그대로 — 지킴).
+    window.setTimeout(() => {
+      if (lastFocus.current === record && record.element.isConnected && document.activeElement !== record.element) lastFocus.current = null;
+    }, 0);
+  };
+  const keysRef = useRef<readonly string[]>([]);
+  const currentRef = useRef<string | null>(current);
+  const inlineRef = useRef(inline);
+  useEffect(() => {
+    if (hasPlaceholder) return undefined;
+    const before = keysRef.current;
+    const keys = keyList === "" ? [] : keyList.split("\n");
+    keysRef.current = keys;
+    currentRef.current = current;
+    inlineRef.current = inline;
+    // 대화상자의 줄이 빠짐 — 닫은 것으로 칩니다(다시 와도 저절로 열지 않음).
+    if (!inline && dialogKey !== null && !keys.includes(dialogKey)) setDialogKey(null);
+    const record = lastFocus.current;
+    if (record === null) return undefined;
+    if (record.key !== null && !keys.includes(record.key) && before.includes(record.key)) {
+      const index = before.indexOf(record.key);
+      record.next =
+        before.slice(index + 1).find((key) => keys.includes(key)) ??
+        before
+          .slice(0, index)
+          .reverse()
+          .find((key) => keys.includes(key)) ??
+        null;
+    }
+    let inner = 0;
+    const outer = window.setTimeout(() => {
+      inner = window.setTimeout(() => {
+        if (lastFocus.current !== record || record.element.isConnected) return;
+        const active = document.activeElement;
+        if (active !== null && active !== document.body) return;
+        lastFocus.current = null;
+        const now = keysRef.current;
+        const has = (key: string | null): key is string => key !== null && now.includes(key);
+        const chosenNow = inlineRef.current ? currentRef.current : null;
+        const key = has(chosenNow) ? chosenNow : has(record.key) ? record.key : has(record.next) ? record.next : (now[0] ?? null);
+        const target = key === null ? emptyRef.current : (buttons.current.get(key) ?? null);
+        target?.focus({ preventScroll: true });
+      }, 0);
+    }, 0);
+    return () => {
+      window.clearTimeout(outer);
+      window.clearTimeout(inner);
+    };
+    // items — 줄 차례가 같아도 내용이 바뀌면(검사 칸 안 단추가 사라짐) 다시 봅니다.
+  }, [hasPlaceholder, items, keyList, current, inline, dialogKey]);
+
   const onRowClick = (key: string, event: MouseEvent<HTMLButtonElement>) => {
     // 누르기가 포커스를 옮기지 않는 브라우저(사파리)에서도 대화상자를 닫은 뒤 이 줄로 돌아오게 먼저 포커스를 둡니다.
     event.currentTarget.focus();
@@ -261,14 +360,18 @@ export function MasterDetail<T>({
 
   const countText =
     count === undefined || count === false ? null : typeof count === "function" ? count(items.length) : `${items.length.toLocaleString("ko-KR")}건`;
-  const hasPlaceholder = placeholder !== undefined && placeholder !== null && placeholder !== false;
 
   let list: ReactNode;
   if (hasPlaceholder) {
     list = <div className="min-w-0">{placeholder}</div>;
   } else if (items.length === 0) {
     // 안내 글은 낱말 사이에서 꺾습니다(공용 글 부품의 break-keep 규약 — 공백 없는 긴 글은 비상으로 꺾음, QA-661).
-    list = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
+    // 줄이 모두 빠졌을 때 포커스를 받을 목록 머리(QA-940) — Tab 차례에는 없음(tabIndex -1).
+    list = (
+      <div ref={emptyRef} tabIndex={-1} className={`min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere ${FOCUS_RING}`}>
+        {emptyText}
+      </div>
+    );
   } else {
     const row = (item: T, index: number) => {
       const key = keys[index];
@@ -321,7 +424,7 @@ export function MasterDetail<T>({
   }
 
   return (
-    <div ref={frameRef} className="@container min-w-0">
+    <div ref={frameRef} onFocus={onFrameFocus} onBlur={onFrameBlur} className="@container min-w-0">
       {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
       {/* 두 칸 격자는 검사 칸이 서거나(줄이 있음) 자리표시가 그 자리를 잡을 때만 — 줄이 없으면 검사 칸이 없어 안내 글이 왼쪽 칸에 갇히고 오른쪽 15rem이
           비었습니다(QA-661). 읽는 중·오류 자리표시는 값이 온 뒤의 목록 폭과 같게 두 칸 그대로(QA-651). */}
@@ -331,6 +434,7 @@ export function MasterDetail<T>({
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 목록 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
           // 긴 화면 목차의 가로 줄이 보이면 그 줄 아래 16px에 붙습니다(--section-strip-h — 목차가 적는 잰 줄 높이, 없으면 0 — QA-657, InspectorFrame과 같음).
           <section
+            ref={inspectorRef}
             id={inspectorId}
             aria-label={`${label} — ${currentItem !== null && currentItem !== undefined ? itemLabel(currentItem) : "고른 줄 없음"}`}
             className={`min-w-0 self-start rounded-control border border-border p-3 ${layout.panel}`}

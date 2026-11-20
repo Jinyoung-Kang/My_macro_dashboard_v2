@@ -11,7 +11,7 @@
  * 수정 전(재현 커밋에서는 it.fails — 고친 커밋에서 it): 포커스 사례 넷 모두 activeElement가 BODY — 'expected <body>…</body> to be <button …>',
  * 다시 열림 사례는 'expected <div role="dialog" …> to be null'.
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
@@ -64,41 +64,38 @@ function view(items: readonly Item[], extra: { autoSelectFirst?: boolean } = {})
 
 const rowButton = (key: string) => document.querySelector<HTMLButtonElement>(`[data-item-key="${key}"]`);
 
-/** 다시 읽기 뒤의 포커스 옮김은 다음 차례(타이머)에 일어납니다. */
+/** 다시 읽기 뒤의 포커스 옮김은 다음 차례(타이머)에 일어납니다 — 옮기는 사례는 waitFor로 기다립니다(부하 때 10ms 안에 두 차례가 돌지 않을 수 있음). */
 async function settle() {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 }
 
 describe("QA-940 다시 읽기로 줄이 빠지면 포커스를 목록으로", () => {
-  it.fails("좁은 화면: 대화상자 안에 포커스가 있다가 그 줄이 빠지면 대화상자가 닫히고 다음 줄 단추로", async () => {
+  it("좁은 화면: 대화상자 안에 포커스가 있다가 그 줄이 빠지면 대화상자가 닫히고 다음 줄 단추로", async () => {
     const { rerender } = render(view(ITEMS));
     fireEvent.click(rowButton("b") as HTMLButtonElement);
     const inner = within(screen.getByRole("dialog", { name: "가상 둘째" })).getByRole("button", { name: "가상 둘째 처리" });
     act(() => inner.focus());
     rerender(view([ITEMS[0], ITEMS[2]]));
-    await settle();
+    await waitFor(() => expect(document.activeElement).toBe(rowButton("c")));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(rowButton("c"));
   });
 
-  it.fails("좁은 화면: 빠진 줄이 마지막이면 앞 줄, 줄이 하나도 남지 않으면 목록 머리(빈 안내 글)로", async () => {
+  it("좁은 화면: 빠진 줄이 마지막이면 앞 줄, 줄이 하나도 남지 않으면 목록 머리(빈 안내 글)로", async () => {
     const { rerender } = render(view(ITEMS));
     fireEvent.click(rowButton("c") as HTMLButtonElement);
     act(() => within(screen.getByRole("dialog")).getByRole("button", { name: "가상 셋째 처리" }).focus());
     rerender(view(ITEMS.slice(0, 2)));
-    await settle();
-    expect(document.activeElement).toBe(rowButton("b"));
+    await waitFor(() => expect(document.activeElement).toBe(rowButton("b")));
 
     fireEvent.click(rowButton("b") as HTMLButtonElement);
     act(() => within(screen.getByRole("dialog")).getByRole("button", { name: "가상 둘째 처리" }).focus());
     rerender(view([]));
-    await settle();
-    expect(document.activeElement).toBe(screen.getByText("합성 목록이 비었습니다."));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByText("합성 목록이 비었습니다.")));
   });
 
-  it.fails("좁은 화면: 빠진 줄이 다시 와도 대화상자가 저절로 다시 열리지 않는다", async () => {
+  it("좁은 화면: 빠진 줄이 다시 와도 대화상자가 저절로 다시 열리지 않는다", async () => {
     const { rerender } = render(view(ITEMS));
     fireEvent.click(rowButton("b") as HTMLButtonElement);
     rerender(view([ITEMS[0], ITEMS[2]]));
@@ -108,24 +105,22 @@ describe("QA-940 다시 읽기로 줄이 빠지면 포커스를 목록으로", (
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it.fails("넓은 화면: 고른 줄이 빠져 검사 칸의 포커스 요소가 사라지면 다음 줄 단추로", async () => {
+  it("넓은 화면: 고른 줄이 빠져 검사 칸의 포커스 요소가 사라지면 다음 줄 단추로", async () => {
     stubWide();
     const { rerender } = render(view(ITEMS));
     fireEvent.click(rowButton("b") as HTMLButtonElement);
     act(() => screen.getByRole("button", { name: "가상 둘째 처리" }).focus());
     rerender(view([ITEMS[0], ITEMS[2]]));
-    await settle();
-    expect(document.activeElement).toBe(rowButton("c"));
+    await waitFor(() => expect(document.activeElement).toBe(rowButton("c")));
   });
 
-  it.fails("넓은 화면 autoSelectFirst: 새 줄이 맨 위에 와 저절로 고른 줄이 바뀌면 지금 고른 줄(새 줄) 단추로", async () => {
+  it("넓은 화면 autoSelectFirst: 새 줄이 맨 위에 와 저절로 고른 줄이 바뀌면 지금 고른 줄(새 줄) 단추로", async () => {
     stubWide();
     const { rerender } = render(view(ITEMS, { autoSelectFirst: true }));
     act(() => screen.getByRole("button", { name: "가상 첫째 처리" }).focus());
     rerender(view([{ key: "z", name: "가상 새 줄" }, ...ITEMS], { autoSelectFirst: true }));
-    await settle();
+    await waitFor(() => expect(document.activeElement).toBe(rowButton("z")));
     expect(rowButton("z")?.getAttribute("aria-current")).toBe("true");
-    expect(document.activeElement).toBe(rowButton("z"));
   });
 
   it("포커스가 목록 밖에 있었으면 줄이 빠져도 옮기지 않는다", async () => {
