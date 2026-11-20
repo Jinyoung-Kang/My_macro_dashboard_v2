@@ -124,14 +124,26 @@
     전량, [명세 §12.2](../specs/2026-11-06-real-trade-mirror.md)). 달라지는 것: 그런 날 그 종목의 전량 매도가 같은 날 늘어난 창 안에서 나간다. 그대로인 것: 한도·창·
     종목당 시도 2·보내기 직전 확인, 묶음 뒤에 생긴 보유와 장중 따라 하기가 손댄 종목은 범위 밖. 회전율 멈춤(60%)이 이 길로 약해지지 않게, 묶음을 만들 때 매매 제한으로
     기다리는 전량 매도 대상의 몫을 회전율에 함께 센다(대기 STOP 종목은 QA-302대로 뺌) — 그 종목이 VI가 아니었을 때와 같은 판정이라, 예전에는 다음 날 걸렸을 회전율 멈춤이
-    그날 묶음에서 걸릴 수 있다. 책의 종목이 VI로 빠진 몫은 2026-11-09 결정 그대로 세지 않는다. 감수한 단점: 묶음을 만들 때 앱의 반대 방향 미체결·가격 모름 등 종목 단위
+    그날 묶음에서 걸릴 수 있다. 책의 종목이 VI로 빠진 몫은 2026-11-09 결정 그대로 세지 않았다(2026-11-20 결정으로 함께 셈 — 아래 QA-949 덧붙임). 감수한 단점: 묶음을 만들 때 앱의 반대 방향 미체결·가격 모름 등 종목 단위
     사유로 건너뛴 책 밖 보유는 회전율에 들지 않은 채 그 사유가 풀린 뒤 그날 팔릴 수 있다(책의 종목은 원래 그랬다). 같은 종류로 이 기능의 미종료 주문이 있던 종목(전날의 결과 모름 행 등)과 잔량을 모르던 종목도 세지 않는다(독립 검토에서 확인 — 보완은 매매 제한으로 기다리는 몫만 셈).
     지키는 시험: `RealTradeJobDbTest`의 `timedSyncWaitsForViOnHoldingNotInBook`·`timedSyncLaterLiquidationHasNoThreshold`·`timedSyncRefusedKeepsLaterLiquidations`·
     `lateSyncStartFollowupSellsHoldingNotInBook`·`waitingLiquidationCountsTowardTurnover`·`waitingLiquidationWithinTurnoverProceeds`·
     `batchTargetsMarkWholeHoldingsNotInBook`·`followupLeavesHoldingsThatAppearedAfterTheBatch`.
     **덧붙임(2026-11-19 — [ADR 0028](0028-real-trade-mirror.md) 덧붙임)**: 규칙 계좌 재선정 다음 묶음의 회전율 예외 판정은 매매 제한 종목도 센다(판정 회전율·계좌 어긋남 —
     막는 종목은 이 기능의 미종료 주문만), 그 밖에 판정에서 빠진 종목(반대 방향 미체결·이 기능 미종료 주문·잔량 모름·가격 모름·매도 가능 0, 스탑 종목 제외 — 하루 건수
-    한도에 가려진 상한가 모름 매수도, QA-802)이 있으면 예외를 주지 않는다. 이 멈춤 판정 자체(책 종목의 제한 몫을 세지 않음)는 그대로다.
+    한도에 가려진 상한가 모름 매수도, QA-802)이 있으면 예외를 주지 않는다. 그때 이 멈춤 판정 자체(책 종목의 제한 몫을 세지 않음)는 그대로 두었다(아래 QA-949로 바뀜).
+    **덧붙임(QA-949, 2026-11-20 사용자 결정 '판정에 함께 셈' — 실제 돈의 멈춤 판정이 바뀜)**: 위 2026-11-09 결정대로 책의 종목이 매매 제한으로 빠진 몫을 세지 않으면, VI 종목이
+    많은 시각 맞추기 날 멈춤 판정 회전율이 60% 아래로 내려가 묶음이 나가고, 제한이 풀린 뒤 같은 창 마무리가 그 몫을 회전율 검사 없이 보냈다. 이제 묶음의 회전율 판정
+    (`RealTradeJob.withRestricted`)은 이번 계획에서 매매 제한(VI·종목 거절 대기)으로 뺀 종목 가운데 **책의 종목**(목표 비중에 있는 것)과 전량 매도 대상의 몫을 모두 더한다 —
+    금액은 그 종목이 제한이 아니었다면 계획이 냈을 매수·매도 금액(`RealTradePlanner.sync`를 그 종목만의 범위로, 막는 종목은 이 기능의 미종료 주문만, 1% 문턱도 같음)이라
+    VI가 아니었을 때와 같은 판정이다. 더한 종목은 스탑 몫 빼기(`withoutStops`)에서도 막지 않아, VI로 빠진 현금성 매수도 스탑 대금까지는 빠진다. 세지 않는 것: 대기 STOP 종목
+    (QA-302), 이 기능의 미종료 주문이 있는 종목(`ownBlocked` — 범위 밖, 위 감수한 단점과 같음). 제한 종목이 없으면 판정은 계획의 값 그대로다. 보내는 주문·건너뜀·묶음 목표·
+    `sync_pending`·재선정 예외(열두 확인)의 동작은 그대로다. 재선정 예외는 이 판정이 멈춤을 낼 때만 보므로 판정 금액이 커지면 예외 판정으로 넘어가는 날이 늘 뿐이고, 예외의
+    판정 회전율은 원래 제한 종목을 세어 두 값이 같다(두 번 세지 않음). 감수할 단점: VI가 많은 날에는 정상 재조정(규칙 계좌 재선정 다음 날이 아닌 평소 묶음)도 회전율 멈춤에
+    걸릴 수 있다 — 예전에는 그날 VI가 아닌 몫만 보내고 풀린 뒤 마무리가 나머지를 보냈다. 그 멈춤은 사람이 해제한다(멈춤 동안 그날 장중 스탑 매도도 서는 것은 다른 회전율
+    멈춤과 같음). 지키는 시험: `RealTradeJobDbTest`의 `restrictedBookSymbolsCountTowardTurnover`·`restrictedBookSymbolCountsTowardTurnover`·
+    `restrictedBookSymbolThatIsPendingStopStaysOutOfTurnover`·`restrictedCashLikeBuyIsFundedByStopsLikeUnrestricted`·`rebalanceRestrictedNewNamesGoThroughExemption`·
+    `rebalanceRestrictedNewNameStillCapped`(멈춤 판정 = 판정 회전율 156.5%).
 - 실제 돈의 주문 시각이 바뀐다. `kr.rules.timing=AT_MINUTE`을 저장한 뒤 첫 시각 맞추기는 그 세션 시가에 체결될 STOP이 아닌 대기 주문이 없는 첫 세션이다. 11-09가 어느 쪽인지는
   배포 전(금요일 11-06 밤) 규칙 계좌 결정에 달렸다(QA-304).
   - 그 결정이 STOP이 아닌 시가(`NEXT_OPEN`) 주문을 남겼으면 11-09는 전환일(옛 08:50 `OPG`)이고, 11-09 밤 결정의 주문부터 09:10이라 첫 시각 맞추기는 2026-11-10 09:10이다.
