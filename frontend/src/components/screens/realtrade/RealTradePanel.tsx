@@ -89,8 +89,6 @@ function KoreaPanel({ rt }: { rt: RealTradeContextValue }) {
       }
     >
       <div className="flex flex-col gap-4">
-        {/* 한 번 실패했으면 다시 읽는 동안에도 '읽는 중'으로 돌아가지 않고 오류 안내를 남깁니다(RT2-FE-1). */}
-        {loading && !status && !statusError && <StatusPending />}
         {/* 상태를 읽지 못해도(읽는 중에도) 끄기 단추는 위에 남습니다(끄기는 서버가 늘 받음). */}
         {statusError && !status && (
           <ErrorState
@@ -99,6 +97,9 @@ function KoreaPanel({ rt }: { rt: RealTradeContextValue }) {
           />
         )}
         <ActionFeedback rt={rt} />
+        {/* 한 번 실패했으면 다시 읽는 동안에도 '읽는 중'으로 돌아가지 않고 오류 안내를 남깁니다(RT2-FE-1). 자리표시는 끄기 결과 안내 뒤 — 값이 온 뒤 칸
+            (StatusBody)과 같은 자리라, 읽는 중에 끄기를 눌러도 그 안내가 큰 자리표시 아래로 밀리지 않습니다(QA-969). */}
+        {loading && !status && !statusError && <StatusPending />}
         {status && status.available !== true && (
           <Banner tone="warn">{status.message || "실제 매매 상태를 읽을 수 없습니다(서버 준비 전)."}</Banner>
         )}
@@ -203,11 +204,14 @@ function ActionFeedback({ rt }: { rt: RealTradeContextValue }) {
   const feedback = disableFeedback(rt.status);
   return (
     <>
+      {/* 실패는 알림 영역 안에 — 상자만이면 낭독되지 않았습니다(QA-969). 글·조건은 그대로입니다. */}
       {showDisableError(rt.disableError, rt.status, rt.readFailed) && (
-        <Banner tone="danger">
-          <p>실제 매매를 끄지 못했습니다 — {rt.disableError}. 끄기 단추를 다시 누르세요.</p>
-          <p className="mt-1 text-xs">{EMERGENCY_STEPS}</p>
-        </Banner>
+        <div role="alert">
+          <Banner tone="danger">
+            <p>실제 매매를 끄지 못했습니다 — {rt.disableError}. 끄기 단추를 다시 누르세요.</p>
+            <p className="mt-1 text-xs">{EMERGENCY_STEPS}</p>
+          </Banner>
+        </div>
       )}
       {feedbackShown(rt) && (
         <div role="status">

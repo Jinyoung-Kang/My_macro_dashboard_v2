@@ -50,7 +50,7 @@ function pendingShapeKept(region: HTMLElement) {
 
 describe("QA-969 상태를 읽는 동안 끄기 결과 안내는 자리표시보다 앞", () => {
   // 수정 전(재현 커밋에서는 it.fails): 실패 배너가 자리표시(타일·표) 뒤에 그려졌고 알림 영역 밖이었습니다.
-  it.fails("끄기가 실패하면 위험 배너(알림 영역)가 자리표시 앞 — 자리표시는 그대로", async () => {
+  it("끄기가 실패하면 위험 배너(알림 영역)가 자리표시 앞 — 자리표시는 그대로", async () => {
     api.apiPost.mockRejectedValue(new Error("요청 실패 (HTTP 500)"));
     render(<PaperScreen market="KR" initialTab="real" />);
     const region = screen.getByRole("region", { name: "실제 매매" });
@@ -69,7 +69,7 @@ describe("QA-969 상태를 읽는 동안 끄기 결과 안내는 자리표시보
   });
 
   // 수정 전(재현 커밋에서는 it.fails): 성공 안내(role=status)도 자리표시 뒤였습니다.
-  it.fails("끄기가 받아들여지면 성공 안내(role=status)가 자리표시 앞 — 자리표시는 그대로", async () => {
+  it("끄기가 받아들여지면 성공 안내(role=status)가 자리표시 앞 — 자리표시는 그대로", async () => {
     api.apiPost.mockResolvedValue({ ok: true, version: 4 });
     render(<PaperScreen market="KR" initialTab="real" />);
     const region = screen.getByRole("region", { name: "실제 매매" });
