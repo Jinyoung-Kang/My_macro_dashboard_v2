@@ -3575,3 +3575,16 @@ Tab 30정지·검사 칸·팔레트·'?'·'/' 동작과 API GET 집합 같음.
 
 - 마무리 확인(2026-11-20 04시): 기능 브랜치를 `de66e6fd`로 앞당겨(wb-d6qa fast-forward) push — CI 여섯 job 통과. QA 스택을 qa@`de66e6fd`로 다시 빌드해 `ui-audit` 전 경로 × 390·1024·1440을 돌린 결과가 이 절의 감사(qa@`8119b555` 뒤 고침 전)와 항목·경로별로 같음(12px 미만·넘침·대비·알약·콘솔·HTTP 오류 0, 작은 누름 48·177·179, 막은 쓰기 `/verify` 폭마다 1).
 - 새 결함 번호는 QA-899부터(이 회차가 받은 QA-886~909 가운데 QA-886~898을 씀 — 반박 확인 뒤 두 번째 고침이 QA-895~898).
+
+## D6 배포 (2026-11-20 16:33~16:35 KST, Vultr `main@e386c492` — main `3717893d` → `e386c492` fast-forward)
+- 담은 것: P7 정보 수집·더보기·인증·정보 검색 정리(기능 브랜치 끝 `8aca8b7e` — P7 고침 QA-880~885, D6 전 QA 고침 QA-886~898)와, 같은 날 다른 작업 둘을 배포 묶음 브랜치 `claude/deploy-2026-11-20`에서 `--no-ff`로 합친 것:
+  - `fad930da` 점검 스크립트(`scripts/vultr/reboot-check.sh`)가 root가 아니면 Livepatch 상태를 `sudo -n`으로 읽음 — QA-417 후속(`6731d0db` 시험 → `60d45d55` 고침 → `4000b847` 문서). cron에는 사용자 세션 버스가 없어 snap이 범위를 못 만들던 것.
+  - `e386c492` 블로그 글 페이지 판정·추출 — QA-391 후속(`e1d46dd8`·`d91863be` 짧은 글을 '형식 바뀜'으로 보던 판정, `63c476ce`·`b43a7396` 구독 안내 상자·보이지 않는 요소가 본문에 섞이던 추출, `d6ac6807` 문서)과
+    `f574fbbe` 피드가 짧은 글도 전문을 싣는 블로그 세 곳(Marginal Revolution·Econbrowser·HumbleDollar)은 짧은 글의 글 페이지를 열지 않음(사용자 승인 — 계획 뒤 '이대로 진행').
+  - 다른 세션의 커밋은 들지 않음. 백엔드·DB 스키마 변경 없음(바뀐 것은 frontend·collector·점검 스크립트·docs).
+- 배포 전: 각 브랜치와 묶음 `e386c492`의 CI 여섯 job 통과(`f574fbbe`는 Maven Central 일시 오류로 백엔드 job 하나만 다시 돌려 통과), 묶음에서 `make test` 통과(수집기 3331·백엔드 3520·화면 4808, lint·build).
+  운영 DB `paper_job_runs`를 읽기만 함 — 16:01 한국 브리핑(SENT)·16:18 `risk`·16:19 `exec-audit` OK, 도는 작업 없음. 실제 매매 창(08:45~15:35)·22:45 미국 결정과 떨어진 시각.
+- `scripts/vultr/deploy.sh`(1분 42초): 수집기·화면·caddy 컨테이너를 다시 띄움(백엔드·postgres·browser는 그대로). 스키마 최신, 디스크 56%, 재부팅 필요 없음 · Livepatch 정상.
+- GET 확인: /·/paper/us·/paper/kr·모의매매 탭(두 시장 × selection·holdings·decisions·framework·notes·settings·real·isa)·/info 8탭·/macro·/institutions·/more·/search·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account 200(/paper는 307), /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@e386c492`.
+- 점검 스크립트를 cron 자리(`systemd-run --uid=ubuntu`, 사용자 버스를 없는 경로로)에서 `--summary`로 돌림 — '재부팅 필요 없음 · Livepatch 정상'(고치기 전에는 같은 자리에서 'Livepatch 상태를 읽지 못함').
+- 배포 뒤 5분(16:40): 서버 HEAD `e386c492`, 백엔드 ERROR 0·화면 오류 0, 수집기 오류 줄 1 — 16:37 yfinance 라이브러리 로그(Yahoo가 FOX 한 종목의 재무 자료에 404, 이번 변경과 관계없는 외부 응답 — 수집기 컨테이너를 다시 띄워 배포 전 로그와는 견주지 못함). 16:39 `exec-audit` OK. main CI(`e386c492`) 여섯 job 통과.
