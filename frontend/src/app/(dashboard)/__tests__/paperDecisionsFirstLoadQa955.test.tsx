@@ -7,6 +7,8 @@
  *
  * 기대(값이 온 뒤의 꼴로 자리 — QA-892 순위·QA-930 결과와 같은 원칙): 결정 기록은 최근 50건까지의 긴 목록이라, 처음 읽는 동안에는 화면 높이 이상의 자리
  * (min-h-dvh)를 둡니다. 읽기가 실패한 뒤 다시 읽는 동안은 예전 한 줄(QA-655). 응답 뒤의 겉모습·요청은 그대로입니다. jsdom은 배치를 재지 않아 자리 클래스를 봅니다.
+ * 건수는 응답 전에 알 수 없어, 목록이 짧으면(출발 직후 등) 큰 자리가 줄며 아래 패널이 올라옵니다 — 그래서 한국 '출발·게이트 기록' 패널은 결정 기록이 처음
+ * 한 번 온 뒤(값·오류)부터 그립니다(작업 기록 요청은 처음부터 그대로 — 고친 커밋에서 더한 사례).
  */
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,13 +64,30 @@ const tokens = (element: Element | null) => (element?.getAttribute("class") ?? "
 
 describe("결정 기록 목록 첫 적재 자리(QA-955)", () => {
   for (const market of ["KR", "US"] as const) {
-    it.fails(`${market}: 처음 읽는 동안 화면 높이 이상의 자리`, async () => {
+    it(`${market}: 처음 읽는 동안 화면 높이 이상의 자리`, async () => {
       render(<PaperScreen market={market} initialTab="decisions" />);
       await settled();
       const loading = screen.getByText("결정 기록을 읽는 중…").parentElement;
       expect(tokens(loading)).toContain("min-h-dvh");
     });
   }
+
+  it("한국 '출발·게이트 기록' 패널은 결정 기록이 처음 온 뒤부터 — 목록이 짧아 자리가 줄 때 위로 올라오지 않게", async () => {
+    let resolveList: (value: unknown) => void = () => {};
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/paper/overview")) return Promise.resolve(overviewOf("KR"));
+      if (path.startsWith("/api/paper/decisions?")) return new Promise((resolve) => { resolveList = resolve; });
+      return new Promise(() => {});
+    });
+    render(<PaperScreen market="KR" initialTab="decisions" />);
+    await settled();
+    expect(screen.getByText("결정 기록을 읽는 중…")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "출발·게이트 기록" })).toBeNull();
+    await act(async () => resolveList({ available: true, decisions: [] }));
+    expect(screen.getByRole("heading", { name: "출발·게이트 기록" })).toBeTruthy();
+    // 작업 기록(상태)은 결정 기록을 기다리지 않고 처음부터 읽습니다(요청 시각 그대로).
+    expect(api.apiGetShared.mock.calls.map(([path]) => path)).toContain("/api/paper/status?market=KR");
+  });
 
   it("읽기가 실패한 뒤에는 오류 상자(큰 자리를 그리지 않음)", async () => {
     failList = true;

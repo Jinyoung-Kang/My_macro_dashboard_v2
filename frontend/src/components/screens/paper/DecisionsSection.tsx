@@ -5,7 +5,7 @@ import { DataTable, InspectorSubheading, type PropertyItem, PropertyList, Timeli
 import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -180,6 +180,14 @@ export function DecisionsSection({
     if (active === null || active === document.body || !active.isConnected) action.focus();
   });
 
+  // 한국 '출발·게이트 기록' 패널은 결정 기록이 처음 한 번 온 뒤(값·오류)부터 그립니다(QA-955) — 목록 건수를 응답 전에 알 수 없어, 목록 위에 그려 두면
+  // 목록이 짧을 때(출발 직후 등) 화면 높이 자리가 줄며 이 패널이 위로 올라왔습니다. 작업 기록은 지금처럼 이 섹션이 바로 읽습니다(요청 시각 그대로).
+  const [listSettled, setListSettled] = useState(false);
+  const listDone = list.data !== null || list.error !== null;
+  useEffect(() => {
+    if (listDone) setListSettled(true);
+  }, [listDone]);
+
   if (!code) {
     return (
       <Callout tone="neutral">
@@ -342,7 +350,17 @@ export function DecisionsSection({
           : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 선정·신호·주문·게이트(참고)를 봅니다."}
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
       >
-        {list.loading && !list.data && <Loading label="결정 기록을 읽는 중…" />}
+        {list.loading && !list.data && (
+          // 처음 읽는 동안은 화면 높이 이상의 자리(QA-955 — 최근 50건까지의 긴 목록, QA-892 순위와 같음): 한 줄이던 때는 목록이 오며 첫 화면 안에 들어온
+          // 아래 패널(한국 '출발·게이트 기록')을 밀었습니다. 실패 뒤 다시 읽는 동안은 한 줄(QA-655).
+          firstLoadPending(list) ? (
+            <div className="min-h-dvh">
+              <Loading label="결정 기록을 읽는 중…" />
+            </div>
+          ) : (
+            <Loading label="결정 기록을 읽는 중…" />
+          )
+        )}
         {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
         {list.data && !list.data.available && <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>}
         {list.data?.available && (
@@ -356,7 +374,7 @@ export function DecisionsSection({
         )}
       </Panel>
 
-      {korea && (
+      {korea && (listSettled || listDone) && (
         <KrStartRecordsCard
           jobs={statusJobs}
           loading={status.loading && !status.data}
