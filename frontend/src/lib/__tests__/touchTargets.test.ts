@@ -15,6 +15,7 @@ import { belowLgTarget, smallTargets } from "./touchTargetAudit";
 
 const {
   buttonClasses,
+  FIELD_INPUT,
   filterChipClasses,
   inputClasses,
   LINK_CLASSES,
@@ -35,6 +36,7 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
     (["default", "primary", "danger", "minimal", "secondary", "ghost"] as const).flatMap((variant) =>
       (["md", "sm", "lg"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
   inputClasses: () => (["md", "sm", "lg"] as const).map((size): [string, string] => [size, inputClasses(size)]),
+  FIELD_INPUT: () => [["", FIELD_INPUT]],
   pillTabClasses: () => BOTH.map((active): [string, string] => [String(active), pillTabClasses(active)]),
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
@@ -56,6 +58,8 @@ const UI_OTHERS: Record<string, string> = {
   ENTITY_FRAME: "대상 화면 칸 틀(격자) — 누르지 않음",
   ENTITY_FRAME_LEFT: "대상 화면 칸 틀의 왼쪽 칸 — 누르지 않음",
   FOCUS_RING: "포커스 링 조각 — 혼자 쓰지 않고 누르는 조각에 붙음",
+  FIELD_LABEL: "폼 이름표(위 글·아래 칸 배치) — 누르는 자리는 안의 입력칸",
+  FIELD_WIDTH: "폼 칸의 폭 조각 — 높이는 입력칸·고르기 상자 모양이 정함",
   SEGMENT_TRACK: "세그먼트의 트랙(바탕) — 누르는 칸은 segmentClasses",
   SELECTED_BAR: "고른 행의 장식 막대 — 누르는 자리는 감싼 행",
   SKELETON_BAR: "읽는 중 자리표시 막대(장식) — 누르지 않음",

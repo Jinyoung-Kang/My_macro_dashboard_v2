@@ -183,21 +183,23 @@ describe("QA-446 — 긴 영문 이름 옆의 종류 꼬리표는 한 줄로 남
   // 수정 전 실패: 꼬리표 className에 shrink-0·whitespace-nowrap이 없음(재현 커밋에서는 it.fails).
   const LONG_NAME = "Fictional Universal Financial Holdings Group, Inc.";
 
-  it("꼬리표는 줄지 않고 한 줄(shrink-0·whitespace-nowrap), 이름은 남은 폭에서 말줄임하고 title에 이름 전체", async () => {
+  // 작업대 P8 U2: 머리를 공용 패턴 EntityHeader로 옮겨 이름은 말줄임하지 않고 낱말 사이에서 줄을 바꿉니다(이름 전체가 보여 title이 필요 없음). 종류 태그는
+  // 이름과 같은 줄바꿈 줄(flex-wrap)의 따로 선 칸이라 자리가 모자라면 다음 줄로 넘어가고 눌리지 않습니다 — 아이콘 칸은 줄 밖(shrink-0).
+  it("종류 태그는 이름과 같은 줄바꿈 줄의 칸이고(눌리지 않고 넘어감), 이름은 말줄임 없이 낱말 사이에서 줄을 바꾼다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: { ...NVIDIA, name: LONG_NAME, nameKo: null, nameEn: LONG_NAME }, errors: {} };
     reads[endpoints.search.watch] = watchList([]);
     renderScreen("/search?e=us:NVDA");
     const heading = await screen.findByRole("heading", { level: 2, name: LONG_NAME });
     const row = heading.parentElement as HTMLElement;
-    expect(row.className).toContain("flex");
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "flex-wrap", "min-w-0"]));
 
     const badge = within(row).getByText("기업");
-    expect(badge.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
-    for (const child of Array.from(row.children)) {
-      if (child !== heading) expect(child.className.split(/\s+/)).toContain("shrink-0");
-    }
-    expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-w-0", "truncate"]));
-    expect(heading.getAttribute("title")).toBe(LONG_NAME);
+    expect(badge.parentElement).toBe(row);
+    expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-w-0", "break-keep", "wrap-anywhere"]));
+    expect(heading.className.split(/\s+/)).not.toContain("truncate");
+    expect(heading.textContent).toBe(LONG_NAME);
+    const icon = heading.closest("header")?.querySelector("span[aria-hidden='true']");
+    expect(icon?.className.split(/\s+/)).toContain("shrink-0");
   });
 });
 

@@ -50,7 +50,7 @@ import { SettingsSection } from "./SettingsSection";
  * 주소가 바뀌면 그 주소의 탭으로 맞춥니다.
  *
  * <p><b>한국</b>(`market` "KR", 2단계 명세 §4-16 — /paper/kr·/paper/kr/&lt;탭&gt;): 같은 여덟 탭이고 개요는 `?market=KR` 응답(원 단위 정수,
- * 네 계좌 kr_rules·kr_claude·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 종목 선정 탭(키
+ * 다섯 계좌 kr_rules·kr_claude·kr_claude2·kr_bench_k200·kr_bench_mix)입니다. 정기 작업이 쉬면 그 사유(dormantReason)를 맨 위에 적습니다. 종목 선정 탭(키
  * selection — 미국 '기관 선정' 자리)은 한국 규칙 계좌의 재선정 기록(KrSelectionSection), 메모 탭은 한국 메모(`?market=KR`)입니다. 프레임·설정은
  * 두 시장이 함께 쓰는 화면이라 같은 섹션에 시장을 넘겨 공용임을 밝힙니다(설정은 '한국 + 공용' 보기가 기본). 주소 맞추기는 그 시장의 주소만 봅니다(다른 시장 주소는 무시).
  *
@@ -166,7 +166,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
           description={
             korea ? (
               <>
-                같은 돈·같은 날 출발한 네 계좌 — 규칙 · Claude · KODEX 200(069500) · 한국 60/40(069500 60%·153130 40%)
+                {/* 한국 장부는 다섯 계좌 — 계좌2도 계좌1의 출발일로 같은 돈에서 출발(백엔드 PaperBooks·startKrClaude2, QA-944). */}
+                같은 돈·같은 날 출발한 다섯 계좌 — 규칙 · Claude 계좌1 · Claude 계좌2 · KODEX 200(069500) · 한국 60/40(069500 60%·153130 40%)
                 {krInitialCash(data) ? ` · 계좌마다 ${krInitialCash(data)}` : ""}
                 {data?.startDate ? ` · 출발 ${data.startDate}` : ""} · 출발일 밤 결정으로 다음 KR 거래일 시가에 함께 출발
               </>

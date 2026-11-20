@@ -160,6 +160,15 @@ export function parseInfoTab(value: string | null | undefined): InfoTab | null {
 /** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 분류 탭의 출처도 작업대 P7부터 카드(8장) 대신 표 10줄. */
 export const PAGE_SIZE = 10;
 
+/**
+ * 정보 수집 화면이 위 읽기의 첫 응답을 기다리는 상한(ms) — InfoHub AfterSettled(아래 패널을 숨기는 동안, QA-897)와 뉴스 탭의 catalog 읽는 중 한 줄(QA-929)이
+ * 함께 씁니다. 화면의 읽기(hooks/useApi)에는 시간 제한이 없어, 응답이 오지 않고 연결도 끊기지 않으면 이미 받은 것이 끝없이 숨었습니다. 상한 2초는 잰 값에서
+ * 정했습니다 — QA 스택에서 위 패널의 응답은 KRX 약 0.01초·뉴스 catalog 약 0.3초(catalog는 수집기 상태를 묻는 길이라 가장 느림 — 16개 동시 요청 최대
+ * 0.65초)라, 보통은 상한 안에 답해 QA-893·894의 이득(밀리지 않음)을 지키고, 운영 서버의 왕복·수집기 지연에 세 배쯤 여유를 둡니다. 상한을 넘겨 답하면
+ * 그때는 예전처럼 밀릴 수 있습니다.
+ */
+export const FIRST_ANSWER_CAP_MS = 2_000;
+
 // ------------------------------------------------------------------ 쪽 나누기
 export type Paged = { page?: number; size?: number; total?: number; pages?: number };
 

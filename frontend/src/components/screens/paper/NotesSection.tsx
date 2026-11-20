@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { MasterDetail, type PropertyItem, PropertyList } from "@/components/patterns";
-import { Button, buttonClasses, Callout, ErrorState, inputClasses, Loading, NativeSelect, Panel } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, FIELD_WIDTH, inputClasses, Loading, NativeSelect, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiDelete, apiPost } from "@/lib/api";
@@ -247,7 +247,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
               <NativeSelect
                 value={draft.kind}
                 onChange={(event) => edit({ kind: event.target.value === "INSIGHT" ? "INSIGHT" : "MARKET" })}
-                wrapperClassName="block w-full sm:max-w-[22rem]"
+                wrapperClassName={`block ${FIELD_WIDTH}`}
               >
                 <option value="MARKET">{korea ? "시황 메모(MARKET) — 한국 결정 패킷에" : "시황 메모(MARKET) — 결정 패킷에"}</option>
                 <option value="INSIGHT">방법론 메모(INSIGHT) — 프레임 제안에</option>

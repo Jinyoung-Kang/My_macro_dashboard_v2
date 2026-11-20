@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Pager } from "@/components/Pager";
 import { ChangeCell, type Column, DataTable, StaleBadge } from "@/components/patterns";
-import { Card, ErrorState, Freshness, LINK_CLASSES, Loading, NativeSelect, Tag } from "@/components/ui";
+import { Card, ErrorState, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, NativeSelect, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber } from "@/lib/format";
@@ -144,7 +144,7 @@ export function KrxSection({ onSettled }: { onSettled?: () => void } = {}) {
 /** 고르기 하나 — 공용 기본 조작 크기(md — 넓은 화면 30px, 좁은 화면 44px), 이름표 13px 보조 글(공용 Select와 같음). 좁은 화면은 한 칸 전체. */
 function Choice({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
+    <label className={FIELD_LABEL}>
       {label}
       <NativeSelect value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map(([v, l]) => (

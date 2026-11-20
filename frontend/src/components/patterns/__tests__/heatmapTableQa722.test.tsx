@@ -31,12 +31,13 @@ const ROWS: HeatmapRow[] = [
   { key: "alpha", label: "SYNTHETIC ALPHA CO", values: [1, 2, 3, 4, 5, 6, 7, 8] },
   { key: "beta", label: "SYNTHETIC BETA CO", values: [8, 7, 6, 5, 4, 3, 2, 1] },
 ];
-const NAME = "합성 히트맵 (좌우 스크롤)";
+/** 스크롤 상자 — 표가 상자에 들어가는 폭에서는 이름 있는 영역이 아니므로(QA-939) 표의 부모로 찾습니다. */
+const scrollBox = () => document.querySelector("table")?.parentElement as HTMLElement;
 
 type Sizes = { content: number; visible: number };
 
 /**
- * 스크롤 상자(role=region)의 내용 폭·보이는 폭을 흉내 내고(바꿀 수 있음), scrollLeft를 요소마다 기억합니다(jsdom은 늘 0). 만든 ResizeObserver의 콜백을
+ * 스크롤 상자(표를 바로 감싼 상자 — 넘치지 않으면 영역 역할이 빠지므로 역할로 찾지 않음, QA-939)의 내용 폭·보이는 폭을 흉내 내고(바꿀 수 있음), scrollLeft를 요소마다 기억합니다(jsdom은 늘 0). 만든 ResizeObserver의 콜백을
  * 모아 두어 `resize`가 폭을 바꾼 뒤 다시 부릅니다.
  */
 function stubBox(initial: Sizes) {
@@ -60,13 +61,13 @@ function stubBox(initial: Sizes) {
   Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.getAttribute("role") === "region" ? sizes.content : 0;
+      return this.querySelector(":scope > table") !== null ? sizes.content : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.getAttribute("role") === "region" ? sizes.visible : 0;
+      return this.querySelector(":scope > table") !== null ? sizes.visible : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, "scrollLeft", {
@@ -83,7 +84,7 @@ function stubBox(initial: Sizes) {
     resize(next: Sizes) {
       sizes.content = next.content;
       sizes.visible = next.visible;
-      const region = screen.getByRole("region", { name: NAME });
+      const region = scrollBox();
       const end = Math.max(0, sizes.content - sizes.visible);
       const clamped = region.scrollLeft > end;
       if (clamped) region.scrollLeft = end;
@@ -97,7 +98,7 @@ function stubBox(initial: Sizes) {
      * scroll 이벤트를 보내고(브라우저는 다음 프레임에 보냄 — 받는 쪽은 그때의 폭을 읽음), 관찰 콜백을 부릅니다. 끝나면 남은 이벤트를 보냅니다.
      */
     frames(steps: readonly Sizes[]) {
-      const region = screen.getByRole("region", { name: NAME });
+      const region = scrollBox();
       let pending = false;
       for (const next of steps) {
         sizes.content = next.content;
@@ -158,13 +159,13 @@ function observed() {
   const classes = screen.getByText("← 표를 좌우로 넘겨 보세요").className.split(/\s+/);
   return {
     hint: classes.includes("hidden") ? "hidden" : classes.includes("sm:hidden") ? "phone-only" : "shown",
-    scrollLeft: screen.getByRole("region", { name: NAME }).scrollLeft,
+    scrollLeft: scrollBox().scrollLeft,
   };
 }
 
 /** 사용자가 상자를 옮긴 것처럼 scrollLeft를 두고 scroll 이벤트를 보냅니다. */
 function userScroll(to: number) {
-  const region = screen.getByRole("region", { name: NAME });
+  const region = scrollBox();
   region.scrollLeft = to;
   fireEvent.scroll(region);
 }

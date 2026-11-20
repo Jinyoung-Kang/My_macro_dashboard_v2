@@ -192,8 +192,10 @@ test-backend: db-test ## 백엔드 테스트 (PostgreSQL 필요)
 	cd backend && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
 		mvn -B verify
 
-test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 검사 포함)
+# 마지막 줄은 화면 감사 스크립트(scripts/qa/ui-audit.js)의 순수 함수 시험 — Node 내장 node:test라 의존성이 없고, CI 프런트엔드 job도 같은 명령을 돌립니다.
+test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 검사 포함) + 화면 감사 스크립트 시험
 	cd frontend && npm run check && npm test && npm run lint && npm run build
+	node --test scripts/qa/ui-audit.test.js
 
 # ------------------------------------------------------------- 네이티브 개발
 # 수집기는 토큰이 비면 기동을 거부하고(COLLECTOR_ALLOW_NO_TOKEN=1일 때만 경고 후 기동), 백엔드는 같은 토큰을

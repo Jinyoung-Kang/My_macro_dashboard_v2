@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { PageHeader } from "@/components/ui";
-import type { InfoTab } from "@/lib/info";
+import { FIRST_ANSWER_CAP_MS, type InfoTab } from "@/lib/info";
 import { CatalogSection } from "./CatalogSection";
 import { KrxSection } from "./KrxSection";
 import { MechanismSection } from "./MechanismSection";
@@ -77,25 +77,17 @@ export default function InfoHub({ tab }: { tab: InfoTab }) {
 }
 
 /**
- * AfterSettled가 위 패널의 첫 응답을 기다리는 상한(ms). 화면의 읽기(hooks/useApi)에는 시간 제한이 없어, 위 응답이 오지 않고 연결도 끊기지 않으면 이미
- * 받은 아래 패널이 끝없이 숨었습니다(QA-897). 상한 2초는 잰 값에서 정했습니다 — QA 스택에서 위 패널의 응답은 KRX 약 0.01초·뉴스 catalog 약 0.3초
- * (catalog는 수집기 상태를 묻는 길이라 가장 느림 — 16개 동시 요청 최대 0.65초)라, 보통은 상한 안에 답해 QA-893·894의 이득(아래가 밀리지 않음)을 지키고,
- * 운영 서버의 왕복·수집기 지연에 세 배쯤 여유를 둡니다. 상한을 넘겨 답하면 그때는 예전처럼 아래 패널이 밀릴 수 있습니다.
- */
-const AFTER_SETTLED_CAP_MS = 2_000;
-
-/**
  * 위 패널이 처음 답할 때까지 아래 패널을 그리되 보이지 않게(hidden — 요청은 처음부터 함께 시작, 횟수·경로 그대로) 둡니다. 위 패널의 응답 뒤 높이는
  * 받은 자료에 따라 크게 갈려(국내 KRX: 받은 날 표 다섯 약 2,000px · 저장본 없음 약 230px, 뉴스: 글 10편 약 650~900px · 0편 한 줄) 읽는 중 자리로는 한쪽만
  * 맞출 수 있었습니다 — 보이던 아래 패널이 응답 뒤 첫 화면 밖으로 밀리거나(받은 날) 화면 밖에서 올라왔습니다(없는 날). 아래 패널은 위 패널이 답한 뒤
- * 처음 나타나므로 밀리지 않습니다(QA-893·894). 위 패널이 오류여도 답한 것으로 봅니다. 위 패널이 상한(AFTER_SETTLED_CAP_MS) 안에 답하지 않으면 아래
+ * 처음 나타나므로 밀리지 않습니다(QA-893·894). 위 패널이 오류여도 답한 것으로 봅니다. 위 패널이 상한(lib/info FIRST_ANSWER_CAP_MS) 안에 답하지 않으면 아래
  * 패널을 그냥 보입니다(QA-897 — 끝없이 숨지 않게).
  */
 function AfterSettled({ top, children }: { top: (settle: () => void) => ReactNode; children: ReactNode }) {
   const [settled, setSettled] = useState(false);
   const settle = useCallback(() => setSettled(true), []);
   useEffect(() => {
-    const timer = window.setTimeout(settle, AFTER_SETTLED_CAP_MS);
+    const timer = window.setTimeout(settle, FIRST_ANSWER_CAP_MS);
     return () => window.clearTimeout(timer);
   }, [settle]);
   return (

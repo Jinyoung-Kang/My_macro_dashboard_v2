@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 import { EstimateBadge, StaleBadge } from "@/components/patterns/badges";
-import { formatNumber } from "@/lib/format";
+import { formatChartNumber } from "@/lib/format";
 import {
   axisLabelWidth,
   hasLineValues,
@@ -178,7 +178,7 @@ export function LineChart({
   data,
   series,
   height,
-  valueFormat = (value: number) => formatNumber(value, 2),
+  valueFormat = (value: number) => formatChartNumber(value, 2),
   tooltipFormat,
   includeZero = false,
   nonNegative = false,

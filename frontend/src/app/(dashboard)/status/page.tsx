@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { DataTable, KpiStrip, SectionAnchor, SectionIndex, type Column, type KpiItem, type SectionIndexItem } from "@/components/patterns";
 import { Button, Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Tag } from "@/components/ui";
 import { ClockIcon, StatusIcon, StatusText, type StatusTone } from "@/components/ui/icons";
@@ -65,6 +66,9 @@ export default function StatusPage() {
   const { reloadAll } = useRefreshSignal();
   // 개별 태스크 실행도 화면 전체를 갱신합니다(useTaskRunner 설명 참고).
   const { running, message, messageTone, runTask } = useTaskRunner(reloadAll);
+  // 태스크 이름 칸의 id — 같은 줄의 '다시 실행'이 낭독 설명으로 가리킵니다(QA-900).
+  const taskNamePrefix = useId();
+  const taskNameId = (task: string) => `${taskNamePrefix}-task-${task}`;
 
   if (loading && !data) {
     return <Loading label="저장소 상태를 확인하는 중…" />;
@@ -123,7 +127,7 @@ export default function StatusPage() {
       cell: (row) => (
         <span className="flex items-center gap-2">
           <TaskStatusIcon status={row.status} />
-          <span className="font-mono text-caption text-text-2">{row.task}</span>
+          <span id={taskNameId(row.task)} className="font-mono text-caption text-text-2">{row.task}</span>
           {row.speed && <Tag>{row.speed}</Tag>}
         </span>
       ),
@@ -156,7 +160,15 @@ export default function StatusPage() {
       header: <span className="sr-only">동작</span>,
       align: "right",
       cell: (row) => (
-        <Button size="sm" onClick={() => runTask(row.task)} disabled={running !== null}>
+        // 실행 중인 줄의 단추는 꺼지지 않고 요청 중(busy — aria-disabled, 누름 무시)이라 누른 단추에 포커스가 남습니다(QA-899). 다른 줄은 예전처럼 꺼짐.
+        // 줄마다 이름이 같은 단추라 낭독 설명으로 그 줄의 태스크 이름 칸을 가리킵니다(보이는 글·이름은 그대로 — QA-900, 이 표는 행 머리가 없음).
+        <Button
+          size="sm"
+          onClick={() => runTask(row.task)}
+          disabled={running !== null && running !== row.task}
+          busy={running === row.task}
+          describedBy={taskNameId(row.task)}
+        >
           {running === row.task ? "실행 중…" : "다시 실행"}
         </Button>
       ),

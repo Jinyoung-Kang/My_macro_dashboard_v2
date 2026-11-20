@@ -106,7 +106,7 @@ export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
 // 수집기(search.py의 _KEY_PATTERNS)·백엔드(SearchService)와 같은 문법 — 어긋나면 수집기의 400이 '응답 없음'으로 보입니다.
 const KEY_PATTERNS: readonly RegExp[] = [/^us:[A-Z0-9][A-Z0-9.-]{0,14}$/, /^kr:\d{6}$/, /^cik:\d{10}$/, /^wd:Q[1-9]\d{0,11}$/];
 const TOPIC_MAX = 60;
-// eslint-disable-next-line no-control-regex -- 제어 글자를 막는 것이 목적
+// 제어 글자를 막는 것이 목적. 이 저장소 eslint 설정에서는 no-control-regex가 꺼져 있음(그 규칙은 \u 이스케이프도 잡음) — 켜면 이 줄에 끄기 주석을 다시 둘 것.
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 const codePoints = (text: string) => Array.from(text).length;
@@ -2041,6 +2041,16 @@ export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { la
   else if (ids.market === "kr" && ids.stockCode) out.push({ label: "종목 상세", href: stockHref("kr", ids.stockCode) });
   if (entity.key.startsWith("cik:")) out.push({ label: "기관 상세", href: institutionHref(entity.key.slice("cik:".length)) });
   return out;
+}
+
+/**
+ * 대상 풀기 응답 전에 키만으로 아는 바로가기 이름 — 종목(us:·kr:)은 '종목 상세', 13F 기관(cik:)은 '기관 상세'(풀린 뒤 entityShortcuts가 거의 늘 그리는 것).
+ * 대상 머리가 응답 전 그 자리를 보이지 않게 잡아 두는 데만 씁니다(QA-930 — 링크를 만들지 않음). wd:·주제 키는 모름(null).
+ */
+export function shortcutLabelOfKey(key: string): string | null {
+  if (key.startsWith("us:") || key.startsWith("kr:")) return "종목 상세";
+  if (key.startsWith("cik:")) return "기관 상세";
+  return null;
 }
 
 const HANGUL = /[가-힣]/;
