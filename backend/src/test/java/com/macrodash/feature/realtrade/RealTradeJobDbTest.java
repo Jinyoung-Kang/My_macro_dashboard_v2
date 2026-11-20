@@ -2550,6 +2550,29 @@ class RealTradeJobDbTest {
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
     }
 
+    // ------------------------------------------------------------------ 책의 종목이 매매 제한으로 빠진 몫도 회전율 판정에(QA-949)
+    // 합성 계좌 E = 1,000만 원: 현금 500만 + D 50주(10만 원) — 책의 목표 A 30%(5만 원 → 60주 매수)·B 20%(2만 원 → 100주 매수)·D 10%(10주 → 40주 매도).
+    // VI가 아니면 회전율 30 + 20 + 40 = 90%.
+    // QA-949 — 수정 전(재현 커밋에서는 @Disabled): A·D가 VI라 계획에서 빠지면 판정 회전율이 B의 20%뿐이라 이상 멈춤 없이 묶음을 만들고
+    // 'BUY 000660 DAY 100'을 보냄(그 뒤 VI가 풀리면 같은 창 마무리가 A 매수·D 매도 70%를 회전율 검사 없이 보냄).
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-949 재현 — 고치기 전에는 VI로 빠진 책의 종목 몫을 회전율에 세지 않아 묶음이 나감")
+    @DisplayName("QA-949: 시각 맞추기 날 책의 종목 둘(A 매수 30%·D 매도 40%)이 VI — 판정 회전율은 VI가 아니었을 때와 같은 90%라 이상 멈춤, 묶음·주문 없음")
+    void restrictedBookSymbolsCountTowardTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));   // 켠 뒤 첫 묶음이 아님 — 회전율 예외 없음
+        timedTargets(Map.of(A, 30.0, B, 20.0, D, 10.0), List.of(), List.of());
+        preflight("5000000", Map.of(D, new String[]{"50", "100000"}), Map.of(A, "50000", B, "20000"));
+        restrictions(Set.of(A, D), null);
+
+        run("09:10:05");
+
+        verify(client, never()).placeOrder(anyString());
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(cfg().haltDetail().path("turnoverPct").decimalValue()).as("VI가 아니었을 때와 같은 값").isEqualByComparingTo("90.00");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
@@ -4042,6 +4065,24 @@ class RealTradeJobDbTest {
         assertHalted("S1b", "over-cap");
         assertThat(haltDetail().path("turnoverPct").asDouble()).isEqualTo(146.7);
         assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(156.5);
+    }
+
+    // QA-949 — 수정 전(재현 커밋에서는 @Disabled): 새 종목 F~I(매수 40%)가 VI라 지금 멈춤 판정이 153130 매도 40%뿐이어서 재선정 예외 판정(열두 확인)을
+    // 거치지 않고 묶음을 보냄 — 예외 이벤트 없음('expected size 1 but was 0').
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-949 재현 — 고치기 전에는 VI로 빠진 새 종목 몫이 멈춤 판정에 없어 예외 판정 없이 묶음이 나감")
+    @DisplayName("QA-949: N1(153130 → 종목 넷) 새 종목 넷이 모두 VI — 멈춤 판정 80%(VI 몫 셈)라 재선정 예외 판정으로 가서 보냄, 멈춤 판정과 판정 회전율이 같은 80%(두 번 세지 않음)")
+    void rebalanceRestrictedNewNamesGoThroughExemption() {
+        rebalanceDay(P1, H1, NOW1, Set.of());
+        restrictions(letters("FGHI"), null);
+
+        run("09:10:05");
+
+        JsonNode detail = assertExempt("N1 + 새 종목 넷 VI");
+        assertThat(detail.path("turnoverPct").asDouble()).as("멈춤 판정 회전율").isEqualTo(80.0);
+        assertThat(detail.path("checkTurnoverPct").asDouble()).as("열두 확인의 판정 회전율 — 제한 종목을 한 번만 셈").isEqualTo(80.0);
+        assertThat(sentSummaries()).contains("SELL " + CASH_LIKE + " DAY 4000").noneMatch(o -> o.contains(r("F")) || o.contains(r("G"))
+                || o.contains(r("H")) || o.contains(r("I")));
     }
 
     @Test
