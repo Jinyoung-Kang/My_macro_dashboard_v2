@@ -1,5 +1,5 @@
 /**
- * 정보 검색 대상 화면 첫 적재 자리 — QA-930(결정 거리 `search-entity-first-load-cls` — D6 전 QA 스택 확인에서 감사·인증·정보 검색 갈래가 함께 냄, 개편 전부터).
+ * 정보 검색 대상 화면 첫 적재 자리 — QA-930(작업대 P8 U2에서 머리를 공용 패턴으로 옮기며 첫째·넷째 사례를 패턴의 줄 꼴로 고침)(결정 거리 `search-entity-first-load-cls` — D6 전 QA 스택 확인에서 감사·인증·정보 검색 갈래가 함께 냄, 개편 전부터).
  *
  * `/search?e=us:NVDA&tab=timeline&range=30d` 첫 적재 CLS 1024 0.3792·1440 0.136·390 0~0.51(응답 차례에 따라). 대상 머리(EntityParts EntityHeader)가 대상이
  * 풀리기 전에는 키 한 줄(`mt-1`·12px 글 16px)이다가 풀린 뒤 꼬리표 줄(`mt-2`·꼬리표 20px)과 '종목 상세' 바로가기(머리 오른쪽 묶음)를 그려 머리 아래 탭 줄·
@@ -70,12 +70,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 검색 대상 화면 첫 적재 자리(QA-930)", () => {
-  it("대상이 풀리기 전 키 줄은 꼬리표 줄과 같은 위 여백·높이다", () => {
+  // 작업대 P8 U2 — 머리가 공용 패턴 EntityHeader라 식별자·별칭 태그는 이름 줄 안에 이어지고 따로 선 꼬리표 줄이 없습니다. 풀리기 전에는 이름 자리에
+  // 키가 한 번만 보이고(예전의 키 줄 없음), 이름 줄 밖에 다른 줄이 없습니다(풀린 뒤에도 같음 — 넷째 사례).
+  it("대상이 풀리기 전 키는 이름 자리에 한 번만 보이고 이름 줄 밖에 다른 줄이 없다", () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
-    const keyLine = within(header()).getByText("us:NVDA", { selector: "p" });
-    // 꼬리표 줄(풀린 뒤)은 mt-2, 꼬리표(Tag)는 text-xs leading-4(16px) + py-px(2px) + 테두리(2px) = 20px.
-    expect(tokens(keyLine)).toContain("mt-2");
-    expect(tokens(keyLine)).toContain("min-h-5");
+    const heading = within(header()).getByRole("heading", { level: 2 });
+    expect(heading.textContent).toBe("us:NVDA");
+    expect(within(header()).getAllByText("us:NVDA")).toHaveLength(1);
+    // 이름 줄(h2 + 종류 태그)이 글 칸의 유일한 줄.
+    expect(heading.parentElement?.parentElement?.children).toHaveLength(1);
   });
 
   it("키로 바로가기를 아는 대상은 풀리기 전 머리 오른쪽에 바로가기와 같은 꼴의 보이지 않는 자리가 있다", () => {
@@ -102,15 +105,19 @@ describe("정보 검색 대상 화면 첫 적재 자리(QA-930)", () => {
     expect(tokens(loading)).toContain("min-h-dvh");
   });
 
-  it("풀린 뒤에는 꼬리표 줄과 '종목 상세' 링크만 — 보이지 않는 자리가 남지 않는다(겉모습 그대로)", async () => {
+  it("풀린 뒤에는 이름 줄의 식별자 태그와 '종목 상세' 링크만 — 보이지 않는 자리가 남지 않는다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     await act(async () => {});
     await act(async () => {});
     const head = header();
     expect(within(head).getByRole("heading", { level: 2 }).textContent).toBe("엔비디아");
+    // 식별자는 이름 줄 안의 고정폭 태그(패턴), 따로 선 꼬리표 줄 없음.
     const chip = within(head).getByText("NVDA · 미국");
-    expect(tokens(chip.parentElement)).toEqual(expect.arrayContaining(["mt-2", "flex", "flex-wrap", "items-center", "gap-1.5"]));
+    expect(tokens(chip)).toContain("font-mono");
+    const heading = within(head).getByRole("heading", { level: 2 });
+    expect(chip.closest(".flex-wrap")).toBe(heading.parentElement);
+    expect(heading.parentElement?.parentElement?.children).toHaveLength(1);
     expect(within(head).queryByText("us:NVDA")).toBeNull();
     const nav = within(head).getByRole("navigation", { name: "바로가기" });
     expect(within(nav).getByRole("link", { name: "종목 상세" })).toBeTruthy();
