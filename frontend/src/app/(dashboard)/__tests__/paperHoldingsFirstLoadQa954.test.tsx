@@ -68,7 +68,7 @@ const pendingSlot = () => screen.getByText("보유를 읽는 중…").closest("[
 
 describe("보유 표 첫 적재 자리(QA-954)", () => {
   for (const market of ["US", "KR"] as const) {
-    it.fails(`${market}: 처음 읽는 동안 계좌 요약의 보유 종목 수만큼 표 높이 자리 — 좁은 화면·넓은 화면·옆 검사 칸 높이`, async () => {
+    it(`${market}: 처음 읽는 동안 계좌 요약의 보유 종목 수만큼 표 높이 자리 — 좁은 화면·넓은 화면·옆 검사 칸 높이`, async () => {
       render(<PaperScreen market={market} initialTab="holdings" />);
       await settled();
       const slot = pendingSlot();
@@ -84,7 +84,7 @@ describe("보유 표 첫 적재 자리(QA-954)", () => {
     });
   }
 
-  it.fails("보유 종목 수가 0이면 줄 자리 없음(검사 칸 높이도 잡지 않음)", async () => {
+  it("보유 종목 수가 0이면 줄 자리 없음(검사 칸 높이도 잡지 않음)", async () => {
     positions = 0;
     render(<PaperScreen market="US" initialTab="holdings" />);
     await settled();
