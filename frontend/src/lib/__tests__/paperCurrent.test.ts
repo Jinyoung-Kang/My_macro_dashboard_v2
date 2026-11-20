@@ -90,8 +90,8 @@ describe("단계 표기 — 한 함수", () => {
 describe("'오늘' 이름과 기준 글", () => {
   // QA-945(작업대 D5 전 QA 관찰 — P8 문구 결정 거리, 사용자 결정 '둘 다 고침'): 개요 계좌 줄의 기준 한 줄이 '-0.41%'(formatPercent — ASCII 하이픈)이고
   // 같은 화면 KPI 띠·변화 칩은 '−0.41%'(U+2212)라 기호가 섞였다. 변화 한 줄의 음수도 U+2212여야 한다(양수 '+'·0은 그대로).
-  // 재현 커밋에서는 it.fails — 'expected '오늘 -0.41% · 10-29 잠정 대비' to be '오늘 −0.41% · 10-29 잠정 대비''.
-  it.fails("QA-945 변화 한 줄의 음수 부호는 U+2212 — 양수 '+'·반올림 뒤 0은 부호 없음", () => {
+  // 재현 커밋에서는 it.fails였다 — 'expected '오늘 -0.41% · 10-29 잠정 대비' to be '오늘 −0.41% · 10-29 잠정 대비''.
+  it("QA-945 변화 한 줄의 음수 부호는 U+2212 — 양수 '+'·반올림 뒤 0은 부호 없음", () => {
     expect(dayChange(current({ dayChangePct: -0.41 }), REGULAR).text).toBe("오늘 \u22120.41% · 10-29 잠정 대비");
     expect(dayChange(current({ dayChangePct: 0.42 }), REGULAR).text).toBe("오늘 +0.42% · 10-29 잠정 대비");
     expect(dayChange(current({ dayChangePct: -0.004 }), REGULAR).text).toBe("오늘 0.00% · 10-29 잠정 대비");
@@ -115,10 +115,10 @@ describe("'오늘' 이름과 기준 글", () => {
 
   it("변화 한 줄 — 서버 값 그대로, 모르면 줄 없음(0.00%를 짓지 않음)", () => {
     expect(dayChange(current(), REGULAR)).toEqual({ pct: 0.42, label: "오늘", base: "10-29 잠정 대비", text: "오늘 +0.42% · 10-29 잠정 대비" });
-    expect(dayChange(current({ dayChangePct: -0.1, previousNavFinal: true }), SUNDAY).text).toBe("10-30 변화 -0.10% · 10-29 확정 대비");
+    expect(dayChange(current({ dayChangePct: -0.1, previousNavFinal: true }), SUNDAY).text).toBe("10-30 변화 \u22120.10% · 10-29 확정 대비");
     // 앞의 마지막 순자산 줄이 바로 전 거래일이 아니면(10-30 값의 기준이 10-23 줄 — 그 사이 줄 없음) 기준 글이 그 간격을 밝힘('하루'라 적지 않음)
     expect(dayChange(current({ dayChangePct: -1.54, previousTradingDate: "2026-10-23", previousNavFinal: true }), SUNDAY).text)
-      .toBe("10-30 변화 -1.54% · 10-23 확정 대비");
+      .toBe("10-30 변화 \u22121.54% · 10-23 확정 대비");
     expect(dayChange(current({ dayChangePct: 0.42, previousTradingDate: "2026-10-23", previousNavFinal: true }), REGULAR).text)
       .toBe("오늘 +0.42% · 10-23 확정 대비");
     expect(dayChange(current({ previousTradingDate: null }), REGULAR).text).toBe("오늘 +0.42%");
