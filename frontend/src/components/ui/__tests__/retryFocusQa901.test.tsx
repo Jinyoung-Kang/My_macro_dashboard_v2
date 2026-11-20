@@ -60,7 +60,7 @@ async function pressRetry() {
 }
 
 describe("'다시 시도' 뒤 포커스(QA-901)", () => {
-  it.fails("패널 안 오류 상자 — 패널 머리 제목으로", async () => {
+  it("패널 안 오류 상자 — 패널 머리 제목으로", async () => {
     failThenPending();
     render(<PanelList />);
     await pressRetry();
@@ -68,7 +68,7 @@ describe("'다시 시도' 뒤 포커스(QA-901)", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "합성 목록" })));
   });
 
-  it.fails("화면 전체 오류 상자 — 본문(main)으로(화면 제목이 아직 없음)", async () => {
+  it("화면 전체 오류 상자 — 본문(main)으로(화면 제목이 아직 없음)", async () => {
     failThenPending();
     render(
       <main id="main" tabIndex={-1}>
@@ -79,7 +79,7 @@ describe("'다시 시도' 뒤 포커스(QA-901)", () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("main")));
   });
 
-  it.fails("정보 수집 뉴스 목록의 오류 상자 — '뉴스·글' 패널 제목으로", async () => {
+  it("정보 수집 뉴스 목록의 오류 상자 — '뉴스·글' 패널 제목으로", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/info/catalog")) return Promise.resolve({ checkedAt: null, collectorReachable: true, tabs: [], sources: [], incidents: [] });
       if (path.startsWith("/api/info/items?kind=blog")) return api.apiGetShared.mock.calls.filter(([p]) => String(p).startsWith("/api/info/items?kind=blog")).length === 1

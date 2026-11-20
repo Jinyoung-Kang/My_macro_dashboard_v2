@@ -15,6 +15,9 @@ import {
   type UnderlineTabSize,
 } from "./classes";
 import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon, XIcon } from "./icons";
+import { keepFocusNearby } from "./keepFocus";
+
+export { keepFocusNearby } from "./keepFocus";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
@@ -402,8 +405,16 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         */}
         <span className="min-w-0 break-keep wrap-break-word">{message}</span>
       </p>
+      {/* 누르면 화면이 이 상자를 '불러오는 중'으로 바꿔 단추가 사라지므로, 포커스는 다시 읽는 자리의 제목으로(QA-901 — keepFocus 규칙). */}
       {onRetry && (
-        <button type="button" onClick={onRetry} className={`mt-2 ${buttonClasses("default", "sm")}`}>
+        <button
+          type="button"
+          onClick={(event) => {
+            keepFocusNearby(event.currentTarget);
+            onRetry();
+          }}
+          className={`mt-2 ${buttonClasses("default", "sm")}`}
+        >
           다시 시도
         </button>
       )}
