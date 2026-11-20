@@ -26,7 +26,7 @@ const ENTRY: ReaderEntry = {
 };
 
 describe("QA-904 원문 본문 상자 — 스크롤 상자 공용 계약", () => {
-  it.fails("잴 수 없으면 본문 상자는 Tab 정지점이고 이름 있는 영역 '본문 (스크롤)'", () => {
+  it("잴 수 없으면 본문 상자는 Tab 정지점이고 이름 있는 영역 '본문 (스크롤)'", () => {
     render(<ReaderDialog entry={ENTRY} onClose={() => {}} />);
     const dialog = screen.getByRole("dialog", { name: "Synthetic long release" });
     const box = within(dialog).getByRole("region", { name: "본문 (스크롤)" });
