@@ -58,7 +58,7 @@ const settled = () => act(async () => {});
 
 describe("결정 기록이 답하지 않아도 상한 뒤 '출발·게이트 기록' 패널(QA-972)", () => {
   // 수정 전(재현 커밋에서는 it.fails): 결정 기록이 끝나지 않으면 패널이 끝내 그려지지 않았습니다.
-  it.fails("상한 안에는 그리지 않고, 상한 뒤에는 결정 기록 없이 패널과 작업 기록의 오류·다시 시도", async () => {
+  it("상한 안에는 그리지 않고, 상한 뒤에는 결정 기록 없이 패널과 작업 기록의 오류·다시 시도", async () => {
     render(<PaperScreen market="KR" initialTab="decisions" />);
     await settled();
     expect(screen.getByText("결정 기록을 읽는 중…")).toBeTruthy();

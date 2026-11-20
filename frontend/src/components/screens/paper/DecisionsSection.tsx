@@ -13,6 +13,7 @@ import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
+import { FIRST_ANSWER_CAP_MS } from "@/lib/info";
 import {
   bookOptions,
   candidatesNote,
@@ -191,6 +192,15 @@ export function DecisionsSection({
   useEffect(() => {
     if (listDone) setListSettled(true);
   }, [listDone]);
+  // 결정 기록이 상한(lib/info FIRST_ANSWER_CAP_MS — 정보 수집 화면 QA-897·929와 같은 2초) 안에 답하지 않으면 목록 없이도 그 패널을 그립니다(QA-972) — 화면의
+  // 읽기(useApi)에는 시간 한도가 없어, 답하지 않고 연결도 끊기지 않으면 이미 받은 작업 기록과 그 오류·다시 시도 칸이 끝내 그려지지 않았습니다. 목록 자리
+  // (화면 높이 — QA-955)는 그대로라 패널은 그 아래이고, 상한을 넘겨 목록이 오면 그때 짧은 목록이면 패널이 올라올 수 있습니다.
+  const [recordsCapOver, setRecordsCapOver] = useState(false);
+  useEffect(() => {
+    if (!korea || listSettled || recordsCapOver) return;
+    const timer = window.setTimeout(() => setRecordsCapOver(true), FIRST_ANSWER_CAP_MS);
+    return () => window.clearTimeout(timer);
+  }, [korea, listSettled, recordsCapOver]);
 
   if (!code) {
     return (
@@ -394,7 +404,7 @@ export function DecisionsSection({
           )}
         </Panel>
 
-        {korea && (listSettled || listDone) && (
+        {korea && (listSettled || listDone || recordsCapOver) && (
           <KrStartRecordsCard
             jobs={statusJobs}
             loading={status.loading && !status.data}
