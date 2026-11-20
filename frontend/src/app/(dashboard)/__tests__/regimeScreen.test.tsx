@@ -684,3 +684,29 @@ describe("QA-965 판정 근거의 읽는 중 자리표시는 값이 온 뒤의 �
     expect(hidden.querySelector("p.rounded-sm.border .invisible")?.textContent).toContain("임계치는 역사적 분포에 근거한 참고치");
   });
 });
+
+// QA-966(작업대 P8 후속 — `regime-header-placeholder-wide-nav-grow`): 대상 머리 자리표시(QA-650)가 높이를 창 폭 단계 클래스(h-15·sm:h-10·…·xl:h-5)로
+// 정해, 머리 칸의 실제 폭(창 폭 − 메뉴 폭 − 동작 칸)이 같은 창 폭에서도 메뉴 폭에 따라 달라지는 것을 따르지 못했습니다 — 1280에서 메뉴 272·320이면 배지 줄이
+// 두 줄이라 머리가 116 → 142px로 자라 첫 적재 CLS 0.0115·0.0109(메뉴 220은 0). 높이는 값이 온 뒤와 같은 글꼴·꼴의 보이지 않는 글이 머리 칸 안에서 정해야
+// 합니다(글꼴이 달라도 같음).
+describe("QA-966 대상 머리 자리표시의 높이는 창 폭이 아니라 머리 칸 안의 보이지 않는 글이 정한다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 세 자리 모두 폭 단계 높이 클래스(h-15·h-9·h-[74px] …)였고 보이지 않는 글이 없었습니다.
+  it.fails("설명 글·주 값 줄·배지 줄 자리에 높이 클래스가 없고, 값이 온 뒤와 같은 글꼴의 보이지 않는 글(설명 14px·값 28px·출처 배지와 축 태그 둘)", () => {
+    render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    const status = within(header).getByRole("status", { name: "국면을 판정하는 중" });
+    const rows = Array.from(status.children).filter((child) => child.getAttribute("aria-hidden") === "true");
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect((row.getAttribute("class") ?? "").split(/\s+/).filter((token) => /^(?:[a-z0-9]+:)?(?:min-)?h-/.test(token))).toEqual([]);
+    }
+    const [description, value, badges] = rows;
+    expect(description.querySelector(".invisible")?.closest("p")?.className).toContain("text-sm");
+    expect(description.querySelector(".invisible")?.textContent?.length).toBeGreaterThan(40);
+    expect(value.querySelector(".invisible .text-value-lg")?.textContent).toBeTruthy();
+    const badgeRow = badges.querySelector(".invisible") as HTMLElement;
+    expect(badgeRow.textContent).toContain("FRED (공식)");
+    expect(badgeRow.textContent).toContain("성장·신용");
+    expect(badgeRow.textContent).toContain("유동성");
+  });
+});
