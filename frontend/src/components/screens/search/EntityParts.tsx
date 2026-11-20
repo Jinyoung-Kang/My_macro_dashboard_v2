@@ -3,9 +3,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Tag } from "@/components/ui";
-import { LINK_CLASSES } from "@/components/ui/classes";
+import { LINK_CLASSES, TEXT_TARGET } from "@/components/ui/classes";
 import { EMPTY } from "@/lib/format";
-import { entityFailuresText, entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips } from "@/lib/infoSearch";
+import { entityFailuresText, entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips, shortcutLabelOfKey } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { KindBadge, KindIcon, PaneHeading } from "./parts";
 
@@ -17,21 +17,29 @@ function visibleAliases(entity: SearchEntity): string[] {
 /**
  * 대상 머리 — 종류 아이콘·이름·식별자·별칭 꼬리표와 다른 화면 바로가기(종목 상세·기관 상세), 관심 대상 등록 단추(action). 차트·시세는 그리지 않습니다(지시문 §4.2).
  * 대상 풀기 응답이 아직 없거나 풀지 못했으면 키만 보입니다.
+ *
+ * 응답 전 자리는 풀린 뒤의 꼴과 같은 높이입니다(QA-930 — 풀린 뒤 머리가 자라 탭 줄·결과 패널을 밀던 첫 적재 이동): 키 줄은 꼬리표 줄과 같은 위 여백·높이
+ * (mt-2 · 꼬리표 20px), 키로 바로가기를 아는 대상(lib/infoSearch shortcutLabelOfKey)은 응답이 올 때까지 오른쪽 묶음에 바로가기와 같은 꼴의 보이지 않는
+ * 자리(낭독·포커스 없음 — 링크를 만들지 않음). 별칭 꼬리표가 많아 꼬리표 줄이 길어지는 몫(오른쪽 묶음이 다음 줄로 꺾임)은 응답 전에 알 수 없어 남습니다.
  */
 export function EntityHeader({
   entityKey,
   entity,
   kind,
+  settled,
   action,
 }: {
   entityKey: string;
   entity: SearchEntity | null;
   kind: SearchEntityKind | null;
+  /** 대상 풀기 응답(성공·실패)이 왔는가 — 오기 전에만 바로가기 자리를 잡습니다. */
+  settled: boolean;
   /** 머리 오른쪽의 단추(관심 대상 등록·해제). */
   action?: ReactNode;
 }) {
   const name = entity?.name ?? entityKey.replace(/^topic:/, "");
   const shortcuts = entity ? entityShortcuts(entity) : [];
+  const pendingShortcut = !entity && !settled ? shortcutLabelOfKey(entityKey) : null;
   const aliases = entity ? visibleAliases(entity) : [];
   return (
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -57,10 +65,10 @@ export function EntityHeader({
             ))}
           </div>
         ) : (
-          <p className="mt-1 text-xs text-text-3">{entityKey}</p>
+          <p className="mt-2 flex min-h-5 items-center text-xs text-text-3">{entityKey}</p>
         )}
       </div>
-      {shortcuts.length > 0 || action ? (
+      {shortcuts.length > 0 || pendingShortcut || action ? (
         <div className="flex flex-wrap items-start gap-3">
           {shortcuts.length > 0 ? (
             <nav aria-label="바로가기" className="flex flex-wrap gap-3 text-sm">
@@ -70,6 +78,10 @@ export function EntityHeader({
                 </Link>
               ))}
             </nav>
+          ) : pendingShortcut ? (
+            <span aria-hidden="true" className={`invisible ${TEXT_TARGET} text-sm`}>
+              {pendingShortcut}
+            </span>
           ) : null}
           {action}
         </div>

@@ -27,6 +27,7 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import {
   type CatalogResponse,
+  FIRST_ANSWER_CAP_MS,
   type Headline,
   type HeadlineSet,
   type HeadlinesResponse,
@@ -93,8 +94,15 @@ export function NewsSection({ onSettled }: { onSettled?: () => void } = {}) {
   // catalog를 처음 받기 전 — '보류한 출처' 안내 상자와 출처 고르기가 catalog로 정해지므로 그때까지 거르기 줄·목록 대신 읽는 중 한 줄을 둡니다. 예전에는
   // 목록이 먼저 오면 그 위에 안내 상자가 뒤늦게 끼어 거르기 줄·목록을 밀었습니다(QA-894). 처음 읽는 동안만입니다(hooks/useApi firstLoadPending) — catalog가
   // 실패한 뒤 다시 읽는 동안(300초 자동 갱신·탭 복귀)도 참이던 식(`!catalog.error` — 다시 읽을 때 error가 비워짐)이라, 다시 읽을 때마다 거르기 줄·목록·
-  // 원문 칸이 통째로 내려갔다 다시 그려져 검색 칸 포커스와 번역해 둔 원문을 잃었습니다(QA-896).
-  const catalogPending = firstLoadPending(catalog);
+  // 원문 칸이 통째로 내려갔다 다시 그려져 검색 칸 포커스와 번역해 둔 원문을 잃었습니다(QA-896). 처음 읽기에도 상한(lib/info FIRST_ANSWER_CAP_MS — QA-897과
+  // 같은 2초)을 둡니다 — 상한이 없던 때는 catalog가 답하지 않고 연결도 끊기지 않으면 이미 받은 글 목록과 검색 칸이 끝없이 숨었습니다(QA-929). 상한 뒤에는
+  // catalog 없이 거르기 줄·목록을 보이고, 출처 고르기·안내 상자는 catalog가 오면 채웁니다(그때는 예전처럼 밀릴 수 있음).
+  const [catalogWaitOver, setCatalogWaitOver] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCatalogWaitOver(true), FIRST_ANSWER_CAP_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const catalogPending = firstLoadPending(catalog) && !catalogWaitOver;
   const choices = sourceChoices(sources, view);
   const deferred = sources.find((row) => row.access === "deferred");
   const set = headlineSet(view);
