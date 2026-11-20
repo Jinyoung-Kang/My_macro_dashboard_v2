@@ -1,13 +1,13 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
 import type { ActionBarItem } from "@/components/ui/ActionBar";
 import { PanelRightIcon } from "@/components/ui/icons";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
@@ -969,7 +969,12 @@ export function HoldingsSection({
         source={ledgerSource}
         actions={<LiveIntervalSelect />}
       >
-        {positions.loading && !positions.data && <Loading label="보유를 읽는 중…" />}
+        {positions.loading && !positions.data && (
+          // 처음 읽는 동안은 개요의 계좌 요약이 아는 종목 수만큼의 표 높이 자리(QA-954), 실패 뒤 다시 읽는 동안·종목 수를 모르면 한 줄(QA-655).
+          firstLoadPending(positions) && typeof book?.positions === "number"
+            ? <HoldingsPending rows={book.positions} korea={korea} />
+            : <Loading label="보유를 읽는 중…" />
+        )}
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
         {positions.data && !positions.data.available && <Callout tone="warn">{positions.data.message}</Callout>}
         {positions.data?.available && (
@@ -1167,6 +1172,42 @@ function withConfirmed(provisional: string, confirmed: string): ReactNode {
       <span>{provisional}</span>
       <span className="whitespace-nowrap text-xs text-text-3">{`확정 ${confirmed}`}</span>
     </span>
+  );
+}
+
+/*
+ * 보유 표 첫 적재 자리의 높이(QA-954) — 값 뒤 꼴(줄 수 + 표 머리·개수 줄·아래 현금·실시간 각주)을 빌드한 화면에서 잰 값으로 잡습니다: 미국 줄 높이 좁은 화면 93px·
+ * 넓은 화면(lg) 60px, 한국 69px·52px, 옆 검사 칸 배치(lg + 틀 52rem — InspectorFrame layout lg와 같은 기준)의 검사 칸 높이 미국 476px·한국 494px(각주 포함
+ * 31·32rem). 종목 수가 0이면 줄 몫과 검사 칸 몫이 없습니다(빈 표·빈 글). Tailwind가 클래스를 글로 찾으므로 통째로 적어 둡니다.
+ */
+const PENDING_HEIGHT = {
+  US: {
+    rows: "min-h-[calc(8rem_+_var(--pending-rows)*5.8rem)] lg:min-h-[calc(7.5rem_+_var(--pending-rows)*3.75rem)]",
+    side: "lg:@min-[52rem]:min-h-[max(calc(7.5rem_+_var(--pending-rows)*3.75rem),31rem)]",
+  },
+  KR: {
+    rows: "min-h-[calc(9rem_+_var(--pending-rows)*4.3rem)] lg:min-h-[calc(7rem_+_var(--pending-rows)*3.25rem)]",
+    side: "lg:@min-[52rem]:min-h-[max(calc(7rem_+_var(--pending-rows)*3.25rem),32rem)]",
+  },
+} as const;
+
+/**
+ * 보유 표 첫 적재 자리(QA-954) — 읽는 중 한 줄만 두면, 첫 화면 안에 들어온 아래 '주문' 패널이 응답 뒤 표(7종목이면 넓은 화면 약 550px)에 밀려 화면 밖으로
+ * 나갔습니다(1440 CLS 0.082). 개요 계좌 요약의 보유 종목 수(`rows`)만큼 자리를 잡습니다 — 처음 읽는 동안만(부르는 쪽이 firstLoadPending으로 고름).
+ */
+function HoldingsPending({ rows, korea }: { rows: number; korea: boolean }) {
+  const height = PENDING_HEIGHT[korea ? "KR" : "US"];
+  const count = Math.max(0, Math.floor(rows));
+  return (
+    <div className="@container min-w-0">
+      <div
+        data-pending-rows={count}
+        style={{ "--pending-rows": count } as CSSProperties}
+        className={`${height.rows} ${count > 0 ? height.side : ""}`.trim()}
+      >
+        <Loading label="보유를 읽는 중…" />
+      </div>
+    </div>
   );
 }
 

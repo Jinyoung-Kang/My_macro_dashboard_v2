@@ -53,36 +53,132 @@ const KIND = { label: "국면 판정", icon: ScaleIcon };
 const BAR = `block ${SKELETON_BAR}`;
 
 /**
- * 대상 머리의 읽는 중 자리표시 — 값이 온 뒤 이름 줄 아래에 생기는 설명 글·주 값 줄·배지 줄과 같은 꼴·높이(QA-650). 이름 줄·동작은 EntityHeader가 그대로 둡니다.
- * 높이는 자기 빌드(메뉴 220)에서 판정 다섯 글(백엔드 Regime.java의 고정 글)로 잰 값이 온 뒤의 부분 높이이고, 글마다 다르면 다섯 글 가운데 셋 이상이 갖는
- * 높이입니다 — 설명 글 390(기본) 3줄·640(sm) 2줄·768(md) 1줄·1024(lg) 2줄·1280 이상(xl) 1줄, 주 값 줄 36px, 배지 줄(출처 배지·축 태그 둘이 꺾임)
- * 74·58·42·58·20px. 예전 자리표시(최소 높이 160·136·76px)는 이보다 낮아 값이 오면 아래 칸 틀이 밀렸고, 1024에서는 그 이동이 '연결' 패널 이동과 같은
- * 프레임에 걸려 첫 적재 CLS가 0.47이었습니다. 나머지 글은 값이 오면 머리가 자랍니다 — 390의 '후퇴 경계'·'침체 경계'(주 값 줄이 꺾임)와 768의 '후퇴 경계'·
- * '회복'(설명 글이 두 줄)은 20px, 1280~1439의 '판정 불가'(축 태그 '… 판정 불가'가 길어 배지 줄이 두 줄)는 26px. 그 높이로 잡으면 셋 이상의 흔한 판정에서
- * 값이 올 때 머리가 그만큼 줄어 아래가 위로 밀립니다.
+ * 읽는 중 자리표시의 높이를 잡는 보이지 않는 글(QA-965·966) — 값이 온 뒤의 글과 같은 글꼴·같은 칸에 같은 꼴로 그려(visibility hidden — 자리만 차지하고 보이지도
+ * 읽히지도 않음) 그 칸의 실제 폭·글꼴에서 값이 온 뒤와 같은 줄 수가 됩니다. 예전에는 창 폭 단계마다 잰 높이를 클래스로 적어(QA-650) 메뉴를 넓히거나(1280에서
+ * 메뉴 272·320이면 배지 줄이 두 줄 — 머리 116 → 142px) 글꼴이 다르면 어긋났습니다.
+ * 글은 백엔드(Regime.java)가 보내는 고정 글 가운데 고릅니다 — 판정 글·이름은 다섯 가운데 그려진 폭이 가운데인 것(설명 '판정 불가'의 글, 주 값 '확장'),
+ * 축 태그는 다섯 가운데 넷이 쓰는 두 글자 값, 판정 근거 해석은 신호마다 정상 쪽 글, 고지는 응답이 늘 싣는 고정 글(AnalyticsService)입니다. 다른 판정·해석이면
+ * 값이 온 뒤 줄 수가 하나 다를 수 있습니다.
+ */
+const SIZER = {
+  summary: "입력 지표가 빠져 국면을 판정하지 않습니다. 빠진 값을 0으로 메우면 '중립'이라는 틀린 판정이 됩니다.",
+  label: "확장 (Expansion)",
+  asOf: "2026-01-01",
+  note: "임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다. 입력 지표가 하나라도 없으면 판정하지 않습니다.",
+  growthAxis: "양호",
+  liquidityAxis: "축소",
+  signals: {
+    curve: { state: "정상", reading: "장기 금리가 단기보다 높습니다(정상 구조)." },
+    nfci: { state: "완화적", reading: "0(장기 평균)보다 낮습니다 — 자금 조달 여건이 평균보다 느슨합니다." },
+    hyOas: { state: "정상", reading: "정상 범위입니다." },
+    liquidity: { state: "확대", reading: "최근 4주 동안 시장으로 유동성이 들어왔습니다." },
+  } as Record<string, { state: string; reading: string } | undefined>,
+};
+
+/**
+ * 보이지 않는 글(`children`)이 높이를 정하고 그 위에 막대 줄을 덮습니다 — 막대 줄은 `line`(글줄 높이 클래스) 높이로 넉넉히 쌓고 넘치는 줄은 잘립니다.
+ * 글은 읽기에서 빼고(부르는 쪽이 aria-hidden 칸 안에 둠) 보이지도 않습니다(invisible).
+ */
+function SizedBars({ children, line, bar, as: Box = "span", className = "" }: { children: ReactNode; line: string; bar: string; as?: "span" | "p" | "div"; className?: string }) {
+  return (
+    <Box className={`relative block ${className}`}>
+      <span className="invisible">{children}</span>
+      <span className="absolute inset-0 flex flex-col overflow-hidden">
+        {["w-full", "w-full", "w-full", "w-full", "w-full", "w-3/5"].map((width, index) => (
+          <span key={index} className={`flex ${line} shrink-0 items-center`}>
+            <span className={`${bar} ${width} ${BAR}`} />
+          </span>
+        ))}
+      </span>
+    </Box>
+  );
+}
+
+/**
+ * 대상 머리의 읽는 중 자리표시 — 값이 온 뒤 이름 줄 아래에 생기는 설명 글·주 값 줄·배지 줄과 같은 꼴(QA-650). 이름 줄·동작은 EntityHeader가 그대로 둡니다.
+ * 세 줄 모두 값이 온 뒤와 같은 글꼴·꼴의 보이지 않는 글(SIZER)이 높이를 정합니다(QA-966 — 창 폭이 아니라 머리 칸의 실제 폭으로 꺾임). 막대는 그 위에 덮습니다.
+ * 판정 이름이 길면(390의 '후퇴 경계'·'침체 경계' — 주 값 줄이 꺾임) 값이 온 뒤 머리가 20px 자랍니다(다섯 판정 가운데 둘).
  */
 function HeaderPending() {
   return (
     <div role="status" aria-busy="true" aria-label="국면을 판정하는 중" className="flex flex-col gap-1">
       <span className="sr-only">국면을 판정하는 중</span>
-      {/* 설명 글 — 14/20 글줄, 폭마다 줄 수만큼. */}
-      <div aria-hidden="true" className="flex h-15 flex-col overflow-hidden sm:h-10 md:h-5 lg:h-10 xl:h-5">
-        {["w-full", "w-full", "w-3/5"].map((width, index) => (
-          <span key={index} className="flex h-5 shrink-0 items-center">
-            <span className={`h-3.5 ${width} ${BAR}`} />
+      {/* 설명 글 — EntityHeader의 보조 글(14/20)과 같은 글꼴·줄바꿈. */}
+      <div aria-hidden="true" data-sizer="description">
+        <SizedBars as="p" className="min-w-0 break-keep wrap-anywhere text-sm" line="h-5" bar="h-3.5">
+          {SIZER.summary}
+        </SizedBars>
+      </div>
+      {/* 주 값 줄 — 12px 캡션('지금 판정')과 28px 값(EntityHeader 값 줄과 같은 꼴). */}
+      <div aria-hidden="true" data-sizer="value" className="relative">
+        <div className="invisible flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-xs">지금 판정</span>
+          <span className="inline-flex items-baseline gap-x-1">
+            <span className="text-value-lg tabular-nums">{SIZER.label}</span>
           </span>
-        ))}
+        </div>
+        <div className="absolute inset-0 flex items-end gap-2 pb-1.5">
+          <span className={`h-3 w-12 ${BAR}`} />
+          <span className={`h-6 w-40 max-w-[60%] ${BAR}`} />
+        </div>
       </div>
-      {/* 주 값 줄 — 12px 캡션('지금 판정')과 28px 값(줄 높이 36px). */}
-      <div aria-hidden="true" className="flex h-9 items-end gap-2 pb-1.5">
-        <span className={`h-3 w-12 ${BAR}`} />
-        <span className={`h-6 w-40 ${BAR}`} />
+      {/* 배지 줄 — 출처 배지(기준일 포함)·축 태그 둘(값이 온 뒤와 같은 부품), 좁은 칸에서는 꺾입니다. */}
+      <div aria-hidden="true" data-sizer="badges" className="relative">
+        <div className="invisible flex min-w-0 flex-wrap items-center gap-1.5">
+          <ProvenanceBadge source={SOURCES.regime} asOf={SIZER.asOf} keepDates />
+          <Tag>성장·신용 {SIZER.growthAxis}</Tag>
+          <Tag>유동성 {SIZER.liquidityAxis}</Tag>
+        </div>
+        <div className="absolute inset-0 flex flex-wrap content-start gap-1.5 overflow-hidden">
+          <span className={`h-5 w-56 max-w-full ${BAR}`} />
+          <span className={`h-5 w-20 ${BAR}`} />
+          <span className={`h-5 w-20 ${BAR}`} />
+        </div>
       </div>
-      {/* 배지 줄 — 출처 배지·축 태그 둘(20px), 좁은 칸에서는 꺾입니다. */}
-      <div aria-hidden="true" className="flex h-[74px] flex-wrap content-start gap-1.5 overflow-hidden sm:h-[58px] md:h-[42px] lg:h-[58px] xl:h-5">
-        <span className={`h-5 w-56 max-w-full ${BAR}`} />
-        <span className={`h-5 w-20 ${BAR}`} />
-        <span className={`h-5 w-20 ${BAR}`} />
+    </div>
+  );
+}
+
+/**
+ * 판정 근거의 읽는 중 자리표시(QA-965) — 값이 온 뒤의 속성 목록과 같은 꼴: 같은 이름 넷(응답 전에도 아는 이름 — regimeHeroModel의 자리)·값 막대·해석 글 자리
+ * (보이지 않는 정상 쪽 해석 글이 줄 수를 정함)와 기준일 줄·고지 상자. 예전에는 막대 네 줄(약 200px)이라 값이 오면 패널이 390에서 352px 자라 아래 '네 국면'·탭을 밀었습니다.
+ * 이름이 보여도 읽기에서는 빠지고 상태 이름('판정 근거 불러오는 중')만 읽힙니다.
+ */
+function EvidencePending({ labels }: { labels: readonly { id: string; label: string }[] }) {
+  const items: PropertyItem[] = labels.map(({ id, label }) => {
+    const sizer = SIZER.signals[id];
+    return {
+      key: id,
+      label,
+      value: <span className={`inline-block h-3.5 w-16 align-middle ${BAR}`} />,
+      block: true,
+      note: sizer ? (
+        <SizedBars line="h-4" bar="h-3">
+          <StatusText tone="ok" colorText={false} iconSize={12} className="align-top">
+            {sizer.state}
+          </StatusText>
+          {" · "}
+          {sizer.reading}
+        </SizedBars>
+      ) : null,
+    };
+  });
+  return (
+    <div role="status" aria-busy="true" aria-label="판정 근거 불러오는 중">
+      <span className="sr-only">판정 근거 불러오는 중</span>
+      <div aria-hidden="true">
+        <PropertyList items={items} />
+        <SizedBars as="p" className="mt-2 break-keep text-xs leading-4" line="h-4" bar="h-3">
+          기준일 <span className="tabular-nums">{SIZER.asOf}</span> — {REGIME_AS_OF_NOTE}
+        </SizedBars>
+        {/* 판정 응답의 고지(note — 백엔드가 늘 보내는 고정 글)와 같은 상자. */}
+        <p className="mt-2 rounded-sm border border-border bg-bg px-3 py-2 text-xs">
+          <SizedBars line="h-4" bar="h-3">
+            <StatusText tone="warn" colorText={false} iconSize={12}>
+              {SIZER.note}
+            </StatusText>
+          </SizedBars>
+        </p>
       </div>
     </div>
   );
@@ -233,7 +329,7 @@ export default function RegimePage() {
   const evidencePending = data ? undefined : error ? (
     <p className="break-keep text-sm text-text-2">판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
   ) : firstLoadPending(regime) ? (
-    <Skeleton lines={4} label="판정 근거 불러오는 중" />
+    <EvidencePending labels={model.tiles} />
   ) : (
     <Loading label="판정 근거를 읽는 중…" />
   );

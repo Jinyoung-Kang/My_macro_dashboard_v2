@@ -8,8 +8,8 @@ import { IsaSection } from "@/components/screens/isa/IsaSection";
 import { RealTradePanel } from "@/components/screens/realtrade/RealTradePanel";
 import { RealTradeProvider } from "@/components/screens/realtrade/RealTradeProvider";
 import { RealTradeToggle } from "@/components/screens/realtrade/RealTradeToggle";
-import { Button, Callout, ErrorState, Loading, Tabs } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { Button, Callout, ErrorState, Loading, SKELETON_BAR, Tabs, underlineTabClasses } from "@/components/ui";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { TickerNamesProvider } from "@/hooks/useTickerNames";
 import { endpoints } from "@/lib/endpoints";
 import { isTimedBook, PAPER_SOURCES, paperTabInMarket, paperTabsFor, type PaperTabKey } from "@/lib/paper";
@@ -92,7 +92,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
   // 머리 칸 둘(작업대 P6 — PaperTabHeader 계약): 탭의 섹션이 계좌 고르기·동작을 이 칸으로 보냅니다(포털). 칸 요소는 콜백 ref로 받아 공급자에 넘깁니다.
   const [accountSlot, setAccountSlot] = useState<HTMLElement | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
-  const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
+  const { data, loading, error, reload, refreshError, failedAt } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
   // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로). 시장 제한 칸('ISA 계좌')은 한국에만.
   const tabs = paperTabsFor(market).map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
   const current = tabs.find((entry) => entry.key === tab) ?? tabs[0];
@@ -186,13 +186,19 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
               : null
           }
           refreshError={refreshError}
+          // 개요를 처음 읽는 동안 머리의 계좌 칸·한계 단추 자리(QA-956) — 계좌 칸은 그 칸을 채우는 탭(개요·보유·체결·결정 로그)만.
+          reserve={firstLoadPending({ data, loading, failedAt }) ? { account: accountReserveText(current.key, korea), limits: true } : null}
           realMarker={current.key === "real" || current.key === "isa"}
           onAccountSlot={setAccountSlot}
           onActionsSlot={setActionsSlot}
         />
 
         {/* 시장 고르기(미국 | 한국 두 링크)는 넓은 화면은 머리의 세그먼트(PaperHeader), 좁은 화면은 셸의 하위 메뉴 줄(lib/nav)이 맡습니다. */}
-        {loading && !data && <Loading label="장부를 읽는 중…" />}
+        {/* 실제 계좌 탭은 개요를 처음 읽는 동안 탭 줄 꼴의 자리(RealTabRowPending — 개요가 오면 그 자리에 탭 줄), 그 밖의 탭과 실패 뒤 다시 읽는 동안은
+            읽는 중 글(오류 상자와 번갈아 높이가 오르내리지 않게 — QA-970, QA-655 규약). */}
+        {loading && !data && (current.key === "real" && firstLoadPending({ data, loading, failedAt })
+          ? <RealTabRowPending />
+          : <Loading label="장부를 읽는 중…" />)}
         {error && <ErrorState message={error} onRetry={reload} />}
         {/* 테이블이 아직 없으면 서버 문구 그대로 — 무엇을 하면 생기는지까지 서버가 적어 보냅니다. */}
         {data && !data.available && <Callout tone="warn">{data.message ?? "모의 매매 장부를 읽을 수 없습니다."}</Callout>}
@@ -291,6 +297,38 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
         <ScrollTopButton />
       </div>
     </PaperHeaderSlotsProvider>
+  );
+}
+
+/**
+ * 머리 계좌 칸 자리의 글(QA-956) — 개요가 오기 전에는 선택지를 모르므로, 그 칸을 채우는 탭의 흔한 가장 긴 선택지 꼴로 폭을 잡습니다(보이지 않음 — 화면에
+ * 내지 않는 글): 개요 탭은 계좌 이름(백엔드 PaperBooks 이름 — 'Claude 계좌1'·'한국 Claude 계좌1'), 보유·체결·결정 로그는 이름 + 상태('· 운용 중' — lib/paper
+ * bookOptions). 계좌 칸이 없는 탭은 null.
+ */
+function accountReserveText(tab: PaperTabKey, korea: boolean): string | null {
+  const name = korea ? "한국 Claude 계좌1" : "Claude 계좌1";
+  if (tab === "overview") return name;
+  if (tab === "holdings" || tab === "decisions") return `${name} · 운용 중`;
+  return null;
+}
+
+/**
+ * 실제 계좌 탭에서 개요를 읽는 동안의 자리 — 개요가 오면 같은 자리에 생기는 탭 줄과 같은 높이(공용 밑줄 탭 sm과 같은 클래스 — 좁은 화면 45px·넓은 화면 31px)의
+ * 글 없는 막대 줄입니다(QA-964). 예전에는 읽는 중 글(68px)이 탭 줄로 바뀌며 아래 실제 매매 칸이 위로 37px 올라갔습니다. 탭이 아니라(역할·누르기 없음 — 탭 줄은
+ * 개요가 온 뒤에만, SEC-6) 읽는 중 상태만 읽힙니다. 개요가 실패·읽을 수 없음이면 탭 줄 없이 이 자리가 빠집니다(예전 읽는 중 글과 같음).
+ */
+function RealTabRowPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="장부를 읽는 중" className="flex overflow-hidden border-b border-border">
+      <span className="sr-only">장부를 읽는 중</span>
+      {["w-8", "w-14", "w-14", "w-14", "w-10", "w-8", "w-14", "w-14"].map((width, index) => (
+        <span key={index} aria-hidden="true" className={underlineTabClasses(false, "sm")}>
+          <span className="flex h-lh items-center">
+            <span className={`block h-3 ${width} ${SKELETON_BAR}`} />
+          </span>
+        </span>
+      ))}
+    </div>
   );
 }
 

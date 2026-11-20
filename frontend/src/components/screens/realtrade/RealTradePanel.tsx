@@ -1,8 +1,8 @@
 "use client";
 
 import { StatGrid, StatTile } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
-import { StatusText } from "@/components/ui/icons";
+import { Banner, Button, Card, ErrorState, Freshness, SKELETON_BAR } from "@/components/ui";
+import { SpinnerIcon, StatusText } from "@/components/ui/icons";
 import { deltaColor, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import {
   bookStatusLabel,
@@ -89,8 +89,6 @@ function KoreaPanel({ rt }: { rt: RealTradeContextValue }) {
       }
     >
       <div className="flex flex-col gap-4">
-        {/* 한 번 실패했으면 다시 읽는 동안에도 '읽는 중'으로 돌아가지 않고 오류 안내를 남깁니다(RT2-FE-1). */}
-        {loading && !status && !statusError && <Loading label="실제 매매 상태를 읽는 중…" />}
         {/* 상태를 읽지 못해도(읽는 중에도) 끄기 단추는 위에 남습니다(끄기는 서버가 늘 받음). */}
         {statusError && !status && (
           <ErrorState
@@ -99,12 +97,96 @@ function KoreaPanel({ rt }: { rt: RealTradeContextValue }) {
           />
         )}
         <ActionFeedback rt={rt} />
+        {/* 한 번 실패했으면 다시 읽는 동안에도 '읽는 중'으로 돌아가지 않고 오류 안내를 남깁니다(RT2-FE-1). 자리표시는 끄기 결과 안내 뒤 — 값이 온 뒤 칸
+            (StatusBody)과 같은 자리라, 읽는 중에 끄기를 눌러도 그 안내가 큰 자리표시 아래로 밀리지 않습니다(QA-969). */}
+        {loading && !status && !statusError && <StatusPending />}
         {status && status.available !== true && (
           <Banner tone="warn">{status.message || "실제 매매 상태를 읽을 수 없습니다(서버 준비 전)."}</Banner>
         )}
         {status && status.available === true && <StatusBody status={status} rt={rt} />}
       </div>
     </Card>
+  );
+}
+
+/** 자리표시 막대 — 공용 Skeleton 막대와 같은 모양(ui/classes SKELETON_BAR). */
+const BAR = `block ${SKELETON_BAR}`;
+
+/** 글줄 하나 높이(그 글 크기의 줄 높이 — h-lh)의 막대 줄. `text`는 그 줄의 글 크기 클래스. */
+function BarLine({ text, width }: { text: string; width: string }) {
+  return (
+    <span className={`flex h-lh items-center ${text}`}>
+      <span className={`h-3 ${width} ${BAR}`} />
+    </span>
+  );
+}
+
+/** 표 자리 — 제목 줄, 머리 줄(공용 표 머리와 같은 여백·글줄), 빈 표 문구 줄(공용 표의 빈 줄과 같은 여백). */
+function TablePending() {
+  return (
+    <div data-pending="table" className="flex flex-col gap-2">
+      <BarLine text="text-sm" width="w-24" />
+      <div className="border-b border-border pt-1.5 pb-[5px] text-caption leading-5">
+        <span className="flex h-lh items-center gap-6">
+          {["w-10", "w-10", "w-16", "w-10", "w-12"].map((width, index) => (
+            <span key={index} className={`h-3 ${width} ${BAR}`} />
+          ))}
+        </span>
+      </div>
+      <div className="flex justify-center py-6">
+        <BarLine text="text-sm" width="w-40" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 실제 매매 상태를 읽는 중 — 값이 온 뒤 칸(StatusBody)과 같은 꼴의 자리(상태 줄·타일 셋·오늘 창·주문 표·이벤트 표·주의 글). 예전에는 읽는 중 글 한 줄(68px)이라
+ * 상태가 오면 칸이 600px 남짓 자라 아래 실제 계좌 조회를 밀었습니다(첫 적재 이동 — QA-964). 표는 빈 표 높이(행이 오면 그만큼 자람 — 그때 아래 조회는 이미
+ * 화면 밖). 읽는 중 글은 그대로 첫 줄에 남기고 막대는 읽기에서 뺍니다.
+ */
+function StatusPending() {
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <p className="flex items-center gap-2 text-sm text-text-3">
+          <SpinnerIcon size={16} className="motion-safe:animate-spin" />
+          실제 매매 상태를 읽는 중…
+        </p>
+        <span aria-hidden="true">
+          <BarLine text="text-sm" width="w-64 max-w-full" />
+        </span>
+      </div>
+      <div aria-hidden="true" className="flex flex-col gap-4">
+        <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3">
+          {["w-20", "w-24", "w-16"].map((width, index) => (
+            <div key={index} data-pending="tile" className="min-w-0 rounded-control border border-border bg-surface px-3 py-2.5">
+              <BarLine text="text-caption" width={width} />
+              <span className="mt-0.5 flex h-lh items-center text-2xl">
+                <span className={`h-6 w-24 max-w-full ${BAR}`} />
+              </span>
+              <span className="mt-1 block text-xs leading-4">
+                <BarLine text="" width="w-full" />
+                <BarLine text="" width="w-3/5" />
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="text-sm">
+          <BarLine text="" width="w-20" />
+          <span className="mt-1 block">
+            <BarLine text="" width="w-48 max-w-full" />
+          </span>
+        </div>
+        <TablePending />
+        <TablePending />
+        <span className="block text-xs leading-relaxed">
+          <BarLine text="" width="w-full" />
+          <BarLine text="" width="w-full" />
+          <BarLine text="" width="w-3/5" />
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -122,11 +204,14 @@ function ActionFeedback({ rt }: { rt: RealTradeContextValue }) {
   const feedback = disableFeedback(rt.status);
   return (
     <>
+      {/* 실패는 알림 영역 안에 — 상자만이면 낭독되지 않았습니다(QA-969). 글·조건은 그대로입니다. */}
       {showDisableError(rt.disableError, rt.status, rt.readFailed) && (
-        <Banner tone="danger">
-          <p>실제 매매를 끄지 못했습니다 — {rt.disableError}. 끄기 단추를 다시 누르세요.</p>
-          <p className="mt-1 text-xs">{EMERGENCY_STEPS}</p>
-        </Banner>
+        <div role="alert">
+          <Banner tone="danger">
+            <p>실제 매매를 끄지 못했습니다 — {rt.disableError}. 끄기 단추를 다시 누르세요.</p>
+            <p className="mt-1 text-xs">{EMERGENCY_STEPS}</p>
+          </Banner>
+        </div>
       )}
       {feedbackShown(rt) && (
         <div role="status">

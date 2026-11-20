@@ -16,6 +16,8 @@ import { ActionBar, type ActionBarItem } from "@/components/ui/ActionBar";
  * - 공급자 밖(섹션만 그린 시험 등): 제자리에 그립니다.
  * - 한 번에 탭 패널 하나만 마운트되므로 칸을 다투는 일이 없습니다. 탭을 바꾸면 섹션과 함께 칸의 내용도 빠집니다.
  * - 이 파일은 패턴 단계가 만들고 세 갈래(셸·로그·설정)가 함께 쓰는 계약이라 얼립니다 — 바꿀 일이 생기면 통합 단계에서.
+ * - 작업대 P8 후속(QA-957): 두 칸 모두 `reserve`를 주면 같은 꼴을 보이지 않는 자리로 그립니다(aria-hidden·invisible·inert — 낭독·포커스·누름 없음). 칸을 비우면
+ *   머리가 줄어드는 보기(결정 로그의 '주간 복기' — 계좌를 고르지 않음)가 머리 높이를 지키는 데 씁니다. 주지 않으면 예전 그대로.
  */
 type Slots = { account: HTMLElement | null; actions: HTMLElement | null };
 
@@ -33,6 +35,17 @@ export function PaperHeaderSlotsProvider({
 }): JSX.Element {
   const value = useMemo(() => ({ account, actions }), [account, actions]);
   return <PaperHeaderSlotsContext.Provider value={value}>{children}</PaperHeaderSlotsContext.Provider>;
+}
+
+/** 보이지 않는 자리 — 같은 꼴이 차지하는 폭·높이만 남깁니다(낭독·포커스·누름 없음, QA-957). */
+function Reserved({ reserve, children }: { reserve: boolean; children: ReactNode }): JSX.Element {
+  return reserve ? (
+    <div aria-hidden="true" inert className="invisible flex max-w-full items-center">
+      {children}
+    </div>
+  ) : (
+    <>{children}</>
+  );
 }
 
 /** 칸 하나로 보내기 — 공급자 안이면 그 칸(없으면 null), 밖이면 제자리. */
@@ -55,37 +68,54 @@ export function PaperTabAccount({
   value,
   options,
   onChange,
+  reserve = false,
 }: {
   label?: string;
   value: string;
   options: readonly PaperAccountOption[];
   onChange: (value: string) => void;
+  /** 보이지 않는 자리로만(QA-957 — 위 계약). */
+  reserve?: boolean;
 }): JSX.Element | null {
   if (options.length === 0) return null;
   return (
     <HeaderSlot slot="account">
-      <span className="inline-flex min-w-0 max-w-full items-center gap-2">
-        <span aria-hidden="true" className="shrink-0 text-[13px] text-text-2">
-          계좌
+      <Reserved reserve={reserve}>
+        <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+          <span aria-hidden="true" className="shrink-0 text-[13px] text-text-2">
+            계좌
+          </span>
+          {/* 보이지 않는 자리의 상자에는 이름을 붙이지 않습니다(읽히지 않는 사본 — 이름으로 찾는 곳이 진짜 칸 하나만 보게). */}
+          <NativeSelect aria-label={reserve ? undefined : label} value={value} onChange={(event) => onChange(event.target.value)} wrapperClassName="inline-flex min-w-0">
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </NativeSelect>
         </span>
-        <NativeSelect aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} wrapperClassName="inline-flex min-w-0">
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </span>
+      </Reserved>
     </HeaderSlot>
   );
 }
 
 /** 머리의 동작 — 탭마다 동작 목록(ui/ActionBar — 빈 목록이면 그리지 않음). `label`은 묶음 이름(예 '보유·체결 동작'). */
-export function PaperTabActions({ label, actions }: { label: string; actions: readonly ActionBarItem[] }): JSX.Element | null {
+export function PaperTabActions({
+  label,
+  actions,
+  reserve = false,
+}: {
+  label: string;
+  actions: readonly ActionBarItem[];
+  /** 보이지 않는 자리로만(QA-957 — 위 계약). */
+  reserve?: boolean;
+}): JSX.Element | null {
   if (actions.length === 0) return null;
   return (
     <HeaderSlot slot="actions">
-      <ActionBar label={label} actions={actions} />
+      <Reserved reserve={reserve}>
+        <ActionBar label={label} actions={actions} />
+      </Reserved>
     </HeaderSlot>
   );
 }
