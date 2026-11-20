@@ -39,7 +39,7 @@ function described(input: HTMLElement): string {
 }
 
 describe("운영자로 올리기 — 오류 글의 낭독과 입력칸 연결(QA-868)", () => {
-  it.fails("틀린 비밀번호: 열 때부터 있던 role=alert 영역 안에 서버 글, 비밀번호 입력칸이 그 글로 설명됨 — 본문 그대로", async () => {
+  it("틀린 비밀번호: 열 때부터 있던 role=alert 영역 안에 서버 글, 비밀번호 입력칸이 그 글로 설명됨 — 본문 그대로", async () => {
     api.apiPost.mockRejectedValue(new Error(WRONG));
     render(<AdminUsersPage />);
     fireEvent.change(await screen.findByLabelText("m@test.local 역할"), { target: { value: "OWNER" } });

@@ -59,7 +59,7 @@ function press(button: HTMLElement) {
 }
 
 describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-868)", () => {
-  it.fails("로그인 실패(401): 처음부터 있던 role=alert 영역 안에 오류 글, 두 입력칸이 aria-invalid이고 오류 글로 설명됨 — 요청 그대로", async () => {
+  it("로그인 실패(401): 처음부터 있던 role=alert 영역 안에 오류 글, 두 입력칸이 aria-invalid이고 오류 글로 설명됨 — 요청 그대로", async () => {
     api.auth.session.mockResolvedValue({ authenticated: false, mailAvailable: false });
     api.auth.login.mockRejectedValue(Object.assign(new Error("이메일 또는 비밀번호가 올바르지 않습니다."), { status: 401 }));
     render(<LoginPage />);
@@ -94,7 +94,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     expect(screen.getByLabelText("비밀번호").getAttribute("aria-invalid")).toBeNull();
   });
 
-  it.fails("가입 불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 설명됨 — 맞추면 둘 다 풀림", () => {
+  it("가입 불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 설명됨 — 맞추면 둘 다 풀림", () => {
     render(<SignupPage />);
     fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "abcdefghij" } });
     const confirm = screen.getByLabelText("비밀번호 확인");
@@ -107,7 +107,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     expect(confirm.getAttribute("aria-describedby")).toBeNull();
   });
 
-  it.fails("가입 서버 오류: 처음부터 있던 role=alert 안, 입력칸이 오류 글로 설명됨 — 본문 그대로", async () => {
+  it("가입 서버 오류: 처음부터 있던 role=alert 안, 입력칸이 오류 글로 설명됨 — 본문 그대로", async () => {
     api.auth.signup.mockRejectedValue(new Error("가입하지 못했습니다 — 잠시 뒤 다시 시도하세요."));
     render(<SignupPage />);
     const region = screen.getByRole("alert");
@@ -122,7 +122,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     expect(described(screen.getByLabelText("이메일"))).toContain("가입하지 못했습니다");
   });
 
-  it.fails("가입 성공: 폼이 결과 글로 바뀌면 포커스가 결과 글로", async () => {
+  it("가입 성공: 폼이 결과 글로 바뀌면 포커스가 결과 글로", async () => {
     api.auth.signup.mockResolvedValue({ ok: true, message: "확인 메일을 보냈습니다." });
     render(<SignupPage />);
     fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "member@test.local" } });
@@ -134,7 +134,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     await waitFor(() => expect(document.activeElement).toBe(box("확인 메일을 보냈습니다.")));
   });
 
-  it.fails("재설정(링크) 불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 설명됨", async () => {
+  it("재설정(링크) 불일치: 확인 입력칸이 aria-invalid이고 불일치 글로 설명됨", async () => {
     window.history.replaceState(null, "", "/reset?token=synthetic-token");
     render(<ResetPage />);
     fireEvent.change(await screen.findByLabelText("새 비밀번호"), { target: { value: "abcdefghij" } });
@@ -144,7 +144,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     expect(described(confirm)).toBe("오류: 비밀번호가 서로 다릅니다.");
   });
 
-  it.fails("재설정(링크) 성공: 폼이 사라지면 포커스가 결과 글로 — 본문 그대로", async () => {
+  it("재설정(링크) 성공: 폼이 사라지면 포커스가 결과 글로 — 본문 그대로", async () => {
     window.history.replaceState(null, "", "/reset?token=synthetic-token");
     api.auth.confirmReset.mockResolvedValue({ ok: true, message: "비밀번호를 바꿨습니다." });
     render(<ResetPage />);
@@ -157,7 +157,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     await waitFor(() => expect(document.activeElement).toBe(box("비밀번호를 바꿨습니다.")));
   });
 
-  it.fails("재설정 요청 오류: 처음부터 있던 role=alert 안, 이메일 입력칸이 오류 글로 설명됨 — 성공하면 결과 글로 포커스", async () => {
+  it("재설정 요청 오류: 처음부터 있던 role=alert 안, 이메일 입력칸이 오류 글로 설명됨 — 성공하면 결과 글로 포커스", async () => {
     api.auth.requestReset.mockRejectedValueOnce(new Error("처리하지 못했습니다."));
     api.auth.requestReset.mockResolvedValueOnce({ ok: true, message: "메일을 보냈습니다." });
     render(<ResetPage />);
@@ -176,7 +176,7 @@ describe("인증 화면 — 오류·결과 글의 낭독과 입력칸 연결(QA-
     await waitFor(() => expect(document.activeElement).toBe(box("메일을 보냈습니다.")));
   });
 
-  it.fails("메일 인증 결과(성공·실패): 결과 글로 포커스 — 토큰을 한 번 넘김", async () => {
+  it("메일 인증 결과(성공·실패): 결과 글로 포커스 — 토큰을 한 번 넘김", async () => {
     window.history.replaceState(null, "", "/verify?token=synthetic-token");
     api.auth.verify.mockResolvedValue({ ok: true, message: "메일 주소를 확인했습니다." });
     render(<VerifyPage />);

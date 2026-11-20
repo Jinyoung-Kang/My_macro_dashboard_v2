@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useId, useState } from "react";
 import { DataTable, InspectorFrame, InspectorSubheading, InspectorTrigger, PropertyList } from "@/components/patterns";
 import { Banner, Button, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, inputClasses, Loading, NativeSelect, PageHeader, Panel, Select } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
@@ -26,6 +26,9 @@ const AUDIT_LINES = 5;
  * 작업대 P7(실행 명세 §7 7행 '사용자 관리: 속성 목록'): 사용자 표는 공용 조밀 표 + 검사 칸 틀(InspectorFrame lg — 틀 52rem부터 옆 18rem, 그 아래 위쪽 대화상자).
  * 이메일이 검사를 여는 줄 단추이고, 검사 칸은 속성 목록(이메일·역할·등급·메일 인증·가입·사용자 번호)과 그 사용자의 최근 감사 기록(이미 읽은 100건 안 — 새 요청
  * 없음). 표 안 역할·등급 고르기와 운영자로 올리기 대화상자(문구·닫기 단추 없음·비밀번호)는 그대로입니다.
+ *
+ * 운영자로 올리기 대화상자의 오류(틀린 비밀번호·연속 실패 지연)는 대화상자를 열 때부터 있는 알림 영역(role="alert") 안에 그리고, 비밀번호 입력칸이 그 글로
+ * 설명됩니다(QA-868 — 예전에는 보낸 뒤 붙는 보통 상자라 낭독되지 않았음). 경로·본문·문구·비밀번호 단계는 그대로입니다.
  */
 export default function AdminUsersPage() {
   const users = useApi<{ users: AdminUser[] }>(endpoints.admin.users, 0);
@@ -53,6 +56,9 @@ export default function AdminUsersPage() {
   // 창을 열기 전 다른 변경의 오류 글이 창 안에 보이지 않게 합니다.
   const [promote, setPromote] = useState<{ row: AdminUser; tier: string; tried: boolean } | null>(null);
   const [promotePassword, setPromotePassword] = useState("");
+  // 대화상자 안 오류 — 이 창에서 보낸 뒤에만(창을 열기 전 다른 변경의 오류는 보이지 않게).
+  const promoteError = promote?.tried && !update.busy ? update.error : null;
+  const promoteErrorId = useId();
   const save = async (row: AdminUser, role: string, nextTier: string, ownerPassword?: string): Promise<boolean> => {
     setSavingId(row.id);
     let ok = false;
@@ -138,13 +144,23 @@ export default function AdminUsersPage() {
         showClose={false}
       >
         <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={update.busy}>
-          <label className="text-xs text-text-3">
-            운영자 비밀번호
-            <input type="password" autoComplete="off" value={promotePassword} disabled={update.busy}
-              onChange={(event) => setPromotePassword(event.target.value)}
-              className={`mt-1 w-full ${inputClasses()}`} />
-          </label>
-          {promote?.tried && !update.busy && update.error && <Banner tone="warn">{update.error}</Banner>}
+          {/* 입력칸과 알림 영역을 한 칸으로 묶어, 빈 영역이 폼 간격(gap-3)을 하나 더 만들지 않게 합니다 — 오류가 있을 때만 12px 위 여백(예전 간격과 같음). */}
+          <div className="flex flex-col">
+            <label className="text-xs text-text-3">
+              운영자 비밀번호
+              <input type="password" autoComplete="off" value={promotePassword} disabled={update.busy}
+                aria-describedby={promoteError ? promoteErrorId : undefined}
+                onChange={(event) => setPromotePassword(event.target.value)}
+                className={`mt-1 w-full ${inputClasses()}`} />
+            </label>
+            <div role="alert">
+              {promoteError && (
+                <div id={promoteErrorId} className="mt-3">
+                  <Banner tone="warn">{promoteError}</Banner>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="secondary" type="button" disabled={update.busy} onClick={() => setPromote(null)}>취소</Button>
             <Button variant="primary" type="submit" disabled={update.busy || !promotePassword}>
