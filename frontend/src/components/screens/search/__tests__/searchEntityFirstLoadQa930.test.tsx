@@ -70,7 +70,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("정보 검색 대상 화면 첫 적재 자리(QA-930)", () => {
-  it.fails("대상이 풀리기 전 키 줄은 꼬리표 줄과 같은 위 여백·높이다", () => {
+  it("대상이 풀리기 전 키 줄은 꼬리표 줄과 같은 위 여백·높이다", () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const keyLine = within(header()).getByText("us:NVDA", { selector: "p" });
     // 꼬리표 줄(풀린 뒤)은 mt-2, 꼬리표(Tag)는 text-xs leading-4(16px) + py-px(2px) + 테두리(2px) = 20px.
@@ -78,7 +78,7 @@ describe("정보 검색 대상 화면 첫 적재 자리(QA-930)", () => {
     expect(tokens(keyLine)).toContain("min-h-5");
   });
 
-  it.fails("키로 바로가기를 아는 대상은 풀리기 전 머리 오른쪽에 바로가기와 같은 꼴의 보이지 않는 자리가 있다", () => {
+  it("키로 바로가기를 아는 대상은 풀리기 전 머리 오른쪽에 바로가기와 같은 꼴의 보이지 않는 자리가 있다", () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const slot = within(header()).queryByText("종목 상세")?.closest("[aria-hidden='true']") ?? null;
     expect(slot).toBeTruthy();
@@ -96,7 +96,7 @@ describe("정보 검색 대상 화면 첫 적재 자리(QA-930)", () => {
     expect(within(header()).queryByText(/상세/)).toBeNull();
   });
 
-  it.fails("결과를 받기 전 가운데 칸의 읽는 중 자리는 화면 높이 이상이다", () => {
+  it("결과를 받기 전 가운데 칸의 읽는 중 자리는 화면 높이 이상이다", () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const loading = screen.getByText(/결과를 모으는 중/).parentElement;
     expect(tokens(loading)).toContain("min-h-dvh");

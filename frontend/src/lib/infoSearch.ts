@@ -2043,6 +2043,16 @@ export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { la
   return out;
 }
 
+/**
+ * 대상 풀기 응답 전에 키만으로 아는 바로가기 이름 — 종목(us:·kr:)은 '종목 상세', 13F 기관(cik:)은 '기관 상세'(풀린 뒤 entityShortcuts가 거의 늘 그리는 것).
+ * 대상 머리가 응답 전 그 자리를 보이지 않게 잡아 두는 데만 씁니다(QA-930 — 링크를 만들지 않음). wd:·주제 키는 모름(null).
+ */
+export function shortcutLabelOfKey(key: string): string | null {
+  if (key.startsWith("us:") || key.startsWith("kr:")) return "종목 상세";
+  if (key.startsWith("cik:")) return "기관 상세";
+  return null;
+}
+
 const HANGUL = /[가-힣]/;
 
 /** 보유 탭의 13F 검색어와 무엇으로 찾는지 — 영문 이름(name)인지, 영문 이름이 없어 쓴 티커(ticker)인지(화면의 머리·0건 안내가 다름, QA-436). */

@@ -154,6 +154,7 @@ export function EntityView({
         entityKey={entityKey}
         entity={entity}
         kind={known}
+        settled={settled}
         action={<WatchButton watch={watch} demo={demo} entityKey={entityKey} entity={entity} settled={settled} />}
       />
       {resolved.data && !resolved.data.available ? (
