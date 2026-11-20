@@ -1,6 +1,6 @@
 """
 tests/test_vultr_scripts.py
-Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,instance,firewall-pc-ip}.sh
+Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,inventory,instance,firewall-pc-ip}.sh
 와 make status의 마지막 S3 백업 나이(QA-199)·재부팅 필요 여부(ADR 0023 개정 2026-11-12).
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
@@ -28,8 +28,8 @@ import yaml
 from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "instance.sh",
-           "firewall-pc-ip.sh"]
+SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "inventory.sh",
+           "instance.sh", "firewall-pc-ip.sh"]
 SECRET = tools.SECRET
 
 
@@ -39,7 +39,8 @@ def fakes(tmp_path):
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
                        "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL,
-                       "canonical-livepatch": tools._FAKE_LIVEPATCH, "sudo": tools._FAKE_SUDO}.items():
+                       "canonical-livepatch": tools._FAKE_LIVEPATCH, "sudo": tools._FAKE_SUDO,
+                       "dpkg-query": tools._FAKE_DPKG_QUERY, "apt": tools._FAKE_APT, "tailscale": tools._FAKE_TAILSCALE}.items():
         tools._write_exec(bin_dir / name, text)
     log.touch()
     return bin_dir, log
@@ -194,6 +195,7 @@ def server(tmp_path):
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
     shutil.copy(ROOT / "scripts/vultr/backup-age.sh", seed / "scripts/vultr/backup-age.sh")   # 끝 요약의 S3 백업 나이(QA-199)
     shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", seed / "scripts/vultr/reboot-check.sh")   # 끝 요약의 재부팅 필요 여부
+    shutil.copy(ROOT / "scripts/vultr/inventory.sh", seed / "scripts/vultr/inventory.sh")         # 끝의 버전 목록(ADR 0046)
     for name in ("db-backup.sh", "db-common.sh"):   # 배포 전 덤프(QA-200)가 부르는 것
         shutil.copy(ROOT / "scripts" / name, seed / "scripts" / name)
     (seed / "deploy/vultr").mkdir(parents=True)
@@ -232,8 +234,13 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy") > schema[0]
     head = tools._git(server[0], "rev-parse", "--short", "HEAD")
     for line in tools._calls(fakes):
+        if line.startswith("logger -t my-macro-inventory "):
+            continue                                         # 끝의 버전 목록(ADR 0046)이 syslog에 남기는 건수 한 줄
         assert f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml APP_VERSION=main@{head}" in line, line
     assert "정기 작업 켜짐" in result.stdout and "주의" not in result.stdout
+    inventory = [i for i, c in enumerate(calls) if "python -m app.inventory" in c]
+    assert len(inventory) == 1 and inventory[0] > calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy")
+    assert "  버전 목록: " in result.stdout, "배포 출력에 버전 목록 건수 한 줄(ADR 0046)"
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
 
 
@@ -1497,3 +1504,258 @@ def test_make_status와_deploy는_재부팅_필요_여부를_같은_줄로_판�
 def test_deploy는_재부팅_점검이_실패해도_배포를_실패로_만들지_않는다():
     text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
     assert "\nbash scripts/vultr/reboot-check.sh --summary || true\n" in text
+
+
+# --------------------------------------------------------------------------- inventory.sh(보안 공지 버전 목록, ADR 0046)
+# 가짜 docker는 컨테이너 대신 이 기계의 sh(dash)로 컨테이너 스크립트를 돌립니다 — alpine 구역(postgres·backend·frontend·caddy)은 가짜 apk 목록을,
+# debian 구역(collector·browser)은 가짜 dpkg-query를 봅니다. 수집기로 넘긴 표준입력은 FAKE_INV_DOC에 남겨 진짜 검증(app.inventory.parse)에
+# 통과하는지 봅니다. 값은 모두 가짜입니다(공개 저장소).
+_INV_DOCKER = """#!/usr/bin/env bash
+echo "docker $*" >> "$FAKE_LOG"
+case "$*" in
+    "version --format {{.Server.Version}}") echo "90.1.2"; exit 0 ;;
+    "compose version --short") echo "v9.1.0"; exit 0 ;;
+esac
+case " $* " in
+    *" exec -T collector python -m app.inventory "*)
+        cat > "$FAKE_INV_DOC"
+        [ "${FAKE_INGEST_RC:-0}" = 0 ] || { echo "버전 목록을 받지 않음(아무것도 쓰지 않음) — 줄 3: 모르는 생태계" >&2; exit "$FAKE_INGEST_RC"; }
+        echo "버전 목록 받음 — 구역 7(ok 7·failed 0·skipped 0) · 구성 요소 30 · 보류 3(보안 2)"; exit 0 ;;
+    *" exec -T postgres psql "*)
+        [ -z "${FAKE_PSQL_FAIL:-}" ] || exit 2
+        echo "99.1"; exit 0 ;;
+    *" exec -T "*" sh -s -- "*)
+        svc="${*: -1}"
+        case " ${FAKE_EXEC_FAIL:-} " in *" $svc "*) cat > /dev/null; echo "service $svc is not running" >&2; exit 1 ;; esac
+        case "$svc" in collector|browser) unset INV_APK_DB ;; esac
+        exec sh -s -- "$svc" ;;
+esac
+exit 0
+"""
+_INV_UNZIP = """#!/usr/bin/env bash
+[ "$1 $2" = "-l $INV_APP_JAR" ] || exit 9
+cat <<'EOF'
+Archive:  app.jar
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  01-01-2026 00:00   BOOT-INF/
+        0  01-01-2026 00:00   BOOT-INF/lib/
+     1234  01-01-2026 00:00   BOOT-INF/lib/fake-core-1.2.3.jar
+     1234  01-01-2026 00:00   BOOT-INF/lib/fake-datatype-jsr310-2.17.0.jar
+     1234  01-01-2026 00:00   BOOT-INF/classes/fake/App.class
+---------                     -------
+     3702                     5 files
+EOF
+"""
+_INV_TOOLS = {
+    "docker": _INV_DOCKER,
+    "unzip": _INV_UNZIP,
+    "node": "#!/usr/bin/env bash\nprintf 'runtime\\tnode\\t90.0.1\\t-\\nnpm\\t@fake/ui\\t1.0.0\\t-\\nnpm\\tfake-next\\t15.0.0-fake\\t-\\n'\n",
+    "python": "#!/usr/bin/env bash\nprintf 'pypi\\tfake-pkg\\t1.0\\t-\\nruntime\\tpython\\t3.99.0\\t-\\n'\n",
+    "google-chrome": "#!/usr/bin/env bash\n[ -z \"${FAKE_CHROME_EMPTY:-}\" ] || exit 0\necho 'Google Chrome 999.0.1.2 '\n",
+    "caddy": "#!/usr/bin/env bash\necho 'v9.8.7 h1:fakehash='\n",
+    "uname": "#!/usr/bin/env bash\n[ \"$1\" = -r ] && echo 0.0.1-fake-generic\n",
+}
+_INV_APK = ("C:Q1fake=\nP:.fake-rundeps\nV:20260101.000000\nA:noarch\n\n"
+            "C:Q1fake=\nP:fake-musl\nV:1.0.0-r0\nA:x86_64\no:fake-musl\nF:lib\n\n"
+            "C:Q1fake=\nP:fake-ssl3\nV:9.9.9-r1\nA:x86_64\no:fake-ssl\n\n"
+            "C:Q1fake=\nP:fake-noorigin\nV:0.1-r0\nA:x86_64\n")
+_INV_VERSIONS = ("9.9.9", "90.1.2", "9.1.0", "0.90.1", "0.0.1-fake", "99.1", "99.0.1", "1.2.3", "90.0.1", "3.99.0", "999.0.1.2",
+                 "9.8.7", "1.0.0-r0")
+
+
+@pytest.fixture()
+def inv(tmp_path, fakes):
+    """서버 역할의 저장소 최상위(inventory.sh·db-common.sh·서버 .env)와 가짜 도구·파일 → (최상위, 환경)."""
+    root = tmp_path / "My_macro_dashboard_v2"
+    (root / "scripts/vultr").mkdir(parents=True)
+    shutil.copy(ROOT / "scripts/vultr/inventory.sh", root / "scripts/vultr/inventory.sh")
+    shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
+    (root / ".env").write_text(f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nDATABASE_PASSWORD={SECRET}\n", encoding="utf-8")
+    bin_dir, _ = fakes
+    for name, text in _INV_TOOLS.items():
+        tools._write_exec(bin_dir / name, text)
+    files = tmp_path / "files"
+    files.mkdir()
+    (files / "installed").write_text(_INV_APK, encoding="utf-8")
+    (files / "release").write_text('IMPLEMENTOR="Fake Vendor"\nJAVA_RUNTIME_VERSION="99.0.1+7-LTS"\nJAVA_VERSION="99.0.1"\n',
+                                   encoding="utf-8")
+    stamp = files / "update-success-stamp"
+    stamp.touch()
+    os.utime(stamp, (1_795_000_000, 1_795_000_000))
+    env = tools._env(fakes, FAKE_INV_DOC=str(files / "doc.tsv"), INV_APK_DB=str(files / "installed"),
+                     INV_JAVA_RELEASE=str(files / "release"), INV_APP_JAR="/fake/app.jar", INV_APT_STAMP=str(stamp))
+    return root, env
+
+
+def _inventory(inv, *args: str, **extra: str) -> subprocess.CompletedProcess:
+    root, env = inv
+    return subprocess.run(["bash", str(root / "scripts/vultr/inventory.sh"), *args], cwd=root, env={**env, **extra},
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
+def _sent(inv):
+    from app import inventory as ingest
+    return ingest.parse(Path(inv[1]["FAKE_INV_DOC"]).read_text(encoding="utf-8"))
+
+
+def _host_calls(fakes) -> list[str]:
+    path = Path(f"{fakes[1]}.host")
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+
+def test_inventory는_서버에서_일곱_구역을_모아_수집기_검증을_통과하는_목록을_넘긴다(inv, fakes):
+    result = _inventory(inv)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "  버전 목록: 버전 목록 받음 — 구역 7(ok 7·failed 0·skipped 0) · 구성 요소 30 · 보류 3(보안 2)\n"
+    sent = _sent(inv)
+    assert sent.host_included is True
+    assert sent.apt_lists_at.isoformat() == "2026-11-18T11:06:40+00:00", "apt 목록을 마지막으로 받은 시각(파일 시각)"
+    assert {name: entry["status"] for name, entry in sent.sections.items()} == dict.fromkeys(
+        ["host", "postgres", "backend", "frontend", "collector", "browser", "caddy"], "ok")
+    components = set(sent.components)
+    assert {
+        ("host", "dpkg", "fake-ssl-lib", "9.9.9-0fake1", "fake-ssl"), ("host", "dpkg", "fake-shell", "1:5.0-fake2", "fake-shell"),
+        ("host", "dpkg", "fake-nosrc", "2.0-1", "fake-nosrc"), ("host", "runtime", "kernel", "0.0.1-fake-generic", None),
+        ("host", "runtime", "docker", "90.1.2", None), ("host", "runtime", "compose", "9.1.0", None),
+        ("host", "runtime", "tailscale", "0.90.1", None),
+        ("postgres", "runtime", "postgres", "99.1", None), ("postgres", "apk", "fake-musl", "1.0.0-r0", "fake-musl"),
+        ("postgres", "apk", "fake-ssl3", "9.9.9-r1", "fake-ssl"), ("postgres", "apk", "fake-noorigin", "0.1-r0", "fake-noorigin"),
+        ("backend", "runtime", "jdk", "99.0.1+7-LTS", "Fake Vendor"), ("backend", "maven", "fake-core", "1.2.3", None),
+        ("backend", "maven", "fake-datatype-jsr310", "2.17.0", None),
+        ("frontend", "runtime", "node", "90.0.1", None), ("frontend", "npm", "@fake/ui", "1.0.0", None),
+        ("collector", "runtime", "python", "3.99.0", None), ("collector", "pypi", "fake-pkg", "1.0", None),
+        ("collector", "dpkg", "fake-ssl-lib", "9.9.9-0fake1", "fake-ssl"),
+        ("browser", "runtime", "chrome", "999.0.1.2", None), ("browser", "dpkg", "fake-shell", "1:5.0-fake2", "fake-shell"),
+        ("caddy", "runtime", "caddy", "9.8.7", None), ("caddy", "apk", "fake-musl", "1.0.0-r0", "fake-musl"),
+    } <= components
+    assert not [c for c in components if c[2] in ("fake-removed", ".fake-rundeps")], "설치 안 된 dpkg 줄·apk 가상 패키지는 빼고"
+    assert not [c for c in components if c[0] in ("collector", "browser") and c[1] == "apk"], "debian 컨테이너는 dpkg"
+    assert sorted(sent.pending) == [
+        ("fake-engine-cli", "amd64", "5:90.1.2-1~fake", "5:90.1.3-1~fake", "fakecode", False),
+        ("fake-esm-lib", "all", "1.0", "1.0+esm1", "fakecode-infra-security", True),
+        ("fake-ssl-lib", "amd64", "9.9.9-0fake1", "9.9.9-0fake2", "fakecode-updates,fakecode-security", True),
+    ]
+    dpkg = "dpkg-query -W -f=${db:Status-Abbrev}\\t${Package}\\t${Version}\\t${source:Package}\\n"
+    assert _host_calls(fakes) == [dpkg, "tailscale version", "apt list --upgradable", dpkg, dpkg], \
+        "호스트 한 번 + debian 컨테이너 둘(collector·browser), apt-get update는 하지 않음"
+    logs = [c for c in tools._calls(fakes) if c.startswith("logger ")]
+    assert logs == ["logger -t my-macro-inventory 버전 목록 받음 — 구역 7(ok 7·failed 0·skipped 0) · 구성 요소 30 · 보류 3(보안 2)"]
+    for version in _INV_VERSIONS:
+        assert version not in result.stdout + result.stderr + "\n".join(logs), f"버전({version})은 출력·syslog에 남기지 않음"
+    assert SECRET not in result.stdout + result.stderr
+
+
+def test_inventory는_서버가_아니면_호스트_구역을_건너뛰고_호스트_명령을_부르지_않는다(inv, fakes):
+    (inv[0] / ".env").write_text("COMPOSE_FILE=docker-compose.yml\n", encoding="utf-8")
+
+    assert _inventory(inv).returncode == 0
+    sent = _sent(inv)
+    assert sent.host_included is False and sent.apt_lists_at is None and sent.pending == []
+    assert sent.sections["host"] == {"status": "skipped", "reason": "서버가 아님"}
+    assert sent.sections["postgres"]["status"] == "ok"
+    assert [c for c in _host_calls(fakes) if not c.startswith("dpkg-query ")] == [], "apt·tailscale을 부르지 않음"
+    assert len(_host_calls(fakes)) == 2, "dpkg-query는 debian 컨테이너 둘(collector·browser)만"
+    assert not [c for c in tools._calls(fakes) if c.startswith("docker version") or c.startswith("docker compose version")]
+
+
+@pytest.mark.parametrize("extra, failed", [
+    ({"FAKE_EXEC_FAIL": "backend"}, {"backend": "읽지 못함(종료 코드 1)"}),
+    ({"FAKE_EXEC_FAIL": "browser caddy"}, {"browser": "읽지 못함(종료 코드 1)", "caddy": "읽지 못함(종료 코드 1)"}),
+    ({"FAKE_PSQL_FAIL": "1"}, {"postgres": "읽지 못함(종료 코드 2)"}),
+    ({"FAKE_CHROME_EMPTY": "1"}, {"browser": "읽지 못함(종료 코드 4)"}),
+    ({"INV_JAVA_RELEASE": "/nonexistent/release"}, {"backend": "읽지 못함(종료 코드 4)"}),
+    ({"FAKE_HOST_FAIL": "tailscale"}, {"host": "읽지 못함(종료 코드 15)"}),
+    ({"FAKE_HOST_FAIL": "apt"}, {"host": "읽지 못함(종료 코드 21)"}),
+    ({"FAKE_HOST_FAIL": "dpkg-query"}, {"host": "읽지 못함(종료 코드 11)", "collector": "읽지 못함(종료 코드 3)",
+                                        "browser": "읽지 못함(종료 코드 3)"}),
+])
+def test_inventory는_구역마다_실패를_따로_잡고_나머지는_보낸다(inv, extra, failed):
+    result = _inventory(inv, **extra)
+
+    assert result.returncode == 0, result.stderr
+    sent = _sent(inv)
+    assert {name: entry.get("reason") for name, entry in sent.sections.items() if entry["status"] == "failed"} == failed
+    assert all(entry["status"] == "ok" for name, entry in sent.sections.items() if name not in failed)
+    assert not [c for c in sent.components if c[0] in failed], "실패한 구역의 구성 요소는 넘기지 않음"
+    if "host" in failed:
+        assert sent.pending == [] and sent.apt_lists_at is None and sent.host_included is True
+
+
+def test_inventory는_컨테이너_출력_모양이_다르면_그_구역만_실패로_넘긴다(inv, fakes):
+    tools._write_exec(fakes[0] / "caddy", "#!/usr/bin/env bash\necho 'v9.8.7 extra'\n")
+    tools._write_exec(fakes[0] / "node", "#!/usr/bin/env bash\nprintf 'runtime\\tnode\\n'\n")
+
+    assert _inventory(inv).returncode == 0
+    sections = _sent(inv).sections
+    assert sections["frontend"] == {"status": "failed", "reason": "출력 모양이 다름"}
+    assert sections["caddy"]["status"] == "ok", "caddy version은 첫 낱말만"
+
+
+def test_inventory는_수집기가_받지_않으면_건수_대신_경고를_남기고_1로_끝난다(inv, fakes):
+    result = _inventory(inv, FAKE_INGEST_RC="2")
+
+    assert result.returncode == 1 and result.stdout == ""
+    assert "경고: 버전 목록을 넘기지 못했습니다(종료 코드 2) — 버전 목록을 받지 않음(아무것도 쓰지 않음) — 줄 3: 모르는 생태계" in result.stderr
+    logs = [c for c in tools._calls(fakes) if c.startswith("logger ")]
+    assert logs == ["logger -t my-macro-inventory -p user.warning 버전 목록을 넘기지 못함(종료 코드 2) — "
+                    "버전 목록을 받지 않음(아무것도 쓰지 않음) — 줄 3: 모르는 생태계"]
+
+
+def test_inventory는_모르는_인자면_2로_끝나고_컨테이너_스크립트만_찍을_수_있다(inv, fakes):
+    assert _inventory(inv, "--now").returncode == 2
+    printed = _inventory(inv, "--container-script")
+    assert printed.returncode == 0 and printed.stdout.startswith('svc="$1"') and tools._calls(fakes) == []
+    assert subprocess.run(["sh", "-n"], input=printed.stdout, text=True, capture_output=True).returncode == 0, "POSIX sh(dash) 문법"
+
+
+def test_inventory_컨테이너_스크립트의_node와_python_조각은_진짜로_돈다(inv, fakes, tmp_path):
+    """가짜 node·python이 아니라 이 기계의 것으로 — npm은 범위 폴더(@…)를 한 단계 더, pypi 이름은 소문자·'-'로 맞춤."""
+    script = _inventory(inv, "--container-script").stdout
+    modules = tmp_path / "web" / "node_modules"
+    for name, version in (("fake-next", "15.0.0-fake"), ("@fake/ui", "1.0.0"), (".bin", None), ("broken", None)):
+        (modules / name).mkdir(parents=True)
+        if version:
+            (modules / name / "package.json").write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
+    real = tmp_path / "realbin"
+    real.mkdir()
+    env = {**inv[1]}
+    for tool in ("node", "python"):
+        os.unlink(fakes[0] / tool)
+    if shutil.which("node", path=env["PATH"]) is None:
+        pytest.skip("node가 없어 건너뜁니다.")
+    tools._write_exec(real / "python", f'#!/usr/bin/env bash\nexec "{sys_executable()}" "$@"\n')    # 이 가상환경의 python
+    env["PATH"] = f"{real}{os.pathsep}{env['PATH']}"
+
+    web = subprocess.run(["sh", "-s", "--", "frontend"], input=script, text=True, capture_output=True, timeout=60,
+                         env={**env, "INV_APP_DIR": str(tmp_path / "web")})
+    assert web.returncode == 0, web.stderr
+    rows = [line.split("\t") for line in web.stdout.splitlines()]
+    assert ["npm", "@fake/ui", "1.0.0", "-"] in rows and ["npm", "fake-next", "15.0.0-fake", "-"] in rows
+    assert [r for r in rows if r[0] == "runtime"][0][:2] == ["runtime", "node"] and not re.match(r"v", rows[0][2])
+
+    py = subprocess.run(["sh", "-s", "--", "collector"], input=script, text=True, capture_output=True, timeout=60,
+                        env={k: v for k, v in env.items() if k != "INV_APK_DB"})
+    assert py.returncode == 0, py.stderr
+    pypi = [line.split("\t") for line in py.stdout.splitlines() if line.startswith("pypi\t")]
+    assert pypi and all(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) for _, name, _, _ in pypi), "정규화한 배포 이름"
+    assert any(name == "pytest" for _, name, _, _ in pypi)
+
+
+def sys_executable() -> str:
+    import sys
+    return sys.executable
+
+
+def test_inventory_cron_제안과_사용법이_DEVELOPMENT_7에_있다():
+    text = (ROOT / "docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    section = text[text.index("## 7. Vultr 서버"):]
+    assert "20 7,22 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/inventory.sh" in section
+    assert "journalctl -t my-macro-inventory" in section
+
+
+def test_deploy는_버전_목록이_실패해도_배포를_실패로_만들지_않는다():
+    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    assert "\nbash scripts/vultr/inventory.sh || true\n" in text
+    assert text.index("bash scripts/vultr/inventory.sh") > text.index("bash scripts/vultr/reboot-check.sh --summary")
