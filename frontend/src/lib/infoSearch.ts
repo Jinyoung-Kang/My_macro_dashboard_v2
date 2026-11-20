@@ -106,7 +106,7 @@ export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
 // 수집기(search.py의 _KEY_PATTERNS)·백엔드(SearchService)와 같은 문법 — 어긋나면 수집기의 400이 '응답 없음'으로 보입니다.
 const KEY_PATTERNS: readonly RegExp[] = [/^us:[A-Z0-9][A-Z0-9.-]{0,14}$/, /^kr:\d{6}$/, /^cik:\d{10}$/, /^wd:Q[1-9]\d{0,11}$/];
 const TOPIC_MAX = 60;
-// 제어 글자를 막는 것이 목적(\u 이스케이프라 no-control-regex에 걸리지 않음).
+// 제어 글자를 막는 것이 목적. 이 저장소 eslint 설정에서는 no-control-regex가 꺼져 있음(그 규칙은 \u 이스케이프도 잡음) — 켜면 이 줄에 끄기 주석을 다시 둘 것.
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 const codePoints = (text: string) => Array.from(text).length;
