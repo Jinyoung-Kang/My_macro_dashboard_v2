@@ -48,7 +48,7 @@ async function momentumPanel(): Promise<HTMLElement> {
 }
 
 describe("QA-943 /sector 읽기 실패 때 섹터 모멘텀 패널", () => {
-  it.fails("값 없이 실패하면 패널에 빈 차트·'표시할 데이터가 없습니다.'가 없고 읽지 못했다는 한 줄 — 오류 상자는 위에 하나", async () => {
+  it("값 없이 실패하면 패널에 빈 차트·'표시할 데이터가 없습니다.'가 없고 읽지 못했다는 한 줄 — 오류 상자는 위에 하나", async () => {
     api.apiGetShared.mockImplementation(() => Promise.reject(new Error("합성 실패 503")));
     render(<SectorPage />);
     expect(await screen.findByRole("button", { name: "다시 시도" })).toBeTruthy();
