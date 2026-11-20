@@ -22,6 +22,7 @@ import { Component, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { belowLgTarget } from "@/lib/__tests__/touchTargetAudit";
+import { APP_TITLE } from "@/lib/nav";
 
 const APP = resolve(__dirname, "..");
 const FILES = {
@@ -90,14 +91,14 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("렌더 예외의 화면(QA-920)", () => {
-  it.fails("세 경계 파일이 있고 모두 클라이언트 컴포넌트다", () => {
+  it("세 경계 파일이 있고 모두 클라이언트 컴포넌트다", () => {
     for (const file of Object.values(FILES)) {
       expect(existsSync(file), file.slice(APP.length + 1)).toBe(true);
       expect(readFileSync(file, "utf8")).toMatch(/^\s*(?:\/\*[\s\S]*?\*\/\s*)?["']use client["']/);
     }
   });
 
-  it.fails("셸 안: 화면 머리 h1·안내·'다시 시도'(reset)·홈 링크 하나 — 자기 <main> 없음, 누름 자리 좁은 화면 44px", async () => {
+  it("셸 안: 화면 머리 h1·안내·'다시 시도'(reset)·홈 링크 하나 — 자기 <main> 없음, 누름 자리 좁은 화면 44px", async () => {
     const DashboardError = await load(FILES.dashboard);
     const onReset = vi.fn();
     renderBroken(DashboardError, onReset);
@@ -118,7 +119,7 @@ describe("렌더 예외의 화면(QA-920)", () => {
     expect(screen.queryByRole("heading", { name: TITLE })).toBeNull();
   });
 
-  it.fails("다시 시도해도 또 던지면 카드가 그대로 남는다(reset만 — 다른 쓰기·이동 없음)", async () => {
+  it("다시 시도해도 또 던지면 카드가 그대로 남는다(reset만 — 다른 쓰기·이동 없음)", async () => {
     const DashboardError = await load(FILES.dashboard);
     const onReset = vi.fn();
     renderBroken(DashboardError, onReset);
@@ -127,7 +128,7 @@ describe("렌더 예외의 화면(QA-920)", () => {
     expect(screen.getByRole("heading", { level: 1, name: TITLE })).toBeTruthy();
   });
 
-  it.fails("루트: 루트 not-found와 같은 인증 카드(<main>·h1)·안내·'다시 시도'(reset)·홈 링크 하나", async () => {
+  it("루트: 루트 not-found와 같은 인증 카드(<main>·h1)·안내·'다시 시도'(reset)·홈 링크 하나", async () => {
     const RootError = await load(FILES.root);
     const onReset = vi.fn();
     renderBroken(RootError, onReset);
@@ -143,7 +144,7 @@ describe("렌더 예외의 화면(QA-920)", () => {
     expect(screen.getByText("다시 그린 화면")).toBeTruthy();
   });
 
-  it.fails("서버 오류의 digest가 있으면 '오류 번호'로 적고, 메시지는 적지 않는다", async () => {
+  it("서버 오류의 digest가 있으면 '오류 번호'로 적고, 메시지는 적지 않는다", async () => {
     const RootError = await load(FILES.root);
     const error = Object.assign(new Error("내부 경로 /secret"), { digest: "123456789" });
     render(<RootError error={error} reset={() => {}} retry={() => {}} />);
@@ -151,7 +152,7 @@ describe("렌더 예외의 화면(QA-920)", () => {
     expect(document.body.textContent).not.toContain("/secret");
   });
 
-  it.fails("전체: <html lang=\"ko\">·<body>(루트 레이아웃과 같은 바탕)·<title>을 스스로 그리고 전역 CSS를 가져온다, 안은 루트와 같은 카드", async () => {
+  it("전체: <html lang=\"ko\">·<body>(루트 레이아웃과 같은 바탕)·<title>을 스스로 그리고 전역 CSS를 가져온다, 안은 루트와 같은 카드", async () => {
     const source = readFileSync(FILES.global, "utf8");
     expect(source).toMatch(/import\s+["']\.\/globals\.css["']/);
     const GlobalError = await load(FILES.global);
@@ -161,7 +162,8 @@ describe("렌더 예외의 화면(QA-920)", () => {
     const bodyClass = /<body className="([^"]+)"/.exec(rootLayout)?.[1];
     expect(bodyClass).toBeTruthy();
     expect(html).toContain(`<body class="${bodyClass}">`);
-    expect(html).toContain(`<title>${TITLE} · 매크로 대시보드</title>`);
+    // 앱 이름은 lib/nav APP_TITLE과 같은 글(전체 경계 묶음에 메뉴 모듈을 싣지 않으려고 글로 둠 — lib/errorScreen).
+    expect(html).toContain(`<title>${TITLE} · ${APP_TITLE}</title>`);
     expect(html).toContain(`<h1`);
     expect(html).toContain(TITLE);
     expect(html).toContain(TEXT);
