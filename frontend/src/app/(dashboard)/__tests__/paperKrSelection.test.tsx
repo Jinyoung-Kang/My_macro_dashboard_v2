@@ -360,7 +360,7 @@ describe("QA-819 — 매수 목표 표의 코드와 이름 사이에는 줄바�
 // 넓음. 기대: 상자가 390 상자(332px = 20.75rem)보다 좁으면 칸 좌우 여백을 줄이고(크기 질의 — 390 이상 겉모습 그대로), 그래도 넘칠 만큼 긴 이름은 이름 안에서
 // 꺾임(overflow-wrap:anywhere — 다른 칸은 한 덩어리 숫자라 이름 칸이 남는 폭을 다 가져, 넘칠 때만 꺾임). jsdom은 배치를 재지 않아 클래스를 봅니다(잰 값은 고친 커밋).
 describe("QA-958 — 좁은 상자에서 매수 목표 표가 넘치지 않는다", () => {
-  it.fails("상자가 20.75rem 미만이면 칸 여백을 줄이고, 이름은 넘칠 때만 이름 안에서 꺾는다", async () => {
+  it("상자가 20.75rem 미만이면 칸 여백을 줄이고, 이름은 넘칠 때만 이름 안에서 꺾는다", async () => {
     reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
       available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
     });
