@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useId, useRef, useState } from "react";
-import { AuthAlert, AuthCard, AuthField, AuthFieldError, AuthMessage, AuthSubmit } from "@/components/auth/AuthCard";
+import { AuthAlert, AuthCard, AuthField, AuthFieldError, AuthMessage } from "@/components/auth/AuthCard";
+import { AuthSubmit } from "@/components/auth/AuthSubmit";
 import { AUTH_CHECK } from "@/components/auth/classes";
 import { FOCUS_RING } from "@/components/ui";
 import { auth } from "@/lib/api";

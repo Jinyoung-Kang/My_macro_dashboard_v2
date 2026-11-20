@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode, Ref } from "react";
-import { AUTH_CARD, AUTH_LINK, AUTH_MESSAGE, AUTH_MESSAGE_TONE, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
+import { AUTH_CARD, AUTH_LINK, AUTH_MESSAGE, AUTH_MESSAGE_TONE, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui/classes";
 import { StatusText } from "@/components/ui/icons";
 
@@ -111,13 +111,5 @@ export function AuthFieldError({ id, children }: { id?: string; children: ReactN
         {children}
       </StatusText>
     </p>
-  );
-}
-
-export function AuthSubmit({ busy, disabled, children }: { busy: boolean; disabled?: boolean; children: ReactNode }) {
-  return (
-    <button type="submit" disabled={busy || disabled} className={AUTH_SUBMIT}>
-      {busy ? "처리 중…" : children}
-    </button>
   );
 }
