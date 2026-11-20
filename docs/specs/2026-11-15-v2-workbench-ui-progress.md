@@ -3649,3 +3649,10 @@ API·백엔드·수집기 변경 0, 실제 계좌·실제 매매 모듈은 자�
 그려집니다(QA-972 — 상한 뒤에도 자리를 남김).
 
 **확인**: 통합 끝 `c1ec1adb`에서 전체 vitest 499파일·4,930건·tsc·lint·check·build 통과. QA 스택을 `0c34402e`와 `c1ec1adb`로 차례로 다시 빌드한 감사가 둘 다 D7 화면 감사와 전 경로·전 항목 같음(`/style` 한 줄은 자동 id만 다름).
+
+## D8 배포 (2026-11-21 07:33~07:35 KST, Vultr `main@fb663698` — main `d9a42d77` → `fb663698` fast-forward)
+- 담은 것: 위 §P8 후속(QA-954~958·964~972, 독립 검토 반영). 같은 날 07:20~07:23에 먼저 나간 작업 2(ADR 0044 — `main@d9a42d77`)를 기능 브랜치에 병합(`90a1d460`, 충돌 없음)하고 그 배포 기록(`fb663698` — ADR 0044·0018)을 더했습니다. 다른 세션의 커밋은 들지 않음.
+- 배포 전: 병합 끝에서 전체 vitest 500파일·4,932건·tsc·lint·check·build·감사 스크립트 시험 9건 통과, 기능 브랜치 CI(`90a1d460`) 여섯 job 통과. 운영 DB `paper_job_runs`를 읽기만 함 — 07:18 `risk`·07:19 `exec-audit` OK, 도는 작업 없음(토요일, 두 시장 닫힘).
+- `scripts/vultr/deploy.sh`(1분 37초): 화면·caddy만 다시 띄움(백엔드·수집기는 작업 2 배포 그대로). 디스크 58%, 재부팅 필요 없음 · Livepatch 정상.
+- GET 확인: /·모의매매 두 시장과 탭(holdings·decisions·selection·real·isa)·/macro·/regime·/institutions·기관 상세·/more·/search·`/search?e=us:NVDA`·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account·/sector·/cot·/info 두 탭·/login 200(/paper는 307), /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@fb663698`.
+- 배포 뒤 5분(07:40): 서버 HEAD `fb663698`, 백엔드 ERROR 0·화면 오류 0, 수집기 오류 줄 1(07:25 yfinance FOX 404 — 작업 2 배포 뒤와 같은 외부 응답). main CI(`fb663698`) 여섯 job 통과.
