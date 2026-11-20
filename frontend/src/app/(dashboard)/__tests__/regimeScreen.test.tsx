@@ -667,7 +667,7 @@ describe("QA-676 판정 근거 메모는 '상태 · 해석'", () => {
 // 합니다. jsdom은 배치를 계산하지 않으므로 꼴을 봅니다.
 describe("QA-965 판정 근거의 읽는 중 자리표시는 값이 온 뒤의 속성 목록 꼴", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 막대 네 줄뿐이었습니다(속성 줄 dt 0개).
-  it.fails("응답 전 판정 근거는 이름 넷의 속성 줄(해석 글 자리)·기준일 줄·고지 상자 — 읽기에서는 상태 이름만", async () => {
+  it("응답 전 판정 근거는 이름 넷의 속성 줄(해석 글 자리)·기준일 줄·고지 상자 — 읽기에서는 상태 이름만", async () => {
     render(<RegimePage />);
     const panel = await panelTitled("판정 근거");
     const status = within(panel).getByRole("status", { name: "판정 근거 불러오는 중" });

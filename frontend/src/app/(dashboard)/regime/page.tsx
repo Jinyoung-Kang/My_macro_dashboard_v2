@@ -89,6 +89,86 @@ function HeaderPending() {
 }
 
 /**
+ * 판정 근거 자리표시의 높이를 잡는 보이지 않는 글(QA-965) — 값이 온 뒤의 글과 같은 글꼴·같은 칸에 같은 꼴로 그려(visibility hidden — 자리만 차지하고 보이지도
+ * 읽히지도 않음) 그 칸의 실제 폭·글꼴에서 값이 온 뒤와 같은 줄 수가 됩니다. 글은 백엔드가 보내는 고정 글 가운데 고릅니다 — 판정 근거 해석은 신호마다 정상 쪽
+ * 글(Regime.java), 고지는 응답이 늘 싣는 고정 글(AnalyticsService)입니다. 다른 해석이면 값이 온 뒤 줄 수가 하나 다를 수 있습니다.
+ */
+const SIZER = {
+  asOf: "2026-01-01",
+  note: "임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다. 입력 지표가 하나라도 없으면 판정하지 않습니다.",
+  signals: {
+    curve: { state: "정상", reading: "장기 금리가 단기보다 높습니다(정상 구조)." },
+    nfci: { state: "완화적", reading: "0(장기 평균)보다 낮습니다 — 자금 조달 여건이 평균보다 느슨합니다." },
+    hyOas: { state: "정상", reading: "정상 범위입니다." },
+    liquidity: { state: "확대", reading: "최근 4주 동안 시장으로 유동성이 들어왔습니다." },
+  } as Record<string, { state: string; reading: string } | undefined>,
+};
+
+/**
+ * 보이지 않는 글(`children`)이 높이를 정하고 그 위에 막대 줄을 덮습니다 — 막대 줄은 `line`(글줄 높이 클래스) 높이로 넉넉히 쌓고 넘치는 줄은 잘립니다.
+ * 글은 읽기에서 빼고(부르는 쪽이 aria-hidden 칸 안에 둠) 보이지도 않습니다(invisible).
+ */
+function SizedBars({ children, line, bar, as: Box = "span", className = "" }: { children: ReactNode; line: string; bar: string; as?: "span" | "p" | "div"; className?: string }) {
+  return (
+    <Box className={`relative block ${className}`}>
+      <span className="invisible">{children}</span>
+      <span className="absolute inset-0 flex flex-col overflow-hidden">
+        {["w-full", "w-full", "w-full", "w-full", "w-full", "w-3/5"].map((width, index) => (
+          <span key={index} className={`flex ${line} shrink-0 items-center`}>
+            <span className={`${bar} ${width} ${BAR}`} />
+          </span>
+        ))}
+      </span>
+    </Box>
+  );
+}
+
+/**
+ * 판정 근거의 읽는 중 자리표시(QA-965) — 값이 온 뒤의 속성 목록과 같은 꼴: 같은 이름 넷(응답 전에도 아는 이름 — regimeHeroModel의 자리)·값 막대·해석 글 자리
+ * (보이지 않는 정상 쪽 해석 글이 줄 수를 정함)와 기준일 줄·고지 상자. 예전에는 막대 네 줄(약 200px)이라 값이 오면 패널이 390에서 352px 자라 아래 '네 국면'·탭을 밀었습니다.
+ * 이름이 보여도 읽기에서는 빠지고 상태 이름('판정 근거 불러오는 중')만 읽힙니다.
+ */
+function EvidencePending({ labels }: { labels: readonly { id: string; label: string }[] }) {
+  const items: PropertyItem[] = labels.map(({ id, label }) => {
+    const sizer = SIZER.signals[id];
+    return {
+      key: id,
+      label,
+      value: <span className={`inline-block h-3.5 w-16 align-middle ${BAR}`} />,
+      block: true,
+      note: sizer ? (
+        <SizedBars line="h-4" bar="h-3">
+          <StatusText tone="ok" colorText={false} iconSize={12} className="align-top">
+            {sizer.state}
+          </StatusText>
+          {" · "}
+          {sizer.reading}
+        </SizedBars>
+      ) : null,
+    };
+  });
+  return (
+    <div role="status" aria-busy="true" aria-label="판정 근거 불러오는 중">
+      <span className="sr-only">판정 근거 불러오는 중</span>
+      <div aria-hidden="true">
+        <PropertyList items={items} />
+        <SizedBars as="p" className="mt-2 break-keep text-xs leading-4" line="h-4" bar="h-3">
+          기준일 <span className="tabular-nums">{SIZER.asOf}</span> — {REGIME_AS_OF_NOTE}
+        </SizedBars>
+        {/* 판정 응답의 고지(note — 백엔드가 늘 보내는 고정 글)와 같은 상자. */}
+        <p className="mt-2 rounded-sm border border-border bg-bg px-3 py-2 text-xs">
+          <SizedBars line="h-4" bar="h-3">
+            <StatusText tone="warn" colorText={false} iconSize={12}>
+              {SIZER.note}
+            </StatusText>
+          </SizedBars>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * 연결 — 판정에 쓴 지표가 있는 화면·절. 신호마다의 지표 상세(/markets/i/…)는 매크로 카드 키로만 있어 신호 id(curve·nfci·hyOas·liquidity)와 맞지
  * 않으므로, 그 지표의 차트가 있는 매크로 화면(lib/marketSections 정본)과 순유동성 화면으로 잇습니다. 링크 글에 어느 화면·절인지 적습니다.
  * 매크로 링크는 절 조각 없이 화면 맨 위로 갑니다 — 자료가 온 뒤 위 절들이 자라 해시 스크롤이 그 절에 머물지 않았습니다(QA-641). 절은 그 화면의 목차로 옮기고,
@@ -233,7 +313,7 @@ export default function RegimePage() {
   const evidencePending = data ? undefined : error ? (
     <p className="break-keep text-sm text-text-2">판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
   ) : firstLoadPending(regime) ? (
-    <Skeleton lines={4} label="판정 근거 불러오는 중" />
+    <EvidencePending labels={model.tiles} />
   ) : (
     <Loading label="판정 근거를 읽는 중…" />
   );
