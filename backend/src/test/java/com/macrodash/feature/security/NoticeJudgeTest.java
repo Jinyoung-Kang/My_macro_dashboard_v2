@@ -15,6 +15,7 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -491,6 +492,21 @@ class NoticeJudgeTest {
             Verdict withLinux = judge(rows("Tailscale Full Client (Windows, Linux, macOS)|1.0 이상 1.900 미만|1.900"), inv);
             assertThat(withLinux.status()).isEqualTo(Status.AFFECTED);
             assertThat(product(withLinux, "tailscale").status()).isEqualTo(Status.AFFECTED);
+        }
+
+        @Test
+        @Disabled("QA-980 재현 — 고치기 전에는 본문 참고 주소의 git 낱말이 Git 별칭에 맞음")
+        @DisplayName("QA-980 본문의 참고 주소(URL)는 이름 맞춤에 쓰지 않음 — 커널 공지의 'git.kernel.org/…/vulns.git'이 Git 별칭에 맞지 않음")
+        void urlsAreNotMentions() {
+            EnvInventory inv = inventory(pkg("host", "dpkg", "git", "1:99.1.0-0ppa1~fake1", "git"));
+            SecurityNotice kernel = new SecurityNotice(11L, "가짜 커널 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
+                    "o 가짜 커널 취약점 [1]\n□ 참고사이트\n[1] https://git.example.invalid/pub/scm/fake/vulns.git/tree/cve/CVE-2099-0003.json");
+            Verdict v = NoticeJudge.judge(kernel, rows("Linux Kernel|9.0 이상 9.9 미만|9.9"), inv);
+            assertThat(v.products()).extracting(ProductVerdict::aliasId).doesNotContain("git");
+
+            SecurityNotice plain = new SecurityNotice(12L, "가짜 점검 안내", Template.NO_TABLE, List.of(), "Git 저장소 설정을 점검하라는 가짜 본문");
+            assertThat(NoticeJudge.judge(plain, List.of(), inv).products()).extracting(ProductVerdict::aliasId).as("주소 밖의 이름은 그대로 맞음")
+                    .contains("git");
         }
     }
 
