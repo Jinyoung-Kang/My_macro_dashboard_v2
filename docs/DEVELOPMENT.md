@@ -622,7 +622,8 @@ Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정
 `/security` 화면이 보호나라 공지와 대조하는 버전 목록은 `scripts/vultr/inventory.sh`가 모읍니다 — 호스트(서버에서만: dpkg 패키지·커널·Docker·Compose·
 Tailscale·apt 보류 목록, `apt-get update`는 하지 않고 목록을 마지막으로 받은 시각을 함께 넘김, 패키지 변경 기록 `changelog.Debian.gz`의 CVE 번호 —
 원본 패키지·버전마다, 실행 중인 커널은 `kernel`로 합침, 서버에서 약 3초)와 컨테이너 여섯(postgres·backend·frontend·collector·browser·
-caddy — 런타임·의존성·컨테이너 OS 패키지)을 구역마다 따로 읽어, `docker compose exec -T collector python -m app.inventory`의 표준입력으로 넘깁니다(틀리면
+caddy — 런타임·의존성·컨테이너 OS 패키지)을 구역마다 따로 읽고, 구역마다 `/etc/os-release`의 ID·VERSION_ID·VERSION_CODENAME도 함께 읽어(배포판 보안 추적기 조회의
+배포판·스위트 — 2026-11-21 덧붙임), `docker compose exec -T collector python -m app.inventory`의 표준입력으로 넘깁니다(틀리면
 수집기가 아무것도 쓰지 않음). 읽지 못한 구역은 `failed`로 넘겨 화면이 그 구역 제품을 '확인 필요'로 둡니다. 버전은 운영 DB에만 남고 출력·syslog에는 건수만
 찍힙니다(`journalctl -t my-macro-inventory`). `deploy.sh`가 끝에서 한 번 부르고(실패해도 배포는 성공), 손으로는 `bash scripts/vultr/inventory.sh`.
 cron 등록 제안(서버 ubuntu — 서버 시간대는 UTC, 매일 07:20·22:20 UTC = 16:20·07:20 KST, 여러 번 돌려도 한 줄):

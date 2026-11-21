@@ -68,6 +68,7 @@
 /status
 /connections
 /security
+/security/900001       # 상세 페이지(QA 씨앗 scripts/qa/security-seed.sql의 가짜 공지 — 씨앗이 없으면 '찾지 못함' 상태를 잼)
 /admin/users
 /account
 /radar

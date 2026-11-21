@@ -161,6 +161,13 @@
   - 목록에서 제목을 고르면 검사 칸에 '이 환경에 걸린 것'(해당·확인 필요)만 보이고, 패치됨·무관은 건수 한 줄입니다. 단추는 '자세히 보기'·'원문 열기' 둘입니다.
   - 새 페이지 `/security/<글 번호>`에는 이 환경 판정 표, ※ 조건 문장, 공지 표(기본 '이 스택 행만'), 추적기 근거(추적기 링크 포함), 공지 본문(접힘)을 둡니다.
   - API 경로는 늘지 않습니다(기존 `GET /api/security/notices/{nttId}`에 칸 `tracker` 추가).
+- 지키는 방법(시험):
+  - 별칭·판정: `ProductAliasesTest`(QA-978 Windows 전용 이름·QA-979 APT·Brotli·Git), `DistroVersionTest`(dpkg·apk 판 비교), `NoticeJudgeTest`(덮임·뒤처짐→해당·
+    영향 없음→무관·열림→`DISTRO_OPEN`·모름·변경 기록과 섞임·실행 중 커널의 판·os 없음), `SecurityServiceTest`(`tracker` 칸·물어볼 것), `SecurityAlertJobTest`(추적기 해당 알림 —
+    글에 판 없음), `SecurityStoreDbTest`(V42 읽기·물어볼 것 맞추기), 표 소유 `ArchitectureRulesTest`·`test_table_ownership.py`.
+  - 수집: `test_security_task.py`(구간 경계·날 넘김·실패도 다음 구간·하루 최대 4번·메우기 중 두 쪽·추적기 단계), `test_distro_trackers.py`(세 출처 해석 — 합성 자료),
+    `test_inventory_ingest.py`·`test_vultr_scripts.py`(os 줄), `test_migrations.py`(V42).
+  - 화면: `security.test.ts`(사유·근거 글·추적기 링크·묶음), `securityScreen.test.tsx`(요약 칸), `securityNoticePage.test.tsx`(상세 페이지), `breadcrumbs.test.ts`.
 - 남은 위험:
   - 추적기가 틀을 바꾸면 그 요청은 결과를 쓰지 않아 확인 필요로 남습니다(안전 쪽). 다만 끊김 알림은 따로 없고 실행 기록에만 남습니다.
   - Node·Chrome 안에 묶여 든 라이브러리(예: Brotli)는 구성 요소로 잡히지 않습니다.
