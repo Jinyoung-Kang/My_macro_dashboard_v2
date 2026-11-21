@@ -10,6 +10,7 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -445,6 +446,30 @@ class NoticeJudgeTest {
                     inventory(comp("frontend", "runtime", "node", "v30.1.0")));
             assertThat(v.status()).isEqualTo(Status.UNRELATED);
             assertThat(v.products()).isEmpty();
+        }
+
+        @Test
+        @Disabled("QA-978 — 고치기 전: Windows 전용 제품명(OpenSSH for Windows·Microsoft OpenSSH)이 서버의 OpenSSH 별칭에 맞아 확인 필요")
+        @DisplayName("QA-978 Windows 전용 제품은 서버 별칭에 맞지 않음 — 표 없는 정기 업데이트 공지의 본문·표 행 모두, Linux가 함께 적힌 행은 맞음")
+        void windowsOnlyNames() {
+            EnvInventory inv = inventory(pkg("host", "dpkg", "openssh-server", "1:9.9p9-9fake1", "openssh"),
+                    comp("host", "runtime", "tailscale", "1.500.0"));
+            // 정기 업데이트 공지 꼴(표 없음) — 본문에 '<제품> for Windows <CVE> <제조사> <제품> for Windows <취약점 종류>' 줄이 이어짐(합성 글).
+            SecurityNotice monthly = new SecurityNotice(10L, "가짜 제조사 정기 보안 업데이트 권고", Template.NO_TABLE, List.of(),
+                    "o 가짜 제조사 정기 업데이트\nOpenSSH for Windows CVE-2099-0001 Microsoft OpenSSH for Windows 권한 상승 취약성\n"
+                            + "Win32-OpenSSH CVE-2099-0002 가짜 서비스 거부 취약성");
+            Verdict v = NoticeJudge.judge(monthly, List.of(), inv);
+            assertThat(v.status()).isEqualTo(Status.UNRELATED);
+            assertThat(v.products()).isEmpty();
+
+            Verdict rowsWindows = judge(rows("OpenSSH for Windows|9.0 이상 9.9 미만|9.9", "Windows용 OpenSSH|9.0 이상 9.9 미만|9.9",
+                    "Tailscale (Windows)|1.0 이상 1.900 미만|1.900"), inv);
+            assertThat(rowsWindows.status()).isEqualTo(Status.UNRELATED);
+            assertThat(rowsWindows.products()).isEmpty();
+
+            Verdict withLinux = judge(rows("Tailscale Full Client (Windows, Linux, macOS)|1.0 이상 1.900 미만|1.900"), inv);
+            assertThat(withLinux.status()).isEqualTo(Status.AFFECTED);
+            assertThat(product(withLinux, "tailscale").status()).isEqualTo(Status.AFFECTED);
         }
     }
 

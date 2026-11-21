@@ -4,6 +4,7 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -127,6 +128,31 @@ class ProductAliasesTest {
         assertThat(ids("Node.js 드라이버")).isEmpty();
         assertThat(alias("node").mentionedIn("o Node.js Driver에서 발생하는 가짜 취약점")).isFalse();
         assertThat(alias("node").mentionedIn("Node.js 런타임의 가짜 취약점")).isTrue();
+    }
+
+    @Test
+    @Disabled("QA-978 — 고치기 전: Windows 전용 제품명이 서버 별칭(OpenSSH 등)에 맞음")
+    @DisplayName("QA-978 Windows 전용 제품명(Linux·Ubuntu·Debian이 함께 적히지 않은 것)은 어느 별칭에도 맞지 않음 — 표 제품명·본문 구절 모두")
+    void windowsOnlyNames() {
+        assertThat(ids("OpenSSH for Windows")).isEmpty();
+        assertThat(ids("Microsoft OpenSSH")).isEmpty();
+        assertThat(ids("Win32-OpenSSH")).isEmpty();
+        assertThat(ids("Windows용 OpenSSH")).isEmpty();
+        assertThat(ids("Node.js (Windows)")).isEmpty();
+        assertThat(ids("Google Chrome for Windows")).isEmpty();
+        // Linux·Ubuntu·Debian이 함께 적힌 행은 그대로 맞음.
+        assertThat(ids("Tailscale Full Client (Windows, Linux, macOS)")).containsExactly("tailscale");
+        assertThat(ids("Node.js (Windows, Linux)")).containsExactly("node");
+        assertThat(ids("OpenSSH (Windows, Ubuntu)")).containsExactly("openssh");
+        assertThat(ids("OpenSSH (Windows, 리눅스)")).containsExactly("openssh");
+
+        Alias openssh = alias("openssh");
+        assertThat(openssh.mentionedIn("OpenSSH for Windows CVE-2099-0001 Microsoft OpenSSH for Windows 권한 상승 취약성")).isFalse();
+        assertThat(openssh.mentionedIn("Win32-OpenSSH 가짜 취약점")).isFalse();
+        assertThat(openssh.mentionedIn("Microsoft OpenSSH 가짜 취약점")).isFalse();
+        assertThat(openssh.mentionedIn("OpenSSH for Windows와 별개로 OpenSSH 서버의 가짜 취약점")).isTrue();
+        // 겹침 제외가 먼저 — 'Docker Desktop for Windows'가 지워진 뒤 'Docker'만 남지 않음.
+        assertThat(alias("docker").mentionedIn("Docker Desktop for Windows 가짜 취약점")).isFalse();
     }
 
     @Test
