@@ -113,6 +113,14 @@ public class CollectorClient {
         return get(controlClient, builder -> builder.path("/status").build(), "/status");
     }
 
+    /**
+     * 가벼운 상태 — 마지막 실행({@code lastRun})·그 상태({@code lastRunStatus})·누락 데이터셋({@code missingDatasets})만. 수집기가 행 수 세기·태스크 요약을
+     * 하지 않습니다(ADR 0047). 오류·경고 모음과 새로고침 기준 실행 번호가 씁니다.
+     */
+    public Optional<JsonNode> statusLight() {
+        return get(controlClient, builder -> builder.path("/status").queryParam("view", "light").build(), "/status?view=light");
+    }
+
     public Optional<JsonNode> tasks() {
         return get(controlClient, builder -> builder.path("/tasks").build(), "/tasks");
     }

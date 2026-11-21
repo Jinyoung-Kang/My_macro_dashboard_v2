@@ -27,6 +27,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -393,8 +394,15 @@ def database_unavailable(request, exc):   # noqa: ARG001
 
 
 @app.get("/status")
-def status() -> dict:
-    """구버전 `collector.py --status`에 해당합니다."""
+def status(view: Literal["full", "light"] = "full") -> dict:
+    """
+    구버전 `collector.py --status`에 해당합니다.
+
+    ``view=light``면 마지막 실행·그 상태·누락 데이터셋만 돌려줍니다(행 수 세기·태스크 요약 없음 — 백엔드 오류·경고 모음과
+    새로고침 기준 실행 번호가 씀, ADR 0047). 기본(``full``)은 상태 화면용 전체이고, 행 수는 60초 동안 기억해 다시 씁니다.
+    """
+    if view == "light":
+        return store.status_light()
     stats = store.store_stats(task_names=[task.name for task in tasks.ALL_TASKS])
     stats["keys"] = {
         "fred": bool(settings.fred_key()),

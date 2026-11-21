@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any, Iterable, Sequence
 
 import psycopg
@@ -73,10 +74,12 @@ def ping() -> None:
 
 
 def close_pool() -> None:
-    global _pool
+    global _pool, _row_counts_cache
     if _pool is not None:
         _pool.close()
         _pool = None
+    # 연결을 새로 열면 다른 DB일 수 있습니다(시험은 시험마다 스키마가 다름) — 기억해 둔 행 수도 버립니다.
+    _row_counts_cache = None
 
 
 _current = threading.local()
@@ -1375,15 +1378,50 @@ def purge_retired_datasets() -> int:
     return removed
 
 
+# 상태 화면의 행 수(timeseries·observations COUNT(*) — 운영 표 150만·80만 행에서 합쳐 60ms쯤)는 이 시간 동안 기억해 다시 씁니다.
+# 값은 센 그대로의 정확한 수이고(추정이 아님), 길어야 이만큼 지난 값입니다(2026-11-22 사용자 결정 D-3 — ADR 0047).
+ROW_COUNTS_MAX_AGE_SECONDS = 60.0
+_row_counts_cache: tuple[float, int, int] | None = None
+_row_counts_lock = threading.Lock()
+
+
+def row_counts(max_age: float = ROW_COUNTS_MAX_AGE_SECONDS) -> tuple[int, int]:
+    """(timeseries 행 수, observations 행 수) — 센 지 ``max_age``초가 안 됐으면 그때 센 값을 다시 씁니다."""
+    global _row_counts_cache
+    with _row_counts_lock:
+        cached = _row_counts_cache
+    if cached is not None and monotonic() - cached[0] < max_age:
+        return cached[1], cached[2]
+    counted_at = monotonic()
+    timeseries, observations = count_timeseries(), count_observations()
+    with _row_counts_lock:
+        _row_counts_cache = (counted_at, timeseries, observations)
+    return timeseries, observations
+
+
 def store_stats(task_names: Sequence[str] | None = None) -> dict:
     last = read_last_run()
+    timeseries_rows, observation_rows = row_counts()
     return {
         "snapshots": list_snapshots(),
-        "timeseriesRows": count_timeseries(),
-        "observationRows": count_observations(),
+        "timeseriesRows": timeseries_rows,
+        "observationRows": observation_rows,
         "lastRun": _serialize_run(last),
         "lastRunStatus": resolve_run_status(last),
         "taskSummary": [_serialize_task(t) for t in read_task_summary(task_names)],
+        "missingDatasets": missing_datasets(),
+    }
+
+
+def status_light() -> dict:
+    """
+    수집기 ``GET /status?view=light`` — 마지막 실행·그 상태·누락 데이터셋만. 행 수 세기·태스크 요약을 하지 않습니다.
+    백엔드의 오류·경고 모음(``/api/status/issues``)과 새로고침 기준 실행 번호가 이것만 씁니다(ADR 0047).
+    """
+    last = read_last_run()
+    return {
+        "lastRun": _serialize_run(last),
+        "lastRunStatus": resolve_run_status(last),
         "missingDatasets": missing_datasets(),
     }
 

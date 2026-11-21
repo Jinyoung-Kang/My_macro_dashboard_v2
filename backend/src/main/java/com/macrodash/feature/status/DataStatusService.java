@@ -113,7 +113,8 @@ public class DataStatusService {
      * 누락 데이터셋은 모름(null)입니다.
      */
     public Map<String, Object> issues() {
-        Optional<JsonNode> collectorStatus = collector.status();
+        // 마지막 실행 상태·누락 목록만 쓰므로 가벼운 상태를 부릅니다 — 행 수 세기·태스크 요약을 일으키지 않음(ADR 0047).
+        Optional<JsonNode> collectorStatus = collector.statusLight();
         List<Map<String, Object>> latest = repository.readTaskSummary();
         List<Map<String, Object>> history =
                 repository.readRecentTaskIssues(Instant.now().minus(ISSUE_LOOKBACK), ISSUE_WINDOW);
@@ -310,7 +311,7 @@ public class DataStatusService {
 
     /** 수집기가 기록한 마지막 실행 번호. 수집기가 죽어 있으면 비어 있습니다. */
     private Optional<Long> currentRunId() {
-        return collector.status()
+        return collector.statusLight()
                 .map(node -> node.path("lastRun").path("id"))
                 .filter(JsonNode::isNumber)
                 .map(JsonNode::asLong);

@@ -138,7 +138,7 @@ class DataStatusServiceTest {
     @DisplayName("오류·경고 모음: 수집기에 닿지 못하면 누락 데이터셋 수는 모름(null), 복사 텍스트도 '확인 못 함'")
     @SuppressWarnings("unchecked")
     void issuesWithoutCollectorDoNotClaimZeroMissing() {
-        when(collector.status()).thenReturn(Optional.empty());
+        when(collector.statusLight()).thenReturn(Optional.empty());
         when(collector.tasks()).thenReturn(Optional.empty());
         when(repository.readTaskSummary()).thenReturn(List.of());
         when(repository.readRecentTaskIssues(any(), anyInt())).thenReturn(List.of());
@@ -148,5 +148,32 @@ class DataStatusServiceTest {
         assertThat(out).containsEntry("collectorReachable", false);
         assertThat((Map<String, Object>) out.get("counts")).containsEntry("missingDatasets", null);
         assertThat((String) out.get("text")).contains("확인 못 함(수집기 연결 안 됨)").doesNotContain("누락 데이터셋 0");
+    }
+    @Test
+    @DisplayName("오류·경고 모음과 새로고침 기준 실행 번호는 수집기의 가벼운 상태만 부른다 — 행 수 세기·태스크 요약을 일으키지 않음(ADR 0047)")
+    @SuppressWarnings("unchecked")
+    void issuesAndBaselineUseLightStatus() {
+        JsonNode light = mapper.readTree("""
+                {"lastRun": {"id": 42, "status": "ok"}, "lastRunStatus": "partial",
+                 "missingDatasets": [{"name": "fake_snap", "label": "가짜 데이터셋"}]}
+                """);
+        when(collector.statusLight()).thenReturn(Optional.of(light));
+        when(collector.tasks()).thenReturn(Optional.of(tasks("fake_task")));
+        when(repository.readTaskSummary()).thenReturn(List.of());
+        when(repository.readRecentTaskIssues(any(), anyInt())).thenReturn(List.of());
+        StoreReader reader = mock(StoreReader.class);
+        when(reader.readMode()).thenReturn(com.macrodash.config.AppProperties.ReadMode.AUTO);
+        DataStatusService withReader = new DataStatusService(repository, reader, collector);
+        when(collector.requestRefresh()).thenReturn(Optional.of(mapper.createObjectNode()));
+        when(collector.runGroup("fast", false)).thenReturn(Optional.of(mapper.createObjectNode()));
+
+        Map<String, Object> out = withReader.issues();
+        Map<String, Object> refreshed = withReader.refresh(true);
+
+        assertThat(out).containsEntry("collectorReachable", true);
+        assertThat((Map<String, Object>) out.get("counts")).containsEntry("missingDatasets", 1);
+        assertThat((String) out.get("text")).contains("가짜 데이터셋 (fake_snap)");
+        assertThat(refreshed).containsEntry("baselineRunId", 42L);
+        verify(collector, never()).status();
     }
 }
