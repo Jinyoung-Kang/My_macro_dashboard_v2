@@ -107,7 +107,7 @@ export function NoticeScreen({ raw }: { raw: string }) {
   const detail = data.notice;
   const url = safeExternalUrl(detail.url);
   const verdict = verdictView(detail.verdict);
-  const fetched = detail.detailFetchedAt ? ` · ${formatKst(detail.detailFetchedAt)}` : "";
+  const fetched = detail.detailFetchedAt ? ` ${formatKst(detail.detailFetchedAt)}` : "";
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <EntityHeader

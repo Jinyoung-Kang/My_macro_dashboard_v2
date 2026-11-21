@@ -137,7 +137,7 @@ describe("보안 공지 상세 — 머리", () => {
     const header = screen.getByRole("heading", { level: 1, name: "[가짜] 합성 DB 보안 업데이트 권고" }).closest("header") as HTMLElement;
     expect(within(header).getByText("보안 공지")).toBeTruthy();
     expect(within(header).getByText("글 900001")).toBeTruthy();
-    expect(within(header).getByText("게시 2026-11-20 · 제품 버전 표 · 상세 받음 · 2026-11-20 12:00")).toBeTruthy();
+    expect(within(header).getByText("게시 2026-11-20 · 제품 버전 표 · 상세 받음 2026-11-20 12:00")).toBeTruthy();
     const verdict = within(header).getByText("해당");
     expect(verdict.closest("span.inline-flex")?.querySelector("svg")).toBeTruthy();
     expect(within(header).getByText("배포판 미수정")).toBeTruthy();
