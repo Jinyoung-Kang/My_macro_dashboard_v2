@@ -33,19 +33,27 @@ const ROWS = [
 ];
 const CHART_WIDTH = 600;
 
-let frames: FrameRequestCallback[] = [];
+/**
+ * 프레임 대역 — requestAnimationFrame이 맡긴 콜백을 번호로 쥐고 있다가 시험이 runFrames로 돌립니다. cancelAnimationFrame은 그 번호를 걷습니다
+ * (걷힌 프레임은 돌지 않음 — 브라우저와 같음). 시험이 끝나면 tidy가 남은 프레임을 비웁니다(QA-974).
+ */
+const frames = new Map<number, FrameRequestCallback>();
+let lastFrameId = 0;
 
 function rect(width: number, height: number): DOMRect {
   return { left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}) } as DOMRect;
 }
 
 beforeEach(() => {
-  frames = [];
+  frames.clear();
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
-    frames.push(callback);
-    return frames.length;
+    lastFrameId += 1;
+    frames.set(lastFrameId, callback);
+    return lastFrameId;
   });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id: number) => {
+    frames.delete(id);
+  });
   // jsdom 29에는 setPointerCapture가 없습니다(SideNavResize.test와 같은 대역).
   Object.defineProperty(Element.prototype, "setPointerCapture", { value: vi.fn(), configurable: true, writable: true });
   vi.stubGlobal(
@@ -69,8 +77,18 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+/**
+ * 시험 하나의 뒷정리 — afterEach가 부르고, QA-974 시험은 '정리한 뒤'를 보려고 먼저 한 번 더 부릅니다(두 번 불러도 같음).
+ *
+ * 언마운트 뒤 프레임 대역에 남은 콜백을 한 번 돌려 비웁니다(QA-974). 남는 것은 차트 저장소(redux-toolkit 자동 묶음)가 미룬 알림입니다 — 화면 코드의
+ * 프레임(끌기·차트 맞춤 확인)은 언마운트가 스스로 걷습니다. 알림이 돌면 함께 걸린 100ms 대체 타이머(Node setTimeout — 환경 해제 뒤에도 살아 있음)를
+ * 스스로 걷어, 파일이 끝난 뒤 터질 타이머가 남지 않습니다. 알림은 걷을 때 대역의 프레임 번호와 (가짜 타이머를 쓴 시험이면) 가짜 타이머 번호를 쓰므로
+ * 둘을 되돌리기 전에 돌립니다. 돌린 뒤에도 프레임이 남으면(프레임이 다음 프레임을 맡김) 나머지 정리를 마친 다음 시험을 실패시킵니다.
+ */
+function tidy() {
   cleanup();
+  runFrames();
+  const leftoverFrames = frames.size;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -79,7 +97,10 @@ afterEach(() => {
   resetNavCollapsedForTest();
   resetNavWidthForTest();
   document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
-});
+  expect(leftoverFrames).toBe(0);
+}
+
+afterEach(tidy);
 
 function Page({ nav = true }: { nav?: boolean }) {
   return (
@@ -98,7 +119,8 @@ const up = (clientX: number) => fireEvent.pointerUp(handle(), { pointerId: 1, cl
 
 function runFrames() {
   act(() => {
-    const pending = frames.splice(0);
+    const pending = [...frames.values()];
+    frames.clear();
     pending.forEach((callback) => callback(0));
   });
 }
@@ -157,5 +179,50 @@ describe("QA-601: 셸 폭이 바뀌는 동안 차트 폭 잡아 두기", () => {
     rerender(<Page nav={false} />);
     expect(screen.queryByRole("separator")).toBeNull();
     expect(heldWidth(container)).toBe("");
+  });
+});
+
+/** Recharts 저장소(redux-toolkit 자동 묶음)가 알림을 미룰 때 프레임과 함께 거는 대체 타이머의 시간(ms) — redux-toolkit 2.13.0 autoBatchEnhancer. */
+const STORE_FALLBACK_TIMER_MS = 100;
+
+/**
+ * vitest가 시험 파일을 마친 뒤 하는 일(jsdom 전역을 globalThis에서 걷음 — 여기서는 cancelAnimationFrame 하나)을 흉내 내고, 대체 타이머가 돌 시간 동안
+ * Node 타이머에서 난 잡히지 않은 오류의 글을 모읍니다. 수신기를 직접 달아 두는 동안에는 vitest가 그 오류를 '처리되지 않은 오류'로 세지 않습니다.
+ */
+async function uncaughtAfterEnvironmentTeardown(): Promise<string[]> {
+  const errors: string[] = [];
+  const onError = (error: unknown) => errors.push(String(error));
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "cancelAnimationFrame");
+  process.on("uncaughtException", onError);
+  delete (globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
+  try {
+    await new Promise((resolve) => setTimeout(resolve, STORE_FALLBACK_TIMER_MS + 50));
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "cancelAnimationFrame", descriptor);
+    process.off("uncaughtException", onError);
+  }
+  return errors;
+}
+
+/**
+ * QA-974 — 이 파일이 끝난 뒤 차트 저장소의 대체 타이머가 남아 CI가 흔들렸습니다(main@261b6b2d 실행 44832833579 첫 시도: 시험 4,932개 통과 + 처리되지
+ * 않은 오류 2건 `ReferenceError: cancelAnimationFrame is not defined` — redux-toolkit.modern.mjs:373, 다시 돌리면 통과).
+ *
+ * Recharts 3.10.1은 차트마다 Redux 저장소를 두고 자동 묶음(autoBatchEnhancer `raf` — redux-toolkit 기본 것과 Recharts 것 둘)으로 알림을 미룹니다:
+ * `requestAnimationFrame(알림)`과 100ms 대체 타이머 `setTimeout(알림)`을 함께 걸고, 먼저 온 쪽이 전역 `cancelAnimationFrame`·`clearTimeout`으로
+ * 다른 쪽을 걷습니다. 이 파일은 프레임을 대역(시험이 runFrames로 직접 돌림)으로 바꾸므로, 마지막 runFrames 뒤에 걸린 알림(다시 그리기·언마운트)은
+ * 프레임으로는 끝내 돌지 않고 대체 타이머만 남습니다. 그 타이머는 jsdom이 아니라 Node의 것이라 vitest가 환경을 내려도(전역 cancelAnimationFrame
+ * 삭제) 살아 있다가 100ms째에 터집니다. 작업자 프로세스가 그때까지 살아 있고(바쁜 CI) 다른 파일이 아직 도는 중이면 vitest가 종료 코드 1을 냅니다.
+ */
+describe("QA-974: 시험이 끝난 뒤 차트 저장소의 대체 타이머가 남지 않음", () => {
+  // 재현 커밋 실패 값: AssertionError: expected [ …(6) ] to deeply equal [] — 여섯 모두 "ReferenceError: cancelAnimationFrame is not defined"
+  // (앞 시험 '끌기'·'메뉴만 사라지면'이 남긴 타이머 둘씩 + 이 시험 둘 — 저장소마다 자동 묶음이 둘이라 둘씩. 이 시험만 돌리면 2건).
+  it("정리한 뒤 jsdom 전역이 걷혀도 대체 타이머가 cancelAnimationFrame을 찾다 터지지 않음", async () => {
+    render(<Page />);
+    down(220);
+    move(260);
+    runFrames();
+    tidy();
+    expect(await uncaughtAfterEnvironmentTeardown()).toEqual([]);
   });
 });

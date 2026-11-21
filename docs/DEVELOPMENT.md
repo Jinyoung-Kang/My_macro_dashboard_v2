@@ -194,6 +194,10 @@ frontend/src/
 - **네 상태**: 새 패턴은 값 있음·값 없음·추정·오래됨 렌더링 테스트를, 새 화면은 데이터 없음·일부 실패·추정·오래됨을 고정 응답으로
   보는 테스트를 갖습니다(예: `HomeScreen.test.tsx`·`paperOverviewStates.test.tsx`). 패턴 파일을 더하면 배럴과
   `patterns/__tests__/index.test.ts`의 목록에 함께 넣습니다(빠지면 그 테스트가 막음).
+- **프레임 대역과 실제 차트**: `requestAnimationFrame`을 대역(시험이 직접 돌리는 큐)으로 바꾼 시험이 실제 Recharts 차트를 그리면, 뒷정리에서
+  언마운트 뒤 대역에 남은 프레임을 한 번 돌려 비웁니다(`shell/__tests__/NavChartHoldQa601.test.tsx`의 `tidy`). 차트 저장소(redux-toolkit 자동 묶음)는
+  알림마다 프레임과 100ms 대체 타이머(Node `setTimeout`)를 함께 걸어, 프레임이 돌지 않으면 그 타이머가 vitest의 환경 해제 뒤에
+  `cancelAnimationFrame is not defined`로 터집니다 — 작업자 종료가 늦는 CI에서만 '처리되지 않은 오류'로 드러납니다(QA-974).
 - **차트 mock**: 화면 테스트의 `vi.mock("@/components/charts")`는 내보내는 이름의 부분집합입니다. 화면이 charts의 새 이름(예:
   `LineChart`)을 쓰기 시작하면 그 화면을 그리는 테스트들의 mock에 이름을 더합니다. 하위 경로(`@/components/charts/LineChart`)로
   가져오면 mock이 걸리지 않으므로 화면은 늘 `@/components/charts`에서 가져옵니다. `@/lib/api`·`next/navigation` mock도 부분집합이라 같습니다.
