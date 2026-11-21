@@ -194,6 +194,10 @@ frontend/src/
 - **네 상태**: 새 패턴은 값 있음·값 없음·추정·오래됨 렌더링 테스트를, 새 화면은 데이터 없음·일부 실패·추정·오래됨을 고정 응답으로
   보는 테스트를 갖습니다(예: `HomeScreen.test.tsx`·`paperOverviewStates.test.tsx`). 패턴 파일을 더하면 배럴과
   `patterns/__tests__/index.test.ts`의 목록에 함께 넣습니다(빠지면 그 테스트가 막음).
+- **프레임 대역과 실제 차트**: `requestAnimationFrame`을 대역(시험이 직접 돌리는 큐)으로 바꾼 시험이 실제 Recharts 차트를 그리면, 뒷정리에서
+  언마운트 뒤 대역에 남은 프레임을 한 번 돌려 비웁니다(`shell/__tests__/NavChartHoldQa601.test.tsx`의 `tidy`). 차트 저장소(redux-toolkit 자동 묶음)는
+  알림마다 프레임과 100ms 대체 타이머(Node `setTimeout`)를 함께 걸어, 프레임이 돌지 않으면 그 타이머가 vitest의 환경 해제 뒤에
+  `cancelAnimationFrame is not defined`로 터집니다 — 작업자 종료가 늦는 CI에서만 '처리되지 않은 오류'로 드러납니다(QA-974).
 - **차트 mock**: 화면 테스트의 `vi.mock("@/components/charts")`는 내보내는 이름의 부분집합입니다. 화면이 charts의 새 이름(예:
   `LineChart`)을 쓰기 시작하면 그 화면을 그리는 테스트들의 mock에 이름을 더합니다. 하위 경로(`@/components/charts/LineChart`)로
   가져오면 mock이 걸리지 않으므로 화면은 늘 `@/components/charts`에서 가져옵니다. `@/lib/api`·`next/navigation` mock도 부분집합이라 같습니다.
@@ -610,3 +614,16 @@ Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정
 
 재부팅은 Vultr 화면(Server → Restart)이나 서버 셸의 `sudo reboot`로 합니다. 앱 컨테이너는 `restart: unless-stopped`라 저절로 다시 뜨고, 1~2분 뒤 위의 확인 명령과
 `sudo canonical-livepatch status`·`bash scripts/vultr/reboot-check.sh --summary`로 봅니다.
+
+### 버전 목록 (보안 공지 — [ADR 0046](adr/0046-security-notices.md))
+
+`/security` 화면이 보호나라 공지와 대조하는 버전 목록은 `scripts/vultr/inventory.sh`가 모읍니다 — 호스트(서버에서만: dpkg 패키지·커널·Docker·Compose·
+Tailscale·apt 보류 목록, `apt-get update`는 하지 않고 목록을 마지막으로 받은 시각을 함께 넘김)와 컨테이너 여섯(postgres·backend·frontend·collector·browser·
+caddy — 런타임·의존성·컨테이너 OS 패키지)을 구역마다 따로 읽어, `docker compose exec -T collector python -m app.inventory`의 표준입력으로 넘깁니다(틀리면
+수집기가 아무것도 쓰지 않음). 읽지 못한 구역은 `failed`로 넘겨 화면이 그 구역 제품을 '확인 필요'로 둡니다. 버전은 운영 DB에만 남고 출력·syslog에는 건수만
+찍힙니다(`journalctl -t my-macro-inventory`). `deploy.sh`가 끝에서 한 번 부르고(실패해도 배포는 성공), 손으로는 `bash scripts/vultr/inventory.sh`.
+cron 등록 제안(서버 ubuntu — 서버 시간대는 UTC, 매일 07:20·22:20 UTC = 16:20·07:20 KST, 여러 번 돌려도 한 줄):
+
+```bash
+(crontab -l 2>/dev/null | grep -v 'scripts/vultr/inventory.sh'; echo '20 7,22 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/inventory.sh') | crontab -
+```

@@ -734,11 +734,11 @@ class StopWatchFallbackTest {
                 assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
                 assertThat(o.asOfTradingDate()).isEqualTo(D1);
                 assertThat(o.createdAt()).isEqualTo(kst("2026-11-04T13:17"));
-                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:19"));
+                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:18"));
                 assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
-                assertThat(o.reason().path("detection").asString()).contains("13:19 KST");
+                assertThat(o.reason().path("detection").asString()).contains("13:18 KST");
             });
-            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("13:19"));
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("13:18"));
         }
 
         @Test
@@ -786,7 +786,7 @@ class StopWatchFallbackTest {
 
         @Test
         @DisplayName("ON — D2 13:17에 수집한 D1 관측치를 5분 뒤(13:22)에 처음 처리하면 장중 시장가 대체 STOP의 생성·기준 시각은 처리 시각에서 셈"
-                + "(T 13:24 — 처리 뒤), 알림 시점 이름은 '장중 시장가 13:24 KST'(QA-327)")
+                + "(T 13:23 — 처리 뒤 처음 시작하는 분), 알림 시점 이름은 '장중 시장가 13:23 KST'(QA-327)")
         void lateMarketFallbackCountsFromTheProcessingTime() {
             mode("ON", null);
             watched("000660", D2, kst("2026-11-04T13:20:20"), 97_000.0, "13:10", "13:15", "13:20");   // 005930은 지금 감시에 없음
@@ -798,10 +798,29 @@ class StopWatchFallbackTest {
                 assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
                 assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
                 assertThat(o.createdAt()).as("주문을 만든 시각 = 처리 시각").isEqualTo(processed);
-                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:24"))
-                        .isAfter(processed.plus(ExecutionAudit.AFTER_CREATED));
-                assertThat(o.reason().path("detection").asString()).contains("13:24 KST");
-                assertThat(PaperNotifications.timingName(o, true)).isEqualTo("장중 시장가 13:24 KST");
+                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:23"))
+                        .isAfter(processed);
+                assertThat(o.reason().path("detection").asString()).contains("13:23 KST");
+                assertThat(PaperNotifications.timingName(o, true)).isEqualTo("장중 시장가 13:23 KST");
+            });
+        }
+
+        @Test
+        @DisplayName("ADR 0044 결정 5 — 분 경계 직전의 ns 시계(13:21:59.999999700)로 처리한 장중 시장가 대체 STOP의 생성 시각은 µs로 잘림: DB에 쓴 값으로 "
+                + "장부가 다시 센 T가 근거의 시각(13:22)과 같음(자르지 않으면 DB가 13:22:00으로 반올림해 T 13:23)")
+        void lateMarketFallbackCreatedAtIsTruncatedToMicros() {
+            mode("ON", null);
+            watched("000660", D2, kst("2026-11-04T13:20:20"), 97_000.0, "13:10", "13:15", "13:20");   // 005930은 지금 감시에 없음
+
+            d1Observation(91_000, kst("2026-11-04T13:17"), kst("2026-11-04T13:21:59").plusNanos(999_999_700));
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+                assertThat(o.createdAt()).isEqualTo(kst("2026-11-04T13:21:59").plusNanos(999_999_000));
+                assertThat(o.reason().path("detection").asString()).contains("13:22 KST");
+                assertThat(ExecutionAudit.marketTarget(PaperFixtures.dbRounded(o.createdAt())))
+                        .as("DB에 쓴 생성 시각으로 장부가 다시 센 T = 근거의 시각").isEqualTo(kst("2026-11-04T13:22"));
             });
         }
 

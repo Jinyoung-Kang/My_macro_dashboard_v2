@@ -1655,7 +1655,7 @@ class PacketBuilderTest {
 
     @Test
     @DisplayName("장중 스탑 감시 ON(stopWatch.mode — ADR 0032): 미국 결정 패킷(켠 판·끈 판 모두)에 1_basis.stopWatch와 12_hardRules의 스탑 줄(5분 감시·두 번·"
-            + "감지 + 60초 뒤 시장가·대체 경로)이 실리고 대기 감시 STOP 종목은 lockedOut에 들어감 — 그 밖은 바이트 그대로. OFF·SHADOW는 예전 고정본 그대로")
+            + "감지 뒤 처음 시작하는 분의 시장가·대체 경로)이 실리고 대기 감시 STOP 종목은 lockedOut에 들어감 — 그 밖은 바이트 그대로. OFF·SHADOW는 예전 고정본 그대로")
     void stopWatchOnPackets() {
         store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
         activeClaude();
@@ -3891,5 +3891,17 @@ class PacketBuilderTest {
         assertThat(at.get("note").asString()).isEqualTo(DecisionTiming.NOTE);
         assertThat(builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0).body()
                 .get(PacketBuilder.BASIS).has("decisionAt")).as("결정 순간은 계좌의 판과 무관 — 모든 Claude 결정 패킷에").isTrue();
+    }
+
+    @Test
+    @DisplayName("ADR 0044: 미국 감시 ON 결정 패킷 고정본(packet-us-ft-claude2-stopwatch-scheduled.json)에서 바뀐 것은 스탑 문장의 체결 시점 구절뿐(12_hardRules 스탑 줄·1_basis.stopWatch.rule "
+            + "두 곳) — 되돌리면 ADR 0044 전 고정본과 바이트까지 같다")
+    void onlyTheStopTimingSentenceChanged() {
+        String now = new String(Golden.resourceBytes("paper/golden/packet-us-ft-claude2-stopwatch-scheduled.json"), java.nio.charset.StandardCharsets.UTF_8);
+        String fresh = "감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다";
+        assertThat(now.split(java.util.regex.Pattern.quote(fresh), -1)).as("새 구절 두 번(하드 규칙·1_basis)").hasSize(3);
+        assertThat(now).doesNotContain("감지 + 60초 뒤 첫 분");
+        assertThat(Golden.sha256(now.replace(fresh, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다")))
+                .isEqualTo("e7fd52a24c44baa2ccade7ab5b1cd6fe722ae67f59c4178d0da560774f1682a9");
     }
 }

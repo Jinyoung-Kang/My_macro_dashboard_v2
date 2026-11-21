@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Pager } from "@/components/Pager";
 import { ChangeCell, DataTable, StaleBadge } from "@/components/patterns";
-import { Callout, Card, ErrorState, Freshness, LINK_CLASSES, Loading, NativeSelect, SourceBadge } from "@/components/ui";
+import { Callout, Card, ErrorState, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, NativeSelect, SourceBadge } from "@/components/ui";
 import { FOCUS_RING, TEXT_TARGET_SHORT } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
@@ -84,7 +84,7 @@ export function NaverFlowsSection() {
           )}
           {/* 고르기 둘 — 공용 기본 조작 크기(md — 넓은 화면 30px, 좁은 화면 44px), 이름표 13px 보조 글. 좁은 화면은 한 칸씩. */}
           <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-end">
-            <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
+            <label className={FIELD_LABEL}>
               시장
               <NativeSelect value={market} onChange={(event) => setMarket(event.target.value as NaverMarket)}>
                 {NAVER_MARKETS.map((entry) => (
@@ -94,7 +94,7 @@ export function NaverFlowsSection() {
                 ))}
               </NativeSelect>
             </label>
-            <label className="flex min-w-0 flex-col gap-1 text-[13px] text-text-2">
+            <label className={FIELD_LABEL}>
               매매상위 투자주체
               <NativeSelect value={investor} onChange={(event) => setInvestor(event.target.value as NaverInvestor)}>
                 {NAVER_INVESTORS.map((entry) => (

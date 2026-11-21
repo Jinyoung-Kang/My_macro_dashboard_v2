@@ -38,12 +38,31 @@ export function sectionOrder(items: readonly SectionIndexItem[]): string[] {
 
 /**
  * 지금 절 — 띠에 걸친 절(`intersecting`) 가운데 고르는 차례(`order`)가 가장 앞인 것. 걸친 절이 없으면(절 사이 빈 곳·화면 끝) 앞 값을 그대로 두고,
- * 앞 값이 차례에 없으면(목차가 바뀜) null입니다.
+ * 앞 값이 차례에 없으면(목차가 바뀜) null입니다. 다만 모든 절이 띠 아래에 있으면(`aboveAll` — 첫 절에 닿기 전, 화면 맨 위) 처음 연 화면과 같이 null입니다
+ * (QA-968 — 목차로 옮긴 뒤 뒤로 가기로 맨 위에 와도 옮긴 절이 지금 칸으로 남았음).
  */
-export function pickActiveSection(order: readonly string[], intersecting: ReadonlySet<string>, previous: string | null): string | null {
+export function pickActiveSection(
+  order: readonly string[],
+  intersecting: ReadonlySet<string>,
+  previous: string | null,
+  aboveAll = false,
+): string | null {
   const first = order.find((id) => intersecting.has(id));
   if (first !== undefined) return first;
+  if (aboveAll) return null;
   return previous !== null && order.includes(previous) ? previous : null;
+}
+
+/** 지금 절 띠의 아래 끝 — 뷰포트 위에서 34%(hooks/useSectionSpy의 rootMargin 아래 -66%와 같은 값). */
+export const SPY_BAND_BOTTOM = 0.34;
+
+/**
+ * 모든 절이 지금 절 띠 아래에 있는가 — 절마다 위 끝(뷰포트 기준, 모르면 무한대)이 모두 띠 아래 끝(뷰포트 높이의 34%) 이상이고 하나라도 아는 값이 있으면 참.
+ * 첫 절에 닿기 전(화면 맨 위)의 자리입니다(QA-968).
+ */
+export function sectionsBelowBand(tops: readonly number[], viewportHeight: number): boolean {
+  const known = tops.filter((top) => Number.isFinite(top));
+  return known.length > 0 && known.every((top) => top >= viewportHeight * SPY_BAND_BOTTOM);
 }
 
 /** 스크롤 상자가 끝까지 내려가 있는가 — 넘침이 있고 남은 거리가 1px 이하(소수 픽셀 스크롤). 넘침이 없으면 거짓(스크롤할 수 없는 화면). */

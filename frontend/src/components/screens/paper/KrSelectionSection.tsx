@@ -105,19 +105,30 @@ export function KrSelectionSection() {
           )}
           {view.targets.length > 0 && (
             <Part title="매수 목표" note="배분 순서·점수·목표 비중 — 남는 비중은 153130(현금성)입니다.">
-              {/* 열이 넷뿐이라 폭을 강제하지 않는 DataTable(390px에서도 한 화면) — ui Table은 최소 640px라 좁은 화면에서 비중이 가려짐. */}
-              <DataTable<KrSelectionView["targets"][number]>
-                caption="매수 목표"
-                count={(count) => `${count}종목`}
-                rows={view.targets}
-                rowKey={(row) => row.key}
-                columns={[
-                  { key: "rank", header: "순서", align: "right", cell: (row) => row.rank },
-                  { key: "code", header: "종목", rowHeader: true, cell: (row) => <CodeName code={row.code} name={row.name} /> },
-                  { key: "score", header: "점수", align: "right", cell: (row) => row.score },
-                  { key: "weight", header: "목표 비중", align: "right", cell: (row) => row.weight },
-                ]}
-              />
+              {/* 열이 넷뿐이라 폭을 강제하지 않는 DataTable(390px에서도 한 화면) — ui Table은 최소 640px라 좁은 화면에서 비중이 가려짐. 상자가 390 폭의 상자
+                  (332px = 20.75rem)보다 좁으면(360~380) 칸 좌우 여백을 12 → 8px로 줄이고, 이름은 넘칠 만큼 길 때만 이름 안에서 꺾습니다 — 그러지 않으면 가장 긴
+                  이름이 정한 종목 칸 최소 폭으로 표가 상자를 넘었습니다(QA-958 — 360 26px). 크기 질의라 390 이상의 겉모습은 그대로입니다. 틀은 Part와 같은
+                  세로 간격(gap-1)으로 DataTable의 두 줄(개수 줄·표 상자)을 놓습니다(감싸기 전과 같은 간격). */}
+              <div className="@container flex min-w-0 flex-col gap-1">
+                <DataTable<KrSelectionView["targets"][number]>
+                  caption="매수 목표"
+                  count={(count) => `${count}종목`}
+                  rows={view.targets}
+                  rowKey={(row) => row.key}
+                  columns={[
+                    { key: "rank", header: "순서", align: "right", className: TARGET_NARROW_CELL, cell: (row) => row.rank },
+                    {
+                      key: "code",
+                      header: "종목",
+                      rowHeader: true,
+                      className: TARGET_NARROW_CELL,
+                      cell: (row) => <CodeName code={row.code} name={row.name} wrapLongName />,
+                    },
+                    { key: "score", header: "점수", align: "right", className: TARGET_NARROW_CELL, cell: (row) => row.score },
+                    { key: "weight", header: "목표 비중", align: "right", className: TARGET_NARROW_CELL, cell: (row) => row.weight },
+                  ]}
+                />
+              </div>
             </Part>
           )}
           {view.notChosen.length > 0 && (
@@ -265,20 +276,24 @@ function signed(text: string, value: number | null) {
   return <span className={value === null ? "text-text-3" : "text-text"}>{text}</span>;
 }
 
+/** 매수 목표 표 칸 — 상자가 20.75rem(390 폭의 상자) 미만이면 좌우 여백 8px(QA-958). */
+const TARGET_NARROW_CELL = "@max-[20.75rem]:px-2";
+
 /**
  * 코드(줄바꿈 없음) + 이름 — 좁은 화면에서는 이름이 한 덩어리로 다음 줄로 내려갑니다(break-keep — 낱말 사이에서만 꺾음, 예전에는 '한화에어로' / '스페이스'처럼
  * 음절 중간에서 꺾였음 — QA-817). 코드와 이름 사이는 공백 글(margin이 아니라) — keep-all은 숫자와 한글 사이의 줄바꿈 기회도 막아, 공백이 없으면
  * '012450한화에어로스페이스'가 한 낱말이 되어 390에서 매수 목표 표가 상자를 넘었습니다(QA-819). 줄이 바뀌면 줄 끝 공백은 매달려 이름이 들여쓰이지 않습니다.
- * 구성원 표는 열이 whitespace-nowrap이라 한 줄입니다.
+ * 구성원 표는 열이 whitespace-nowrap이라 한 줄입니다. `wrapLongName`(매수 목표 표)은 이름이 칸보다 길 때만 이름 안에서도 꺾습니다(overflow-wrap:anywhere —
+ * 낱말 사이 꺾기가 먼저라 맞는 이름은 그대로, QA-958).
  */
-function CodeName({ code, name }: { code: string; name: string }) {
+function CodeName({ code, name, wrapLongName = false }: { code: string; name: string; wrapLongName?: boolean }) {
   return (
     <span className="break-keep">
       <span className="whitespace-nowrap font-semibold text-text">{code}</span>
       {name && name !== "—" && (
         <>
           {" "}
-          <span className="text-xs text-text-2">{name}</span>
+          <span className={`text-xs text-text-2 ${wrapLongName ? "wrap-anywhere" : ""}`.trim()}>{name}</span>
         </>
       )}
     </span>

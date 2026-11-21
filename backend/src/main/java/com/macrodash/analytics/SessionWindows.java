@@ -44,6 +44,38 @@ public final class SessionWindows {
         return calendar.closeInstant(session).minus(tail(korea));
     }
 
+    /** 실제 계좌 스탑 매도 창의 길이(ADR 0033 결정 2 — 실제 매매 {@code RealTradePlanner.MIRROR_LENGTH}와 같은 값, 그쪽 시험이 대조). */
+    public static final Duration KR_STOP_MIRROR_LENGTH = Duration.ofMinutes(3);
+    /** 실제 계좌 장중 창의 시작 여유(정규장 시작 뒤 — {@code RealTradePlanner.FOLLOWUP_OPEN_AFTER}와 같은 값). */
+    public static final Duration KR_MIRROR_OPEN_AFTER = Duration.ofSeconds(30);
+    /** 실제 계좌 장중 창의 끝 여유(종가 단일가 시작 전 — {@code RealTradePlanner.MIRROR_CLOSE_BEFORE}와 같은 값). */
+    public static final Duration KR_MIRROR_CLOSE_BEFORE = Duration.ofSeconds(30);
+
+    /**
+     * 모의 STOP(기준 시각 {@code target})을 실제 계좌가 따라 파는 창의 끝(ADR 0033 결정 2의 식을 모의 달력으로 — ADR 0045 관문 G5): 시작 = max(T, 개장 +
+     * {@link #KR_MIRROR_OPEN_AFTER}, 개장 + {@link #OPEN_OFFSET}), 끝 = min(시작 + {@link #KR_STOP_MIRROR_LENGTH}, 종가 단일가 시작 −
+     * {@link #KR_MIRROR_CLOSE_BEFORE}). 창이 비면(시작이 끝 뒤) null — 실제 계좌가 그 STOP을 따라 팔 창이 없음. 실제 매매의 {@code RealTradePlanner.stopWindow}는
+     * 토스 장 운영 정보로 같은 식을 셉니다(실제 매매 시험이 두 값을 대조).
+     *
+     * @param open                그 세션 정규장 개장
+     * @param closingAuctionStart 그 세션 종가 단일가 시작(마감 − {@link #KR_CLOSING_AUCTION})
+     */
+    public static Instant krStopMirrorEnd(Instant open, Instant closingAuctionStart, Instant target) {
+        Instant start = target;
+        Instant earliest = open.plus(KR_MIRROR_OPEN_AFTER);
+        if (start.isBefore(earliest)) {
+            start = earliest;
+        }
+        Instant first = open.plus(OPEN_OFFSET);
+        if (start.isBefore(first)) {
+            start = first;
+        }
+        Instant until = start.plus(KR_STOP_MIRROR_LENGTH);
+        Instant last = closingAuctionStart.minus(KR_MIRROR_CLOSE_BEFORE);
+        Instant end = until.isBefore(last) ? until : last;
+        return start.isAfter(end) ? null : end;
+    }
+
     /** 그 세션 장중 첫 분의 현지 시각(그 시장 시간대). */
     public static LocalTime firstLocal(TradingCalendar calendar, LocalDate session) {
         return first(calendar, session).atZone(calendar.zone()).toLocalTime();

@@ -1,5 +1,5 @@
 /**
- * 더보기 화면들(/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account)의 요청과 쓰기 지킴 — 작업대 개편 P7(부분 재배치)이
+ * 더보기 화면들(/status·/radar·/krx·/alerts·/ai/report·/connections·/security·/admin/users·/account)의 요청과 쓰기 지킴 — 작업대 개편 P7(부분 재배치)이
  * 머리·표·검사 칸·목차를 다시 짜도 화면마다 읽는 경로·간격과 쓰기(경로·메서드·본문·확인 문구·켜짐 조건)가 그대로인지 봅니다.
  * 개편 전 코드에서 통과시켜 두고, 재배치 커밋들이 사례의 뜻을 바꾸지 않고 통과해야 합니다(조작을 찾는 도우미만 개편 뒤 조작도 함께 찾음).
  *
@@ -28,7 +28,8 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/status" }));
+// 보안 공지 화면은 주소의 ?ntt=를 읽습니다(useSearchParams) — 여기서는 인자 없는 주소.
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/status", useSearchParams: () => new URLSearchParams() }));
 // jsdom에서는 차트를 재지 못해 그림은 뺍니다(요청만 봄).
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
@@ -48,6 +49,7 @@ import AlertsPage from "../alerts/page";
 import ConnectionsPage from "../connections/page";
 import KrxPage from "../krx/page";
 import RadarPage from "../radar/page";
+import SecurityPage from "../security/page";
 import StatusPage from "../status/page";
 
 const OWNER: SessionUser = { email: "owner@test.local", role: "OWNER", tier: "PRO", local: false };
@@ -407,6 +409,56 @@ describe("연결 테스트 — 요청과 쓰기", () => {
     fireEvent.click(screen.getByRole("button", { name: "환율 조회 (USD → KRW)" }));
     expect(api.apiGet.mock.calls).toEqual([[endpoints.toss.exchangeRate("USD", "KRW")]]);
     expect(api.apiDelete).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------------ 보안 공지(ADR 0046 — 읽기만, 쓰기 경로 없음)
+const SECURITY_LIST = endpoints.security.notices({ page: 1, size: 20 });
+const SECURITY_NOTICES = {
+  available: true, checkedAt: "2026-11-21T00:00:00Z", inventory: null,
+  collection: {
+    task: "kisa_security_notices", recorded: false, status: null, streak: null, reason: null, lastOkAt: null, lastRunAt: null, staleAfterMinutes: null,
+    notices: 1, details: { pending: 0, ok: 1, failed: 0, skipped: 0 }, oldestPostedOn: "2026-11-20", newestPostedOn: "2026-11-20",
+  },
+  counts: { affected: 0, check: 1, patched: 0, unrelated: 0, total: 1 },
+  reasonCounts: { NO_INVENTORY: 1 },
+  items: [{
+    nttId: 900001, title: "[가짜] 합성 제품 보안 업데이트 권고", postedOn: "2026-11-20", url: "https://example.invalid/900001", pinned: false,
+    detailStatus: "ok", layout: "product_table", verdict: "check", reasons: ["NO_INVENTORY"], conditionNote: false,
+    products: [{ aliasId: "postgres", label: "PostgreSQL", status: "check", reasons: ["NO_INVENTORY"] }], rowCount: 1, cveCount: 1,
+  }],
+  page: 1, size: 20, total: 1, pages: 1,
+};
+
+describe("보안 공지 — 요청과 쓰기", () => {
+  it("열 때 공지 목록 한 번(300초), 버전 목록은 그 탭을 열 때만, 공지 한 건은 고를 때만 — 거르기·탭·고르기를 눌러도 쓰기 0", async () => {
+    reads = {
+      [SECURITY_LIST]: SECURITY_NOTICES,
+      [endpoints.security.notices({ verdict: "check", page: 1, size: 20 })]: SECURITY_NOTICES,
+      [endpoints.security.inventory]: { available: true, checkedAt: "2026-11-21T00:00:00Z", present: false, collectedAt: null, receivedAt: null,
+        ageSeconds: null, stale: null, hostIncluded: null, aptListsAt: null, sections: [], counts: null, components: [], pending: [] },
+    };
+    renderAs(OWNER, <SecurityPage />);
+    await screen.findAllByText("[가짜] 합성 제품 보안 업데이트 권고");
+    await settled();
+
+    expect(pathSet()).toEqual([SECURITY_LIST]);
+    expect(await refreshTimers()).toEqual({ 300_000: [SECURITY_LIST] });
+    expectNoWrites();
+
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "판정" })).getByRole("radio", { name: "확인 필요" }));
+    await settled();
+    fireEvent.click(screen.getByRole("tab", { name: "버전 목록" }));
+    await settled();
+    fireEvent.click(screen.getByRole("tab", { name: "공지" }));
+    // 좁은 화면(jsdom)에서는 제목을 누르면 검사 대화상자가 열리고 그때 공지 한 건을 읽습니다.
+    fireEvent.click((await screen.findAllByRole("button", { name: "[가짜] 합성 제품 보안 업데이트 권고" }))[0]);
+    await settled();
+
+    expect(pathSet()).toEqual([
+      SECURITY_LIST, endpoints.security.notices({ verdict: "check", page: 1, size: 20 }), endpoints.security.notice(900001), endpoints.security.inventory,
+    ].sort());
+    expectNoWrites();
   });
 });
 

@@ -652,6 +652,29 @@ def kr_market_orders(books) -> list[tuple[str, date, datetime]]:
     return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
 
 
+# 한국 장중 감시 STOP을 장중에 장부에 적은 주문(ADR 0045 — 백엔드 KrStopFillStep, 근거 intradayFill.mode = ON). 밤 일괄이면 그 STOP은 대기로 남아
+# kr_timed_orders·kr_market_orders가 그 기준 분 창을 받았을 것이라, 같은 창을 받도록 따로 읽습니다(D10 (b) — 읽기만, 호출 수는 밤 일괄 세계와 같음).
+INTRADAY_RECORDED_STOP = (
+    "source = 'STOP' AND status = 'FILLED' AND timing = 'MARKET' AND reason->'intradayFill'->>'mode' = 'ON'"
+)
+
+
+def kr_intraday_filled_stops(books, since: datetime) -> list[tuple[str, date, datetime]]:
+    """
+    한국 장중 감시 STOP 가운데 장중에 장부에 적은 것(ADR 0045 ON — 출처 STOP·체결·장중 시장가·근거 ``intradayFill.mode = ON``)의 (종목, 기준 거래일,
+    생성 시각), ``since`` 뒤에 만든 것만(기준일·종목·생성 순). 밤 1분봉(paper.kr.timed)이 그 STOP의 기준 분 창을 밤 일괄 세계처럼 받게 합니다 — 밤 체결
+    뒤 대조(백엔드 사후 점검)의 길 A 자료. 받는 기간은 태스크가 밤 일괄 세계의 대기 수명(목표 세션 다음 거래일까지)으로 다시 거릅니다. 백엔드 표
+    ``paper_orders``를 읽기만 합니다(ADR 0008).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ticker, as_of_trading_date, created_at FROM paper_orders WHERE book_code = ANY(%s) AND " + INTRADAY_RECORDED_STOP
+            + " AND as_of_trading_date IS NOT NULL AND created_at >= %s ORDER BY 2, 1, 3",
+            (list(books), since),
+        ).fetchall()
+    return [(row["ticker"], row["as_of_trading_date"], row["created_at"]) for row in rows]
+
+
 def kr_minute_orders(books) -> list[tuple[str, date, time]]:
     """
     한국 분 단위 지정 시각(AT_MINUTE — ADR 0027) **대기** 주문의 (종목, 기준 거래일, 지정 시각 KST) — 시각 지정 1분봉(paper.kr.timed)에 그 주문의
@@ -779,19 +802,26 @@ STOPWATCH_MODE_PATHS = {"US": ("stopWatch", "mode"), "KR": ("kr", "stopWatch", "
 KR_OPEN_OVERRIDES_PATH = ("kr", "calendar", "openTimeOverrides")
 
 
-def stopwatch_scope(market: str) -> list[str]:
+def stopwatch_scope(market: str, session: date | None = None) -> list[str]:
     """
     장중 스탑 감시 범위 — 그 시장의 운용 중(ACTIVE)이고 벤치마크가 아닌 책(규칙·Claude 계좌1·2)의 보유 종목(중복 없음·정렬). 일시정지 책과
     벤치마크는 스탑이 없어 받지 않습니다(백엔드 장부와 같은 범위). 현금성 종목도 담습니다(백엔드가 거름 — 설정을 수집기가 다시 해석하지 않게).
+    ``session``을 주면(한국) 그 세션에 장중 감시 STOP을 장중에 장부에 적어 보유에서 빠진 종목도 담습니다(ADR 0045 ON — 밤 일괄이면 그날 밤까지 보유라
+    감시 범위·호출 수·저장본이 그 세계와 같게).
 
-    백엔드 표 ``paper_positions``·``paper_books``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와 같은 교차 읽기).
+    백엔드 표 ``paper_positions``·``paper_books``·``paper_orders``·``paper_fills``를 **읽기만** 합니다(쓰는 프로세스는 백엔드 하나 — ADR 0008, held_tickers와
+    같은 교차 읽기).
     """
+    sql = ("SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
+           "WHERE b.market = %s AND b.status = %s AND b.kind <> %s AND p.qty > 0")
+    params: list = [market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND]
+    if session is not None:
+        sql += (" UNION SELECT DISTINCT f.ticker FROM paper_fills f JOIN paper_orders o ON o.id = f.order_id "
+                "JOIN paper_books b ON b.code = o.book_code WHERE b.market = %s AND b.status = %s AND b.kind <> %s "
+                "AND f.observation_date = %s AND o." + INTRADAY_RECORDED_STOP.replace(" AND ", " AND o."))
+        params += [market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND, session]
     with connection() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT p.ticker FROM paper_positions p JOIN paper_books b ON b.code = p.book_code "
-            "WHERE b.market = %s AND b.status = %s AND b.kind <> %s AND p.qty > 0 ORDER BY p.ticker",
-            (market, STOPWATCH_BOOK_STATUS, STOPWATCH_EXCLUDED_KIND),
-        ).fetchall()
+        rows = conn.execute(sql + " ORDER BY 1", tuple(params)).fetchall()
     return [row["ticker"] for row in rows]
 
 
@@ -827,7 +857,7 @@ MINUTE_TIMING = "AT_MINUTE"
 def timed_market_targets(market: str) -> list[datetime]:
     """
     1분봉(paper.bars.us)에 창을 더할 장중 시장가 주문의 생성 시각(UTC, 오래된 순) — 그 시장 책의 ``timing = MARKET`` 주문 가운데 대기이거나
-    최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 + 60초 뒤 첫 분)은 태스크가 셉니다(paper_bars.market_target).
+    최근 ``TIMED_RECENT_DAYS``일(달력일, DB 시각)에 만든 것. 기준 시각(생성 뒤 처음 시작하는 분)은 태스크가 셉니다(paper_bars.market_target).
 
     백엔드 표 ``paper_orders``·``paper_books``를 **읽기만** 합니다(timed_scope와 같은 교차 읽기 — ADR 0008·0022). 1분봉을 받는 시장
     (``TIMED_ORDER_BOOKS``)이 아니면 빈 목록입니다.
@@ -1752,6 +1782,166 @@ def source_state(task: str) -> dict | None:
     """그 태스크의 판정 행(없으면 None)."""
     with connection() as conn:
         return conn.execute("SELECT * FROM fetch_source_state WHERE task = %s", (task,)).fetchone()
+
+
+# ------------------------------------------------------------------ 보안 공지 (ADR 0046, V40)
+# security_notices·security_notice_rows는 태스크 kisa_security_notices가 이 함수들로만 씁니다(tests/test_table_ownership.py가 봄).
+def upsert_security_notices(items: Iterable[Any], *, first_page: bool, detail_since: date) -> int:
+    """
+    목록에서 읽은 글을 넣거나 고칩니다 → 처음 넣은 글 수.
+
+    처음 보는 글은 게시일이 ``detail_since`` 이후면 상세 '받을 것'(pending), 그보다 오래면 '받지 않음'(skipped)으로 넣습니다. 이미 있는 글은
+    제목·게시일·번호 칸(비어 있던 때만)을 고치고 상세 상태는 그대로 둡니다. 고정 공지 여부는 목록 1쪽(``first_page``)이 정합니다 — 1쪽을 읽으면
+    그 쪽의 고정 공지만 참이고 나머지는 거짓, 다른 쪽에서는 참으로 바꾸기만 합니다.
+
+    :param items: ``services.kisa_notices.ListItem``
+    """
+    items = list(items)
+    inserted = 0
+    with connection() as conn:
+        for item in items:
+            status = "pending" if item.posted_on >= detail_since else "skipped"
+            row = conn.execute(
+                """
+                INSERT INTO security_notices (ntt_id, list_no, title, posted_on, url, pinned, detail_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ntt_id) DO UPDATE SET
+                    list_no    = COALESCE(EXCLUDED.list_no, security_notices.list_no),
+                    title      = EXCLUDED.title,
+                    posted_on  = EXCLUDED.posted_on,
+                    url        = EXCLUDED.url,
+                    pinned     = CASE WHEN %s THEN EXCLUDED.pinned ELSE security_notices.pinned OR EXCLUDED.pinned END,
+                    updated_at = now()
+                RETURNING (xmax = 0) AS inserted
+                """,
+                (int(item.ntt_id), item.list_no, item.title, item.posted_on, item.url, bool(item.pinned), status, bool(first_page)),
+            ).fetchone()
+            inserted += 1 if row and row["inserted"] else 0
+        if first_page:
+            pinned = [int(item.ntt_id) for item in items if item.pinned]
+            conn.execute("UPDATE security_notices SET pinned = false, updated_at = now() WHERE pinned AND NOT (ntt_id = ANY(%s))",
+                         (pinned,))
+    return inserted
+
+
+def security_list_bounds() -> dict:
+    """
+    목록 메우기의 기준 → {maxNo, minNo, oldestNumbered}: 번호 칸이 있는 글의 가장 큰·작은 번호와 그 가운데 가장 오래된 게시일(없으면 None).
+    """
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT max(list_no) AS max_no, min(list_no) AS min_no, min(posted_on) FILTER (WHERE list_no IS NOT NULL) AS oldest "
+            "FROM security_notices"
+        ).fetchone()
+    return {"maxNo": row["max_no"], "minNo": row["min_no"], "oldestNumbered": row["oldest"]}
+
+
+def security_pending_details(limit: int, *, max_attempts: int, since: date) -> list[int]:
+    """
+    상세를 받을 글 번호 — 게시일이 ``since`` 이후이고 아직 받지 않았거나(pending) 받지 못한(failed) 글 가운데 시도가 ``max_attempts``보다 적은 것,
+    최근 글부터 ``limit``건.
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT ntt_id FROM security_notices WHERE detail_status IN ('pending', 'failed') AND detail_attempts < %s "
+            "AND posted_on >= %s ORDER BY posted_on DESC, ntt_id DESC LIMIT %s",
+            (int(max_attempts), since, int(limit)),
+        ).fetchall()
+    return [int(r["ntt_id"]) for r in rows]
+
+
+def save_security_detail(ntt_id: int, detail: Any, *, now: datetime | None = None) -> None:
+    """
+    상세 한 건을 적습니다 — 틀·제품명·'※' 문장·본문 글자와 4열 표의 행(그 공지의 행을 통째로 바꿈)을 한 트랜잭션으로.
+
+    :param detail: ``services.kisa_notices.Detail``
+    """
+    when = now or datetime.now(timezone.utc)
+    with transaction(), connection() as conn:
+        updated = conn.execute(
+            """
+            UPDATE security_notices SET detail_status = 'ok', detail_attempts = detail_attempts + 1, detail_error = NULL,
+                   layout = %s, products = %s, notes = %s, body_text = %s, detail_fetched_at = %s, updated_at = now()
+            WHERE ntt_id = %s
+            """,
+            (detail.layout, Jsonb(list(detail.products)), Jsonb(list(detail.notes)), detail.body_text, when, int(ntt_id)),
+        ).rowcount
+        if not updated:
+            raise ValueError(f"목록에 없는 공지: {ntt_id}")
+        conn.execute("DELETE FROM security_notice_rows WHERE ntt_id = %s", (int(ntt_id),))
+        if detail.rows:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO security_notice_rows (ntt_id, row_no, cve, product, affected, fixed) VALUES (%s, %s, %s, %s, %s, %s)",
+                    [(int(ntt_id), index, row.cve, row.product, row.affected, row.fixed) for index, row in enumerate(detail.rows)],
+                )
+
+
+def mark_security_detail_failed(ntt_id: int, reason: str) -> None:
+    """상세를 받지 못했거나 틀이 깨짐 — 시도 수를 올리고 사유 한 줄(주소·본문 없음)을 남깁니다. 받아 둔 내용은 그대로."""
+    with connection() as conn:
+        conn.execute(
+            "UPDATE security_notices SET detail_status = CASE WHEN detail_status = 'ok' THEN 'ok' ELSE 'failed' END, "
+            "detail_attempts = detail_attempts + 1, detail_error = %s, updated_at = now() WHERE ntt_id = %s",
+            ((reason or "")[:300] or None, int(ntt_id)),
+        )
+
+
+def security_notice(ntt_id: int) -> dict | None:
+    """공지 한 행과 표 행(시험·진단용)."""
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM security_notices WHERE ntt_id = %s", (int(ntt_id),)).fetchone()
+        if row is None:
+            return None
+        rows = conn.execute("SELECT cve, product, affected, fixed FROM security_notice_rows WHERE ntt_id = %s ORDER BY row_no",
+                            (int(ntt_id),)).fetchall()
+    return {**row, "rows": [dict(r) for r in rows]}
+
+
+# env_inventory·env_components·env_pending_updates는 수집기 CLI app/inventory.py가 이 함수로만 씁니다(ADR 0046 결정 2).
+def replace_env_inventory(doc: dict) -> None:
+    """
+    버전 목록 한 벌로 표 셋을 통째로 바꿉니다(한 트랜잭션 — 중간에 실패하면 앞의 목록이 그대로 남음).
+
+    :param doc: {collected_at, host_included, apt_lists_at, sections, components[(source, ecosystem, name, version, source_package)],
+                 pending[(package, arch, installed, candidate, repos, security)]} — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것
+    """
+    with transaction(), connection() as conn:
+        conn.execute("DELETE FROM env_components")
+        conn.execute("DELETE FROM env_pending_updates")
+        conn.execute(
+            """
+            INSERT INTO env_inventory (id, collected_at, received_at, host_included, apt_lists_at, sections)
+            VALUES (1, %s, now(), %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET collected_at = EXCLUDED.collected_at, received_at = EXCLUDED.received_at,
+                host_included = EXCLUDED.host_included, apt_lists_at = EXCLUDED.apt_lists_at, sections = EXCLUDED.sections
+            """,
+            (doc["collected_at"], bool(doc["host_included"]), doc.get("apt_lists_at"), Jsonb(doc.get("sections") or {})),
+        )
+        with conn.cursor() as cur:
+            if doc.get("components"):
+                cur.executemany(
+                    "INSERT INTO env_components (source, ecosystem, name, version, source_package) VALUES (%s, %s, %s, %s, %s)",
+                    [tuple(row) for row in doc["components"]],
+                )
+            if doc.get("pending"):
+                cur.executemany(
+                    "INSERT INTO env_pending_updates (package, arch, installed, candidate, repos, security) VALUES (%s, %s, %s, %s, %s, %s)",
+                    [tuple(row) for row in doc["pending"]],
+                )
+
+
+def env_inventory() -> dict | None:
+    """버전 목록 한 벌(시험·진단용) → {inventory, components, pending}. 받은 적이 없으면 None."""
+    with connection() as conn:
+        head = conn.execute("SELECT * FROM env_inventory WHERE id = 1").fetchone()
+        if head is None:
+            return None
+        components = conn.execute("SELECT source, ecosystem, name, version, source_package FROM env_components "
+                                  "ORDER BY source, ecosystem, name, version").fetchall()
+        pending = conn.execute("SELECT package, arch, installed, candidate, repos, security FROM env_pending_updates "
+                               "ORDER BY package, arch").fetchall()
+    return {"inventory": head, "components": [dict(r) for r in components], "pending": [dict(r) for r in pending]}
 
 
 # ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)

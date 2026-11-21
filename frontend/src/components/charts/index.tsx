@@ -24,7 +24,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY, formatChartNumber } from "@/lib/format";
 import { readableOn, valueDescKey } from "@/lib/chartTooltip";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
 import {
@@ -162,7 +162,7 @@ function BarValueLabel({
       fill={AXIS_TEXT}
       fontSize={AXIS.fontSize}
     >
-      {`${formatNumber(amount, digits)}${unit}`}
+      {`${formatChartNumber(amount, digits)}${unit}`}
     </text>
   );
 }
@@ -254,8 +254,8 @@ export function LineSeries({
       grid={grid}
       ariaLabel={ariaLabel}
       includeZero={zeroLine}
-      valueFormat={(value) => `${formatNumber(value, precision)}${unit}`}
-      tooltipFormat={(value) => `${formatNumber(value, precision + 1)}${unit}`}
+      valueFormat={(value) => `${formatChartNumber(value, precision)}${unit}`}
+      tooltipFormat={(value) => `${formatChartNumber(value, precision + 1)}${unit}`}
     />
   );
 }
@@ -426,8 +426,8 @@ export function MultiLineSeries({
   const usesRight = series.some((entry) => entry.axis === "right");
   // 그림 너비(px) — X 중간 눈금 개수를 고릅니다(선 차트 LineChart와 같음). 재기 전에는 null(첫·마지막만).
   const [width, setWidth] = useState<number | null>(null);
-  const leftLabel = (value: number) => `${formatNumber(value, precision)}${unit}`;
-  const rightLabel = (value: number) => formatNumber(value, rightPrecision);
+  const leftLabel = (value: number) => `${formatChartNumber(value, precision)}${unit}`;
+  const rightLabel = (value: number) => formatChartNumber(value, rightPrecision);
   // 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 둥근 간격, 0은 zeroLine일 때만). 고정 범위(domain)면 그 범위 안의 둥근 간격.
   const leftAxis: LineYAxis | null = domain
     ? fixedYAxis(domain, { zeroLine, format: leftLabel })
@@ -523,7 +523,7 @@ export function MultiLineSeries({
               return [
                 value === null || value === undefined
                   ? EMPTY
-                  : `${formatNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
+                  : `${formatChartNumber(Number(value), digitsOf(String(name)))}${unitOf(String(name))}`,
                 String(name),
               ];
             }}
@@ -655,7 +655,7 @@ export function HorizontalBars({
           tick={AXIS}
           tickLine={false}
           padding={hasNegative ? { left: NEG_LABEL_ROOM } : undefined}
-          tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 0)}${unit}`}
         />
         {/* 축 폭은 이름표 폭에 맞춥니다(width="auto") — 고정 150px은 12px 글자에서 영문 대문자가 섞인 24칸 이름('KODEX 코스닥150선물인버…')을 왼쪽에서 잘랐습니다. */}
         <YAxis
@@ -670,7 +670,7 @@ export function HorizontalBars({
         <Tooltip
           {...tooltipStyle()}
           cursor={BAR_CURSOR}
-          formatter={(value) => [`${formatNumber(Number(value), digits)}${unit}`, valueName]}
+          formatter={(value) => [`${formatChartNumber(Number(value), digits)}${unit}`, valueName]}
         />
         <ReferenceLine x={0} stroke={GUIDE} />
         {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 — 상승·하락 토큰(패널 면 surface 위 그래픽 대비 5.84·8.06:1 — 작업대 실행 명세 §3-5) */}
@@ -730,12 +730,12 @@ export function SignedBars({
           tick={AXIS}
           tickLine={false}
           width="auto"
-          tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 0)}${unit}`}
         />
         <Tooltip
           {...tooltipStyle()}
           cursor={BAR_CURSOR}
-          formatter={(value) => [`${formatNumber(Number(value), 0)}${unit}`, valueName]}
+          formatter={(value) => [`${formatChartNumber(Number(value), 0)}${unit}`, valueName]}
         />
         <ReferenceLine y={0} stroke={GUIDE} />
         <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
@@ -797,7 +797,7 @@ export function ScatterPlot({
           stroke={AXIS_LINE}
           tick={AXIS}
           tickLine={false}
-          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 2)}`}
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
                    offset: -18, fill: AXIS_TEXT, fontSize: CHART_FONT }}
         />
@@ -816,7 +816,7 @@ export function ScatterPlot({
           tick={AXIS}
           tickLine={false}
           width={70}
-          tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          tickFormatter={(value: number) => `${formatChartNumber(value, 2)}`}
           label={{ value: `${yLabel}${yUnit ? ` (${yUnit})` : ""}`, angle: -90, position: "insideLeft",
                    fill: AXIS_TEXT, fontSize: CHART_FONT, textAnchor: "middle" }}
         />
@@ -828,7 +828,7 @@ export function ScatterPlot({
           {...tooltipStyle()}
           cursor={{ strokeDasharray: "3 3", stroke: GUIDE }}
           formatter={(value, name) => [
-            `${formatNumber(Number(value), 3)}${String(name) === xLabel ? xUnit : yUnit}`,
+            `${formatChartNumber(Number(value), 3)}${String(name) === xLabel ? xUnit : yUnit}`,
             String(name),
           ]}
           labelFormatter={() => ""}

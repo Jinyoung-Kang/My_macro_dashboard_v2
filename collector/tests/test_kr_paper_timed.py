@@ -9,10 +9,12 @@ tests/test_kr_paper_timed.py
      E 16:40(덮는 가장 늦은 마감 + 10분) 전에 받은 OK 칸은 그 뒤 한 번 더 받고, 다시 받기가 실패하면 직전 OK 칸을 덮지 않는다(QA-174).
   4. 받을 것이 없으면 EmptyResult(저장본 그대로).
   5. 계좌·시점 글자는 백엔드 PaperBooks와 같다.
-  6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 + 60초를 분으로 올림, KST)의 창을 같은 모양으로 더한다.
+  6. 장중 시장가(MARKET — 단계 2b) 대기 주문은 그 기준 분 T(생성 뒤 처음 시작하는 분 — 생성을 분으로 내린 뒤 + 1분, KST, ADR 0044)의 창을 같은 모양으로 더한다.
   7. 실행 감사(단계 2c): 개장 창 09:00을 늘 싣고, 한국 Claude 계좌1·2의 최근 결정 주문도 장부 몫 뒤에 받으며, 받은 칸에 필요한 창 키가 없으면 다시 받는다.
      감사 몫의 지정 시각(AT_MINUTE) 주문은 체결·취소된 뒤에도 그 시각 창을 싣는다(QA-301).
   8. 목표 세션 E가 NO_BARS면 만료 창(기준일 + 3거래일) 안의 다음 거래일도 그날 끝난 뒤 받는다(장부가 고르는 첫 관측 봉의 날 — QA-201).
+  9. 장중에 장부에 적은 감시 STOP(ADR 0045 ON — 체결·근거 intradayFill.mode = ON)은 대기가 아니어도 밤 일괄 세계처럼 그 기준 분 창을 받는다(목표 세션
+     다음 거래일까지 — 그 세계의 대기 수명). 밤에 체결된 STOP·SHADOW 근거 STOP은 받지 않는다(D10 (b)).
 """
 from __future__ import annotations
 
@@ -84,9 +86,10 @@ def toss(monkeypatch):
     return fake
 
 
-def _orders(monkeypatch, rows, market=(), audit=(), minute=()):
+def _orders(monkeypatch, rows, market=(), audit=(), minute=(), recorded=()):
     monkeypatch.setattr(kr_paper_timed.store, "kr_timed_orders", lambda books, timings: list(rows))
     monkeypatch.setattr(kr_paper_timed.store, "kr_market_orders", lambda books: list(market))
+    monkeypatch.setattr(kr_paper_timed.store, "kr_intraday_filled_stops", lambda books, since: list(recorded))
     monkeypatch.setattr(kr_paper_timed.store, "kr_minute_orders", lambda books: list(minute))
     monkeypatch.setattr(kr_paper_timed.store, "kr_audit_orders", lambda books, days: list(audit))
 
@@ -166,16 +169,35 @@ def test_계좌와_시점_글자는_백엔드와_같다():
     assert f'SNAP_KR_PAPER_TIMED = "{catalog.SNAP_KR_PAPER_TIMED}"' in datasets
 
 
-def test_장중_시장가의_기준_분은_생성_더하기_60초를_분으로_내린_뒤_1분_뒤():
-    # 백엔드 ExecutionAudit.marketTarget과 같은 식 — 늘 생성 + 60초보다 뒤(:00초 생성이면 + 2분).
-    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, tzinfo=KST)) == "10:33"
-    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, 500, tzinfo=KST)) == "10:33"
-    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 59, tzinfo=KST)) == "10:33"
-    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 1, 59, 30, tzinfo=timezone.utc)) == "11:01"   # UTC로 와도 KST
+def test_장중_시장가의_기준_분은_생성을_분으로_내린_뒤_1분_뒤():
+    # 백엔드 ExecutionAudit.marketTarget과 같은 식 — 생성 뒤 처음 시작하는 분(:00초 생성도 다음 분, ADR 0044).
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, tzinfo=KST)) == "10:32"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 0, 500, tzinfo=KST)) == "10:32"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 10, 31, 59, tzinfo=KST)) == "10:32"
+    assert kr_paper_timed.market_target(datetime(2026, 11, 3, 1, 59, 30, tzinfo=timezone.utc)) == "11:00"   # UTC로 와도 KST
+
+
+# 생성 시각 → (창 키 T, R1 라벨 T+1 — 토스 라벨은 봉 끝이라 봉 구간 T~T+1분, 생성 뒤). 백엔드 KrTimedLadderTest.marketKeyMatchesTheCollectorTable이
+# 같은 표를 씁니다(ADR 0044).
+KR_MARKET_KEYS = [
+    ("2026-11-17T13:10:42+09:00", "13:11", "13:12"),          # 사용자 예(2026-11-17 NAVER 감지 13:10:42)
+    ("2026-11-17T13:10:00+09:00", "13:11", "13:12"),          # 정각 생성도 다음 분
+    ("2026-11-17T13:10:59.999999+09:00", "13:11", "13:12"),   # 가장 좁은 여유 1µs
+    ("2026-11-03T01:59:30+00:00", "11:00", "11:01"),          # UTC로 와도 KST
+]
+
+
+@pytest.mark.parametrize("created, key, first", KR_MARKET_KEYS)
+def test_장중_시장가_기준_분과_R1_라벨은_백엔드와_같은_표(created, key, first):
+    assert kr_paper_timed.market_target(datetime.fromisoformat(created)) == key
+    bars = {label: {"time": label, "open": 1.0, "volume": 1} for label in (key, first)}
+    windows, first_after = kr_paper_timed.summarize_windows(bars, [key])
+    assert [bar["label"] for bar in windows[key]] == [first], "라벨 T 봉(봉 구간 T−1분~T — 생성 앞이 섞일 수 있음)은 창에 들지 않음"
+    assert first_after[key]["label"] == first
 
 
 def test_장중_시장가_대기_주문은_그_기준_분의_창을_더한다(store, toss, monkeypatch):
-    created = datetime(2026, 11, 3, 10, 31, 20, tzinfo=KST)
+    created = datetime(2026, 11, 3, 10, 32, 20, tzinfo=KST)
     _orders(monkeypatch, [("005930", date(2026, 11, 2))], market=[("005930", date(2026, 11, 2), created)])
     toss.pages[("005930", E)] = _session(E)
 
@@ -254,9 +276,42 @@ def test_장중_시장가_범위는_그_계좌의_대기_MARKET_주문만_읽는
         "계좌1(자유 시점 판 — ADR 0027)의 장중 시장가도 범위 — 끈 판은 MARKET을 내지 않음"
 
 
+def test_장중에_장부에_적은_감시_STOP은_대기가_아니어도_그_기준_분_창을_받는다(store, toss, monkeypatch):
+    created = datetime(2026, 11, 3, 13, 10, 42, tzinfo=KST)                  # T = 13:11(ADR 0044)
+    with store.connection() as conn:
+        conn.execute(
+            "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+            "VALUES ('kr_rules', 'RULES', 'kr_rules', 100000000, %s, 'ACTIVE', 'KR', 'KRW')", (date(2026, 10, 30),))
+        for ticker, reason in (("005930", '{"stopMode": "INTRADAY_WATCH", "intradayFill": {"mode": "ON"}}'),   # ON 장중 기록 → 받음
+                               ("000660", '{"stopMode": "INTRADAY_WATCH"}'),                                   # 밤에 체결된 STOP → 뺌
+                               ("035720", '{"stopMode": "INTRADAY_WATCH", "intradayFill": {"mode": "SHADOW"}}')):  # SHADOW 대조 → 뺌
+            conn.execute(
+                "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, created_at, reason) "
+                "VALUES ('kr_rules', %s, 'SELL', 'MARKET', 'STOP', 'FILLED', %s, %s, %s::jsonb)", (ticker, date(2026, 11, 2), created, reason))
+    for code in ("005930", "000660", "035720"):
+        toss.pages[(code, E)] = _session(E)
+    rows = kr_paper_timed.store.kr_intraday_filled_stops(kr_paper_timed.KR_TIMED_BOOKS, created - kr_paper_timed.KR_INTRADAY_STOP_LOOKBACK)
+    assert [(ticker, as_of) for ticker, as_of, _ in rows] == [("005930", date(2026, 11, 2))]
+    assert kr_paper_timed.store.kr_intraday_filled_stops(kr_paper_timed.KR_TIMED_BOOKS, created + kr_paper_timed.KR_INTRADAY_STOP_LOOKBACK) == []
+
+    # 목표 세션(11-03) 다음 거래일(11-04) 뒤면 밤 일괄 세계에서는 만료로 닫혔을 주문 — 받지 않는다(호출 수가 그 세계와 같음).
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: datetime(2026, 11, 5, 23, 25, tzinfo=KST))
+    with pytest.raises(EmptyResult):
+        tasks.task_kr_paper_timed()
+    assert toss.calls == []
+
+    monkeypatch.setattr(kr_paper_timed, "_now", lambda: NIGHT)
+    detail = tasks.task_kr_paper_timed()
+
+    assert {symbol for symbol, _ in toss.calls} == {"005930"}, "실제로 그 (종목, 세션)을 받음 — 창 키만 더하지 않음"
+    entry = _payload(store)["sessions"][E]["005930"]
+    assert [b["label"] for b in entry["windows"]["13:11"]] == ["13:12", "13:13", "13:14", "13:15", "13:16"]
+    assert detail.startswith("1/1")
+
+
 def test_실행_감사_주문도_장부_몫_뒤에_받는다(store, toss, monkeypatch):
     # 계좌1 시가 주문(000660)과 계좌2 체결된 장중 시장가(035720) — 장부 몫(005930)을 먼저 부르고, 감사 MARKET 주문의 기준 분 창도 싣는다.
-    created = datetime(2026, 11, 3, 13, 14, 30, tzinfo=KST)
+    created = datetime(2026, 11, 3, 13, 15, 30, tzinfo=KST)
     _orders(monkeypatch, [("005930", date(2026, 11, 2))],
             audit=[("000660", date(2026, 11, 2), "NEXT_OPEN", datetime(2026, 11, 2, 22, 31, tzinfo=KST), None),
                    ("035720", date(2026, 11, 2), "MARKET", created, None),
@@ -548,7 +603,7 @@ def test_QA301_감사_몫의_지정_시각_창은_그_종목_E에만_더하고_�
 
 def test_QA301_장중_시장가_감사_키로_다시_받아도_지정_시각_창이_남는다(store, toss, monkeypatch):
     # 10:47 창이 든 OK 칸(16:40 뒤에 받음)에 같은 종목의 장중 시장가 감사 주문이 새로 생김 → 그 키 때문에 다시 받아도 10:47은 그대로.
-    created = datetime(2026, 11, 3, 13, 14, 30, tzinfo=KST)
+    created = datetime(2026, 11, 3, 13, 15, 30, tzinfo=KST)
     keys = kr_paper_timed.window_keys({"10:47"})
     held = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T08:00:00+00:00",
             "windows": {key: [] for key in keys}, "firstAfter": {}, "closes": {}}

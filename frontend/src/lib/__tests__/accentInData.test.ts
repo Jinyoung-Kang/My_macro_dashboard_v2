@@ -15,7 +15,8 @@
  * InspectorFrame도 P5a), 그래프는 그 부품이 들어오는 단계(명세 §8-2 '새 부품을 만드는 단계' — P5·P7)에서 이 목록에 더합니다. 공용 표(DataTable)는 값 칸과 정렬 머리·누를 수 있는 행이 같은 파일에
  * 있어 파일 전체를 봅니다 — 누를 수 있는 부분도 데이터 영역이라 중립 바탕·밑줄·focus 링으로 그립니다.
  * 공용 키트(components/ui/index.tsx)는 단추·링크(강조 파랑을 쓰는 것)와 한 파일이라 파일 전체가 아니라 데이터를 그리는 함수 몸통만 봅니다(DATA_FUNCTIONS) —
- * 명세 §6이 DenseTable의 '지금'으로 꼽은 Table과 KpiStrip의 '지금'인 Metric(과 그 변화 값 색을 정하는 lib/format의 deltaColor). 화면 대부분이 이 둘을 씁니다.
+ * 명세 §6이 DenseTable의 '지금'으로 꼽은 옛 Table과 KpiStrip의 '지금'인 옛 Metric은 부르는 곳이 없어져 P8에서 지웠고(공용 표·KPI 띠는 위 DATA_FILES),
+ * 남은 것은 변화 값 색을 정하는 lib/format의 deltaColor입니다.
  * 함수 몸통 안에서 부르는 다른 함수(EmptyState·SourceLine 등)의 몸통은 보지 않습니다(한계).
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -76,9 +77,6 @@ const DATA_FILES = [
  * 바뀌면 그 패턴 파일을 DATA_FILES에 더하고 여기서 뺍니다.
  */
 const DATA_FUNCTIONS = [
-  // 공용 키트의 표(값 칸·머리·행 hover)와 지표 칸(값·변화·캡션·출처 줄).
-  { path: "components/ui/index.tsx", name: "Table" },
-  { path: "components/ui/index.tsx", name: "Metric" },
   // 지표 칸 변화 값의 색(상승·하락·보합·없음).
   { path: "lib/format.ts", name: "deltaColor" },
 ] as const;

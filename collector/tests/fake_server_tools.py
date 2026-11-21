@@ -100,6 +100,33 @@ shift
 FAKE_AS_ROOT=1 exec "$@"
 """
 
+# 서버의 버전 목록(scripts/vultr/inventory.sh, ADR 0046)이 호스트에서 부르는 것 — 가짜 값만. 부른 인자는 <기록>.host에 따로 남깁니다(배포 시험의
+# 호출 목록을 바꾸지 않게). dpkg-query는 '상태<탭>패키지<탭>버전<탭>원본' 줄(설치 안 된 'rc' 줄 하나 포함 — 거르는지 봄), apt는
+# 'apt list --upgradable' 모양, tailscale은 첫 줄이 버전. FAKE_HOST_FAIL에 이름(dpkg-query·apt·tailscale)이 있으면 그 명령이 실패합니다.
+_FAKE_DPKG_QUERY = """#!/usr/bin/env bash
+echo "dpkg-query $*" >> "$FAKE_LOG.host"
+case " ${FAKE_HOST_FAIL:-} " in *" dpkg-query "*) exit 2 ;; esac
+printf 'ii \\tfake-ssl-lib\\t9.9.9-0fake1\\tfake-ssl\\n'
+printf 'ii \\tfake-shell\\t1:5.0-fake2\\tfake-shell\\n'
+printf 'rc \\tfake-removed\\t0.1-1\\tfake-removed\\n'
+printf 'ii \\tfake-nosrc\\t2.0-1\\t\\n'
+"""
+_FAKE_APT = """#!/usr/bin/env bash
+echo "apt $*" >> "$FAKE_LOG.host"
+case " ${FAKE_HOST_FAIL:-} " in *" apt "*) exit 100 ;; esac
+[ "$*" = "list --upgradable" ] || exit 3
+echo "WARNING: apt does not have a stable CLI interface. Use with caution in scripts." >&2
+echo "Listing..."
+echo "fake-ssl-lib/fakecode-updates,fakecode-security 9.9.9-0fake2 amd64 [upgradable from: 9.9.9-0fake1]"
+echo "fake-engine-cli/fakecode 5:90.1.3-1~fake amd64 [upgradable from: 5:90.1.2-1~fake]"
+echo "fake-esm-lib/fakecode-infra-security 1.0+esm1 all [upgradable from: 1.0]"
+"""
+_FAKE_TAILSCALE = """#!/usr/bin/env bash
+echo "tailscale $*" >> "$FAKE_LOG.host"
+case " ${FAKE_HOST_FAIL:-} " in *" tailscale "*) exit 1 ;; esac
+printf '0.90.1\\n  tailscale commit: fake\\n  go version: fake\\n'
+"""
+
 
 def _write_exec(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

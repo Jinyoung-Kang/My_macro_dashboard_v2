@@ -354,3 +354,32 @@ describe("QA-819 — 매수 목표 표의 코드와 이름 사이에는 줄바�
     expect(name.closest(".break-keep")).not.toBeNull();
   });
 });
+
+// QA-958 — QA-819 고침 뒤에도 360·370·380에서 '매수 목표' 표가 가로 스크롤 상자를 26·16·6px 넘음(결정 거리 kr-selection-narrow-name-wrap — 2026-11-20 결정:
+// 360~412 넘침 0). 표 328px(순서 50·종목 132·점수 67·목표 비중 80 — 가장 긴 이름 '한화에어로스페이스'가 한 덩어리라 종목 칸 최소 132px)가 상자 302~322px보다
+// 넓음. 기대: 상자가 390 상자(332px = 20.75rem)보다 좁으면 칸 좌우 여백을 줄이고(크기 질의 — 390 이상 겉모습 그대로), 그래도 넘칠 만큼 긴 이름은 이름 안에서
+// 꺾임(overflow-wrap:anywhere — 다른 칸은 한 덩어리 숫자라 이름 칸이 남는 폭을 다 가져, 넘칠 때만 꺾임). jsdom은 배치를 재지 않아 클래스를 봅니다(잰 값은 고친 커밋).
+describe("QA-958 — 좁은 상자에서 매수 목표 표가 넘치지 않는다", () => {
+  it("상자가 20.75rem 미만이면 칸 여백을 줄이고, 이름은 넘칠 때만 이름 안에서 꺾는다", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
+      available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
+    });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    reads["/api/paper/decisions/45"] = () => Promise.resolve(LATEST_DETAIL);
+    renderSelection();
+    const targets = await screen.findByRole("region", { name: "매수 목표" });
+    const table = within(targets).getByRole("table", { name: "매수 목표" });
+    // 크기 질의 틀(@container)이 표를 감쌈.
+    expect(table.closest(".\\@container")).not.toBeNull();
+    // 모든 칸(머리·몸통)에 좁은 상자의 여백.
+    const cells = [...within(table).getAllByRole("columnheader"), ...within(table).getAllByRole("rowheader"), ...within(table).getAllByRole("cell")];
+    for (const cell of cells) expect(cell.className.split(/\s+/), cell.textContent ?? "").toContain("@max-[20.75rem]:px-2");
+    // 이름은 낱말 사이에서 꺾되(QA-817) 넘칠 만큼 길면 이름 안에서도.
+    const name = within(targets).getByText("삼성전자");
+    expect(name.closest(".break-keep")).not.toBeNull();
+    expect(name.className.split(/\s+/)).toContain("wrap-anywhere");
+    // 구성원 표의 이름(한 줄 열)은 그대로 — 꺾지 않음.
+    const members = screen.getByRole("table", { name: "유니버스 구성원" });
+    expect(within(members).getByText("삼성전자").className.split(/\s+/)).not.toContain("wrap-anywhere");
+  });
+});

@@ -400,7 +400,10 @@ export function FeedPanel({
     body = feed.error ? (
       <ErrorState message={feed.error} onRetry={() => void feed.reload()} />
     ) : (
-      <Loading label="결과를 모으는 중… (외부 출처를 부르면 몇 초 걸립니다)" />
+      // 첫 적재 자리 — 화면 높이 이상(QA-930, QA-892 순위와 같음): 한 줄이던 때는 결과가 오며 아래 칸(xl 미만은 속성 칸)을 밀었습니다.
+      <div className="min-h-dvh">
+        <Loading label="결과를 모으는 중… (외부 출처를 부르면 몇 초 걸립니다)" />
+      </div>
     );
   } else if (!data.available) {
     body = <p className="px-3 py-6 text-sm text-text-2">{data.message ?? "결과를 받지 못했습니다."}</p>;

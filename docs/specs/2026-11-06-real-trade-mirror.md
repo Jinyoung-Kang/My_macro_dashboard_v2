@@ -104,6 +104,8 @@
 
 ### 3.2 장중 따라 하기의 목표
 - 대상: 따라 하는 책의 PENDING 주문 중 목표 세션 = 오늘, timing ∈ {`AT_MINUTE`, `AT_1000`…`AT_1500`, `MARKET`, `NEXT_CLOSE`}, 기준 시각 T ≤ 지금. 그 밖의 timing(모르는 값)은 보내지 않고 `skipped`(`timing-unsupported`)·알림.
+- 여기와 아래(§13)의 PENDING은 모의 공개 창(`PaperMirrorService`)이 보이는 대기다 — 한국 장중 감시 STOP을 모의 장부에 장중에 적은 것(`kr.stopWatch.fill = ON`, 근거 `intradayFill.mode = ON`)은 그 STOP 세션의
+  밤 처리 전까지 대기로 되감아 보인다([ADR 0045](../adr/0045-kr-intraday-stop-fill.md) — ADR 0033 결정 4 덧붙임, 따라 하는 책이 규칙 계좌이고 그 밤이 그 STOP을 체결할 때 실제 동작 불변).
 - `PaperMirrorService.weightAfter(book, orderId, now)` — 책의 보유 + 기준 시각이 T 이하인 모든 PENDING 주문(시가 포함)을 `KrExpectedState`와 같은 가격 고르기로 simulate 한 뒤 그 종목의 비중 w*.
 - 보낼 수량 = §2의 식을 w*로, **원 주문 방향으로만**(매수 주문이면 양수일 때만 매수, 매도 주문이면 음수일 때만 매도). 1%p 조건은 없고 1주 이상이면 보냄. w* = 0인 매도는 전량.
 - 같은 뿌리(`reason.reissuedFrom` 사슬의 첫 주문)는 한 번만 따라 한다.
@@ -459,6 +461,7 @@ MIRROR는 모의 주문 번호·뿌리, SYNC·SYNC_FOLLOWUP은 묶음 번호 필
 ### 13.3 매수 직전 대기 STOP 확인
 - 묶음 첫 전송·창 안 재시도·시가 뒤 마무리·장중 따라 하기의 매수를 보내기 직전마다 `PaperMirrorService.pendingStopSymbols(book, session)`을 DB에서 다시 읽어, 그 종목 매수는 보내지 않고
   건너뜀 사유 `pending-stop`으로 창 요약에 센다(09:10 묶음이 매도 대금을 기다리는 동안 생긴 STOP 종목을 재시도가 다시 사지 않게).
+- 장중 기록 STOP(ADR 0045 — 모의 장부에 장중에 적힌 감시 STOP)도 그 세션 밤 처리 전까지 이 대기 STOP 종목에 든다(공개 창이 대기로 되감아 봄 — §13.2 스탑 매도의 대상·놓침 집계도 같음).
 
 ### 13.4 화면·운영
 - 상태 응답 `today.windows`의 `kind`에 `SYNC_AT`, 이벤트에 `STOP_SELL`이 더해진다([API](../API.md)). 이름표 '맞추기(시장가)'는 시가 뒤 마무리와 시각 맞추기의 시장가 주문이 함께 쓴다.

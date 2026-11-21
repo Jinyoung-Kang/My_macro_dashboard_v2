@@ -280,5 +280,7 @@ echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
 bash scripts/vultr/backup-age.sh
 # 재부팅이 필요한지·Livepatch가 도는지(ADR 0023 개정 2026-11-12) — 판정은 make status·cron과 같은 reboot-check.sh. 요약이라 실패해도 배포를 실패로 만들지 않습니다.
 bash scripts/vultr/reboot-check.sh --summary || true
+# 보안 공지(ADR 0046)의 버전 목록 — 새 이미지의 버전을 바로 넘깁니다(배포 출력·syslog에는 건수만, 버전은 운영 DB에만). 실패해도 배포를 실패로 만들지 않습니다.
+bash scripts/vultr/inventory.sh || true
 [ -z "$paper_off" ] ||
     echo "주의: 모의 매매 정기 작업이 꺼진 채 떴습니다(.env의 PAPER_ENABLED=false) — 정비가 끝났으면 그 줄을 지우고 다시 배포하세요."

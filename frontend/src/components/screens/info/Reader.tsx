@@ -1,6 +1,7 @@
 "use client";
 
 import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { useScrollRegion } from "@/components/patterns/useScrollRegion";
 import { Banner, ErrorState, Loading, buttonClasses } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useTranslate } from "@/hooks/useTranslate";
@@ -56,6 +57,9 @@ export function Reader({ entry }: { entry: ReaderEntry }) {
   const loading = !!entry.itemId && entry.hasBody && stored.loading && !stored.data;
   const koreanTitle = translated?.titleKo ?? entry.titleKo;
   const shown = showKorean && translated?.textKo ? translated.textKo : original;
+  // 본문 상자 — 넘칠 때만 Tab 정지점·이름 있는 영역(공용 계약 useScrollRegion, QA-939 — 재기 전·잴 수 없으면 정지점). 글이 바뀌면 다시 잽니다(QA-904).
+  const bodyBox = useRef<HTMLDivElement>(null);
+  const { regionProps: bodyRegion } = useScrollRegion(bodyBox, "본문 (스크롤)", { axis: "y", enabled: Boolean(shown), watch: shown });
   // 일부만 번역된 응답(제목만 옮기고 본문은 실패) 뒤에도 단추를 남깁니다 — 다시 누르면 서버가 남은 부분만 옮깁니다(QA-409).
   const offerTranslate = !loading && offersTranslate(entry, original, translated);
   const retry = translated !== null || error !== null;
@@ -104,6 +108,8 @@ export function Reader({ entry }: { entry: ReaderEntry }) {
       {shown ? (
         // 본문 상자는 놓인 면과 다른 면(bg-bg — 페이지 바탕)과 1px 경계로 가릅니다 — 대화상자 덮개 면(surface-2) 위에서 예전 surface-2/60이 묻혔음(QA-838).
         <div
+          ref={bodyBox}
+          {...bodyRegion}
           lang={showKorean && translated?.textKo ? "ko" : undefined}
           className="max-h-[60dvh] overflow-y-auto whitespace-pre-wrap rounded-control border border-border bg-bg p-3 text-[13px] leading-6 text-text"
         >

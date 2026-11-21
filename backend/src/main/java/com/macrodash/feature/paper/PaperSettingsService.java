@@ -682,7 +682,10 @@ public class PaperSettingsService {
         kr.put("intradayFixed", false);
         kr.put("decisionBeforeOpenMinutes", 0);
         kr.put("briefing", Briefing.defaultsBody());
-        kr.put("stopWatch", Map.of("mode", StopWatchMode.DEFAULT.name()));
+        Map<String, Object> stopWatch = new LinkedHashMap<>();
+        stopWatch.put("mode", StopWatchMode.DEFAULT.name());
+        stopWatch.put("fill", KrStopFill.DEFAULT.name());   // 장중 감시 스탑 체결의 장중 기록(ADR 0045) — 감시 ON일 때만 뜻이 있음
+        kr.put("stopWatch", stopWatch);
         return kr;
     }
 }

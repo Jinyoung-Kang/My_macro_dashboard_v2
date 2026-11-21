@@ -32,6 +32,8 @@ export function useMountedRef() {
  *   - run: 부르기. 시작할 때 오류를 지우고, 실패해도 앞서 받은 결과는 남깁니다. 성공하면 true, 실패하면 false를
  *     돌려줍니다 — 성공했을 때만 입력을 지우는 화면이 씁니다(QA-051)
  *   - 화면을 떠난 뒤 끝나면 상태를 바꾸지 않습니다
+ *   - busy는 누른 단추의 `busy`(공용 Button — aria-disabled + 누름 무시)로 넘깁니다. `disabled`로 넘기면 누른 단추가 꺼져 크롬이 포커스를
+ *     body로 보냅니다(QA-899). run 자체는 겹쳐 불러도 막지 않습니다 — 같은 동작을 줄마다 따로 부르는 화면이 있습니다(알림 '읽음' QA-863).
  */
 export function useAsyncAction<Args extends unknown[], T>(
   action: (...args: Args) => Promise<T>,

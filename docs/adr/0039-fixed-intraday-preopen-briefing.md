@@ -4,6 +4,8 @@
   마감 30분 뒤 텔레그램 브리핑을 권장안대로 계획서를 만들고 바로 진행"). 계획서는 [2026-11-13 명세](../specs/2026-11-13-fixed-intraday-preopen-briefing.md).
   [ADR 0027](0027-free-fill-timing.md)·[ADR 0031](0031-open-offset-window-intraday-budget.md)의 자유 시점 판과 [ADR 0038](0038-decision-continuity.md)의
   판단 이어받기 위에 얹습니다(그 판의 고정 문단·스키마는 그대로).
+  **결과 일부 개정 — [ADR 0045](0045-kr-intraday-stop-fill.md)(2026-11-18 결정, 배포 전)**: '한국 16:00 브리핑의 한계'의 '순자산·체결은 직전 처리 기준'에서, 그 세션 체결에 장중에 장부에 적은
+  감시 스탑 매도가 있으면(자료로 고름) 그 반영을 함께 적음(순자산·현금에 먼저 들어감, 표시 날짜는 직전 처리일) · 나머지는 그대로.
 - 지키는 방법(시험):
   - 고정 일정: `IntradaySchedulerTest`(`fixedTimesFollowTheSessionHours`·`fixedTimeRules`·`fixedPendingReservesSlots`·`fixedScheduleInsertsTwoRows`),
     `IntradayEventsTest.fixedScheduleKeepsDownEventsAndReservesSlots`, `KrStartTest.krFixedScheduleInsertsRowsAtTheTwoTimes`(한국 작업 끝에서 끝)

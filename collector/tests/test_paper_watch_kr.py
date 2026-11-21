@@ -233,7 +233,7 @@ def test_창_안_계획이_여럿이면_합집합을_받고_계획이_더해지�
 
 
 def test_그_계좌_대기_주문의_지정_시각과_장중_시장가_기준_분도_창으로_뽑는다(store, toss, monkeypatch):
-    """예상 상태가 기준 시각이 지난 대기 주문(AT_MINUTE 10:47·MARKET 생성 10:31:20 → 기준 분 10:33)의 가격을 감시 저장본의 창에서 읽습니다.
+    """예상 상태가 기준 시각이 지난 대기 주문(AT_MINUTE 10:47·MARKET 생성 10:32:20 → 기준 분 10:33)의 가격을 감시 저장본의 창에서 읽습니다.
     아직 오지 않은 지정 시각(13:15)·다른 계좌의 주문·다른 세션의 주문은 창을 만들지 않습니다."""
     with store.connection() as conn:
         for code in ("kr_claude", "kr_claude2"):
@@ -243,7 +243,7 @@ def test_그_계좌_대기_주문의_지정_시각과_장중_시장가_기준_�
         for book, ticker, timing, at, as_of, created in (
                 ("kr_claude", "005930", "AT_MINUTE", time(10, 47), date(2026, 11, 2), None),
                 ("kr_claude", "000660", "AT_MINUTE", time(13, 15), date(2026, 11, 2), None),
-                ("kr_claude", "035720", "MARKET", None, date(2026, 11, 2), datetime(2026, 11, 3, 10, 31, 20, tzinfo=KST)),
+                ("kr_claude", "035720", "MARKET", None, date(2026, 11, 2), datetime(2026, 11, 3, 10, 32, 20, tzinfo=KST)),
                 ("kr_claude", "051910", "AT_MINUTE", time(9, 40), date(2026, 10, 30), None),      # 지난 세션의 주문
                 ("kr_claude2", "005930", "AT_MINUTE", time(10, 5), date(2026, 11, 2), None)):     # 다른 계좌
             conn.execute(

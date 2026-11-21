@@ -1413,4 +1413,53 @@ class KrPacketBuilderTest {
         }
         return null;
     }
+
+    @Test
+    @DisplayName("ADR 0044: 한국 감시 ON 결정 패킷 고정본(packet-kr-ft-stopwatch-scheduled.json)에서 바뀐 것은 스탑 문장의 체결 시점 구절뿐(12_hardRules 스탑 줄·1_basis.stopWatch.rule "
+            + "두 곳) — 되돌리면 ADR 0044 전 고정본과 바이트까지 같다")
+    void onlyTheStopTimingSentenceChanged() {
+        String now = new String(Golden.resourceBytes("paper/golden/packet-kr-ft-stopwatch-scheduled.json"), java.nio.charset.StandardCharsets.UTF_8);
+        String fresh = "감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가로 전량 매도한다";
+        assertThat(now.split(java.util.regex.Pattern.quote(fresh), -1)).as("새 구절 두 번(하드 규칙·1_basis)").hasSize(3);
+        assertThat(now).doesNotContain("감지 + 60초 뒤 첫 분");
+        assertThat(Golden.sha256(now.replace(fresh, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다")))
+                .isEqualTo("0c9426e644e8bc4e8804b25539daeb72f49d5c778385b9381405ae17aa2c47c2");
+    }
+
+    @Test
+    @DisplayName("ADR 0045: 한국 장중 기록 판(kr.stopWatch.fill ON — 감시 ON일 때만) 결정 패킷 고정본(packet-kr-ft-stopwatch-fill-scheduled.json)에서 바뀐 것은 "
+            + "스탑 문장의 반영 시점 구절뿐(12_hardRules 스탑 줄·1_basis.stopWatch.rule 두 곳 — 되돌리면 감시 ON 고정본과 바이트까지 같음), SHADOW는 그 고정본 "
+            + "그대로, 끈 판 결정 패킷도 같은 구절")
+    void stopWatchFillOnPacket() {
+        // stopWatchOnPacket과 같은 차례(같은 저장소 상태 — 주문 번호 등)로 감시 ON 장면을 만듭니다.
+        scheduled();
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "SHADOW");
+        builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "ON");
+        store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE, null, "000660", "SELL", null, null, null, PaperBooks.AT_MINUTE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK), D, kst("2026-11-03T21:15"),
+                LocalDate.of(2026, 11, 6), null, java.time.LocalTime.of(9, 10)));
+        String watchOn = new String(Golden.resourceBytes("paper/golden/packet-kr-ft-stopwatch-scheduled.json"), java.nio.charset.StandardCharsets.UTF_8)
+                .stripTrailing();   // 고정본 파일 끝 줄바꿈
+
+        ((ObjectNode) kr.get("stopWatch")).put("fill", "SHADOW");
+        assertThat(builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text())
+                .as("SHADOW — 감시 ON 고정본 그대로(대조만)").isEqualTo(watchOn);
+
+        ((ObjectNode) kr.get("stopWatch")).put("fill", "ON");
+        Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        Golden.assertMatches("packet-kr-ft-stopwatch-fill-scheduled.json", on.text());
+        assertThat(on.text().split(java.util.regex.Pattern.quote(StopWatch.KR_FILL_PHRASE), -1)).as("새 구절 두 번(하드 규칙·1_basis)").hasSize(3);
+        assertThat(on.text().replace(StopWatch.KR_FILL_PHRASE, StopWatch.KR_NIGHT_PHRASE)).as("그 구절만 되돌리면 감시 ON 고정본").isEqualTo(watchOn);
+        Packet offBoard = builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(offBoard.body().get(PacketBuilder.BASIS).get("stopWatch").get("rule").asString()).as("끈 판 결정 패킷도 같은 구절")
+                .isEqualTo(StopWatch.rule(true, true));
+
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "SHADOW");
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).body().get(PacketBuilder.BASIS).has("stopWatch"))
+                .as("감시가 주문을 내지 않으면 기록 키는 뜻이 없음 — 칸 없음").isFalse();
+    }
 }

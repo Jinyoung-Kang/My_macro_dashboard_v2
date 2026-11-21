@@ -198,6 +198,18 @@ describe("모의매매(운영자)", () => {
     ]);
   });
 
+  // 보안 공지(ADR 0046 결정 9의 5) — 더보기 '묶음 없음'의 운영자 화면. 알림함 링크의 ?ntt=는 빵부스러기에 칸을 더하지 않음(주소 경로만 봄).
+  it("보안 공지 — /security는 더보기 › 보안 공지, 회원이 주소로 열면 링크 없이", () => {
+    expect(breadcrumbs("/security", OWNER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "보안 공지", href: "/security" },
+    ]);
+    expect(breadcrumbs("/security", MEMBER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "보안 공지", href: null },
+    ]);
+  });
+
   it("보이지 않는 화면(데모의 내 계정)도 링크 없이", () => {
     expect(breadcrumbs("/account", DEMO)).toEqual([
       { label: "더보기", href: "/more" },

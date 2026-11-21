@@ -3,15 +3,17 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { DataTable, InspectorSubheading, type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
 import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
+import type { ActionBarItem } from "@/components/ui/ActionBar";
 import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
+import { FIRST_ANSWER_CAP_MS } from "@/lib/info";
 import {
   bookOptions,
   candidatesNote,
@@ -180,6 +182,26 @@ export function DecisionsSection({
     if (active === null || active === document.body || !active.isConnected) action.focus();
   });
 
+  // 한국 '출발·게이트 기록' 패널은 결정 기록이 처음 한 번 온 뒤(값·오류)부터 그립니다(QA-955) — 목록 건수를 응답 전에 알 수 없어, 목록 위에 그려 두면
+  // 목록이 짧을 때(출발 직후 등) 화면 높이 자리가 줄며 이 패널이 위로 올라왔습니다. 작업 기록은 지금처럼 이 섹션이 바로 읽습니다(요청 시각 그대로).
+  const [listSettled, setListSettled] = useState(false);
+  // 보기를 바꿀 때 지킬 보기 영역 높이(QA-957 — changeView)와 그 영역.
+  const [viewKeep, setViewKeep] = useState<number | null>(null);
+  const viewAreaRef = useRef<HTMLDivElement>(null);
+  const listDone = list.data !== null || list.error !== null;
+  useEffect(() => {
+    if (listDone) setListSettled(true);
+  }, [listDone]);
+  // 결정 기록이 상한(lib/info FIRST_ANSWER_CAP_MS — 정보 수집 화면 QA-897·929와 같은 2초) 안에 답하지 않으면 목록 없이도 그 패널을 그립니다(QA-972) — 화면의
+  // 읽기(useApi)에는 시간 한도가 없어, 답하지 않고 연결도 끊기지 않으면 이미 받은 작업 기록과 그 오류·다시 시도 칸이 끝내 그려지지 않았습니다. 목록 자리
+  // (화면 높이 — QA-955)는 그대로라 패널은 그 아래이고, 상한을 넘겨 목록이 오면 그때 짧은 목록이면 패널이 올라올 수 있습니다.
+  const [recordsCapOver, setRecordsCapOver] = useState(false);
+  useEffect(() => {
+    if (!korea || listSettled || recordsCapOver) return;
+    const timer = window.setTimeout(() => setRecordsCapOver(true), FIRST_ANSWER_CAP_MS);
+    return () => window.clearTimeout(timer);
+  }, [korea, listSettled, recordsCapOver]);
+
   if (!code) {
     return (
       <Callout tone="neutral">
@@ -187,35 +209,6 @@ export function DecisionsSection({
           ? "결정을 내는 한국 계좌가 아직 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 규칙·Claude 계좌가 생깁니다(쉬는 사유는 위 경고)."
           : "결정을 내는 계좌가 아직 없습니다 — 개요 탭에서 초기화하면 규칙 계좌·Claude 계좌가 생깁니다."}
       </Callout>
-    );
-  }
-
-  const views = (
-    <div role="group" aria-label="결정 로그 보기" className={`inline-flex w-fit ${SEGMENT_TRACK}`}>
-      {DECISION_VIEWS.map((entry) => {
-        const active = entry.key === view;
-        return (
-          <button
-            key={entry.key}
-            type="button"
-            aria-pressed={active}
-            onClick={() => setView(entry.key)}
-            // 공용 세그먼트 — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌). 높이(좁은 화면 44px)는
-            // segmentClasses가 정하고 여기서는 여백·글자 크기만 붙입니다.
-            className={`px-3 text-[13px] lg:px-2.5 ${segmentClasses(active)} ${FOCUS_RING}`}
-          >
-            {entry.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-  if (view === "reviews") {
-    return (
-      <>
-        {views}
-        <ReviewsSection onOpenProposal={onOpenProposal} market={market} books={books} />
-      </>
     );
   }
 
@@ -256,114 +249,170 @@ export function DecisionsSection({
     setConfirmingFor(null);
   };
 
+  // 머리 칸(작업대 P6 — PaperTabHeader)의 계좌 고르기 선택지와 '지금 결정 실행'. 복기 보기도 같은 꼴의 보이지 않는 자리로 그립니다(QA-957 — 아래).
+  const accountOptions = bookOptions(decisionBooks(books));
+  const headerActions: ActionBarItem[] = showRun ? [{
+    id: RUN_ACTION,
+    label: run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행",
+    // Claude 계좌는 화면 안 확인 상자를 엽니다(비용·하루 상한) — 규칙 계좌는 지금처럼 바로 실행.
+    onSelect: () => (claude ? openConfirm() : void runNow()),
+    disabled: run.busy || blocked !== null || confirming,
+    expanded: claude ? confirming : undefined,
+    controls: claude ? confirmId : undefined,
+  }] : [];
+  // 보기를 바꾸면 보기 영역(세그먼트 + 그 보기)이 누른 때의 화면 아래 끝까지는 남게 합니다(QA-957) — 복기 보기(읽는 중 한 줄 등)가 짧으면 문서가 줄며
+  // 스크롤이 위로 당겨져 누른 단추가 아래로 움직였습니다. 머리 칸은 두 보기가 같은 꼴이라(복기는 보이지 않는 자리) 단추 위쪽 높이도 그대로입니다.
+  const changeView = (key: DecisionViewKey) => {
+    const area = viewAreaRef.current;
+    if (area) setViewKeep(Math.max(0, Math.ceil(window.scrollY + window.innerHeight - (area.getBoundingClientRect().top + window.scrollY))));
+    setView(key);
+  };
+  const viewAreaStyle = viewKeep === null ? undefined : { minHeight: `${viewKeep}px` };
+  const views = (
+    <div role="group" aria-label="결정 로그 보기" className={`inline-flex w-fit ${SEGMENT_TRACK}`}>
+      {DECISION_VIEWS.map((entry) => {
+        const active = entry.key === view;
+        return (
+          <button
+            key={entry.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => changeView(entry.key)}
+            // 공용 세그먼트 — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌). 높이(좁은 화면 44px)는
+            // segmentClasses가 정하고 여기서는 여백·글자 크기만 붙입니다.
+            className={`px-3 text-[13px] lg:px-2.5 ${segmentClasses(active)} ${FOCUS_RING}`}
+          >
+            {entry.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  if (view === "reviews") {
+    return (
+      <>
+        {/* 복기는 계좌를 고르지 않습니다 — 머리 칸에는 결정 기록 보기와 같은 꼴의 보이지 않는 자리(낭독·포커스 없음)만 둬, 보기를 바꿔도 머리 높이가
+            그대로입니다(QA-957 — 예전에는 칸이 비며 세그먼트가 390 −52px·1024 −38px 올라감). */}
+        <PaperTabAccount reserve value={code} options={accountOptions} onChange={pickBook} />
+        <PaperTabActions reserve label="결정 동작" actions={headerActions} />
+        <div ref={viewAreaRef} data-decision-view="reviews" className="flex flex-col gap-6" style={viewAreaStyle}>
+          {views}
+          <ReviewsSection onOpenProposal={onOpenProposal} market={market} books={books} />
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       {/* 머리 칸(작업대 P6 — PaperTabHeader): 계좌 고르기와 '지금 결정 실행'. 고르기·실행 상태와 확인 상자·결과 알림은 아래 '결정' 칸에 그대로 둡니다.
           한국 규칙 계좌는 수동 결정이 없어 동작이 없습니다(빈 목록 — 머리에 그리지 않음). */}
-      <PaperTabAccount value={code} options={bookOptions(decisionBooks(books))} onChange={pickBook} />
-      <PaperTabActions
-        label="결정 동작"
-        actions={showRun ? [{
-          id: RUN_ACTION,
-          label: run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행",
-          // Claude 계좌는 화면 안 확인 상자를 엽니다(비용·하루 상한) — 규칙 계좌는 지금처럼 바로 실행.
-          onSelect: () => (claude ? openConfirm() : void runNow()),
-          disabled: run.busy || blocked !== null || confirming,
-          expanded: claude ? confirming : undefined,
-          controls: claude ? confirmId : undefined,
-        }] : []}
-      />
-      {views}
-      <Panel
-        title="결정"
-        source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
-        actions={<Freshness refreshError={list.refreshError} />}
-      >
-        {/* 머리 '지금 결정 실행'의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안 — 단추가 머리로 옮겨 결과 글과 떨어졌고 끝나면 포커스가 머리로 돌아가므로,
-            이 영역이 없으면 낭독기 사용자는 비용이 드는 쓰기의 성공·실패를 듣지 못합니다(보유·체결 탭과 같음 — QA-771). 패널 본문 맨 앞 — 긴 계좌 설명·결정 창
-            아래에 두면 좁은 화면에서 머리 단추를 누른 첫 화면 밖에 떴습니다(QA-813). 비어 있으면 높이·간격이 없습니다. */}
-        <div role="status" className="mb-3 flex flex-col gap-2 empty:mb-0">
-          {runError && <Callout tone="warn">{runError}</Callout>}
-          {runView && <Callout tone={runView.tone}>{runView.text}</Callout>}
-        </div>
-        <p className="text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
-        {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
-        {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
-        {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
-        {korea && code === "kr_claude2" && (
-          <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} />
-        )}
-        {/* 자유 시점 판의 장중 판단(ADR 0027) — 그 계좌의 스위치가 켜져 있거나 계획 행이 있을 때만(상태 응답 intraday). */}
-        {claude && status.data?.available && (
-          <IntradayPlansPanel
-            intraday={status.data.intraday}
-            book={code}
-            bookLabel={book?.label}
-            market={market}
-            onChanged={() => {
-              void status.reload();
-              onChanged();
-            }}
-          />
-        )}
-        {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
-        {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
-        {confirming && (
-          <div id={confirmId} className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
-            <p id={confirmTextId} className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
-            {korea && (
-              <p id={`${confirmTextId}-kr`} className="text-xs leading-relaxed text-warn">
-                {krManualDecisionNote(manualLimit, krDecisionWindowText(settings.data?.available ? settings.data.body : null))}
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" onClick={() => void runNow()} disabled={run.busy}>
-                {run.busy ? `결정 중… ${elapsed}초` : "결정 실행 확인"}
-              </Button>
-              <button
-                ref={confirmCancelRef}
-                type="button"
-                onClick={cancelConfirm}
-                disabled={run.busy}
-                aria-describedby={korea ? `${confirmTextId} ${confirmTextId}-kr` : confirmTextId}
-                className={buttonClasses()}
-              >
-                취소
-              </button>
-            </div>
+      <PaperTabAccount value={code} options={accountOptions} onChange={pickBook} />
+      <PaperTabActions label="결정 동작" actions={headerActions} />
+      <div ref={viewAreaRef} data-decision-view="decisions" className="flex flex-col gap-6" style={viewAreaStyle}>
+        {views}
+        <Panel
+          title="결정"
+          source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
+          actions={<Freshness refreshError={list.refreshError} />}
+        >
+          {/* 머리 '지금 결정 실행'의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안 — 단추가 머리로 옮겨 결과 글과 떨어졌고 끝나면 포커스가 머리로 돌아가므로,
+              이 영역이 없으면 낭독기 사용자는 비용이 드는 쓰기의 성공·실패를 듣지 못합니다(보유·체결 탭과 같음 — QA-771). 패널 본문 맨 앞 — 긴 계좌 설명·결정 창
+              아래에 두면 좁은 화면에서 머리 단추를 누른 첫 화면 밖에 떴습니다(QA-813). 비어 있으면 높이·간격이 없습니다. */}
+          <div role="status" className="mb-3 flex flex-col gap-2 empty:mb-0">
+            {runError && <Callout tone="warn">{runError}</Callout>}
+            {runView && <Callout tone={runView.tone}>{runView.text}</Callout>}
           </div>
-        )}
-      </Panel>
+          <p className="text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
+          {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
+          {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
+          {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
+          {korea && code === "kr_claude2" && (
+            <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} />
+          )}
+          {/* 자유 시점 판의 장중 판단(ADR 0027) — 그 계좌의 스위치가 켜져 있거나 계획 행이 있을 때만(상태 응답 intraday). */}
+          {claude && status.data?.available && (
+            <IntradayPlansPanel
+              intraday={status.data.intraday}
+              book={code}
+              bookLabel={book?.label}
+              market={market}
+              onChanged={() => {
+                void status.reload();
+                onChanged();
+              }}
+            />
+          )}
+          {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
+          {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
+          {confirming && (
+            <div id={confirmId} className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
+              <p id={confirmTextId} className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
+              {korea && (
+                <p id={`${confirmTextId}-kr`} className="text-xs leading-relaxed text-warn">
+                  {krManualDecisionNote(manualLimit, krDecisionWindowText(settings.data?.available ? settings.data.body : null))}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="primary" onClick={() => void runNow()} disabled={run.busy}>
+                  {run.busy ? `결정 중… ${elapsed}초` : "결정 실행 확인"}
+                </Button>
+                <button
+                  ref={confirmCancelRef}
+                  type="button"
+                  onClick={cancelConfirm}
+                  disabled={run.busy}
+                  aria-describedby={korea ? `${confirmTextId} ${confirmTextId}-kr` : confirmTextId}
+                  className={buttonClasses()}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+        </Panel>
 
-      <Panel
-        title={`결정 기록 (최근 ${RECENT_LIMIT}건)`}
-        subtitle={korea
-          ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 자료 게이트·기한 지남·선정·주문을 봅니다."
-          : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 선정·신호·주문·게이트(참고)를 봅니다."}
-        source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
-      >
-        {list.loading && !list.data && <Loading label="결정 기록을 읽는 중…" />}
-        {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
-        {list.data && !list.data.available && <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>}
-        {list.data?.available && (
-          <DecisionTimeline
-            rows={list.data.decisions ?? []}
-            showExposure={claude}
-            market={market}
-            selectedKey={openKey}
-            onSelectedKeyChange={setOpenKey}
+        <Panel
+          title={`결정 기록 (최근 ${RECENT_LIMIT}건)`}
+          subtitle={korea
+            ? "KR 거래일마다 종류별로 한 건(같은 세션 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 자료 게이트·기한 지남·선정·주문을 봅니다."
+            : "거래일마다 종류별로 한 건(같은 날 다시 돌아도 새로 만들지 않음). 결정을 고르면 그 결정의 선정·신호·주문·게이트(참고)를 봅니다."}
+          source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
+        >
+          {list.loading && !list.data && (
+            // 처음 읽는 동안은 화면 높이 이상의 자리(QA-955 — 최근 50건까지의 긴 목록, QA-892 순위와 같음): 한 줄이던 때는 목록이 오며 첫 화면 안에 들어온
+            // 아래 패널(한국 '출발·게이트 기록')을 밀었습니다. 실패 뒤 다시 읽는 동안은 한 줄(QA-655). 이 화면에서 목록을 한 번이라도 받았으면(listSettled)
+            // 계좌를 바꿔 다시 읽는 동안도 한 줄 — 바꿀 때마다 화면 높이 자리가 생겼다 짧은 목록에 다시 줄며 아래 패널이 오르내렸습니다(QA-971).
+            firstLoadPending(list) && !listSettled ? (
+              <div className="min-h-dvh">
+                <Loading label="결정 기록을 읽는 중…" />
+              </div>
+            ) : (
+              <Loading label="결정 기록을 읽는 중…" />
+            )
+          )}
+          {list.error && <ErrorState message={list.error} onRetry={list.reload} />}
+          {list.data && !list.data.available && <Callout tone="warn">{list.data.message ?? "결정 기록을 읽을 수 없습니다."}</Callout>}
+          {list.data?.available && (
+            <DecisionTimeline
+              rows={list.data.decisions ?? []}
+              showExposure={claude}
+              market={market}
+              selectedKey={openKey}
+              onSelectedKeyChange={setOpenKey}
+            />
+          )}
+        </Panel>
+
+        {korea && (listSettled || listDone || recordsCapOver) && (
+          <KrStartRecordsCard
+            jobs={statusJobs}
+            loading={status.loading && !status.data}
+            error={status.error}
+            onRetry={status.reload}
           />
         )}
-      </Panel>
-
-      {korea && (
-        <KrStartRecordsCard
-          jobs={statusJobs}
-          loading={status.loading && !status.data}
-          error={status.error}
-          onRetry={status.reload}
-        />
-      )}
+      </div>
     </>
   );
 }

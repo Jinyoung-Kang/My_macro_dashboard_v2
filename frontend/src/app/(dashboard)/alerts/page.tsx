@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState, type FocusEvent, type MouseEvent } from "react";
+import { FormEvent, useEffect, useId, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
-import { Button, buttonClasses, Callout, ErrorState, Freshness, inputClasses, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag, useFocusAfterWrite } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -14,6 +14,7 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
+import { securityInboxHref } from "@/lib/security";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
@@ -24,8 +25,6 @@ type RuleAction = "toggle" | "delete";
 /** 규칙 표 안 작은 단추 — 공용 Button(sm)과 같은 모양에, 요청 중(aria-disabled)이면 꺼진 단추처럼 보임(QA-898 — 원문 번역 단추 QA-887과 같은 꼴). */
 const RULE_BUTTON = `${buttonClasses("default", "sm")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`;
 
-/** 폼 이름표 — 공용 고르기 상자(Select)와 같은 13px 보조 글(text-2), 위 이름표·아래 칸(form-label-styles-mixed의 이 화면 몫 — 예전 12px text-3). */
-const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
 
 /**
  * 알림 — 화면 알림함과 알림 규칙(명세 C, D2: 화면 알림함만).
@@ -34,6 +33,8 @@ const FIELD_LABEL = "flex min-w-0 flex-col gap-1 text-[13px] text-text-2";
  * 규칙을 만든 날 이후의 사건만 들어오고, 사건은 수집이 확정된 데이터로만 만듭니다(잠정치 제외).
  * 데모 열람(ADR 0013)은 읽기 전용이라 읽음 처리·규칙 만들기·켜기/끄기·지우기를 막습니다(백엔드도 403).
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH — 그 대상에서 켠 것, 규칙 없음)은 제목을 누르면 그 대상의 타임라인으로 갑니다(정보 검색 화면 안쪽 주소만).
+ * 보안 공지 해당 알림(SECURITY_NOTICE — 운영자, 규칙 없음, ADR 0046)은 검사 칸의 '보안 공지에서 보기'가 그 공지의 검사 칸을 연 보안 공지 화면으로 갑니다
+ * (`/security?ntt=<번호>` — 보안 공지 화면 안쪽 주소만, lib/security).
  * 그 알림은 규칙 없이 들어오므로 빈 알림함과 규칙 만들기(알림 종류 목록 아래)에 어디서 켜고 끄는지 적습니다(QA-443 — 데모 열람은 관심 대상을 읽지 않아 빼고).
  *
  * 작업대 P7(실행 명세 §7 7행 '알림: 타임라인과 필터 태그'): 알림함은 시각순 목록(Timeline — 발생일 열·종류 태그·제목 + '새 알림'·'지난 사건' 태그) + 화면 안
@@ -68,11 +69,15 @@ export default function AlertsPage() {
   // 규칙 표 줄의 쓰기(QA-898). 단추의 켜짐 조건은 예전 그대로(disabled={demo})이고, 그 줄의 쓰기와 뒤따른 규칙 다시 읽기가 끝날 때까지 같은 줄 두 단추의
   // 누름만 무시합니다(aria-disabled로 요청 중임을 알림 — 진짜 disabled가 아니라 포커스가 남음). 예전에는 두 번 누르거나 Enter를 되풀이하면 같은 POST·DELETE가
   // 두 번 가고, 두 번째 DELETE는 서버 404라 지운 직후 경고가 떴습니다. 경로·메서드·본문·확인 없음은 그대로(moreWritesKeep). 다른 줄은 그대로 누를 수 있습니다.
-  // 누른 단추에 포커스가 있었고 끝난 뒤 포커스가 <body>면(지운 줄이 사라짐 등) 그 줄의 같은 단추 → 누를 때의 다음 줄의 같은 단추 → 표(가로 스크롤 상자)로 옮깁니다.
+  // 누른 단추에 포커스가 있었고 끝난 뒤 포커스가 <body>면(지운 줄이 사라짐 등) 그 줄의 같은 단추 → 누를 때의 다음 줄의 같은 단추 → 표(가로 스크롤 상자 — 넘치지 않아
+  // 영역이 아닐 때도 data-scroll-box·tabIndex -1로 남음, QA-939)로 옮깁니다.
   const ruleBusy = useRef(new Set<number>());
   const [busyRules, setBusyRules] = useState<ReadonlySet<number>>(() => new Set());
   const [ruleRefocus, setRuleRefocus] = useState<{ id: number; action: RuleAction; next: number | null } | null>(null);
   const rulesTable = useRef<HTMLDivElement>(null);
+  // 규칙 줄의 두 단추는 줄마다 이름이 같아('켜짐 — 끄기'·'지우기') 낭독 설명으로 그 줄의 규칙 설명(행 머리 칸의 글)을 가리킵니다(보이는 글·이름은 그대로 — QA-900).
+  const ruleNamePrefix = useId();
+  const ruleNameId = (id: number) => `${ruleNamePrefix}-rule-${id}`;
   useEffect(() => {
     if (ruleRefocus === null) return;
     setRuleRefocus(null);
@@ -82,7 +87,7 @@ export default function AlertsPage() {
     if (box === null) return;
     const find = (id: number | null) =>
       id === null ? null : box.querySelector<HTMLElement>(`[data-rule-id="${id}"][data-rule-action="${ruleRefocus.action}"]`);
-    (find(ruleRefocus.id) ?? find(ruleRefocus.next) ?? box.querySelector<HTMLElement>('[role="region"]'))?.focus();
+    (find(ruleRefocus.id) ?? find(ruleRefocus.next) ?? box.querySelector<HTMLElement>("[data-scroll-box]"))?.focus();
   }, [ruleRefocus]);
   const ruleWrite = async (event: MouseEvent<HTMLButtonElement>, row: AlertRule, action: RuleAction) => {
     if (ruleBusy.current.has(row.id)) return;
@@ -104,9 +109,22 @@ export default function AlertsPage() {
     }
   };
 
+  // '모두 읽음' — 다시 읽은 읽지 않은 수가 0이면 단추가 켜짐 조건으로 꺼집니다. 그 단추에 있던 포커스를 알림함 제목(알림 목록 머리)으로(QA-905 — 공용
+  // useFocusAfterWrite, 예전에는 <body>로 떨어짐). 쓰기·다시 읽기·벨 알림의 차례와 본문은 그대로입니다.
+  const focusAfterWrite = useFocusAfterWrite();
+  const readAll = async () => {
+    const done = focusAfterWrite(document.activeElement);
+    await read.run(null);
+    const reloaded = inbox.reload();
+    notifyAlertsRead();
+    await reloaded;
+    done();
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (demo) return;
+    // 요청 중이면 다시 보내지 않습니다 — 단추는 요청 동안 aria-disabled라(QA-899) 입력칸 Enter의 폼 보내기를 막지 못합니다.
+    if (demo || create.busy) return;
     const params: Record<string, unknown> =
       kind === "FOREIGN_STREAK" ? { target, n: Number(days), ...(target === "STOCK" ? { code } : {}) }
         : kind === "INSTITUTION_NEW" ? { cik }
@@ -134,7 +152,7 @@ export default function AlertsPage() {
           <span className="flex items-center gap-2">
             {/* 자동 갱신(5분)이 실패하면 새 알림이 들어오지 않은 채 남으므로 '새로 읽지 못함'을 붙입니다(QA-104). */}
             <Freshness refreshError={inbox.refreshError} />
-            <Button onClick={async () => { await read.run(null); void inbox.reload(); notifyAlertsRead(); }} disabled={demo || read.busy || !inbox.data?.unread}>
+            <Button onClick={() => void readAll()} disabled={demo || !inbox.data?.unread} busy={read.busy}>
               모두 읽음
             </Button>
           </span>
@@ -184,7 +202,7 @@ export default function AlertsPage() {
             rowKey={(row) => String(row.id)}
             emptyText="규칙이 없습니다."
             columns={[
-              { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => withoutLeadingIcon(row.description) },
+              { key: "desc", header: "알림", rowHeader: true, className: "min-w-[12rem] break-keep", cell: (row) => <span id={ruleNameId(row.id)}>{withoutLeadingIcon(row.description)}</span> },
               { key: "created", header: "만든 날", className: "whitespace-nowrap", cell: (row) => formatKst(row.createdAt) },
               {
                 key: "enabled",
@@ -195,6 +213,7 @@ export default function AlertsPage() {
                     type="button"
                     disabled={demo}
                     aria-disabled={busyRules.has(row.id) || undefined}
+                    aria-describedby={ruleNameId(row.id)}
                     data-rule-id={row.id}
                     data-rule-action="toggle"
                     onClick={(event) => void ruleWrite(event, row, "toggle")}
@@ -213,6 +232,7 @@ export default function AlertsPage() {
                     type="button"
                     disabled={demo}
                     aria-disabled={busyRules.has(row.id) || undefined}
+                    aria-describedby={ruleNameId(row.id)}
                     data-rule-id={row.id}
                     data-rule-action="delete"
                     onClick={(event) => void ruleWrite(event, row, "delete")}
@@ -246,7 +266,7 @@ export default function AlertsPage() {
                 <label className={FIELD_LABEL}>
                   종목코드(6자리)
                   <input value={code} onChange={(event) => setCode(event.target.value.trim())} placeholder="005930"
-                    className={`w-full sm:max-w-[22rem] ${inputClasses()}`} />
+                    className={FIELD_INPUT} />
                 </label>
               )}
               <Select label="연속 일수" value={days} onChange={setDays}
@@ -265,7 +285,7 @@ export default function AlertsPage() {
           {create.error && <Callout tone="warn">{create.error}</Callout>}
           {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}
           <Button variant="primary" type="submit"
-            disabled={demo || create.busy || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))}>
+            disabled={demo || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))} busy={create.busy}>
             {create.busy ? "만드는 중…" : "규칙 만들기"}
           </Button>
           {demo && <p className="text-xs text-text-3">{DEMO_READ_ONLY}</p>}
@@ -443,7 +463,9 @@ function InboxDetail({
   readError: string | null;
   onRead: (id: number) => Promise<void>;
 }) {
-  const href = searchWatchInboxHref(item);
+  const watchHref = searchWatchInboxHref(item);
+  const securityHref = watchHref ? null : securityInboxHref(item);
+  const href = watchHref ?? securityHref;
   return (
     <div data-inbox-detail={item.id} className="flex min-w-0 flex-col gap-3">
       <PropertyList
@@ -460,7 +482,7 @@ function InboxDetail({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {href ? (
             <Link href={href} className={LINK_CLASSES}>
-              정보 검색에서 보기
+              {securityHref ? "보안 공지에서 보기" : "정보 검색에서 보기"}
             </Link>
           ) : null}
           {!item.read && !demo ? (

@@ -223,7 +223,7 @@ class PaperLedgerDbTest {
     }
 
     @Test
-    @DisplayName("미국 시각 지정 체결(1-4)을 실제 표로 — AT_1000 매수는 1분봉 T 봉으로 체결(bar_at·fill_rung·출처), 종일 거래 없는 AT_1100은 마감 뒤 NO_TRADE_AFTER_T 만료, 장중 시장가 MARKET(V18 — 10:02:10 생성 → T 10:04)은 그 T 봉으로 체결(시험 계좌 claude2는 시작·끝에 지움 — V14·V17 재실행 안전)")
+    @DisplayName("미국 시각 지정 체결(1-4)을 실제 표로 — AT_1000 매수는 1분봉 T 봉으로 체결(bar_at·fill_rung·출처), 종일 거래 없는 AT_1100은 마감 뒤 NO_TRADE_AFTER_T 만료, 장중 시장가 MARKET(V18 — 10:03:10 생성 → T 10:04, 생성 분 10:03 봉은 쓰지 않음)은 그 T 봉으로 체결(시험 계좌 claude2는 시작·끝에 지움 — V14·V17 재실행 안전)")
     void timedFillsOnRealTables() {
         assertThat(store.insertBookIfAbsent(new PaperStore.Book(TIMED_BOOK, PaperBooks.KIND_CLAUDE, "시험용 계좌2", 100_000,
                 FRI, PaperBooks.ACTIVE, null))).isTrue();
@@ -235,7 +235,7 @@ class PaperLedgerDbTest {
         long halted = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "BBB", "BUY", 5, null, null, "AT_1100",
                 "CLAUDE", "PENDING", null, null, MON, decided, tue, null));
         long market = store.insertOrder(new PaperStore.Order(0, TIMED_BOOK, null, "CCC", "BUY", 3, null, null, "MARKET",
-                "CLAUDE", "PENDING", null, null, MON, Instant.parse("2026-10-27T14:02:10Z"), tue, null));
+                "CLAUDE", "PENDING", null, null, MON, Instant.parse("2026-10-27T14:03:10Z"), tue, null));
         Instant w = Instant.parse("2026-10-27T20:20:00Z");   // 16:20 EDT — 화요일 확정 종가 관측치
         ExecutionAuditFixtures.Bars bars = new ExecutionAuditFixtures.Bars(w.plusSeconds(60))
                 .market(java.time.LocalTime.of(10, 4))

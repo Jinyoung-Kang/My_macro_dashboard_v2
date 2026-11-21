@@ -71,6 +71,12 @@ import java.util.TreeSet;
  * 마감일 때만(마지막 관측치의 세션 = D, D 뒤 체결 없음). 그날까지의 체결이 모두 확정되고 모든 보유가 금융위 D 종가로 평가되고 D 이하 봉으로 나중에
  * 체결될 수 있는 대기 주문이 없으면({@link #pendingThrough}) {@code prices_final = true}, 아니면 잠정(이번에 확정한 체결이 있으면 고친 현금으로 다시 씀).
  * 미처리 기업행위 보유는 묶인 평가 그대로라 그 줄은 잠정입니다.
+ *
+ * <p><b>장중 기록 STOP의 되감기</b>(ADR 0045 — ADR 0021 결정 3 일부 개정): 스위치 {@code kr.stopWatch.fill = ON}이면 D+1 오전에 장중 감시 STOP 매도가
+ * 장부에 먼저 적혀 'D 뒤 체결'이 생기는데, 금융위 D는 D+1 13시대에 옵니다. D 뒤 체결이 모두 그런 장중 기록 STOP 매도(근거 {@code intradayFill.mode = ON})이고
+ * 그 관측일이 D 다음 거래일이면 줄을 거부하지 않고, 장중 기록이 없던 세계로 되감아 셉니다({@link #intradayRewind}): 판 종목을 금융위 D 시세 읽기에 넣고, 보유는
+ * 체결 행의 수량과 근거의 기록 직전 사본({@code intradayFill.before})의 평가 가격·평단으로 되살리며(줄을 셀 사본에만 — 저장된 보유는 그대로), 현금은 체결 행의
+ * 현금 흐름({@link KrxCosts#cashFlow})을 뺍니다. 그래서 그 줄은 밤 일괄이었다면 13시대에 썼을 줄과 같습니다. 장중 기록이 없으면 지금과 같은 길입니다.
  */
 final class KrConfirmations {
 
@@ -200,6 +206,9 @@ final class KrConfirmations {
         Map<String, Position> positions = new TreeMap<>();
         store.positions(book.code()).forEach(position -> positions.put(position.ticker(), position));
         Set<String> codes = new TreeSet<>(positions.keySet());
+        // 장중 기록 STOP의 되감기(클래스 설명 — ADR 0045): 판 종목을 금융위 D 시세 읽기에 넣어야 되살린 보유를 금융위 D 종가로 평가합니다.
+        Rewind rewind = line.isPresent() ? intradayRewind(run, book, state, line.get().tradingDate()) : Rewind.NONE;
+        rewind.positions().forEach(p -> codes.add(p.ticker()));
         LocalDate from = navDay;
         for (UnconfirmedFill unconfirmed : pending) {
             codes.add(unconfirmed.fill().ticker());
@@ -232,9 +241,88 @@ final class KrConfirmations {
         }
         LocalDate finalized = null;
         if (line.isPresent() && (confirmed > 0 || lineOpen)) {
-            finalized = rewriteNav(run, book, state, line.get(), cashNow, positions, left, fsc, confirmed > 0, notes);
+            double lineCash = cashNow;
+            Map<String, Position> lineHeld = positions;
+            if (rewind.applies()) {
+                // 줄을 셀 사본만 되감습니다 — 지금 상태(현금)와 저장된 보유는 장중 기록 그대로(그 줄만 밤 일괄 세계로 셈).
+                lineCash = PaperLedger.round4(cash.subtract(rewind.cashFlow()).doubleValue());
+                lineHeld = new TreeMap<>(positions);
+                for (Position p : rewind.positions()) {
+                    lineHeld.put(p.ticker(), p);
+                }
+            }
+            finalized = rewriteNav(run, book, state, line.get(), lineCash, lineHeld, left, fsc, confirmed > 0, rewind, notes);
         }
         return new Result(confirmed, finalized, notes);
+    }
+
+    /**
+     * 확정 순자산 줄의 되감기 값(ADR 0045) — 되살릴 보유(체결 행의 수량, 근거 {@code intradayFill.before}의 평단·평가 가격)와 뺄 현금 흐름(체결 행 —
+     * {@link KrxCosts#cashFlow}, 확정 조정 {@link #confirmFill}의 잠정 쪽과 같은 식).
+     */
+    private record Rewind(List<Position> positions, BigDecimal cashFlow) {
+
+        static final Rewind NONE = new Rewind(List.of(), BigDecimal.ZERO);
+
+        boolean applies() {
+            return !positions.isEmpty();
+        }
+
+        String tickers() {
+            return String.join("·", positions.stream().map(Position::ticker).toList());
+        }
+    }
+
+    /**
+     * 그 줄(거래일 D)을 되감아 셀 장중 기록 STOP(클래스 설명) — D 뒤 체결이 하나 이상이고 <b>모두</b> 장중 기록 STOP 매도(출처 STOP·매도·근거
+     * {@code intradayFill.mode = ON})이며 관측일이 D 다음 거래일이고, 기록 직전 보유 사본이 있고 그 종목이 지금 보유에 없을 때만 그 값. 아니면
+     * {@link Rewind#NONE} — 그때는 지금처럼 'D 뒤 체결이 있음'으로 줄을 다시 쓰지 않습니다({@link #stateMovedPast}). 마지막 처리 세션이 D가 아니면 읽지
+     * 않습니다(그 판정은 {@link #stateMovedPast}가 함).
+     */
+    private Rewind intradayRewind(MarketRun run, Book book, BookState state, LocalDate day) {
+        if (state.lastProcessedCollectedAt() == null) {
+            return Rewind.NONE;
+        }
+        TradingCalendar calendar = run.calendar();
+        LocalDate next;
+        try {
+            if (!day.equals(KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), calendar))) {
+                return Rewind.NONE;
+            }
+            next = calendar.nextTradingDay(day);
+        } catch (com.macrodash.analytics.CalendarUnavailableException e) {
+            return Rewind.NONE;
+        }
+        Optional<LocalDate> latest = store.latestFillDate(book.code());
+        if (latest.isEmpty() || !latest.get().isAfter(day)) {
+            return Rewind.NONE;   // D 뒤 체결 없음 — 되감을 것 없음(지금과 같은 길)
+        }
+        List<PaperStore.OrderFill> after = store.fillsObservedAfter(book.code(), day);
+        Set<String> held = new TreeSet<>();
+        store.positions(book.code()).forEach(p -> held.add(p.ticker()));
+        List<Position> restored = new ArrayList<>();
+        BigDecimal flow = BigDecimal.ZERO;
+        for (PaperStore.OrderFill of : after) {
+            Order order = of.order();
+            Fill fill = of.fill();
+            tools.jackson.databind.JsonNode record = order.reason() == null ? null : order.reason().get(KrIntradayFill.FIELD);
+            if (!PaperBooks.SOURCE_STOP.equals(order.source()) || !PaperBooks.SELL.equals(fill.side())
+                    || !KrStopFill.ON.name().equals(com.macrodash.support.Json.asText(record, KrIntradayFill.MODE))
+                    || !next.equals(fill.observationDate()) || held.contains(fill.ticker())) {
+                return Rewind.NONE;
+            }
+            Position before = KrIntradayFill.position(book.code(), fill.ticker(), record.get(KrIntradayFill.BEFORE));
+            if (before == null) {
+                return Rewind.NONE;
+            }
+            restored.add(new Position(book.code(), fill.ticker(), fill.qty(), before.avgCost(), before.openedOn(), before.openedAt(),
+                    before.highWatermark(), before.watermarkAt(), before.lastPrice(), before.lastPriceAt(), before.priceStale(),
+                    before.fillRefDate(), before.fillRefClose(), before.splitNote()));
+            held.add(fill.ticker());
+            flow = flow.add(KrxCosts.cashFlow(PaperLedger.Side.SELL, BigDecimal.valueOf(fill.price()).multiply(BigDecimal.valueOf(fill.qty())),
+                    fill.fee(), fill.tax(), fill.slippageCost()));
+        }
+        return restored.isEmpty() ? Rewind.NONE : new Rewind(List.copyOf(restored), flow);
     }
 
     /**
@@ -255,9 +343,9 @@ final class KrConfirmations {
      */
     private LocalDate rewriteNav(MarketRun run, Book book, BookState state, NavRow line, double cash,
                                  Map<String, Position> positions, List<UnconfirmedFill> left, KrConfirmed fsc,
-                                 boolean cashChanged, List<String> notes) {
+                                 boolean cashChanged, Rewind rewind, List<String> notes) {
         LocalDate day = line.tradingDate();
-        String moved = stateMovedPast(run, book, state, day);
+        String moved = stateMovedPast(run, book, state, day, rewind.applies());
         if (moved != null) {
             if (cashChanged) {
                 notes.add("순자산 " + day + " 줄은 다시 쓰지 않음 — " + moved + "(확정 현금은 상태에 반영, 그 줄은 잠정 그대로)");
@@ -296,6 +384,10 @@ final class KrConfirmations {
         PaperLedger.Valuation valuation = PaperLedger.value(cash, qty, price);
         store.upsertNav(new NavRow(book.code(), day, PaperLedger.round4(valuation.nav()), PaperLedger.round4(cash),
                 PaperLedger.round4(valuation.equityValue()), PaperLedger.round4(valuation.exposurePct()), pricesFinal));
+        if (rewind.applies()) {
+            notes.add("순자산 " + day + " 줄은 " + day + " 뒤 장중 기록 STOP 매도 " + rewind.positions().size() + "건(" + rewind.tickers()
+                    + ")을 되감아 셈 — 보유·현금은 장중 기록 전(ADR 0045)");
+        }
         if (pricesFinal) {
             notes.add("순자산 " + day + " 확정(금융위 종가) " + won(BigDecimal.valueOf(PaperLedger.round4(valuation.nav())))
                     + "원 — 그날까지 체결 모두 확정·보유 모두 금융위 " + day + " 종가");
@@ -356,8 +448,9 @@ final class KrConfirmations {
      * 마지막 처리 저장본의 세션은 수집 시각의 세션이 아니라 그 저장본이 담은 자료의 세션({@link KrPaperMarket#targetSession} — 수집기
      * {@code kr_target_session}과 같은 20:30 규칙)입니다: D+1 낮에 다시 저장된 D 자료 저장본(1분봉 개장 봉 재요청 등)을 처리한 장부는 아직 D 마감입니다
      * (QA-336 — 수집 시각으로 세면 D+1로 봐 금융위 D 행이 들어와도 D 줄을 확정하지 않고, D+1 밤 줄이 생기면 그 줄은 잠정으로 영구히 남음. QA-331과 같은 꼴).
+     * D 뒤 체결이 모두 장중 기록 STOP 매도여서 되감아 세는 줄({@code rewound} — {@link #intradayRewind}, ADR 0045)은 그 체결을 보지 않습니다.
      */
-    private String stateMovedPast(MarketRun run, Book book, BookState state, LocalDate day) {
+    private String stateMovedPast(MarketRun run, Book book, BookState state, LocalDate day, boolean rewound) {
         if (state.lastProcessedCollectedAt() == null) {
             return "장부가 관측치를 처리한 적이 없음";
         }
@@ -369,6 +462,9 @@ final class KrConfirmations {
         }
         if (!day.equals(session)) {
             return "마지막으로 처리한 관측치의 세션이 " + session + "(그 줄 " + day + "이 아님)";
+        }
+        if (rewound) {
+            return null;   // D 뒤 체결은 모두 장중 기록 STOP 매도 — 되감아 셈(ADR 0045)
         }
         Optional<LocalDate> latest = store.latestFillDate(book.code());
         if (latest.isPresent() && latest.get().isAfter(day)) {

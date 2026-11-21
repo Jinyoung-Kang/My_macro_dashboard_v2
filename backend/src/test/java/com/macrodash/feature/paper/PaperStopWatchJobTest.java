@@ -111,7 +111,7 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @DisplayName("ON — 두 격자 모두 스탑가 이하면 STOP 한 건(T = 감지 + 60초 뒤 첫 분 시장가), 같은 저장본·다음 저장본에도 다시 내지 않음")
+    @DisplayName("ON — 두 격자 모두 스탑가 이하면 STOP 한 건(T = 감지 뒤 처음 시작하는 분 시장가), 같은 저장본·다음 저장본에도 다시 내지 않음")
     void onPlacesOneStop() {
         settings("ON", "OFF");
         usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
@@ -135,8 +135,8 @@ class PaperStopWatchJobTest {
             assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperStopWatchJob.STOP_MODE);
             assertThat(o.reason().path("stopPrice").asDouble()).isEqualTo(92.0);
             assertThat(o.reason().path("checks")).hasSize(2);
-            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 22, 0).toString());
-            assertThat(o.reason().path("note").asString()).contains("10:15", "10:20", "10:22 ET 시장가 매도");
+            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 21, 0).toString());
+            assertThat(o.reason().path("note").asString()).contains("10:15", "10:20", "10:21 ET 시장가 매도");
         });
         assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.job()).isEqualTo("stopwatch"));
 
@@ -146,6 +146,27 @@ class PaperStopWatchJobTest {
         clock.now = et(10, 25, 40);
         job.run();
         assertThat(stops()).as("대기 STOP이 곧 '이미 냄'").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("ADR 0044 결정 5 — 분 경계 직전의 ns 시계(10:20:59.999999700)로 낸 STOP의 생성 시각은 µs로 잘림(10:20:59.999999): 자르지 않으면 "
+            + "DB가 10:21:00으로 반올림해 장부가 다시 센 T(10:22)가 근거의 targetAt(10:21)과 갈림")
+    void stopCreatedAtIsTruncatedToMicros() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 91}), et(10, 19, 0));
+        clock.now = et(10, 20, 59).plusNanos(999_999_700);
+
+        job.run();
+
+        assertThat(stops()).singleElement().satisfies(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+            assertThat(o.createdAt()).isEqualTo(et(10, 20, 59).plusNanos(999_999_000));
+            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 21, 0).toString());
+            assertThat(ExecutionAudit.marketTarget(PaperFixtures.dbRounded(o.createdAt())))
+                    .as("DB에 쓴 생성 시각으로 장부가 다시 센 T = 근거의 targetAt").isEqualTo(et(10, 21, 0));
+        });
     }
 
     @Test

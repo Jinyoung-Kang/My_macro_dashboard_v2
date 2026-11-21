@@ -9,6 +9,7 @@ import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
+import com.macrodash.store.PaperStore.BookState;
 import com.macrodash.store.PaperStore.Checkpoint;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.IntradayPlan;
@@ -360,9 +361,12 @@ public class PaperKrIntradayJob {
         // 판단 이어받기(ADR 0038) — 한국 스위치를 켠 설정 행이면 밤 결정의 조건, 보유 종목의 진입 논거, 밤 결정 뒤의 사건 뉴스를 싣습니다(끄면 null —
         // 예전 패킷 그대로).
         Continuity.Intraday extra = Continuity.on(row.body(), true) ? continuity(code, c, source, row.body(), calledAt) : null;
-        Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
-                source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,
-                row.version(), calendar, clock.instant(), free), mapper, extra), row, claudeSettings, today, scheduled);
+        Attempt attempt = pipeline.attemptCheckpoint(version -> {
+            BookState state = store.state(code).orElse(null);
+            return KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf, source, state, store.positions(code), pendingOrders(code), watch,
+                    quotes, version, row.version(), calendar, clock.instant(), free, KrStopFill.effective(row.body()).records(),
+                    PaperKrCheckpointJob.intradayStopsRecorded(store, code, state, calendar)), mapper, extra);
+        }, row, claudeSettings, today, scheduled);
         if (attempt == null) {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }

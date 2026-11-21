@@ -62,6 +62,12 @@ import java.util.function.Supplier;
  *       선점한 주문(기준 시각이 지남)을 취소하지 않습니다 — 종가 주문은 아래 '따라 할 시각'의 예외가 있습니다.</li>
  * </ul>
  *
+ * <p><b>장중 기록 STOP의 거울 보기</b>(ADR 0045 — ADR 0033 결정 4 덧붙임): 한국 장중 감시 STOP을 장부에 장중에 적은 것(근거 {@code intradayFill.mode = ON})은
+ * 그 STOP 세션의 밤 처리 전까지 대기 STOP으로 되감아 보입니다 — 대기 주문·보유·현금을 읽는 모든 창({@link #openTargets}·{@link #targetsAt}·
+ * {@link #weightAfter}·{@link #dueOrders}·{@link #pendingStopSymbols}·{@link #claim}·{@link #orderStatus})이 같은 장부 한 벌({@code mirrorLedger})을
+ * 봅니다. 그래서 따라 하는 책이 규칙 계좌이고 그 세션 밤이 그 STOP을 체결할 때 실제 계좌·ISA 동작은 {@code kr.stopWatch.fill}과 상관없습니다(Claude 계좌를
+ * 따르면 장중 기록이 Claude의 입력을 바꿔 그 뒤 주문 자체가 달라질 수 있음 — ADR 0045). 장중 기록이 없으면 지금과 같은 값입니다.
+ *
  * <p><b>따라 할 시각</b>({@link DueOrder#mirrorAt}): 매시·장중 시장가·분 단위 지정 시각은 기준 시각 T 그대로. 종가({@code NEXT_CLOSE})는 T가 마감이라 그 전에
  * 종가 단일가에 넣어야 하므로 모의 달력의 종가 단일가 시작(마감 − {@link KrTimedLadder#CLOSING_AUCTION})입니다 — 이 시각과 마감 사이에 끝난 장중 교체는
  * (그 주문의 T가 아직 뒤라) 선점한 종가 주문을 취소할 수 있습니다. 그런 어긋남은 다음 시가 맞추기가 목표로 되돌립니다.
@@ -585,11 +591,12 @@ public class PaperMirrorService {
             if (state == null) {
                 return Optional.empty();
             }
-            List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+            Mirror view = mirrorLedger(code, state, calendar);
+            List<Order> pending = view.pending();
             Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
             Map<String, Position> held = new TreeMap<>();
             Map<String, Double> price = new HashMap<>();
-            ledgerPositions(store.positions(code), held, price);
+            ledgerPositions(view.positions(), held, price);
             Map<Long, Instant> targets = new HashMap<>();
             List<Order> due = openOrders(pending, session, run, targets);
             if (cutoff != null) {
@@ -597,7 +604,7 @@ public class PaperMirrorService {
             }
             List<Order> stale = staleStops(pending, session, calendar, held, targets);
             due.addAll(stale);
-            ExpectedState.State expected = ExpectedState.simulate(state.cash(), held, price, new ArrayList<>(due), targets, session,
+            ExpectedState.State expected = ExpectedState.simulate(view.cash(), held, price, new ArrayList<>(due), targets, session,
                     cutoff != null ? cutoff : calendar.openInstant(session), lastPrice(quotes));
             if (!(expected.nav() > 0)) {
                 return Optional.empty();
@@ -709,7 +716,7 @@ public class PaperMirrorService {
      * 그 책의 대기 STOP 매도 가운데 목표 세션이 {@code session}인 것과 목표 세션이 지났는데 아직 대기인 것(만료 전 — {@link #staleStop}, QA-328)의 종목(ADR
      * 0033 결정 4) — 실제 매매가 매수를 보내기 직전(묶음 재시도·마무리·장중 따라 하기) 이 종목을 뺍니다(방금 판 종목을 재시도가 다시 사지 않게 — 통합
      * 검토 R2, 지난 세션에 따라 판 종목을 장부가 그 STOP을 체결하기 전에 다시 사지 않게). 출처 STOP의 모든 시점(시가·장중 시장가·지정 시각·종가)을
-     * 봅니다. 한국 책이 아니거나 달력이 모르면 빈 집합.
+     * 봅니다. 장중 기록 STOP(ADR 0045)은 그 세션 밤 처리 전까지 대기로 봅니다(클래스 설명 '거울 보기'). 한국 책이 아니거나 달력이 모르면 빈 집합.
      */
     public Set<String> pendingStopSymbols(String code, LocalDate session) {
         Objects.requireNonNull(session, "session");
@@ -719,7 +726,7 @@ public class PaperMirrorService {
         try {
             TradingCalendar calendar = run().calendar();
             Set<String> out = new TreeSet<>();
-            for (Order o : store.ordersByStatus(code, PaperBooks.ORDER_PENDING)) {
+            for (Order o : mirrorLedger(code, store.state(code).orElse(null), calendar).pending()) {
                 if ((PaperBooks.ORDER_PENDING.equals(o.status()) && PaperBooks.SOURCE_STOP.equals(o.source())
                         && PaperBooks.SELL.equals(o.side()) && o.ticker() != null
                         && session.equals(ExecutionAudit.targetSession(o, calendar))) || staleStop(o, session, calendar)) {
@@ -736,7 +743,8 @@ public class PaperMirrorService {
      * 목표 세션이 {@code session}인 시가 밖 대기 주문 가운데 따라 할 시각({@link DueOrder#mirrorAt})이 {@code now} 이하인 것, 따라 할 수 없는 시점의 주문은
      * 시각과 상관없이 모두(받는 쪽이 건너뜀으로 남김) — 따라 할 시각 순, 같은 시각은 매도 먼저·번호 순. 한국 책이 아니거나 달력이 모르면 빈 목록.
      * 시가 주문은 시가 맞추기가 흡수하므로 넣지 않습니다. 목표 세션이 지난 대기 STOP({@link #staleStop} — QA-328)도 넣지 않습니다 — 스탑 매도 경로는
-     * 그 세션에 이미 따라 했고(선점도 목표 세션 = 오늘만), 이 세션에는 목표 비중 0·매수 직전 확인으로만 들어 남은 보유는 일일 맞추기 묶음이 팝니다.
+     * 그 세션에 이미 따라 했고(선점도 목표 세션 = 오늘만), 이 세션에는 목표 비중 0·매수 직전 확인으로만 들어 남은 보유는 일일 맞추기 묶음이 팝니다. 장중 기록
+     * STOP(ADR 0045)은 그 세션 밤 처리 전까지 대기 주문으로 봅니다(클래스 설명 '거울 보기' — 창이 끝난 뒤 놓침 집계·ISA 스탑 지시가 밤 일괄 때와 같게).
      */
     public List<DueOrder> dueOrders(String code, LocalDate session, Instant now) {
         Objects.requireNonNull(session, "session");
@@ -746,7 +754,7 @@ public class PaperMirrorService {
         }
         try {
             TradingCalendar calendar = run().calendar();
-            List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+            List<Order> pending = mirrorLedger(code, store.state(code).orElse(null), calendar).pending();
             Map<Long, Order> byId = new HashMap<>();
             pending.forEach(o -> byId.put(o.id(), o));
             List<DueOrder> out = new ArrayList<>();
@@ -783,23 +791,24 @@ public class PaperMirrorService {
         if (krBook(code) == null) {
             return Optional.empty();
         }
-        Order order = store.order(orderId).filter(o -> code.equals(o.bookCode())).orElse(null);
-        if (order == null || !PaperBooks.ORDER_PENDING.equals(order.status())) {
-            return Optional.empty();
-        }
         MarketRun run = run();
         try {
             TradingCalendar calendar = run.calendar();
+            BookState state = store.state(code).orElse(null);
+            Mirror view = mirrorLedger(code, state, calendar);
+            Order order = view.pending().stream().filter(o -> o.id() == orderId).findFirst().orElse(null);
+            if (order == null) {
+                return Optional.empty();
+            }
             LocalDate session = ExecutionAudit.targetSession(order, calendar);
             Instant cutoff = session == null ? null : KrExpectedState.targetAt(order, session, calendar);
-            BookState state = store.state(code).orElse(null);
             if (cutoff == null || state == null) {
                 return Optional.empty();
             }
-            List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+            List<Order> pending = view.pending();
             Map<String, Position> held = new TreeMap<>();
             Map<String, Double> price = new HashMap<>();
-            ledgerPositions(store.positions(code), held, price);
+            ledgerPositions(view.positions(), held, price);
             Map<Long, Instant> targets = new HashMap<>();
             List<Order> due = openOrders(pending, session, run, targets);
             for (Order o : pending) {
@@ -816,7 +825,7 @@ public class PaperMirrorService {
             JsonNode watch = reader.quietly(marketData::watchKr)
                     .filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(now)).map(Snapshot::payload).orElse(null);
             Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
-            ExpectedState.State expected = ExpectedState.simulate(state.cash(), held, price, due, targets, session, now,
+            ExpectedState.State expected = ExpectedState.simulate(view.cash(), held, price, due, targets, session, now,
                     KrExpectedState.pricer(now, watch, quotes));
             if (!(expected.nav() > 0)) {
                 return Optional.empty();
@@ -842,7 +851,22 @@ public class PaperMirrorService {
         if (code == null || !store.ready()) {
             return Optional.empty();
         }
-        return store.order(orderId).filter(o -> code.equals(o.bookCode())).map(Order::status);
+        Optional<Order> order = store.order(orderId).filter(o -> code.equals(o.bookCode()));
+        if (order.isEmpty() || PaperBooks.ORDER_PENDING.equals(order.get().status()) || krBook(code) == null) {
+            return order.map(Order::status);
+        }
+        try {
+            Mirror view = mirrorLedger(code, store.state(code).orElse(null), run().calendar());
+            if (view.rewound().contains(orderId)) {
+                return Optional.of(PaperBooks.ORDER_PENDING);   // 장중 기록 STOP — 그 세션 밤 처리 전까지 대기(거울 보기)
+            }
+            if (view.paused().contains(orderId)) {
+                return Optional.of(PaperBooks.ORDER_CANCELLED); // 기록 뒤 일시정지 — 밤 일괄이면 취소됐을 주문
+            }
+        } catch (CalendarUnavailableException e) {
+            return order.map(Order::status);
+        }
+        return order.map(Order::status);
     }
 
     /**
@@ -857,7 +881,7 @@ public class PaperMirrorService {
     }
 
     /**
-     * 선점(명세 §3.3) — 장부 잠금 안에서 그 주문을 다시 읽어, 이 책의 대기(PENDING) 주문이고 책이 운용 중이며 목표 세션이 {@code now}의 한국 날짜이고 따라 할
+     * 선점(명세 §3.3) — 장부 잠금 안에서 그 주문을 다시 읽어, 이 책의 대기(PENDING) 주문(그 세션 밤 처리 전의 장중 기록 STOP 포함 — ADR 0045)이고 책이 운용 중이며 목표 세션이 {@code now}의 한국 날짜이고 따라 할
      * 시각({@link DueOrder#mirrorAt})이 {@code now}와 이 서비스의 지금 시각 모두 이하일 때만 {@code insert}를 부르고 그 결과를 돌려줍니다. 아니면 부르지 않고
      * empty — 장중 교체가 먼저 취소했으면 대기가 아니라 empty입니다. 시가 주문은 선점하지 않습니다(시가 맞추기가 흡수). {@code insert}는 잠금 안에서 돌므로
      * 네트워크 호출을 하지 마세요(DB 쓰기만). {@code insert}가 던진 예외는 그대로 나가고 잠금은 풀립니다. null을 돌려주면 empty입니다.
@@ -871,7 +895,16 @@ public class PaperMirrorService {
         TradingCalendar calendar = run().calendar();
         return ledger.exclusively(() -> {
             Order order = store.order(orderId).filter(o -> code.equals(o.bookCode())).orElse(null);
-            if (order == null || !PaperBooks.ORDER_PENDING.equals(order.status())) {
+            if (order != null && !PaperBooks.ORDER_PENDING.equals(order.status())) {
+                // 장중 기록 STOP(ADR 0045)은 그 세션 밤 처리 전까지 대기로 봄(거울 보기) — 그 밖의 체결·취소된 주문은 선점하지 않음.
+                try {
+                    order = mirrorLedger(code, store.state(code).orElse(null), calendar).pending().stream()
+                            .filter(o -> o.id() == orderId).findFirst().orElse(null);
+                } catch (CalendarUnavailableException e) {
+                    order = null;
+                }
+            }
+            if (order == null) {
                 return Optional.empty();
             }
             Book book = store.book(code).orElse(null);
@@ -893,6 +926,70 @@ public class PaperMirrorService {
             }
             return Optional.ofNullable(insert.get());
         });
+    }
+
+    // ------------------------------------------------------------------ 거울 보기(ADR 0045)
+    /**
+     * 공개 창이 보는 장부 한 벌 — 현금·보유(종목 순)·대기 주문(만든 순), 되감은 장중 기록 STOP의 번호, 기록 뒤 일시정지로 주문 없이 보유·현금만 되감은 번호.
+     */
+    private record Mirror(double cash, List<Position> positions, List<Order> pending, Set<Long> rewound, Set<Long> paused) {
+    }
+
+    /**
+     * 공개 창이 보는 장부(ADR 0045 — ADR 0033 결정 4 덧붙임 '거울 보기'): 장중 기록 STOP(출처 STOP·체결·근거 {@code intradayFill.mode = ON})은 그 책의 밤
+     * 처리가 그 체결일의 관측치를 처리하기 전까지 — 체결일 &gt; {@link KrPaperMarket#targetSession}(마지막 처리 저장본), 마지막 처리가 없으면 모두 — 장중
+     * 기록이 없던 세계로 되감아 봅니다: 그 주문은 대기, 보유는 기록 직전 사본({@code before} — {@link KrIntradayFill#position}), 현금은 기록 직전 값
+     * ({@link KrIntradayFill#rewindCash} — 기록 트랜잭션마다 뒤에서부터). 행마다 따로이고 부른 세션과 상관없으며(S−1 밤 처리가 S 낮으로 밀린 날도), 목표
+     * 세션·만료·지난 STOP의 거름은 대기 주문과 같은 코드가 합니다. 기록 뒤 그 밤 전에 책을 일시정지했으면({@code pausedAt}) 밤 일괄에서는 그 STOP이 취소됐을
+     * 것이므로 보유·현금만 되감고 주문은 넣지 않습니다. 장중 기록이 없으면 저장소 값 그대로입니다(스위치 OFF·SHADOW — 지금과 같음).
+     *
+     * @param state 그 책 상태(없으면 현금 0·마지막 처리 없음)
+     * @throws CalendarUnavailableException 달력이 마지막 처리 저장본의 세션을 모름
+     */
+    private Mirror mirrorLedger(String code, BookState state, TradingCalendar calendar) {
+        List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+        List<Position> positions = store.positions(code);
+        double cash = state == null ? 0 : state.cash();
+        LocalDate processed = state == null || state.lastProcessedCollectedAt() == null ? null
+                : KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), calendar);
+        List<PaperStore.OrderFill> recorded = store.intradayRecordedStops(code, processed);
+        if (recorded.isEmpty()) {
+            return new Mirror(cash, positions, pending, Set.of(), Set.of());
+        }
+        Map<String, Position> held = new TreeMap<>();
+        positions.forEach(p -> held.put(p.ticker(), p));
+        List<Order> view = new ArrayList<>(pending);
+        Set<Long> rewound = new TreeSet<>();
+        Set<Long> paused = new TreeSet<>();
+        // 기록 트랜잭션(기록 시각·직전·직후 현금이 같은 행) → 직전·직후 현금, 기록 시각 순.
+        TreeMap<String, double[]> transactions = new TreeMap<>();
+        for (PaperStore.OrderFill rec : recorded) {
+            Order o = rec.order();
+            JsonNode fill = o.reason() == null ? null : o.reason().get(KrIntradayFill.FIELD);
+            Position before = KrIntradayFill.position(code, o.ticker(), fill == null ? null : fill.get(KrIntradayFill.BEFORE));
+            if (before != null && !held.containsKey(o.ticker())) {
+                held.put(o.ticker(), before);
+            }
+            if (fill != null && fill.hasNonNull(KrIntradayFill.PAUSED_AT)) {
+                paused.add(o.id());
+            } else {
+                view.add(new Order(o.id(), o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(), o.targetWeightPct(), o.sellFraction(),
+                        o.timing(), o.source(), PaperBooks.ORDER_PENDING, null, o.reason(), o.asOfTradingDate(), o.createdAt(), o.expiresOn(),
+                        null, o.targetLocal()));
+                rewound.add(o.id());
+            }
+            Double before0 = fill == null ? null : com.macrodash.support.Json.asDouble(fill, KrIntradayFill.CASH_BEFORE);
+            Double after0 = fill == null ? null : com.macrodash.support.Json.asDouble(fill, KrIntradayFill.CASH_AFTER);
+            String at = fill == null ? null : com.macrodash.support.Json.asText(fill, KrIntradayFill.RECORDED_AT);
+            if (before0 != null && after0 != null && at != null) {
+                transactions.putIfAbsent(at + "|" + before0 + "|" + after0, new double[]{before0, after0});
+            }
+        }
+        for (double[] tx : transactions.descendingMap().values()) {
+            cash = KrIntradayFill.rewindCash(cash, tx[0], tx[1]);
+        }
+        view.sort(Comparator.comparing(Order::createdAt, Comparator.nullsFirst(Comparator.naturalOrder())).thenComparingLong(Order::id));
+        return new Mirror(cash, List.copyOf(held.values()), List.copyOf(view), Set.copyOf(rewound), Set.copyOf(paused));
     }
 
     // ------------------------------------------------------------------ 보조

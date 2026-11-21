@@ -56,6 +56,14 @@ describe("메뉴 고르기", () => {
       .toEqual(["/statusx", "/paperclip", "/admin"]);
   });
 
+  it("보안 공지(/security — ADR 0046, /api/security/* 전부 운영자 전용)는 운영자 메뉴 — 회원·데모·로그인 전에는 숨김, 경계는 '/'로만", () => {
+    const menus = [{ href: "/security" }, { href: "/securityx" }, { href: "/alerts" }];
+    expect(visibleMenus(menus, { email: "o@x", role: "OWNER", tier: "FREE" }).map((m) => m.href)).toEqual(["/security", "/securityx", "/alerts"]);
+    for (const user of [{ email: "m@x", role: "MEMBER", tier: "PRO" } as const, { email: null, role: "MEMBER", tier: "PRO", demo: true } as const, undefined]) {
+      expect(visibleMenus(menus, user).map((m) => m.href)).toEqual(["/securityx", "/alerts"]);
+    }
+  });
+
   it("역할·등급 이름", () => {
     expect(roleLabel({ email: "o@x", role: "OWNER", tier: "FREE" })).toBe("운영자");
     expect(roleLabel({ email: "m@x", role: "MEMBER", tier: "PRO" })).toBe("유료 회원");

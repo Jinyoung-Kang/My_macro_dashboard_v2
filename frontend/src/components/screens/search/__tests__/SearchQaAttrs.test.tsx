@@ -234,7 +234,12 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
 
 describe("QA-431 — 풀지 못한 wd: 대상의 속성 칸 종류는 확인한 값만(탭을 고르려고 짐작한 '사람'을 보이지 않음)", () => {
   /** 속성 칸의 '종류' 값. */
-  const kindValue = (pane: HTMLElement) => within(pane).getByText("종류").nextElementSibling?.textContent;
+  // 값을 모르면 속성 목록 패턴(작업대 P8 U2)이 보이는 '—'와 낭독용 '값 없음'을 함께 그립니다 — 보이는 글만 읽습니다.
+  const kindValue = (pane: HTMLElement) => {
+    const value = within(pane).getByText("종류").nextElementSibling?.cloneNode(true) as HTMLElement | undefined;
+    value?.querySelectorAll(".sr-only").forEach((node) => node.remove());
+    return value?.textContent;
+  };
 
   // QA-431: wd: 키를 풀지 못하면(Wikidata 실패 — entity:null) 탭을 고르려고 사람으로 짐작한 종류를 속성 칸에도 넘겨, 머리는 '대상'(모름)인데
   // 속성 칸은 '종류 사람'이었음. 결과 탭은 FeedPanel을 거쳐, 보유·연결 탭은 EntityView에서 바로 넘김.

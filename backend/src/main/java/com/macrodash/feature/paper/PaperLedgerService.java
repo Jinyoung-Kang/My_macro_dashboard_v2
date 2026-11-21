@@ -1283,11 +1283,13 @@ public class PaperLedgerService {
      * <p>감시를 켠 시장({@link BookRun#stopWatch})의 감지 시각은 이 관측치의 수집 시각과 지금(이 처리를 돌리는 시각) 가운데 늦은 쪽입니다(QA-327) — 대체 STOP의
      * 시점({@link #nightFallback})·지금 세션의 덮음·주문의 생성 시각을 모두 이 시각으로 셉니다. 수집 시각만 보면 백엔드가 밤새 꺼졌다가 다음 세션 장중에
      * 처음 처리한 밤 관측치가 첫 분 검사를 통과해 그 첫 분 지정 시각 STOP(주문을 만든 시각보다 이른 시각에 체결 — 실제 계좌는 그 창이 지난 뒤에야 봄)이
-     * 되고, 늦은 장중 시장가의 기준 시각(생성 + 60초 뒤 첫 분)이 처리(5분 주기)보다 앞설 수 있었습니다. 감시를 켜지 않은 시장은 예전 그대로 수집 시각입니다.
+     * 되고, 늦은 장중 시장가의 기준 시각(생성 뒤 처음 시작하는 분 — ADR 0044)이 처리(5분 주기)보다 앞설 수 있었습니다. 감시를 켜지 않은 시장은 예전 그대로
+     * 수집 시각입니다. 지금을 쓸 때는 µs로 자릅니다(DB가 µs까지만 담음 — 근거의 기준 시각과 장부가 다시 센 기준 분이 갈리지 않게).
      */
     private void detectStops(BookRun run) {
         double stopPct = run.settings.trailingStopPct();
-        Instant now = clock.instant();
+        // 감지 시각이 지금이면 µs로 잘라 둡니다 — DB가 µs까지만 담으므로 대체 STOP의 근거 시각과 장부가 생성 시각으로 다시 센 기준 분이 갈리지 않게(ADR 0044).
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         Instant detectedAt = run.stopWatch == null || !now.isAfter(run.at) ? run.at : now;
         Set<String> waiting = new TreeSet<>();
         for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {
@@ -1411,7 +1413,7 @@ public class PaperLedgerService {
      * <p>그 첫 분이 이미 감지 + 60초 안으로 지났으면(처리가 S 장중이나 뒤에 돎 — 백엔드가 밤새 꺼졌다가 켜짐, D 관측치를 S 장중에 처음 받음) 그 첫 분·시가로
      * 내지 않습니다(QA-317 — 대체 STOP은 ⑤ 늦은 주문 검사를 건너뛰므로 주문을 만든 시각보다 이른 시각으로 체결됨): S 장이 끝났으면 내지 않고 S 밤
      * 관측치가 S 종가로 다시 판정하게 두고, 감시가 지금 S의 그 종목을 지켜보면({@link #watchCovers}) 감시에 맡기고, 아니면 감시 STOP과 같은 시점
-     * ({@link StopWatch#target} — 감지 + 60초 뒤 첫 분 장중 시장가, 종가 단일가 시간이면 그날 종가)으로 냅니다. 감지 시각은 수집 시각이 아니라 이 처리의
+     * ({@link StopWatch#target} — 감지 뒤 처음 시작하는 분 장중 시장가, 종가 단일가 시간이면 그날 종가)으로 냅니다. 감지 시각은 수집 시각이 아니라 이 처리의
      * 시각입니다({@link #detectStops} — QA-327: 수집 시각으로 판정하면 밤새 꺼졌던 백엔드가 S 장중에 처음 처리한 D 밤 관측치가 첫 분 검사를 통과하고,
      * 지금 감시 저장본은 이미 S 것이라 D의 덮음도 읽지 못해 S 첫 분 지정 시각 STOP이 그 첫 분 뒤에 생겼음).
      *
@@ -1475,6 +1477,11 @@ public class PaperLedgerService {
     static final String STOP_BASIS_INTRADAY = PaperStopWatchJob.STOP_MODE;
     private static final StopCheck INTRADAY_STOP_CHECK = new StopCheck(STOP_BASIS_INTRADAY, null, null,
             "장중 감시 STOP — 장중 실제 가격(토스 1분봉)으로 판정해 금융위 종가로 다시 판정하지 않음");
+
+    /** 장중 감시 STOP 체결의 판정 근거 칸({@code stopBasis}·{@code stopBasisNote}) — 장중 기록(ADR 0045 {@code KrStopFillStep})도 밤 체결과 같은 칸을 남김. */
+    static Map<String, Object> intradayStopFields() {
+        return INTRADAY_STOP_CHECK.fields();
+    }
     /** 스탑 취소 사유의 머리 — 확정 종가가 스탑가 위. */
     static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
     /**
@@ -1575,7 +1582,7 @@ public class PaperLedgerService {
     }
 
     /**
-     * 한국 장부의 장중 시점의 그날 시각(KST) — 매시(AT_1000~AT_1500)는 hh:00, 장중 시장가(MARKET)는 그 주문의 기준 분({@link ExecutionAudit#marketTarget}),
+     * 한국 장부의 장중 시점의 그날 시각(KST) — 매시(AT_1000~AT_1500)는 hh:00, 장중 시장가(MARKET)는 그 주문의 기준 분({@link ExecutionAudit#marketTarget} — 생성 뒤 처음 시작하는 분),
      * 분 단위 지정 시각(AT_MINUTE — ADR 0027)은 그 주문의 시각, 그 밖(시가·종가·생성 시각 모르는 MARKET·시각 없는 AT_MINUTE)은 null. 한 관측치 안 처리
      * 순서만 정합니다(가격은 {@link KrTimedLadder}).
      */

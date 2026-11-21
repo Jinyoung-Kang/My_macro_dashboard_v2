@@ -238,38 +238,44 @@ describe("주소의 탭이 이 대상에 없을 때 — 주소도 타임라인�
 });
 
 describe("좁은 화면(390) — 고른 탭을 탭 줄 안에 보이게 가로로 옮김(4단계 확인 [하])", () => {
+  // 탭 줄은 공용 Tabs(작업대 P8 U2)라 줄 옮김도 공용 훅(hooks/useScrollStripActive — 칸의 offsetLeft·offsetWidth와 줄의 clientWidth, 양옆 여유 16px)입니다.
   const TAB_WIDTH = 80;
-  const BAR = { left: 16, right: 374 };
-  let rects: ReturnType<typeof vi.spyOn>;
+  const BAR_WIDTH = 358;
+  const spies: { mockRestore: () => void }[] = [];
 
   beforeEach(() => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
-    // jsdom은 배치를 재지 않아 탭 줄(358px)과 탭(80px씩)의 자리를 흉내 냅니다. 탭의 자리는 탭 줄의 가로 스크롤만큼 왼쪽으로 갑니다.
-    rects = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      const box = (left: number, right: number) => ({ left, right, top: 0, bottom: 44, width: right - left, height: 44, x: left, y: 0, toJSON: () => ({}) });
-      if (this.getAttribute("role") === "tablist") return box(BAR.left, BAR.right) as DOMRect;
-      const bar = this.closest('[role="tablist"]') as HTMLElement | null;
-      if (this.getAttribute("role") === "tab" && bar) {
-        const index = [...bar.querySelectorAll('[role="tab"]')].indexOf(this);
-        const left = BAR.left + index * TAB_WIDTH - bar.scrollLeft;
-        return box(left, left + TAB_WIDTH) as DOMRect;
-      }
-      return box(0, 0) as DOMRect;
-    });
+    // jsdom은 배치를 재지 않아 탭 줄(358px)과 탭(80px씩 — 줄 안 좌표)의 자리를 흉내 냅니다.
+    const tabIndex = (element: HTMLElement) => {
+      const bar = element.closest('[role="tablist"]');
+      return element.getAttribute("role") === "tab" && bar ? [...bar.querySelectorAll('[role="tab"]')].indexOf(element) : -1;
+    };
+    spies.push(
+      vi.spyOn(HTMLElement.prototype, "offsetLeft", "get").mockImplementation(function (this: HTMLElement) {
+        const index = tabIndex(this);
+        return index >= 0 ? index * TAB_WIDTH : 0;
+      }),
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+        return tabIndex(this) >= 0 ? TAB_WIDTH : 0;
+      }),
+      vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (this: Element) {
+        return this.getAttribute("role") === "tablist" ? BAR_WIDTH : 0;
+      }),
+    );
   });
-  afterEach(() => rects.mockRestore());
+  afterEach(() => spies.splice(0).forEach((spy) => spy.mockRestore()));
 
   it("주소로 연 탭(tab=links)이 탭 줄 밖이면 그 탭이 보이게 옮긴다", async () => {
     renderScreen(MEMBER, "/search?e=us:NVDA&tab=links");
     const bar = await screen.findByRole("tablist", { name: "결과 탭" });
-    // 연결 = 여섯째 탭(16 + 5 × 80 = 416 ~ 496) — 오른쪽 끝 374에 맞춤
-    await waitFor(() => expect(bar.scrollLeft).toBe(496 - BAR.right));
+    // 연결 = 여섯째 탭(5 × 80 = 400 ~ 480) — 오른쪽 끝에 여유 16px을 두고 맞춤(480 + 16 − 358)
+    await waitFor(() => expect(bar.scrollLeft).toBe(480 + 16 - BAR_WIDTH));
   });
 
   it("탭을 바꾸면 그 탭이 보이게 다시 옮기고, 이미 보이면 그대로", async () => {
     renderScreen(MEMBER, "/search?e=us:NVDA&tab=links");
     const bar = await screen.findByRole("tablist", { name: "결과 탭" });
-    await waitFor(() => expect(bar.scrollLeft).toBe(122));
+    await waitFor(() => expect(bar.scrollLeft).toBe(138));
     fireEvent.click(within(bar).getByRole("tab", { name: "타임라인" }));
     await waitFor(() => expect(bar.scrollLeft).toBe(0));
     fireEvent.click(within(bar).getByRole("tab", { name: "뉴스" }));

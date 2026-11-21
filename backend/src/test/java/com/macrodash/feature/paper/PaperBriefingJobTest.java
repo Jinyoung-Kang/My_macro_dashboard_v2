@@ -250,4 +250,37 @@ class PaperBriefingJobTest {
         assertThat(rows).containsOnlyKeys("KR " + KR_SESSION);
         assertThat(store.jobRuns).extracting(r -> r.job()).containsExactly(KrPaperMarket.INSTANCE.jobName(PaperBriefingJob.JOB));
     }
+
+    @Test
+    @DisplayName("한국 장부 안내 글은 자료로 고름(ADR 0045 결정 11) — 그 세션 체결의 STOP 근거 intradayFill.mode가 SHADOW(대조만 — 장부는 밤)면 예전 글, ON(장중에 장부에 "
+            + "적음)일 때만 장중 기록 판 글")
+    void krLedgerNoteReadsTheIntradayRecordMode() {
+        assertThat(krBriefingWithStop("SHADOW")).contains(PaperTelegram.esc("참고: " + Briefing.KR_LEDGER_NOTE))
+                .doesNotContain(PaperTelegram.esc(Briefing.KR_LEDGER_NOTE_INTRADAY));
+        setUp();
+        assertThat(krBriefingWithStop("ON")).contains(PaperTelegram.esc("참고: " + Briefing.KR_LEDGER_NOTE_INTRADAY))
+                .doesNotContain(PaperTelegram.esc(Briefing.KR_LEDGER_NOTE));
+    }
+
+    /** 한국 계좌에 그 세션(12-02) 감시 STOP 매도 체결 하나(근거 intradayFill.mode = {@code mode}), 그 세션 순자산 줄 없음 — 16:00 브리핑 글. */
+    private String krBriefingWithStop(String mode) {
+        rows.clear();
+        sent.clear();
+        store.books.put(PaperBooks.KR_CLAUDE, new Book(PaperBooks.KR_CLAUDE, PaperBooks.KIND_CLAUDE, "한국 Claude 계좌", 100_000_000,
+                LocalDate.of(2026, 11, 2), PaperBooks.ACTIVE, store.dbNow, Book.MARKET_KR, "KRW"));
+        store.states.put(PaperBooks.KR_CLAUDE, new BookState(PaperBooks.KR_CLAUDE, 100_000_000, 100_000_000, 0, 0, store.dbNow, store.dbNow,
+                LocalDate.of(2026, 12, 1), store.dbNow));
+        ObjectNode reason = MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        reason.putObject(KrIntradayFill.FIELD).put(KrIntradayFill.MODE, mode).put(KrIntradayFill.OUTCOME, KrIntradayFill.RECORD);
+        long stop = store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.KR_CLAUDE, null, "005930", PaperBooks.SELL, null, null,
+                null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_FILLED, null, reason, LocalDate.of(2026, 12, 1),
+                Instant.parse("2026-12-02T01:10:42Z"), KR_SESSION, Instant.parse("2026-12-02T01:15:20Z")));
+        store.insertFill(new com.macrodash.store.PaperStore.Fill(0, stop, PaperBooks.KR_CLAUDE, "005930", PaperBooks.SELL, 10, 70_134.915, 70_170,
+                5, 701_349.15, Instant.parse("2026-12-02T01:15:20Z"), KR_SESSION, KrTimedLadder.SOURCE_AT, false, Instant.parse("2026-12-02T01:15:21Z"),
+                java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO));
+        enable(true);
+        assertThat(run(KrPaperMarket.INSTANCE, KR_DUE).outcome()).isEqualTo(PaperBriefingJob.SENT);
+        assertThat(sent).hasSize(1);
+        return sent.get(0);
+    }
 }

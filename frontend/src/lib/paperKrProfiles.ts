@@ -38,9 +38,12 @@ const KR_RULES_FILL =
 const KR_STOP =
   "트레일링 스탑의 감지·체결은 설정 kr.stopWatch.mode를 따릅니다. 끔(OFF)·기록만(SHADOW)이면 밤 잠정 평가가로 감지해 다음 거래일 시가에 "
   + "팔고, 그때 감지한 날의 금융위 확정 종가로 다시 판정합니다(스탑가 위면 취소). 켬(ON)이면 정규장 5분 감시(토스 1분봉)에서 두 번 이어 "
-  + "스탑가 이하일 때 그 세션 안에 팝니다 — 감지 + 60초 뒤 첫 분의 1분봉 시가(개장 10분 뒤 전이면 그 첫 분, 마감 10분 전부터는 그날 종가 "
+  + "스탑가 이하일 때 그 세션 안에 팝니다 — 감지 뒤 처음 시작하는 분(1분 안)의 1분봉 시가(개장 10분 뒤 전이면 그 첫 분, 마감 10분 전부터는 그날 종가 "
   + "단일가)로 체결하고 확정가로 다시 판정하지 않습니다. 감시가 덮지 못한 종목(수집 실패·기업행위 갭 가드)만 밤 잠정 평가가로 감지해 다음 "
-  + "거래일 첫 분(개장 10분 뒤)의 지정 시각에 팔고 금융위 확정 종가로 다시 판정합니다.";
+  + "거래일 첫 분(개장 10분 뒤)의 지정 시각에 팔고 금융위 확정 종가로 다시 판정합니다. 감시가 판 체결이 장부에 반영되는 때는 설정 "
+  + "kr.stopWatch.fill(ADR 0045)을 따릅니다 — 끔(OFF)·대조만(SHADOW)이면 그날 밤 장부가 적고, 켬(ON)이면 그 분 봉에 거래가 있을 때 기준 분 몇 분 "
+  + "뒤 장중에 적어 보유·현금이 바로 바뀝니다(종가 매도·자료 부족·앞 시각이나 같은 종목의 대기 주문·장부 밀림·기업행위 의심 등이면 그날 밤). 실제 계좌·ISA는 그 세션 밤 장부 "
+  + "처리 전까지 그 스탑을 대기로 봅니다.";
 
 /**
  * 한국 장중 판단 문장(자유 시점 판을 켠 Claude 계좌 — ADR 0027 결정 3·ADR 0031 결정 4, 백엔드 IntradayPlanner·IntradayScheduler). 횟수·보장·사건은 설정 키로만
@@ -65,6 +68,9 @@ const KR_CLAUDE_FILL =
 
 /** 장중 스탑 감시 스위치(kr.stopWatch.mode)의 지금 값 이름표. */
 const KR_STOP_WATCH_LABELS = { OFF: "끔(OFF — 밤 스탑만)", SHADOW: "기록만(SHADOW — 밤 스탑만)", ON: "켬(ON — 장중 감시 주문)" };
+
+/** 장중 감시 스탑 체결의 장중 기록 스위치(kr.stopWatch.fill — ADR 0045)의 지금 값 이름표. */
+const KR_STOP_FILL_LABELS = { OFF: "끔(OFF — 밤 장부)", SHADOW: "대조만(SHADOW — 밤 장부)", ON: "켬(ON — 장중 기록)" };
 
 /** 한국 장중 판단 설정 행(자유 시점 판을 켠 Claude 계좌만 읽음) — 두 Claude 계좌가 같은 키를 씁니다. intradayEffort는 두 시장 공용이고 없으면 effort입니다. */
 const KR_INTRADAY_SETTINGS: AccountProfile["settings"] = [
@@ -162,6 +168,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.rules.timingAtKst", label: "지정 시각(KST — AT_MINUTE일 때)" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
       { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
+      { key: "kr.stopWatch.fill", label: "장중 스탑 체결 기록(감시 켬일 때)", labels: KR_STOP_FILL_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.rules.parkCashThresholdPct", label: "153130 매수 기준(순자산 대비)", unit: "%" },
       { key: "kr.minOrderNotional", label: "최소 주문 금액", unit: "원" },
@@ -225,6 +232,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: " KR 거래일" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
       { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
+      { key: "kr.stopWatch.fill", label: "장중 스탑 체결 기록(감시 켬일 때)", labels: KR_STOP_FILL_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.cashLikeTickers", label: "현금성 종목" },
     ],
@@ -297,6 +305,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: " KR 거래일" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
       { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
+      { key: "kr.stopWatch.fill", label: "장중 스탑 체결 기록(감시 켬일 때)", labels: KR_STOP_FILL_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.cashLikeTickers", label: "현금성 종목" },
     ],

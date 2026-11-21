@@ -16,7 +16,7 @@
 | P5b | 기관 4화면 | 코드·문서 끝(아래 §P5b — 패턴 `wb-p5b-patterns`(QA-692, 새 부품 둘 — 표 히트맵 `HeatmapTable`·거르기 목록 `FilterList`, 칸 틀 두 칸)에서 포트폴리오 `wb-p5b-portfolio`(`/institutions`, QA-696·697)·분석 `wb-p5b-analysis`(`/consensus`·`/style`·`/scorecard`, QA-703~709) 두 갈래를 갈라 통합 `wb-p5b`에 합침 — 겹친 파일 없음, 통합 확인은 자기 빌드 + QA API GET) · 사용자 결정 거리 다섯은 2026-11-18 결정(사용자 위임 — 권장안) · 검토·고침(QA-710~719 몫)과 QA 스택 확인은 D4 전 | D4 |
 | P6 | 모의매매 부분 재배치(결정 로그 390px 잘림 W13 포함) | 코드·문서 끝(아래 §P6 — 패턴 `wb-p6-patterns`(새 부품 ActionBar·Drawer, '읽는 법' 접기를 패턴으로, 머리 칸 계약)에서 셸 `wb-p6-shell`(QA-735~739)·로그 `wb-p6-log`(QA-747~750 — W13은 QA-747)·설정 `wb-p6-config`(QA-757·759) 세 갈래를 갈라 통합 `wb-p6`에 합침 — 충돌 없음, 통합에서 남은 옛 표 셋을 공용 표로) · 사용자 결정 거리 열(U1~U10)은 2026-11-18 결정(사용자 위임 — 2026-11-15 지시 '권장안대로 진행하되 궁금한 점·의견은 말해', 명세 §7-1 글과 다르게 만든 넷은 D5 전 사용자 보고) · **검토 반영 끝**(같은 폴더 — QA-765~777, 아래 §P6 '검토 반영') · QA 스택 확인은 D5 전 | D5 |
 | P7 | 정보 수집·더보기·인증·정보 검색 범위 장치 정리 | 코드·문서 끝(아래 §P7 — 패턴 `wb-p7-patterns`(새 부품 `LogPanel`·`TEXT_TARGET_SHORT`·검사 칸 틀 대화상자 설명 줄)에서 정보 수집 `wb-p7-info`(QA-835·836·838)·더보기 `wb-p7-more`(QA-846~850)·인증 + 정보 검색 `wb-p7-authsearch`(QA-855~861·QA-270 — 정보 검색 범위 장치 제거는 두 빌드 대조로 겉모습 변화 0) 세 갈래를 갈라 통합 `wb-p7`에 합침 — 충돌 없음, 통합 확인에서 QA-862) · 사용자 결정 거리 여덟(U1~U8)은 2026-11-19 결정(사용자 위임 — 권장안, 그래프 공용화·정보 검색 대상 머리 패턴 이전은 P8) · 검토·QA 스택 확인은 D6 전 | D6 |
-| P8 | 전 화면 QA·문서 | 시작 전 | 문서만(필요하면 D7) |
+| P8 | 전 화면 QA·문서 | 코드·문서 끝(아래 §P8 — 갈래 다섯 `wb-p8-kit`·`wb-p8-auth`·`wb-p8-shell`·`wb-p8-search`·`wb-p8-tables`를 통합 `wb-p8`에 합침 — 충돌 없음, 통합 뒤 고침·독립 검토 반영 QA-904~907, U2 사용자 승인 뒤 합침, QA 스택 감사가 D6 화면과 같음) | D7 |
 
 ## P0 — 문서 (2026-11-15, main `78431302`에서)
 
@@ -3588,3 +3588,71 @@ Tab 30정지·검사 칸·팔레트·'?'·'/' 동작과 API GET 집합 같음.
 - GET 확인: /·/paper/us·/paper/kr·모의매매 탭(두 시장 × selection·holdings·decisions·framework·notes·settings·real·isa)·/info 8탭·/macro·/institutions·/more·/search·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account 200(/paper는 307), /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@e386c492`.
 - 점검 스크립트를 cron 자리(`systemd-run --uid=ubuntu`, 사용자 버스를 없는 경로로)에서 `--summary`로 돌림 — '재부팅 필요 없음 · Livepatch 정상'(고치기 전에는 같은 자리에서 'Livepatch 상태를 읽지 못함').
 - 배포 뒤 5분(16:40): 서버 HEAD `e386c492`, 백엔드 ERROR 0·화면 오류 0, 수집기 오류 줄 1 — 16:37 yfinance 라이브러리 로그(Yahoo가 FOX 한 종목의 재무 자료에 404, 이번 변경과 관계없는 외부 응답 — 수집기 컨테이너를 다시 띄워 배포 전 로그와는 견주지 못함). 16:39 `exec-audit` OK. main CI(`e386c492`) 여섯 job 통과.
+
+## P8 — 전 화면 정리 (2026-11-20, 다섯 갈래 → 통합 `wb-p8`)
+
+`637a0cec`(D6 배포본 + 기록)에서 넘김 거리 가운데 공용 키트·인증·셸·정보 검색·표·차트·문구를 다섯 갈래로 갈랐습니다(파일 소유를 나눠 같은 파일을 만지지 않음). 공용 키트 `wb-p8-kit`(QA-899~903, 옛 ui `Table`·`Metric`
+지우기, `FIELD_LABEL`·`FIELD_WIDTH`·`FIELD_INPUT`)를 먼저 끝내고 그 끝에서 인증 `wb-p8-auth`(QA-868·909)를 갈랐고, 셸·번들 `wb-p8-shell`(QA-919·920, 감사 스크립트 본문 스크롤 상자)·정보 검색 `wb-p8-search`(QA-929·930)·
+표·차트·문구 `wb-p8-tables`(QA-939~945)는 함께 돌았습니다. 통합 `wb-p8`에 `--no-ff` 병합 다섯(`3301d93b` 키트 → `a38983c1` 셸 → `5d1696e3` 정보 검색 → `9d350b15` 표 → `c60b8258` 인증)으로 합쳤고 git 충돌은 없었습니다.
+API 경로·백엔드·수집기·`lib/endpoints.ts`·`lib/nav.ts` 변경 0, 실제 계좌·ISA·실제 매매 모듈(`screens/realtrade`·`isa`·`brokerage`) 파일 변경 0(공용 `DataTable`의 넘칠 때만 정지점은 그 표에도 감). 쓰기 지킴 시험(`infoWritesKeep`·`moreWritesKeep`·QA-898)은 무수정 통과.
+결함 줄은 결함 기록 '## 작업대 P8'.
+
+**사용자 결정(2026-11-20)**: U2(정보 검색 대상 머리·속성 칸·탭 줄의 패턴 이전) — '캡처 보고 결정' → 캡처(아래)를 보고 '합침', 배럴 `sideEffects` — '측정 뒤 권장안대로', 넓은 화면 정렬 머리·접기 머리·따로 선 링크 글 높이 20px(`lg-sort-header-summary-text-height`) — '그대로 둠'(WCAG 2.5.8 간격 예외 만족, 감사의 작은 누름 자리 수는 알려진 예외), 문구 — '둘 다 고침'(QA-944 한국 '다섯 계좌'·QA-945 음수 −).
+
+**통합 뒤 메인 세션이 더한 것**: `ae00fd34` 오류 경계 '다시 시도'를 `reset`에서 Next 16 문서가 권하는 `retry`로(설치된 next 16.4.5 `docs/01-app/03-api-reference/03-file-conventions/error.md` — reset은 서버 컴포넌트 예외를 다시 받지 않음),
+`97331021` `sideEffects`(아래 번들), `e3a0272c`·`65b8b41c` QA-904(원문 본문 상자 — 표 갈래가 넘긴 자리), `2c5f385f` lint 경고 0.
+**독립 검토**(제 결론을 주지 않은 검토자 — `637a0cec..wb-p8`, 커밋 50·파일 92): 쓰기 경로·횟수 변화, 렌더 루프, 하이드레이션 불일치, 서버/클라이언트 경계 오류 없음. 지적 다섯을 고침 — QA-905(QA-899 뒤에도 성공 뒤 켜짐 조건으로 꺼지는 단추 셋 — 공용
+`useFocusAfterWrite`), QA-906(운영자로 올리기 다시 읽는 동안 두 번 보냄 — 개편 전부터), QA-907(세로로만 넘치는 표 이름 '좌우 스크롤'), `c40ed7e4` 주석 바로잡기, `4dcbf0c0` 감사 스크립트 시험(`node --test scripts/qa/ui-audit.test.js`)을 `make test-frontend`와 CI 프런트엔드 job에(job 수 6 그대로).
+남긴 것(검토·고침 보고): '모두 읽음'도 읽음 뒤 다시 읽는 짧은 틈에 다시 누르면 같은 POST가 한 번 더(멱등 — 결과 같음), 비밀번호 바꾸기 성공 글이 기존 status 영역(QA-867)과 결과 상자 포커스로 두 번 읽힐 수 있음(실제 낭독기 미확인).
+
+**번들(`sideEffects`)**: 셸 갈래가 `wb-p8-shell`(`c4fe58de`)을 Turbopack으로 두 번 빌드해(결정적) 그린 HTML의 script 합(원본 / gzip -9, KiB)을 쟀습니다. 지시한 꼴 A(`["**/*.css"]` — 전부 부작용 없음)는 열다섯 경로 gzip 합 −77.8이지만
+여섯 경로가 커져(`/paper/us` +10.4·`/institutions` +5.9·`/macro` +4.3) 넣지 않았고, B(CSS와 `src/app`·`hooks`·`lib`·`components/*.tsx`·`components/{auth,charts,screens,shell,ui}`를 부작용 있음 — 사실상 공용 패턴만 부작용 없음)는 열한 경로가 5.7~11.4 줄고
+넷이 0.5~0.7 늘어(script 하나 더) 합 −87.9입니다(`/` −11.4, `/info/*`·`/status`·`/alerts` −8.4~−8.7, `/markets/i/sp500` −9.7, `/macro` −5.7, `/institutions` −5.8, `/search`·`/more` +0.7, `/login` +0.7, `/paper/us` +0.5). B를 넣고
+`packageSideEffects.test`가 src 아래 새 폴더가 목록에서 빠지는 것을 막습니다(빠지면 조용히 부작용 없음이 됨). 패턴 폴더에 모듈 최상위 부작용(CSS import·등록 코드·window 접근) 없음(검토 확인).
+
+**확인**: 통합 끝 `4dcbf0c0`에서 전체 vitest 489파일·4,895건, `tsc --noEmit`, `npm run lint`(경고 0), `npm run check`, `npm run build`, `node --test scripts/qa/ui-audit.test.js` 9건 통과.
+QA 스택: 기준 qa@`de66e6fd`(= D6 화면) 감사와 `wb-p8` 다시 빌드 감사를 같은(고친) 감사 스크립트로 전 경로 × 390·1024·1440 — 12px 미만·넘침·대비·알약·콘솔·HTTP 오류 0 → 0, 작은 누름 48·177·179 그대로, 막은 쓰기 `/verify` 폭마다 1 그대로(경로별 차이 0).
+실제 크롬의 포커스 길(QA-899·901·905·940)·낭독은 jsdom 시험(크롬의 꺼진 단추 포커스 바로잡기를 MutationObserver로 흉내)으로만 봤습니다.
+
+**넘긴 것(D7 뒤 또는 다음)**: U1 `LinksGraph` 공용화(쓰는 곳이 여전히 정보 검색 연결 탭 하나 — 다시 넘김), 고대비·상태 묶음(`status-live-regions`·`SourceBadge` 고대비·`error-state-retry-button-on-danger-tint`·`forced-colors:disabled`),
+값 꼴 자리 규칙(`page-header-freshness-late-row`·`filterlist-pending-tag-width-by-viewport`·`regime-*`·KPI 띠 랜드마크·`kpi-value-break-narrow-tile`), `quickview-detail-link-target`·시세 창 Dialog 슬롯, `DataTable` 칸 break-keep(표마다 재야 함),
+P6 모의매매 busy 단추(시험이 `disabled`를 고정 — 바꾸면 P6 쓰기 지킴과 함께), P6 메모·프레임 폼 이름표(`min-w-0`이 없어 글이 다름), 공용 `Panel` 머리 다시 그림, 마우스로 누른 차트 SVG `:focus` 링, 문구 `flag-badge-vocabulary`.
+
+**U2**(별도 가지 `wb-p8-search-u2` `89dc12fe` — 정보 검색 갈래가 `wb-p8-search` 끝에서 만듦): 대상 머리·속성 칸·탭 줄을 공용 `EntityHeader`·`PropertyList`·`Tabs`로(배럴이 아니라 파일 경로로 가져옴, 패턴 파일 변경 0).
+바뀐 것 — 이름 18px 굵게·말줄임 → 20px·낱말 사이 줄바꿈, 종류 표지 아이콘+글 → 중립 태그, 식별자·별칭이 따로 선 꼬리표 줄 → 이름 줄 안(식별자 고정폭 태그), 풀리기 전 따로 선 키 줄 없음, 동작 칸 lg 이상 늘 오른쪽,
+속성 줄 이름 12px·값 왼쪽 약 26px → 이름 13px·값 오른쪽·줄마다 구분선·lg 이상 32px(상세 화면 셋과 같음), 탭 줄 gap-1·고를 때 색 전환·넘칠 때 고른 탭 옮김 공용 훅(390 `tab=links` scrollLeft 122 → 138), xl 미만 속성 칸 위치 그대로.
+QA 스택에서 `wb-p8`(`4dcbf0c0`)과 `wb-p8` + U2(확인용 가지 `wb-p8-u2-try` `35ff205f`)를 차례로 빌드해 `/search?e=us:NVDA`(타임라인·연결)·`/search?e=cik:0001045810` × 390·1024·1440을 찍어 사용자에게 보임(캡처는 커밋하지 않음) —
+감사 수치(12px·넘침·대비·누름 자리)는 전후 같음. 사용자 승인(2026-11-20 21시대) 뒤 `48921dc0`으로 합침. 번들(정보 갈래 자기 빌드) `/search` +2.2 KiB·`/info/news` +0.7 KiB gzip.
+
+## D7 배포 (2026-11-20 21:25~21:28 KST, Vultr `main@09972bd1` — main `637a0cec` → `09972bd1` fast-forward)
+- 담은 것: 위 §P8 전부(다섯 갈래·통합 뒤 고침·독립 검토 반영 QA-905~907·U2). 화면·감사 스크립트·Makefile·CI 파일·문서만 바뀜(백엔드·수집기·DB 변경 0). 다른 세션의 커밋은 들지 않음.
+- 사용자 결정: 배포 시기 '오늘 밤 올림'(2026-11-20 21시대 — 작업 2 배포 예약(11-21)보다 먼저).
+- 배포 전: 통합 끝에서 전체 vitest 489파일·4,895건·tsc·lint 경고 0·check·build·감사 스크립트 시험 9건 통과. Tailscale SSH 추가 확인을 사용자가 승인(21:25). 운영 DB `paper_job_runs`를 읽기만 함 —
+  21:18 `risk`·21:19 `exec-audit`·21:23 `kr.risk`·21:24 텔레그램 OK, 도는 작업 없음. 실제 매매 창·22:45 미국 결정과 떨어진 시각, 매시 :17~:19 피함.
+- `scripts/vultr/deploy.sh`(2분 30초): 화면·caddy 컨테이너만 다시 띄움(백엔드·수집기·postgres는 그대로). 스키마 최신, 디스크 57%, 재부팅 필요 없음 · Livepatch 정상.
+- GET 확인: /·모의매매 두 시장과 탭 셋·/macro·/institutions·/more·/search·`/search?e=us:NVDA`·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account·/sector·/cot·/info 8탭·/login 200(/paper는 307),
+  /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@09972bd1`.
+- 배포 뒤 5분(21:33): 서버 HEAD `09972bd1`, 백엔드 ERROR 0·수집기 오류 0·화면 오류 0. main CI(`09972bd1`) 여섯 job 통과.
+
+## P8 후속 — 남은 판단 거리 (2026-11-20~21, 두 갈래 → 통합 `wb-p8fu`)
+
+D7 보고 뒤 사용자가 D5·D6에서 고치지 않고 넘긴 판단 거리 목록을 보이며 '문제를 모두 해결했어?'라고 물었고, 고친 것은 문구 둘(QA-944·945)뿐이라고 답한 뒤 '권장안대로 진행'으로 이어 갔습니다. 실제 계좌 탭은 사용자 결정
+'자리표시만 고침'(요청·켜기/끄기·확인 글자·비밀번호 단계·쓰기·값 계산 그대로, 시험은 합성 자료만), QA-376 남은 위험(시각 맞추기 날 책 종목의 매매 제한 몫이 회전율 판정에서 빠짐)은 '판정에 함께 셈'으로 회전율 예외
+브랜치에서 따로 고침(QA-949 — 결함 기록 '실제 매매 회전율 멈춤 판정').
+`40a8b4cf`에서 모의매매 갈래 `wb-p8fu-paper`(QA-954~958, 끝 `d1961ad0`)와 그 밖 화면 갈래 `wb-p8fu-screens`(QA-964~968, 끝 `de32e8fb`)를 갈라 통합 `wb-p8fu`에 합쳤습니다(`e06d039f`·`0c34402e` — `PaperScreen.tsx` 충돌은 두 도우미를
+모두 남김). 독립 검토(제 결론을 주지 않은 검토자)가 실제 매매 끄기 안내가 새 자리표시 아래로 밀리는 것(중간)과 낮음 셋을 찾아 QA-969~972로 고쳤습니다(끝 `c1ec1adb`). 결함 줄·값은 결함 기록 '## 작업대 P8 후속'.
+API·백엔드·수집기 변경 0, 실제 계좌·실제 매매 모듈은 자리표시 부품과 그 렌더 자리·실패 배너 `role="alert"`만(검토 확인 — `realTradeScreen.test`·경계 시험 셋 무수정 통과).
+
+**대가와 남긴 것**: 정상 상태를 맞춘 맞바꿈으로 오류 상태의 이동이 늘었습니다 — 모의 보유 실패 1440 0.0027 → 0.0471, 실제 계좌 탭에서 실제 매매·실제 계좌 둘 다 503이면 1024 0.0776 → 0.2021, 기관 상세 503 1024 0.0961 → 0.1195
+(오류 때 큰 자리가 오류 상자로 줄며 아래가 올라옴). 계좌가 시작 전인 상태 1024 최대 0.005. 결정 로그 '주간 복기' 보기 머리에 빈 자리(390 계좌 칸 줄 44px)가 생겼습니다(누른 단추를 제자리에 두려고). /macro 등 목차를 쓰는 다섯 화면은
+맨 위로 올리면 지금 칸이 빕니다(QA-968 — 의도). 기관 상세 1024·390과 /regime 390·768에 남은 0.01~0.11은 응답 전에 길이를 알 수 없는 이름의 줄바꿈입니다. 결정 기록이 2초 넘게 답하지 않으면 한국 '출발·게이트 기록'은 목록 자리 아래에
+그려집니다(QA-972 — 상한 뒤에도 자리를 남김).
+
+**확인**: 통합 끝 `c1ec1adb`에서 전체 vitest 499파일·4,930건·tsc·lint·check·build 통과. QA 스택을 `0c34402e`와 `c1ec1adb`로 차례로 다시 빌드한 감사가 둘 다 D7 화면 감사와 전 경로·전 항목 같음(`/style` 한 줄은 자동 id만 다름).
+
+## D8 배포 (2026-11-21 07:33~07:35 KST, Vultr `main@fb663698` — main `d9a42d77` → `fb663698` fast-forward)
+- 담은 것: 위 §P8 후속(QA-954~958·964~972, 독립 검토 반영). 같은 날 07:20~07:23에 먼저 나간 작업 2(ADR 0044 — `main@d9a42d77`)를 기능 브랜치에 병합(`90a1d460`, 충돌 없음)하고 그 배포 기록(`fb663698` — ADR 0044·0018)을 더했습니다. 다른 세션의 커밋은 들지 않음.
+- 배포 전: 병합 끝에서 전체 vitest 500파일·4,932건·tsc·lint·check·build·감사 스크립트 시험 9건 통과, 기능 브랜치 CI(`90a1d460`) 여섯 job 통과. 운영 DB `paper_job_runs`를 읽기만 함 — 07:18 `risk`·07:19 `exec-audit` OK, 도는 작업 없음(토요일, 두 시장 닫힘).
+- `scripts/vultr/deploy.sh`(1분 37초): 화면·caddy만 다시 띄움(백엔드·수집기는 작업 2 배포 그대로). 디스크 58%, 재부팅 필요 없음 · Livepatch 정상.
+- GET 확인: /·모의매매 두 시장과 탭(holdings·decisions·selection·real·isa)·/macro·/regime·/institutions·기관 상세·/more·/search·`/search?e=us:NVDA`·/status·/radar·/krx·/alerts·/ai/report·/connections·/admin/users·/account·/sector·/cot·/info 두 탭·/login 200(/paper는 307), /no-such-page 404, `/api/health`·`/api/status` 200, JS 빌드 표지 `main@fb663698`.
+- 배포 뒤 5분(07:40): 서버 HEAD `fb663698`, 백엔드 ERROR 0·화면 오류 0, 수집기 오류 줄 1(07:25 yfinance FOX 404 — 작업 2 배포 뒤와 같은 외부 응답). main CI(`fb663698`) 여섯 job 통과.

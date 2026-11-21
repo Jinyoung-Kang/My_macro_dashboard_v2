@@ -4,7 +4,16 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { pickActiveSection, pickEndSection, scrolledToEnd, sectionCountText, sectionOrder, sectionParent, type SectionIndexItem } from "../sectionIndex";
+import {
+  pickActiveSection,
+  pickEndSection,
+  scrolledToEnd,
+  sectionCountText,
+  sectionOrder,
+  sectionParent,
+  sectionsBelowBand,
+  type SectionIndexItem,
+} from "../sectionIndex";
 
 const ITEMS: SectionIndexItem[] = [
   { id: "top", label: "맨 위" },
@@ -40,6 +49,23 @@ describe("pickActiveSection", () => {
     expect(pickActiveSection(order, new Set(), "gone")).toBeNull();
     // 차례에 없는 id만 걸치면 걸친 것이 없는 것과 같음
     expect(pickActiveSection(order, new Set(["other"]), "ind")).toBe("ind");
+  });
+
+  it("걸친 것이 없고 모든 절이 띠 아래면(aboveAll — 첫 절에 닿기 전) 앞 값이 있어도 null, 걸친 것이 있으면 그것(QA-968)", () => {
+    expect(pickActiveSection(order, new Set(), "fx", true)).toBeNull();
+    expect(pickActiveSection(order, new Set(["ind"]), "fx", true)).toBe("ind");
+  });
+});
+
+describe("sectionsBelowBand(QA-968)", () => {
+  it("아는 위 끝이 모두 띠 아래 끝(뷰포트 높이의 34%) 이상이면 참 — 하나라도 위면 거짓, 아는 값이 없으면 거짓", () => {
+    expect(sectionsBelowBand([509, 3846, 7151], 844)).toBe(true);
+    expect(sectionsBelowBand([287, 900], 844)).toBe(true);
+    expect(sectionsBelowBand([286, 900], 844)).toBe(false);
+    expect(sectionsBelowBand([-560, 500], 844)).toBe(false);
+    expect(sectionsBelowBand([Number.POSITIVE_INFINITY, 600], 844)).toBe(true);
+    expect(sectionsBelowBand([Number.POSITIVE_INFINITY], 844)).toBe(false);
+    expect(sectionsBelowBand([], 844)).toBe(false);
   });
 });
 

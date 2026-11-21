@@ -80,6 +80,13 @@ const MENU_PATHS: Record<string, React.ReactNode> = {
       <path d="M12 17v4" />
     </>
   ),
+  // 보안 공지 — 방패 안의 체크(이 환경에 남은 보안 업데이트를 살핌).
+  "/security": (
+    <>
+      <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />
+      <path d="M8.75 12l2.25 2.25 4.25-4.5" />
+    </>
+  ),
   "/admin/users": (
     <>
       <circle cx="9" cy="8" r="3.5" />

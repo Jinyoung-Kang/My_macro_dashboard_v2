@@ -120,3 +120,44 @@ describe("QA-626 지금 절 띠는 위에 붙은 상단바·가로 목차 줄 �
     expect(Number(top)).toBeLessThanOrEqual(-96);
   });
 });
+
+// QA-968(작업대 P8 후속 — `section-spy-history-back`): 지금 절은 띠에 걸친 절이 없으면 앞 값을 그대로 두어, 목차로 옮긴 절에서 뒤로 가기로 화면 맨 위(첫 절이
+// 띠 아래)에 돌아와도 옮긴 절이 지금 칸으로 남았습니다 — 기준 빌드(40a8b4cf, QA API GET) /macro 390×844에서 목차 '신용·변동성'을 누른 뒤 뒤로 가기:
+// 주소 /macro·scrollY 0·첫 절(지표) 위 끝 509px(띠 아래 끝 287px 아래)인데 가로 줄의 지금 칸이 '#macro-risk'. 같은 자리를 처음 열면 지금 칸이 없습니다.
+// 모든 절이 띠 아래면(첫 절에 닿기 전) 처음 연 화면과 같이 지금 칸이 없어야 합니다. 절 사이 빈 곳(위에 지나간 절이 있음)은 앞 값 그대로입니다.
+describe("QA-968 화면 맨 위(모든 절이 띠 아래)로 돌아오면 지금 절이 없다", () => {
+  /** 절 닻의 뷰포트 위 끝(px)을 정합니다 — jsdom은 배치를 계산하지 않음. */
+  function placeAt(tops: Record<string, number>) {
+    for (const [id, top] of Object.entries(tops)) {
+      const element = document.getElementById(id) as HTMLElement;
+      element.getBoundingClientRect = () => ({ top, bottom: top + 400, left: 0, right: 0, width: 0, height: 400, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    }
+  }
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 옮긴 절이 남았습니다(expected 'risk' to be null).
+  it("옮긴 절이 띠를 떠나고 모든 절의 위 끝이 띠(창 높이의 34%) 아래면 null — 처음 연 화면과 같음", () => {
+    const made = stubObserver();
+    anchors(["ind", "fx", "risk"]);
+    const { result } = renderHook(() => useSectionSpy(["ind", "fx", "risk"]));
+    placeAt({ ind: -6000, fx: -3000, risk: 57 });
+    fire(made[0], [["risk", true]]);
+    expect(result.current).toBe("risk");
+    // 뒤로 가기로 맨 위 — 첫 절 위 끝이 띠 아래(창 높이 768의 34% = 261px 아래).
+    placeAt({ ind: 509, fx: 3846, risk: 7151 });
+    fire(made[0], [["risk", false]]);
+    expect(result.current).toBeNull();
+  });
+
+  it("절 사이 빈 곳(위에 지나간 절이 있음)이나 마지막 절 뒤는 앞 값 그대로", () => {
+    const made = stubObserver();
+    anchors(["ind", "fx", "risk"]);
+    const { result } = renderHook(() => useSectionSpy(["ind", "fx", "risk"]));
+    placeAt({ ind: -2000, fx: 40, risk: 3000 });
+    fire(made[0], [["fx", true]]);
+    expect(result.current).toBe("fx");
+    // fx의 꼬리가 띠를 지나 위로 — 다음 절은 아직 띠 아래, 지나간 절이 위에 있음.
+    placeAt({ ind: -2600, fx: -560, risk: 500 });
+    fire(made[0], [["fx", false]]);
+    expect(result.current).toBe("fx");
+  });
+});

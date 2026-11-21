@@ -219,8 +219,8 @@ final class PaperSettingKeys {
             integer("lockoutTradingDays", 0, 250, true, "스탑 뒤 재진입 금지 거래일(D10)"),
             choice(StopWatchMode.US_KEY, StopWatchMode.OPTIONS, true,
                     "미국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 보고 트레일링 "
-                            + "스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음). OFF는 감시·수집 없음(시간별 관측치 "
-                            + "스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+                            + "스탑선 아래가 두 번 이어지면 감지 뒤 처음 시작하는 분(1분 안)에 시장가로 매도(개장 10분 전에는 팔지 않음). "
+                            + "OFF는 감시·수집 없음(시간별 관측치 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
             integer("maxDiscretionaryOrdersPerMonth", 0, 200, false, "Claude 재량 주문 월 상한(C9)"),
             integer("minHoldTradingDaysForSell", 0, 60, false, "Claude 재량 매도 전 최소 보유 거래일(C9, 스탑 제외)"),
             number("minOrderNotional", 0, 100_000, true, "주문 최소 금액(달러) — Claude 검증기·규칙 계좌 매수(C9)"),
@@ -398,8 +398,13 @@ final class PaperSettingKeys {
             integer("kr.lockoutTradingDays", 0, 250, true, "한국 스탑 뒤 재진입 금지(KRX 거래일)"),
             choice(StopWatchMode.KR_KEY, StopWatchMode.OPTIONS, true,
                     "한국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 토스 1분봉으로 "
-                            + "보고 트레일링 스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음, 실제 계좌·ISA도 따름 — "
-                            + "ADR 0033). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+                            + "보고 트레일링 스탑선 아래가 두 번 이어지면 감지 뒤 처음 시작하는 분(1분 안)에 시장가로 매도(개장 10분 전에는 팔지 않음, "
+                            + "실제 계좌·ISA도 따름 — ADR 0033). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+            choice(KrStopFill.KEY, KrStopFill.OPTIONS, true,
+                    "한국 장중 감시 스탑 체결의 장중 기록(ADR 0045, 기본 OFF) — kr.stopWatch.mode가 ON일 때만 뜻이 있음. OFF는 지금처럼 그날 밤 "
+                            + "장부가 체결, SHADOW는 장부를 그대로 두고 '장중에 적었을 것'(토스 1분봉 기준 분 다음 봉 시가·관문 판정)을 주문 근거에 남겨 밤 "
+                            + "체결과 견줌(대조만), ON은 관문을 지난 그 체결을 장중에 장부에 적음(보유·현금이 바로 바뀜 — 실제 계좌·ISA는 그 세션 밤 처리 "
+                            + "전까지 대기로 봄). 저장은 장 마감 뒤 ~ 다음 정기 결정 전"),
             integer("kr.rulesMaxNames", 1, 50, true, "한국 규칙 계좌 매수 종목 수 상한(K7 — 후보가 모자란 만큼은 153130)"),
             choice("kr.rules.weighting", List.of("EQUAL", "SCORE"), true,
                     "한국 규칙 계좌 배분 — 동일비중(EQUAL)·점수 비례(SCORE, 점수 = 20일 외국인·기관 순매수 주 ÷ 상장주식수)"),
@@ -473,7 +478,8 @@ final class PaperSettingKeys {
                             + "분 이상). 금요일·휴장 전날 세션의 결정이 다음 거래일 아침으로 옮겨짐"),
             of(Briefing.KR_ENABLED, Type.BOOLEAN, false,
                     "한국 마감 브리핑(ADR 0039, 기본 꺼짐) — 켜면 정규장 마감 kr.briefing.afterCloseMinutes분 뒤에 텔레그램 한 통. 한국 장부는 밤에 "
-                            + "체결·평가하므로 마감 직후 브리핑의 체결·순자산·수급은 '밤 장부 처리 뒤 확정'으로 적음"),
+                            + "체결·평가하므로 마감 직후 브리핑의 체결·순자산·수급은 '밤 장부 처리 뒤 확정'으로 적음(그날 장중에 기록한 감시 스탑 "
+                            + "매도가 있으면 그 반영을 함께 적음 — ADR 0045)"),
             integer(Briefing.KR_AFTER_CLOSE, 0, Briefing.MAX_AFTER_CLOSE, false,
                     "한국 마감 브리핑을 정규장 마감 몇 분 뒤에 보낼지(기본 30 — 장 시간 변경일은 그날 마감 기준, 밤 장부 뒤 값이 필요하면 330 등)"),
             of(IntradayPolicy.KR_EVENTS, Type.BOOLEAN, false,

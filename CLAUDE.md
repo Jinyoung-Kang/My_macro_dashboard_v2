@@ -15,7 +15,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - 숫자·화면 원칙: [docs/PRINCIPLES.md](docs/PRINCIPLES.md)
 - 설계 결정과 지키는 방법: [docs/adr/README.md](docs/adr/README.md)
 - API 경로(`RouteInventoryTest`·`endpoints.test.ts`가 이 문서와 대조): [docs/API.md](docs/API.md)
-- 수집 태스크 68개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
+- 수집 태스크 69개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
 - 지난 리뷰·QA의 결함 목록과 남은 위험: [docs/reviews/](docs/reviews/) · [docs/qa/](docs/qa/) (결함 번호 `QA-###`)
 - **v2 프로그램**(순서·사용자 결정 V1~V8·AWS 교체 절차): [docs/specs/2026-10-26-v2-program-plan.md](docs/specs/2026-10-26-v2-program-plan.md) ·
   [0단계 체크리스트](docs/specs/2026-10-26-v2-step0-fork.md) · [UI/UX 설계](docs/specs/2026-10-26-v2-ui-design.md)(1단계 — 토큰·셸 시안 승인 뒤 홈 → 모의매매(미국)) ·
@@ -53,7 +53,9 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다(서버 v1도 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 DEVELOPMENT §7 '서버 `.env` 전달' 절차대로 — 그 줄과 포트 네 줄 등은 빼고, 서버 전용 줄(토스 키·텔레그램·`PAPER_KR_START_DATE`·실제 매매 여섯 줄 등, `.env.vultr.example`)은 서버의 지금 값을 그대로 이어 붙인다.
 - **체결 시점 자유화(ADR 0027·0031)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` — 개장 10분 뒤부터, 미국 09:40~15:54 ET·한국 09:10~15:19 + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`,
-  장중 판단 최소·사건·effort(`intradayMinPerSession`·`intradayEvents`·`intradayEffort`, 한국 `kr.` 키), 장중 스탑 감시(`stopWatch.mode`·`kr.stopWatch.mode` = OFF·SHADOW·ON, ADR 0032).
+  장중 판단 최소·사건·effort(`intradayMinPerSession`·`intradayEvents`·`intradayEffort`, 한국 `kr.` 키), 장중 스탑 감시(`stopWatch.mode`·`kr.stopWatch.mode` = OFF·SHADOW·ON, ADR 0032),
+  한국 장중 스탑 체결 기록(`kr.stopWatch.fill` = OFF·SHADOW·ON, ADR 0045 — 감시 ON일 때만 뜻, SHADOW는 대조만·ON은 장중에 장부에 적음, 실제 계좌·ISA는 그 세션 밤 처리 전까지 대기로 봄 —
+  SHADOW·ON 저장은 각각 사용자 재확인, 평소 저장은 장 마감 뒤 ~ 다음 정기 결정 전, 잘못된 기록이 보이면 장중에도 OFF로 바꾸고 섞인 패킷을 ADR 0018에 적음).
   끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 70·예약 30·`claude2.maxCallsPerCycle` 5 이상·`claude.checkpoint` 끔을 함께 — ADR 0031).
 - **판단 이어받기(ADR 0038)의 스위치 `continuity`·`kr.continuity`도 기본 꺼짐**(자유 시점 판을 켠 계좌에만 듦) — 켜면 결정 패킷에 보유 종목의 진입 논거·무효화 조건(`entry`)과
   직전 결정이 남긴 조건(`10b_carried` — 코드가 지금 값으로 충족 여부를 매김), 응답에 바라는 노출·계획·조건 칸, 장중 판단 패킷에 그 세션 결정의 논거·조건이 실린다.

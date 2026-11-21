@@ -80,7 +80,7 @@ describe("탭과 펼침", () => {
   it("운영자의 더보기에는 운영 화면도 — 회원의 나무에는 없다", () => {
     const labelsOf = (user: SessionUser) =>
       navTree("/more", user).find((node) => node.tab.key === "more")?.groups?.[0].leaves.map((leaf) => leaf.item.label);
-    expect(labelsOf(OWNER)).toEqual(["알림", "AI 종합 분석", "데이터 저장소 상태", "외부 API 연결 테스트", "사용자 관리", "내 계정"]);
+    expect(labelsOf(OWNER)).toEqual(["알림", "AI 종합 분석", "데이터 저장소 상태", "외부 API 연결 테스트", "보안 공지", "사용자 관리", "내 계정"]);
     expect(labelsOf(MEMBER)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
   });
 });

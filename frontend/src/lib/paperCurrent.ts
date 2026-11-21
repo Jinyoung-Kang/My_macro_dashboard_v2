@@ -7,7 +7,7 @@
  *
  * 지금 값은 **표시 전용**입니다 — `isEstimated`면 장중 1분봉으로 다시 평가한 추정이고, 통계·순자산 줄·결정에는 들어가지 않습니다.
  */
-import { formatKst, formatPercent } from "./format";
+import { formatKst, formatPercent, withMinusSign } from "./format";
 import { PAPER_SOURCES } from "./paper";
 import { formatMoney, type PaperMarketCode } from "./paperMarket";
 import { presentText } from "./patterns";
@@ -124,7 +124,7 @@ export interface DayChange {
   label: string;
   /** '10-29 잠정 대비' 등(모르면 null). */
   base: string | null;
-  /** '오늘 +0.42% · 10-29 잠정 대비' — 변화를 모르면 null(줄을 생략, 0.00%를 짓지 않음). */
+  /** '오늘 +0.42% · 10-29 잠정 대비'(음수는 '−0.41%' — U+2212) — 변화를 모르면 null(줄을 생략, 0.00%를 짓지 않음). */
   text: string | null;
 }
 
@@ -141,7 +141,8 @@ export function dayChange(source: DaySource, session: PaperLiveSessionSummary | 
   const pct = typeof source.dayChangePct === "number" && Number.isFinite(source.dayChangePct) ? source.dayChangePct : null;
   const label = dayLabel(source.tradingDate, session);
   const base = dayBaseText(source.previousTradingDate, source.previousNavFinal);
-  return { pct, label, base, text: pct === null ? null : `${label} ${formatPercent(pct)}${base ? ` · ${base}` : ""}` };
+  // 음수 부호는 U+2212(−) — 같은 화면의 KPI 띠·변화 칩과 같은 기호(QA-945, 예전 formatPercent 글 그대로의 '-0.41%').
+  return { pct, label, base, text: pct === null ? null : `${label} ${withMinusSign(formatPercent(pct))}${base ? ` · ${base}` : ""}` };
 }
 
 /**

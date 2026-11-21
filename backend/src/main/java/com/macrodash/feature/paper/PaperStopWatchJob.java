@@ -66,7 +66,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 프로세스가 세션 첫 판정 전 회차를 놓친 것은 재기동이 아니므로 첫 판정 격자부터 판정합니다(QA-306). 한 종목에서 처음 걸린 격자로 주문을 냅니다.
  *
  * <p><b>주문</b>(ON): 매도·수량 없음(체결 때 보유 전량)·출처 {@code STOP}·대기, 결정 없음, 기준 거래일 = 그 세션 전 거래일(목표 세션 = 그 세션), 생성 =
- * 이 작업의 시각, 만료 = 그 세션, 시점은 {@link StopWatch#target}(감지 + 60초 뒤 첫 분 — 보통 장중 시장가, 장 끝 여유 안이면 종가). 근거에
+ * 이 작업의 시각(µs로 자름), 만료 = 그 세션, 시점은 {@link StopWatch#target}(감지 뒤 처음 시작하는 분 — ADR 0044, 보통 장중 시장가, 장 끝 여유 안이면 종가). 근거에
  * {@code stopMode = }{@value #STOP_MODE}·최고가·스탑가·두 격자의 가격과 봉 시각·감시 저장본 시각·감지 시각·기준 시각과 사람이 읽는 한 줄({@code note} —
  * 텔레그램 '근거')을 남깁니다. 체결은 기존 1분봉 사다리가 합니다(미국 다음 관측치, 한국 그날 밤 — 장부). 같은 종목에 대기 STOP이 있거나, 전량 매도
  * 대기 주문의 기준 시각이 이 STOP의 기준 시각 이전이면 내지 않습니다(멱등 — 대기 STOP이 곧 '이미 냄'의 표시라 상태 표가 없음).
@@ -74,6 +74,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>최고가</b>: 장부가 쓴 값만 씁니다(이 작업은 최고가를 쓰지 않음). 한국은 저장된 최고가와, 장부가 최고가를 올리는 같은 규칙의 금융위 확정 종가
  * (그 세션 전날까지 — {@link PaperLedgerService#watermarkFrom}) 가운데 큰 값입니다(금융위 D 값은 D+1 낮에 들어와 밤 장부보다 먼저 볼 수 있음).
  * 현금성·한국 미처리 기업행위 보유·갭 가드에 걸린 종목은 보지 않습니다.
+ *
+ * <p><b>한국 장중 체결 단계</b>(ADR 0045 — {@link KrStopFillStep}): 한국 판정 뒤 주기마다(판정 쪽 조기 반환·예외와 상관없이) 스위치
+ * {@value KrStopFill#KEY}의 유효 값이 SHADOW·ON이면 감시 STOP의 R1 체결을 장중에 셈해 근거를 남기고, 밤 처리가 닫은 뒤 밤 체결과 견줍니다. 결과·오류는
+ * 판정 쪽과 따로입니다.
  *
  * <p>장부 잠금({@link PaperLedgerService#exclusively}) 안에서 책마다 한 트랜잭션입니다 — 관측치 처리와 같은 종목을 함께 팔지 않게. Claude 호출을 하지
  * 않아 몇 초 안에 끝납니다. 저장본은 {@link StoreReader#quietly}로만 읽습니다(ADR 0008). {@code dashboard.paper.enabled=false}면 아무것도 하지 않습니다.
@@ -105,9 +109,13 @@ public class PaperStopWatchJob {
     private final Clock clock;
     private final PaperMarkets markets;
     private final StopWatchStatus status;
+    /** 한국 장중 감시 STOP 체결의 장중 단계(ADR 0045) — 한국 판정 뒤 주기마다(판정 쪽 조기 반환·예외와 상관없이). */
+    private final KrStopFillStep fillStep;
     private final ReentrantLock running = new ReentrantLock();
     /** 시장 코드 → 이 프로세스가 본 것(세션 중 재기동하면 비어 가장 최근 격자부터). */
     private final Map<String, MarketState> states = new HashMap<>();
+    /** 마지막 한국 장중 체결 단계 결과({@link #lastFill}). */
+    private volatile KrStopFillStep.Outcome lastFill;
     /** 시장 코드 → 마지막으로 남긴 오류(같은 오류를 되풀이해 남기지 않게). */
     private final Map<String, String> lastErrors = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -166,6 +174,7 @@ public class PaperStopWatchJob {
         this.mapper = mapper;
         this.clock = clock;
         this.markets = markets;
+        this.fillStep = new KrStopFillStep(store, reader, marketData, ledger, config, mapper, clock, markets);
     }
 
     /**
@@ -233,11 +242,43 @@ public class PaperStopWatchJob {
                     status.cycled(market.code(), clock.instant(), outcome.error() != null ? "오류 — " + outcome.error() : outcome.skipped());
                 }
                 out.add(outcome);
+                if (market.auctionFills()) {
+                    runFillStep(market);
+                }
             }
             return out;
         } finally {
             running.unlock();
         }
+    }
+
+    /**
+     * 한국 장중 체결 단계(ADR 0045 — {@link KrStopFillStep}) 한 번 — 판정 쪽 결과·예외와 따로입니다. 오류는 바뀔 때만 경고로 남깁니다(20초마다 같은 줄이
+     * 쌓이지 않게). 결과는 시험이 읽게 남깁니다({@link #lastFill}).
+     */
+    private void runFillStep(PaperMarket market) {
+        String key = market.code() + "|fill";
+        try {
+            KrStopFillStep.Outcome fill = fillStep.run(market);
+            lastFill = fill;
+            if (fill.error() != null) {
+                if (!fill.error().equals(lastErrors.put(key, fill.error()))) {
+                    log.warn("한국 장중 스탑 체결 단계 실패 — 다음 주기에 다시 봅니다: {}", fill.error());
+                }
+                return;
+            }
+            lastErrors.remove(key);
+            if (!fill.recorded().isEmpty()) {
+                log.info("한국 장중 스탑 체결 단계: 근거 {}건 {}", fill.recorded().size(), fill.recorded());
+            }
+        } catch (RuntimeException e) {
+            log.warn("한국 장중 스탑 체결 단계 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+        }
+    }
+
+    /** 마지막 한국 장중 체결 단계 결과(시험용 — 아직 돌지 않았으면 null). */
+    KrStopFillStep.Outcome lastFill() {
+        return lastFill;
     }
 
     private Outcome runMarket(PaperMarket definition) {
@@ -570,7 +611,9 @@ public class PaperStopWatchJob {
             if (hit == null || stopPending.contains(ticker)) {
                 continue;
             }
-            Instant now = clock.instant();
+            // DB가 µs까지만 담으므로 시각을 µs로 잘라 T 계산과 생성 시각(created_at)에 같이 씁니다 — 분 경계에서 저장 때 반올림이 갈려 근거의
+            // targetAt과 장부가 다시 센 T가 1분 다르지 않게(ADR 0044).
+            Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
             StopWatch.Target target = StopWatch.target(now, session, calendar, korea);
             if (fullSellBefore(pending, ticker, target.at(), calendar, korea)) {
                 continue;

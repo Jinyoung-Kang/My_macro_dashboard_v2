@@ -130,8 +130,8 @@ final class KrFills {
      * ({@link KrTimedLadder#targetOn} — 장중 확인이 E 장중에 낸 주문은 그 뒤 시각만 그날 체결, 단계 2b). 시가 체결가는 봉 날짜 개장(09:00) 단일가라, 다음
      * 세션 개장 뒤에 만든 주문(기준일 D, 생성 D+1 10:00 — 수동 결정 등)이 결정 뒤 정보를 본 채 그 전 시각의 시가로 체결되지 않게 합니다(미국은 체결가가
      * 관측치 자체라 ①로 충분 — 묶음 C 리뷰). 밤에 감지한 스탑({@code STOP})은 감지 근거가 기준일 종가(그날 15:30에 공개)라 그 다음 시가에 팔 수 있던 정보이므로
-     * 보지 않습니다. 장중 감시가 낸 STOP({@link StopWatch#intradayStop} — ADR 0032)은 그 근거가 장중 가격이라 이 우회가 맞지 않아 일반 검사를 거칩니다(만들 때
-     * 기준 시각이 생성 + 60초 뒤라 보통 통과).
+     * 보지 않습니다. 장중 감시가 낸 STOP({@link StopWatch#intradayStop} — ADR 0032)은 그 근거가 장중 가격이라 이 우회가 맞지 않아 일반 검사를 거칩니다(장중
+     * 시장가의 기준 시각은 생성 뒤 처음 시작하는 분 — ADR 0044 — 이라 T &gt; 생성이 늘 성립해 통과, 첫 분 지정 시각도 그 첫 분이 감지 + 60초보다 뒤).
      */
     static boolean opensAfterOrder(Order order, LocalDate barDate, TradingCalendar calendar) {
         if ((PaperBooks.SOURCE_STOP.equals(order.source()) && !StopWatch.intradayStop(order)) || order.createdAt() == null) {
@@ -171,19 +171,33 @@ final class KrFills {
         if (!choice.date().equals(bar.date())) {
             throw new IllegalArgumentException("고른 체결의 날짜(" + choice.date() + ")가 봉 날짜(" + bar.date() + ")와 다릅니다");
         }
+        PaperLedger.Side side = PaperBooks.SELL.equals(order.side()) ? PaperLedger.Side.SELL : PaperLedger.Side.BUY;
+        return termsFor(side, bar.ticker(), choice, quote.fscMarket(), settings, etfs);
+    }
+
+    /**
+     * 고른 체결({@code choice} — 날짜·관측가·출처) 하나의 체결 조건(클래스 설명의 체결 조건 — 비용 요율 → 종목 구분 → 세율 시행일 → 호가 경고). 밤
+     * 장부({@link #terms})는 체결 봉 고르기·날짜 검사 뒤 이 함수를 부르고, 장중 감시 저장본으로 고른 R1 체결(ADR 0045 — {@code KrIntradayFill})도 같은
+     * 함수를 지나 세율·수수료·슬리피지·호가 검사가 한 곳입니다.
+     *
+     * @param code      종목 코드(ETF 목록 대조)
+     * @param fscMarket 금융위 시장 구분({@code fsc_price.market} — 모르면 null, 보류)
+     * @param etfs      설정 밖의 ETF 목록(벤치마크 종목)
+     * @throws IllegalStateException 설정에 한국 비용 요율이 없음(한국 시장 판으로 읽지 않은 설정)
+     */
+    static FillTerms termsFor(PaperLedger.Side side, String code, Choice choice, String fscMarket, PaperSettings settings,
+                              Set<String> etfs) {
         PaperSettings.CostRates costRates = settings.costRates();
         if (costRates == null) {
             throw new IllegalStateException("한국 비용 요율이 없는 설정입니다 — 한국 시장 판으로 읽은 설정을 넘기세요(PaperSettings.from(body, KR))");
         }
-        String code = bar.ticker();
         boolean etf = settings.cashLike(code) || etfs.contains(code);
-        Optional<KrxCosts.Instrument> instrument = KrxCosts.classify(quote.fscMarket(), etf);
+        Optional<KrxCosts.Instrument> instrument = KrxCosts.classify(fscMarket, etf);
         if (instrument.isEmpty()) {
             return new FillTerms.Hold("종목 구분 모름 — 금융위 시장 구분 "
-                    + (quote.fscMarket() == null ? "없음(최신 기준일에 그 종목 행 없음)" : "'" + quote.fscMarket() + "'")
+                    + (fscMarket == null ? "없음(최신 기준일에 그 종목 행 없음)" : "'" + fscMarket + "'")
                     + "이고 ETF 목록(kr.cashLikeTickers·벤치마크)에도 없음: 세율·호가를 짐작하지 않고 주문 보류(코넥스·모르는 시장, §4-3)");
         }
-        PaperLedger.Side side = PaperBooks.SELL.equals(order.side()) ? PaperLedger.Side.SELL : PaperLedger.Side.BUY;
         if (side == PaperLedger.Side.SELL && choice.date().isBefore(costRates.tax().effectiveFrom())) {
             return new FillTerms.Hold("세율 모름 — 매도 체결일 " + choice.date() + "이 이 설정 판의 세율 시행일(kr.tax.effectiveFrom "
                     + costRates.tax().effectiveFrom() + ")보다 이름(그 전 세율은 이 판에 없음 — 짐작하지 않고 주문 보류)");

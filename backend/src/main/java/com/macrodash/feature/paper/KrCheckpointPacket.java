@@ -133,10 +133,32 @@ final class KrCheckpointPacket {
      * @param calendar         한국 달력(그 실행)
      * @param assembledAt      조립 시각
      * @param free             자유 시점 판의 장중 판단이면 그 차이({@link Free}), 끈 판 장중 확인이면 null
+     * @param intradayFill     한국 장중 감시 스탑 체결을 장중에 장부에 적는 판인가({@link KrStopFill#effective}가 ON — ADR 0045): 자유 시점 판의
+     *                         {@code 1_basis.stopWatch.rule} 반영 시점 구절과 장부 글({@code 4_portfolio.ledger.note})이 그 판 글. 끈 판 장중 확인도 같은
+     *                         표지를 받습니다(두 작업이 함께 넘김)
+     * @param intradayRecorded 그 장부에 밤 처리 전 장중 기록 스탑 매도가 있는가(자료 — {@link PaperKrCheckpointJob#intradayStopsRecorded}): 설정과 상관없이
+     *                         장부 글을 장중 기록 판 글로(QA-791 — 기록 뒤 같은 세션에 OFF로 바꿔도 현금·보유에는 이미 들어가 있음). 스탑 문장은 설정대로
      */
     record Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
                   List<Order> pending, Optional<Snapshot> watch, Optional<Quotes> quotes, Integer frameworkVersion,
-                  Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free) {
+                  Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free, boolean intradayFill,
+                  boolean intradayRecorded) {
+
+        /** 장부 자료 표지 없이(시험·장중 기록이 없는 장부). */
+        Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
+               List<Order> pending, Optional<Snapshot> watch, Optional<Quotes> quotes, Integer frameworkVersion,
+               Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free, boolean intradayFill) {
+            this(checkpoint, asOf, night, state, positions, pending, watch, quotes, frameworkVersion, settingsVersion, calendar,
+                    assembledAt, free, intradayFill, false);
+        }
+
+        /** 장중 기록 판이 아닌 판(OFF·SHADOW — 예전 글 그대로). */
+        Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
+               List<Order> pending, Optional<Snapshot> watch, Optional<Quotes> quotes, Integer frameworkVersion,
+               Integer settingsVersion, TradingCalendar calendar, Instant assembledAt, Free free) {
+            this(checkpoint, asOf, night, state, positions, pending, watch, quotes, frameworkVersion, settingsVersion, calendar,
+                    assembledAt, free, false);
+        }
 
         /** 끈 판 장중 확인(한국 계좌2 단계 2b) — 자유 시점 판 칸({@code free}) 없이. */
         Inputs(Checkpoint checkpoint, LocalDate asOf, Decision night, BookState state, List<Position> positions,
@@ -247,7 +269,7 @@ final class KrCheckpointPacket {
                         + CheckpointPacket.PENDING_AHEAD + "')만 취소되고 새 주문을 받는다 — 기준 시각이 지난 주문은 체결 예정으로 남고, "
                         + "4_portfolio.expected가 그 주문을 체결로 본 예상 장부다.",
                 "주문 timing은 1_basis.remainingTimings 가운데 하나다(장중 판단이 받는 시점 — 12_hardRules의 timings는 밤 결정의 것이다). "
-                        + "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가(그 분이 마감 10분 전 이후면 거절), AT_MINUTE이면 atLocal(한국 시간 "
+                        + "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가(그 분이 마감 10분 전 이후면 거절), AT_MINUTE이면 atLocal(한국 시간 "
                         + "HH:MM)을 1_basis.atMinute 범위 안에서 적고, NEXT_CLOSE는 오늘 종가 단일가다. 주문마다 executionNote를 쓰고, 주문이 없으면 "
                         + "noTradeReason을 쓴다. 한도·유니버스는 12_hardRules(밤 결정과 같음)이고 검증 문맥은 예상 장부다.",
                 "다음 판단이 필요하면 nextCheckpoint에 시각을 적는다(1_basis.nextCheckpoint — available이 false면 적어도 버려진다). 필요 없으면 null로 둔다.",
@@ -302,7 +324,7 @@ final class KrCheckpointPacket {
         out.put("frameworkVersion", in.frameworkVersion());
         out.put("settingsVersion", in.settingsVersion());
         if (free != null && free.stopWatch()) {
-            out.put("stopWatch", StopWatch.basis(true));
+            out.put("stopWatch", StopWatch.basis(true, in.intradayFill()));
         }
         return out;
     }
@@ -332,7 +354,7 @@ final class KrCheckpointPacket {
             return null;
         }
         FreeTiming.Window window = FreeTiming.window(session, calendar, true);
-        Instant first = ExecutionAudit.marketTarget(now);
+        Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
             first = window.first();
         }
@@ -443,6 +465,15 @@ final class KrCheckpointPacket {
         return out;
     }
 
+    /** {@code 4_portfolio.ledger.note} — 장부는 밤에 한 번 체결·평가(끈 판·대조 판 — 예전 글 그대로). */
+    static final String LEDGER_NOTE = "장부는 지난밤 관측치로 평가한 값이다(한국 장부는 밤에 한 번 체결·평가 — 오늘 시가 주문도 아직 대기)";
+    /**
+     * {@code 4_portfolio.ledger.note}의 장중 기록 판(ADR 0045) — 장중 감시 스탑 매도만 장중에 적힘. 장중 기록 판({@code intradayFill})이거나 그 장부에 밤
+     * 처리 전 장중 기록 스탑이 있을 때({@code intradayRecorded} — QA-791).
+     */
+    static final String LEDGER_NOTE_INTRADAY_FILL = "장부는 지난밤 관측치로 평가한 값에 오늘 장중에 적힌 감시 스탑 매도를 더한 값이다(장중 감시 스탑 "
+            + "매도는 기록되는 대로 현금·보유에 반영 — 그 밖의 체결·평가는 밤에 한 번, 오늘 시가 주문도 아직 대기)";
+
     private static Map<String, Object> portfolio(Inputs in, LocalDate session) {
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Object> ledger = new LinkedHashMap<>();
@@ -459,7 +490,8 @@ final class KrCheckpointPacket {
             held.add(row);
         }
         ledger.put("positions", held);
-        ledger.put("note", "장부는 지난밤 관측치로 평가한 값이다(한국 장부는 밤에 한 번 체결·평가 — 오늘 시가 주문도 아직 대기)");
+        // 장부 글은 판(설정)이나 자료로 — 장중 기록 판이면 늘, 아니어도 그 장부에 밤 처리 전 장중 기록 스탑이 있으면(QA-791) 장중 기록 판 글.
+        ledger.put("note", in.intradayFill() || in.intradayRecorded() ? LEDGER_NOTE_INTRADAY_FILL : LEDGER_NOTE);
         out.put("ledger", ledger);
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Order o : in.pending()) {

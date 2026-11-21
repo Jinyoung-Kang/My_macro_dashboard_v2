@@ -9,7 +9,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Card, Metric, Panel } from "@/components/ui";
+import { Card, Panel } from "@/components/ui";
 
 afterEach(() => cleanup());
 
@@ -130,14 +130,5 @@ describe("Panel", () => {
 
   it("Card는 Panel과 같은 부품(옛 이름)", () => {
     expect(Card).toBe(Panel);
-  });
-});
-
-describe("Metric", () => {
-  it("값은 KPI 크기(20px, lg 24px)와 tabular-nums, 칸은 4px·안쪽 12px", () => {
-    const { container } = render(<Metric label="순자산" value="1,000원" />);
-    const value = screen.getByText("1,000원");
-    expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xl", "lg:text-2xl", "tabular-nums"]));
-    expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["rounded-control", "p-3"]));
   });
 });

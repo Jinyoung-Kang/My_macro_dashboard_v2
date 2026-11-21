@@ -1,7 +1,7 @@
 /**
  * 모의매매(한국) 결정 로그 탭(/paper/kr/decisions, 2단계 명세 §4-6·§4-9·§4-16 F2) — 네 상태 이야기와 한국 상세.
  *
- *  - 불러오는 중: 결정 기록·작업 기록이 오기 전에는 읽는 중 표시
+ *  - 불러오는 중: 결정 기록이 오기 전에는 읽는 중 표시(작업 기록은 처음부터 읽고 '출발·게이트 기록' 패널은 결정 기록이 온 뒤부터 — QA-955)
  *  - 빈 상태(출발 전): 결정 기록이 비었다고 말하고 출발 단추(개요)를 안내, 규칙 계좌에는 수동 결정 단추가 없음, 출발 기록도 없음
  *  - 오류: 결정 기록·작업 기록을 못 읽으면 오류 + 다시 시도
  *  - 자료(결정 줄을 고르면 상세 — jsdom은 좁은 배치라 대화상자): 규칙 계좌 기한 지남 행(기한·판정 근거·판정 시각·기다린 게이트·③ 창 구멍 링크), 출발 INITIAL(설정 출발일·미룸), Claude 기한 지남
@@ -212,7 +212,8 @@ describe("불러오는 중", () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(overview(BOOKS));
     render(<PaperPage market="KR" initialTab="decisions" />);
     expect(await screen.findByText("결정 기록을 읽는 중…")).toBeTruthy();
-    expect(screen.getByText("작업 기록을 읽는 중…")).toBeTruthy();
+    // '출발·게이트 기록' 패널은 결정 기록이 처음 온 뒤부터 그립니다(QA-955 — 작업 기록 요청은 처음부터, 아래 단언).
+    expect(screen.queryByText("작업 기록을 읽는 중…")).toBeNull();
     expect(screen.getByRole("tab", { name: "결정 로그" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(requested()).toContain("/api/paper/decisions?book=kr_rules&limit=50"));
     expect(requested()).toContain("/api/paper/status?market=KR");

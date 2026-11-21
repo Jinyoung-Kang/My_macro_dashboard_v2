@@ -90,7 +90,7 @@ class PaperSettingsKrTest {
         assertThat(kr).containsExactly("kr.slippageBp", "kr.commissionBp", "kr.tax.kospi.sttBp", "kr.tax.kospi.ruralBp",
                 "kr.tax.kosdaq.sttBp", "kr.tax.etfBp", "kr.tax.effectiveFrom", "kr.minOrderNotional", "kr.maxWeightStockPct",
                 "kr.maxWeightEtfPct", "kr.maxPositions", "kr.maxDiscretionaryOrdersPerMonth", "kr.minHoldTradingDaysForSell",
-                "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.stopWatch.mode", "kr.rulesMaxNames", "kr.rules.weighting",
+                "kr.trailingStopPct", "kr.lockoutTradingDays", "kr.stopWatch.mode", "kr.stopWatch.fill", "kr.rulesMaxNames", "kr.rules.weighting",
                 "kr.rules.minStreakDays", "kr.rules.debtRatioMaxPct", "kr.rules.reselection",
                 "kr.rules.parkCashThresholdPct", "kr.rules.timing", "kr.rules.timingAtKst", "kr.cashLikeTickers",
                 "kr.universeExtraTickers", "kr.decisionTimeKst",
