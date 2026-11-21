@@ -8,6 +8,7 @@
 // 끄야(--no-mangling) 읽힙니다 — QA 화면을 그렇게 빌드했을 때만 씁니다(빌드 방법은 진행 기록). 그 밖의 빌드에서는 횟수만 뜻이 있습니다.
 //
 // 사용: node scripts/qa/render-profile.js --base http://127.0.0.1:13002 [--route /macro] [--rate 4] [--width 390] [--settle 20000] [--runs 1] [--top 30]
+//   --raw <파일>: 커밋마다의 기록(시각·그리기 ms·컴포넌트별 횟수·자기 시간)을 JSON으로도 씀(마지막 회차).
 //   --settle: load 뒤 이만큼(ms) 더 지켜봄(늦게 오는 응답·실시간 값·분 시계에 따른 다시 그리기까지). 실시간 시세 SSE는 QA에서 막혀 있음.
 // 출력: 커밋 수·그리기 시간 합(HostRoot actualDuration 합), 1초 구간별 커밋 수·시간, 컴포넌트별 그린 횟수·자기 시간 합(위에서 --top개), 긴 작업(longtask) 수·합.
 // 안전: 주소 이동(GET)만 합니다. QA 스택(로그인 없는 모드)에만 쓰세요.
@@ -16,7 +17,7 @@
 const { launchChrome, Cdp, sleep } = require('./ui-audit.js');
 
 function parseArgs(argv) {
-  const opts = { base: null, route: '/macro', rate: 4, width: 390, settle: 20000, runs: 1, top: 30, chrome: null };
+  const opts = { base: null, route: '/macro', rate: 4, width: 390, settle: 20000, runs: 1, top: 30, chrome: null, raw: null };
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]; const value = argv[i + 1];
     if (key === '--base') opts.base = value.replace(/\/$/, '');
@@ -27,6 +28,7 @@ function parseArgs(argv) {
     else if (key === '--runs') opts.runs = Number(value);
     else if (key === '--top') opts.top = Number(value);
     else if (key === '--chrome') opts.chrome = value;
+    else if (key === '--raw') opts.raw = value;
     else throw new Error(`모르는 인자: ${key}`);
   }
   if (!opts.base) throw new Error('--base가 필요합니다');
@@ -144,6 +146,7 @@ async function main() {
     process.stdout.write(`# ${kst} KST render-profile base=${opts.base}\n`);
     for (let run = 1; run <= opts.runs; run += 1) {
       const log = await profileOnce(browser, opts);
+      if (opts.raw) require('node:fs').writeFileSync(opts.raw, JSON.stringify(log));
       process.stdout.write(`${report(log, opts, run)}\n\n`);
     }
   } finally {
