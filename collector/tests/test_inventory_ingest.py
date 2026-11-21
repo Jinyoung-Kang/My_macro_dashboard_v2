@@ -11,6 +11,8 @@ tests/test_inventory_ingest.py
   5. 모듈은 app.store만 가져온다(쓰는 곳 하나 — ADR 0008).
   6. changelog(배포판 패키지 변경 기록의 CVE — ADR 0046 덧붙임 2026-11-21)는 ok인 host 구역이 있을 때만, 번호는 'CVE-연도-숫자 4~7자리'.
      같은 줄은 한 번으로, 넷째 표 env_changelog_cves도 같은 트랜잭션으로 통째로 바꾸고 건수만 찍는다(번호 없음).
+  7. os(구역의 /etc/os-release — ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기')는 ok인 구역에만 구역당 한 줄, 세 칸은 소문자·숫자·.·_·-의
+     32자 이하(ID는 반드시, 나머지는 '-'이면 null). 표를 바꾸지 않고 env_inventory.sections의 그 구역 객체에 "os"로 두고, 건수만 찍는다(값 없음).
 
 값은 모두 가짜입니다(공개 저장소 — 서버의 실제 버전은 운영 DB에만).
 """
@@ -109,6 +111,29 @@ def test_변경_기록_CVE를_받아_넷째_표에_두고_건수만_찍는다(st
     assert store.env_inventory()["changelog"] == [], "다시 받으면 변경 기록도 통째로 바뀜(없으면 빈 표)"
 
 
+def test_구역의_os_줄을_그_구역_객체에_두고_건수만_찍는다(store):
+    text = GOOD + "\n".join([
+        "os\thost\tubuntu\t99.04\tfakecode",
+        "os\tpostgres\talpine\t9.99.9\t-",
+        "",
+    ])
+
+    code, out, err = _run(text)
+
+    assert code == 0 and err == ""
+    assert out.strip().endswith(" · 보류 3(보안 2) · OS 2구역 · 실패 구역 backend")
+    assert "99.04" not in out and "9.99.9" not in out and "fakecode" not in out, "값은 찍지 않음"
+    sections = store.env_inventory()["inventory"]["sections"]
+    assert sections["host"] == {"status": "ok", "count": 3, "pending": 3,
+                                "os": {"id": "ubuntu", "versionId": "99.04", "codename": "fakecode"}}
+    assert sections["postgres"] == {"status": "ok", "count": 2, "os": {"id": "alpine", "versionId": "9.99.9", "codename": None}}
+    assert "os" not in sections["backend"] and "os" not in sections["browser"]
+    assert len(store.env_inventory()["components"]) == 5, "os 줄은 구성 요소가 아님"
+
+    assert _run(GOOD)[0] == 0
+    assert "os" not in store.env_inventory()["inventory"]["sections"]["host"], "다시 받으면 통째로 바뀜(os 줄이 없으면 없음)"
+
+
 def test_다시_받으면_앞의_목록을_통째로_바꾼다(store):
     assert _run(GOOD)[0] == 0
     smaller = "\n".join([
@@ -162,6 +187,17 @@ def test_다시_받으면_앞의_목록을_통째로_바꾼다(store):
     ("\n".join(line for line in GOOD.split("\n") if not line.startswith(("component\thost", "pending")))
      .replace("section\thost\tok\t-", "section\thost\tfailed\t-") + "\nchangelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-0001\n",
      "changelog 줄이 있는데 ok인 host 구역이 없음"),
+    (GOOD + "os\thost\tubuntu\t99.04\n", "os 칸이 4개"),
+    (GOOD + "os\thost\tUbuntu\t99.04\tfakecode\n", "os의 ID 모양"),
+    (GOOD + "os\thost\t-\t99.04\tfakecode\n", "os의 ID 모양"),
+    (GOOD + "os\thost\tubuntu\t99 04\tfakecode\n", "os의 VERSION_ID 모양"),
+    (GOOD + "os\thost\tubuntu\t.99\tfakecode\n", "os의 VERSION_ID 모양"),
+    (GOOD + "os\thost\tubuntu\t" + "9" * 33 + "\tfakecode\n", "os의 VERSION_ID 모양"),
+    (GOOD + "os\thost\tubuntu\t99.04\tFake/Code\n", "os의 VERSION_CODENAME 모양"),
+    (GOOD + "os\tbackend\tdebian\t99\tfakedeb\n", "os의 구역이 ok인 section 줄에 없음"),
+    (GOOD + "os\tbrowser\tdebian\t99\tfakedeb\n", "os의 구역이 ok인 section 줄에 없음"),
+    (GOOD + "os\tnowhere\tdebian\t99\tfakedeb\n", "os의 구역이 ok인 section 줄에 없음"),
+    (GOOD + "os\thost\tubuntu\t99.04\tfakecode\nos\thost\tubuntu\t99.04\tfakecode\n", "같은 구역의 os 줄이 두 번"),
 ])
 def test_하나라도_틀리면_아무것도_쓰지_않는다(store, text, why):
     assert _run(GOOD)[0] == 0
@@ -171,7 +207,7 @@ def test_하나라도_틀리면_아무것도_쓰지_않는다(store, text, why):
 
     assert code == inventory.EXIT_INVALID and out == ""
     assert why in err and err.startswith("버전 목록을 받지 않음(아무것도 쓰지 않음)")
-    assert "fake-lib" not in err and "9.9.9" not in err, "칸 값을 싣지 않음"
+    assert "fake-lib" not in err and "9.9.9" not in err and "99.04" not in err and "fakecode" not in err, "칸 값을 싣지 않음"
     assert store.env_inventory() == before
 
 

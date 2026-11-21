@@ -91,9 +91,10 @@ ALL_TASKS: tuple[Task, ...] = (
          "정보 검색 보도자료·경제지 RSS — 연준·ECB·영란은행·Bloomberg·MarketWatch·CNBC·Benzinga·Seeking Alpha·BBC·Economist·Nikkei Asia, "
          "피드마다 탄력 주기·조건부 요청, 90일 보관 (정보 검색 화면 — 모의 매매 패킷은 읽지 않음)",
          due=search_feeds_due),
-    # 보안 공지(ADR 0046) — 보호나라 보안공지 목록 한 쪽 + 상세 최대 8건(요청 사이 3~6초), 사건 뉴스와 같은 flex 방식(공용 세션·로컬에서도 돎).
+    # 보안 공지(ADR 0046) — 보호나라 보안공지 목록 1쪽(메우는 중이면 메우기 쪽도) + 상세 최대 12건(요청 사이 3~6초), 사건 뉴스와 같은 flex 방식
+    # (공용 세션·로컬에서도 돎). KST 6시간 구간마다 무작위 한 번 — 하루 최대 4번.
     Task("kisa_security_notices", "flex", task_kisa_security_notices,
-         "보안 공지 — KISA 보호나라 보안공지 목록·상세(제품별 영향받는 버전 표), 3~6시간에 한 번·처음 90일을 메우는 동안 20~40분 (운영자 화면 '보안 공지')",
+         "보안 공지 — KISA 보호나라 보안공지 목록·상세(제품별 영향받는 버전 표), KST 6시간 구간마다 무작위 한 번(하루 최대 4번) (운영자 화면 '보안 공지')",
          due=security_due),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열", yahoo=True),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),

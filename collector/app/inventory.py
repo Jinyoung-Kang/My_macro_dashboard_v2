@@ -12,6 +12,7 @@ app/inventory.py
   component  <구역>  <생태계>  <이름>  <버전>  <원본 | ->
   pending    <패키지>  <아키텍처 | ->  <설치 버전>  <후보 버전>  <저장소(쉼표로 여럿)>
   changelog  <원본 패키지 | kernel>  <버전>  <CVE 번호>
+  os         <구역>  <ID>  <VERSION_ID | ->  <VERSION_CODENAME | ->     (구역마다 /etc/os-release — 선택, 구역당 한 줄)
 
   - 구역: 소문자·숫자·``_``·``-``. 지금 쓰는 것은 일곱 — host(서버 OS 패키지·커널·Docker·Compose·Tailscale·apt 보류)·postgres·backend·
     frontend·collector·browser·caddy(컨테이너 OS 패키지도 그 컨테이너의 구역). 구역마다 한 줄. component는 상태가 ok인 구역에만,
@@ -25,6 +26,10 @@ app/inventory.py
   - changelog는 서버 배포판 패키지의 변경 기록(changelog.Debian.gz)에 적힌 CVE 번호 — ok인 ``host`` 구역이 있을 때만 받습니다. 패키지는 dpkg 원본
     패키지 이름(component 줄의 원본 칸과 같은 값)·버전은 그 바이너리 패키지의 설치 버전이고, 실행 중인 커널은 이름 ``kernel``·버전 ``uname -r``
     (runtime kernel 줄과 같은 값)입니다. CVE 번호는 ``CVE-연도-숫자 4~7자리``. 같은 줄이 두 번 오면 한 번으로 셉니다.
+  - os는 그 구역(호스트·컨테이너)의 /etc/os-release(ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기' — 백엔드가 추적기에 물을 배포판·스위트를 정함).
+    상태가 ok인 구역에만, 구역마다 한 줄까지. 세 칸 모두 소문자·숫자·``.``·``_``·``-``의 32자 이하이고 소문자·숫자로 시작(ID는 반드시,
+    나머지는 없으면 ``-``).
+    저장은 표를 바꾸지 않고 ``env_inventory.sections``의 그 구역 객체에 ``"os": {"id", "versionId", "codename"}``(없는 값은 null).
 
 [출력] 성공하면 건수 한 줄만(버전 없음 — 배포 출력·syslog에 그대로 남음). 실패하면 줄 번호와 사유만(칸 값을 싣지 않음).
 """
@@ -49,6 +54,8 @@ MAX_FIELD_CHARS = 300
 MAX_REASON_CHARS = 200
 
 _SECTION = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+# os 줄의 칸(os-release의 ID·VERSION_ID·VERSION_CODENAME) — 추적기 주소·스위트 이름에 그대로 쓰이므로 좁게.
+_OS_FIELD = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 EXIT_OK = 0
@@ -110,6 +117,7 @@ def parse(text: str) -> Inventory:
     raw_components: list[tuple[int, list[str]]] = []
     raw_pending: list[tuple[int, list[str]]] = []
     raw_changelog: list[tuple[int, list[str]]] = []
+    raw_os: list[tuple[int, list[str]]] = []
     for number, raw in enumerate(lines, start=1):
         if not raw.strip():
             continue
@@ -160,6 +168,10 @@ def parse(text: str) -> Inventory:
             if len(cells) != 4:
                 raise InvalidInventory(f"줄 {number}: changelog 칸이 {len(cells)}개(4개여야 함)")
             raw_changelog.append((number, cells))
+        elif kind == "os":
+            if len(cells) != 5:
+                raise InvalidInventory(f"줄 {number}: os 칸이 {len(cells)}개(5개여야 함)")
+            raw_os.append((number, cells))
         else:
             raise InvalidInventory(f"줄 {number}: 모르는 줄 종류")
     if inventory is None:
@@ -208,6 +220,23 @@ def parse(text: str) -> Inventory:
         cves.add(row)
         inventory.changelog.append(row)
 
+    for number, cells in raw_os:
+        entry = inventory.sections.get(cells[1])
+        if entry is None or entry["status"] != "ok":
+            raise InvalidInventory(f"줄 {number}: os의 구역이 ok인 section 줄에 없음")
+        if "os" in entry:
+            raise InvalidInventory(f"줄 {number}: 같은 구역의 os 줄이 두 번")
+        values = []
+        for cell, what in zip(cells[2:], ("ID", "VERSION_ID", "VERSION_CODENAME")):
+            value = cell.strip()
+            if what != "ID" and value == "-":
+                values.append(None)
+                continue
+            if not _OS_FIELD.match(value):
+                raise InvalidInventory(f"줄 {number}: os의 {what} 모양이 다름")
+            values.append(value)
+        entry["os"] = {"id": values[0], "versionId": values[1], "codename": values[2]}
+
     counts: dict[str, int] = {}
     for source, *_ in inventory.components:
         counts[source] = counts.get(source, 0) + 1
@@ -230,6 +259,9 @@ def summary(inventory: Inventory) -> str:
             f"skipped {statuses.count('skipped')}) · 구성 요소 {len(inventory.components)} · 보류 {len(inventory.pending)}(보안 {security})")
     if inventory.changelog:
         line += f" · 변경 기록 CVE {len(inventory.changelog)}"
+    with_os = sum(1 for entry in inventory.sections.values() if "os" in entry)
+    if with_os:
+        line += f" · OS {with_os}구역"
     return line + (f" · 실패 구역 {', '.join(failed)}" if failed else "")
 
 

@@ -1528,7 +1528,10 @@ case " $* " in
     *" exec -T "*" sh -s -- "*)
         svc="${*: -1}"
         case " ${FAKE_EXEC_FAIL:-} " in *" $svc "*) cat > /dev/null; echo "service $svc is not running" >&2; exit 1 ;; esac
-        case "$svc" in collector|browser) unset INV_APK_DB ;; esac
+        case "$svc" in
+            collector|browser) unset INV_APK_DB; export INV_OS_RELEASE="${FAKE_OS_DEBIAN:-/nonexistent}" ;;
+            *) export INV_OS_RELEASE="${FAKE_OS_ALPINE:-/nonexistent}" ;;
+        esac
         exec sh -s -- "$svc" ;;
 esac
 exit 0
@@ -1570,7 +1573,13 @@ _INV_CHANGELOGS = {
     "linux-modules-0.0.0-old-generic": "linux (0.0.0-1.1) fakecode; urgency=medium\n  - CVE-2099-9999\n",
 }
 _INV_VERSIONS = ("9.9.9", "90.1.2", "9.1.0", "0.90.1", "0.0.1-fake", "99.1", "99.0.1", "1.2.3", "90.0.1", "3.99.0", "999.0.1.2",
-                 "9.8.7", "1.0.0-r0")
+                 "9.8.7", "1.0.0-r0", "99.04", "fakecode", "9.99.9", "fakedeb")
+# 구역의 /etc/os-release(ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기') — 호스트·alpine 컨테이너·debian 컨테이너 셋, 따옴표 꼴을 섞음. 값은 가짜.
+_INV_OS = {
+    "host": 'PRETTY_NAME="Fake Linux 99.04"\nNAME="Fake Linux"\nVERSION_ID="99.04"\nVERSION_CODENAME=fakecode\nID=ubuntu\nID_LIKE=debian\n',
+    "alpine": "NAME='Fake Alpine'\nID='alpine'\nVERSION_ID=9.99.9\n",
+    "debian": 'ID="debian"\nVERSION_ID="99"\nVERSION_CODENAME=fakedeb\n',
+}
 
 
 @pytest.fixture()
@@ -1597,9 +1606,12 @@ def inv(tmp_path, fakes):
     for package, text in _INV_CHANGELOGS.items():
         (docs / package).mkdir(parents=True)
         (docs / package / "changelog.Debian.gz").write_bytes(gzip.compress(text.encode("utf-8")))
+    for name, text in _INV_OS.items():
+        (files / f"os-release-{name}").write_text(text, encoding="utf-8")
     env = tools._env(fakes, FAKE_INV_DOC=str(files / "doc.tsv"), INV_APK_DB=str(files / "installed"),
                      INV_JAVA_RELEASE=str(files / "release"), INV_APP_JAR="/fake/app.jar", INV_APT_STAMP=str(stamp),
-                     INV_DOC_DIR=str(docs))
+                     INV_DOC_DIR=str(docs), INV_OS_RELEASE=str(files / "os-release-host"),
+                     FAKE_OS_ALPINE=str(files / "os-release-alpine"), FAKE_OS_DEBIAN=str(files / "os-release-debian"))
     return root, env
 
 
@@ -1646,6 +1658,13 @@ def test_inventory는_서버에서_일곱_구역을_모아_수집기_검증을_�
         ("caddy", "runtime", "caddy", "9.8.7", None), ("caddy", "apk", "fake-musl", "1.0.0-r0", "fake-musl"),
     } <= components
     assert not [c for c in components if c[2] in ("fake-removed", ".fake-rundeps")], "설치 안 된 dpkg 줄·apk 가상 패키지는 빼고"
+    assert not [c for c in components if c[1] == "os"], "os 줄은 구성 요소가 아님"
+    alpine = {"id": "alpine", "versionId": "9.99.9", "codename": None}
+    debian = {"id": "debian", "versionId": "99", "codename": "fakedeb"}
+    assert {name: entry.get("os") for name, entry in sent.sections.items()} == {
+        "host": {"id": "ubuntu", "versionId": "99.04", "codename": "fakecode"}, "postgres": alpine, "backend": alpine,
+        "frontend": alpine, "collector": debian, "browser": debian, "caddy": alpine,
+    }, "구역마다 os-release 한 줄(따옴표 꼴은 벗기고 없는 칸은 null)"
     assert not [c for c in components if c[0] in ("collector", "browser") and c[1] == "apk"], "debian 컨테이너는 dpkg"
     assert sorted(sent.pending) == [
         ("fake-engine-cli", "amd64", "5:90.1.2-1~fake", "5:90.1.3-1~fake", "fakecode", False),
@@ -1673,6 +1692,26 @@ def test_inventory는_호스트_배포판_패키지_변경_기록의_CVE를_원�
     assert "CVE-2099" not in result.stdout + result.stderr, "번호는 출력에 남기지 않음"
     assert _host_calls(fakes).count("dpkg-query -W -f=${db:Status-Abbrev}\\t${Package}\\t${Version}\\t${source:Package}\\n") == 3, \
         "변경 기록은 호스트 구역 본문으로 — dpkg-query를 더 부르지 않음"
+
+
+def test_inventory는_os_release가_없거나_모양이_다르면_그_칸만_비우고_목록은_받게_넘긴다(inv, fakes, tmp_path):
+    odd = tmp_path / "odd"
+    odd.mkdir()
+    (odd / "bad-id").write_text('ID="Fake Linux"\nVERSION_ID=1\n', encoding="utf-8")
+    (odd / "bad-fields").write_text("ID=debian\nVERSION_ID=\"99 (fake)\"\nVERSION_CODENAME=" + "x" * 33 + "\n", encoding="utf-8")
+    (odd / "crlf").write_text("ID=alpine\r\nVERSION_ID='9.99.9'\r\n", encoding="utf-8")
+
+    result = _inventory(inv, INV_OS_RELEASE="/nonexistent/os-release", FAKE_OS_DEBIAN=str(odd / "bad-fields"),
+                        FAKE_OS_ALPINE=str(odd / "crlf"))
+    assert result.returncode == 0, result.stderr
+    sections = _sent(inv).sections
+    assert "os" not in sections["host"] and sections["host"]["status"] == "ok", "os-release가 없어도 호스트 구역은 그대로"
+    assert sections["collector"]["os"] == {"id": "debian", "versionId": None, "codename": None}, "모양이 다른 칸은 '-'"
+    assert sections["postgres"]["os"] == {"id": "alpine", "versionId": "9.99.9", "codename": None}, "CR·홑따옴표도 벗김"
+
+    assert _inventory(inv, FAKE_OS_DEBIAN=str(odd / "bad-id")).returncode == 0
+    sections = _sent(inv).sections
+    assert "os" not in sections["collector"] and sections["collector"]["status"] == "ok", "ID 모양이 다르면 그 구역은 os 줄 없이"
 
 
 def test_inventory는_서버가_아니면_변경_기록도_넘기지_않는다(inv, fakes):

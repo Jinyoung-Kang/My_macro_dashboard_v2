@@ -54,6 +54,9 @@ BACKEND_TABLES = (
     "search_watches", "search_media_excludes",
     # 보안 공지 알림 기록(V40, ADR 0046 결정 7) — 백엔드 SecurityAlertStore만 씁니다. 수집기는 읽지도 쓰지도 않습니다.
     "security_alerts",
+    # 배포판 보안 추적기에 물어볼 것(V42, ADR 0046 덧붙임 2026-11-21) — 백엔드 SecurityTrackerStore만 씁니다. 수집기는 읽기만 합니다
+    # (store.distro_tracker_due — 태스크 kisa_security_notices가 물을 것을 고름).
+    "security_tracker_wants",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"
@@ -203,10 +206,10 @@ def test_수집기는_관심_대상_알림_칸을_읽지도_쓰지도_않는다(
     assert not re.search(r"\bnotify\b", source), "알림 칸은 읽지 않음(이름 두 칸 name_ko·name_en만 V38에서 더 읽음)"
 
 
-# 보안 공지(ADR 0046, V40·V41) — 수집기 표 여섯은 store.py만 씁니다. 공지 둘은 태스크 kisa_security_notices가, 버전 목록 넷은 CLI app/inventory.py가
-# store 함수로 씁니다(태스크·CLI 모듈에는 SQL이 없음).
+# 보안 공지(ADR 0046, V40·V41·V42) — 수집기 표 일곱은 store.py만 씁니다. 공지 둘과 추적기 결과(distro_cve_status)는 태스크
+# kisa_security_notices가, 버전 목록 넷은 CLI app/inventory.py가 store 함수로 씁니다(태스크·CLI·추적기 해석 모듈에는 SQL이 없음).
 SECURITY_TABLES = ("security_notices", "security_notice_rows", "env_inventory", "env_components", "env_pending_updates",
-                   "env_changelog_cves")
+                   "env_changelog_cves", "distro_cve_status")
 SECURITY_TABLE_WRITE = re.compile(r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE|COPY)\s+(" + "|".join(SECURITY_TABLES) + r")\b")
 
 
@@ -219,7 +222,20 @@ def test_보안_공지_수집기_표는_store_py만_쓴다():
 
 
 def test_보안_공지_태스크와_버전_목록_CLI에는_SQL이_없다():
-    for module in ("tasks/security.py", "inventory.py"):
+    for module in ("tasks/security.py", "inventory.py", "services/distro_trackers.py"):
         code = (APP / module).read_text(encoding="utf-8")
         assert ".execute(" not in code and "connection(" not in code, module
         assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s+", code.split('"""', 2)[2]), module
+
+
+def test_추적기에_물을_것은_백엔드_표를_store_함수로만_읽는다():
+    """security_tracker_wants(V42)는 백엔드 표 — 수집기는 store.distro_tracker_due로 읽기만 하고, 그 함수에는 쓰기 문장이 없습니다."""
+    import inspect
+
+    from app import store
+
+    source = inspect.getsource(store.distro_tracker_due)
+    assert "security_tracker_wants" in source and not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source)
+    readers = sorted(path.relative_to(APP).as_posix() for path in APP.rglob("*.py")
+                     if re.search(r"(?i)\b(FROM|JOIN)\s+security_tracker_wants\b", path.read_text(encoding="utf-8")))
+    assert readers == ["store.py"]

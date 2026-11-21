@@ -16,6 +16,9 @@
 #   caddy      caddy version + 컨테이너 OS 패키지
 #   컨테이너 OS 패키지는 alpine이면 /lib/apk/db/installed(P:·V:·o:), debian이면 dpkg-query. 컨테이너마다 `docker compose exec -T <서비스> sh -s`
 #   한 번(아래 컨테이너 스크립트를 표준입력으로 — 컨테이너에 파일을 두지 않음).
+#   구역마다(호스트·컨테이너) /etc/os-release의 ID·VERSION_ID·VERSION_CODENAME도 'os' 줄로(ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기' —
+#   백엔드가 추적기에 물을 배포판·스위트를 정함). 없거나 모양이 다르면(소문자·숫자로 시작하는 소문자·숫자·.·_·- 32자 이하가 아님) 그 칸은 '-', ID가 그러면 줄을 빼므로
+#   목록 전체가 거절되지 않습니다. 호스트도 같은 컨테이너 스크립트(서비스 이름 대신 os-release)로 읽습니다.
 # 넘기는 길: `docker compose exec -T collector python -m app.inventory`의 표준입력(형식은 collector/app/inventory.py). 수집기가 검증해
 #   틀리면 아무것도 쓰지 않습니다.
 #
@@ -38,11 +41,24 @@ source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # env_file_value · ru
 tag=my-macro-inventory
 CONTAINERS=(postgres backend frontend collector browser caddy)
 
-# 컨테이너 안에서 도는 POSIX sh(alpine busybox·debian dash 둘 다) — 첫 인자가 서비스 이름. 줄마다 '생태계<탭>이름<탭>버전<탭>원본'.
+# 컨테이너 안에서 도는 POSIX sh(alpine busybox·debian dash 둘 다) — 첫 인자가 서비스 이름. 줄마다 '생태계<탭>이름<탭>버전<탭>원본',
+# 끝에 'os<탭>ID<탭>VERSION_ID|-<탭>VERSION_CODENAME|-' 한 줄(os-release가 있을 때 — 같은 네 칸 모양이라 구역 검사를 그대로 지나고, 넘길 때 os 줄로 가름).
+# 서비스 이름 대신 os-release를 주면 os 줄만 찍습니다(호스트 구역이 씀).
 # 종료 코드: 3 OS 패키지 목록 실패, 4 런타임 버전 실패, 5 의존성 목록 실패, 2 모르는 서비스.
 container_script() {
     cat <<'SH'
 svc="$1"
+os_line() {
+    f="${INV_OS_RELEASE:-/etc/os-release}"
+    [ -r "$f" ] || return 0
+    awk -v q="'" '
+        function val() { v = substr($0, index($0, "=") + 1); sub(/\r$/, "", v); c = substr(v, 1, 1)
+            if (length(v) >= 2 && (c == "\"" || c == q) && substr(v, length(v), 1) == c) v = substr(v, 2, length(v) - 2)
+            return v }
+        function ok(x) { return x ~ /^[a-z0-9][a-z0-9._-]*$/ && length(x) <= 32 }
+        /^ID=/ { id = val() } /^VERSION_ID=/ { ver = val() } /^VERSION_CODENAME=/ { code = val() }
+        END { if (ok(id)) print "os\t" id "\t" (ok(ver) ? ver : "-") "\t" (ok(code) ? code : "-") }' "$f"
+}
 pkgs() {
     apk_db="${INV_APK_DB:-/lib/apk/db/installed}"
     if [ -f "$apk_db" ]; then
@@ -109,9 +125,12 @@ print("\n".join("\t".join(row) for row in sorted(rows)))
         [ -n "$version" ] || exit 4
         printf 'runtime\tcaddy\t%s\t-\n' "$version"
         pkgs || exit 3 ;;
+    os-release)
+        ;;
     *)
         exit 2 ;;
 esac
+os_line || true
 SH
 }
 
@@ -125,8 +144,10 @@ sections=""
 components=""
 pending=""
 changelog=""
+oslines=""
 
 # 구역 하나를 적습니다 — ok이면 본문 줄이 모두 '생태계<탭>이름<탭>버전<탭>원본'이어야 함(아니면 failed '출력 모양이 다름').
+# 첫 칸이 os인 줄(os-release)은 구성 요소가 아니라 그 구역의 os 줄로 넘깁니다(구역당 첫 줄만).
 add_section() {
     local name="$1" status="$2" reason="$3" body="${4:-}"
     if [ "$status" = ok ]; then
@@ -138,7 +159,8 @@ add_section() {
     fi
     sections+="section"$'\t'"$name"$'\t'"$status"$'\t'"$reason"$'\n'
     if [ "$status" = ok ]; then
-        components+="$(awk -v s="$name" '{ print "component\t" s "\t" $0 }' <<< "$body")"$'\n'
+        components+="$(awk -F '\t' -v s="$name" '$1 != "os" { print "component\t" s "\t" $0 }' <<< "$body")"$'\n'
+        oslines+="$(awk -F '\t' -v s="$name" '$1 == "os" && !seen++ { print "os\t" s "\t" $2 "\t" $3 "\t" $4 }' <<< "$body")"$'\n'
     fi
 }
 
@@ -155,6 +177,7 @@ host_lines() {
     printf 'runtime\tcompose\t%s\t-\n' "${v#v}"
     v="$(tailscale version | head -n 1)" || return 15
     printf 'runtime\ttailscale\t%s\t-\n' "$v"
+    container_script | sh -s -- os-release || true      # 호스트의 os 줄(선택 — 못 읽어도 호스트 구역은 그대로)
 }
 
 # 변경 기록 한 파일의 CVE 번호(한 줄에 하나, 겹칠 수 있음). 파일이 없거나 읽지 못하면 아무것도 찍지 않음. 끝 숫자가 4~7자리가 아닌 것은
@@ -241,7 +264,7 @@ trap 'rm -f "$doc" "$out"' EXIT
 chmod 600 "$doc"
 {
     printf 'inventory\t1\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$host_flag" "$apt_at"
-    printf '%s' "$sections" "$components" "$pending" "$changelog"
+    printf '%s' "$sections" "$components" "$oslines" "$pending" "$changelog"
 } > "$doc"
 
 rc=0

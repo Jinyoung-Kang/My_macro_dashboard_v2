@@ -299,3 +299,50 @@ def test_V41_변경_기록_CVE_표는_두_번_적용해도_되고_번호_모양�
     for bad in ("CVE-2099-123", "cve-2099-0001", "CVE-2099-12345678", "CVE-2099-0001 "):
         with pytest.raises(psycopg.errors.CheckViolation):
             conn.execute("INSERT INTO env_changelog_cves (package, version, cve) VALUES ('fake-ssl', '1', %s)", (bad,))
+
+
+def test_V42_추적기_표_둘은_두_번_적용해도_되고_모양과_고친_판_조건을_지킨다(conn):
+    """보안 공지(ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기') — 물어볼 것(백엔드)·물어본 결과(수집기). 값은 가짜(공개 저장소)."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v42 = next(m for m in found if m.version == 42)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 42])
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 42]) == [42]
+    conn.execute(v42.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v42.sql)
+
+    columns = {(r["table_name"], r["column_name"]): r["is_nullable"] for r in conn.execute(
+        "SELECT table_name, column_name, is_nullable FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name IN ('security_tracker_wants', 'distro_cve_status')")}
+    assert {c for t, c in columns if t == "security_tracker_wants"} == {"distro", "suite", "package", "cve", "wanted_at"}
+    assert {c for t, c in columns if t == "distro_cve_status"} == {
+        "distro", "suite", "package", "cve", "status", "fixed_version", "detail", "checked_at"}
+    assert {c for (t, c), nullable in columns.items() if nullable == "YES"} == {"fixed_version", "detail"}
+
+    conn.execute("INSERT INTO security_tracker_wants (distro, suite, package, cve) VALUES ('ubuntu', 'fakecode', 'fakessl', 'CVE-2099-0001')")
+    assert conn.execute("SELECT wanted_at IS NOT NULL AS ok FROM security_tracker_wants").fetchone()["ok"], "처음 넣은 시각은 기본값"
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO security_tracker_wants (distro, suite, package, cve) VALUES ('ubuntu', 'fakecode', 'fakessl', 'CVE-2099-0001')")
+    for distro, suite, package, cve in (("fedora", "fakecode", "fakessl", "CVE-2099-0001"), ("ubuntu", "Fakecode", "fakessl", "CVE-2099-0001"),
+                                        ("alpine", "v9.99", "Fake_ssl", "CVE-2099-0001"), ("debian", "fakedeb", "fakessl", "CVE-2099-1"),
+                                        ("debian", "", "fakessl", "CVE-2099-0001")):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO security_tracker_wants (distro, suite, package, cve) VALUES (%s, %s, %s, %s)",
+                         (distro, suite, package, cve))
+    conn.execute("INSERT INTO security_tracker_wants (distro, suite, package, cve) VALUES ('alpine', 'v9.99', 'fakessl', 'CVE-2099-0001')")
+
+    insert = ("INSERT INTO distro_cve_status (distro, suite, package, cve, status, fixed_version, detail, checked_at) "
+              "VALUES (%s, 'fakecode', %s, 'CVE-2099-0001', %s, %s, %s, now())")
+    conn.execute(insert, ("ubuntu", "fakessl", "fixed", "9.9.9-0fake1.1", "released"))
+    conn.execute(insert, ("ubuntu", "fakessl-a", "not_affected", None, "DNE"))
+    conn.execute(insert, ("ubuntu", "fakessl-b", "open", None, None))
+    conn.execute(insert, ("ubuntu", "fakessl-c", "unknown", None, "no entry"))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(insert, ("ubuntu", "fakessl", "open", None, "needed"))
+    for status, fixed, detail in (("fixed", None, "released"), ("open", "9.9.9-0fake1.1", "needed"),
+                                  ("not_affected", "1", "DNE"), ("patched", None, None),
+                                  ("fixed", "9" * 201, "released"), ("open", None, "x" * 101)):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(insert, ("debian", "fakessl", status, fixed, detail))
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute("INSERT INTO distro_cve_status (distro, suite, package, cve, status) "
+                     "VALUES ('debian', 'fakedeb', 'fakessl', 'CVE-2099-0001', 'open')")

@@ -69,7 +69,7 @@
 | | | `us_bls_actuals` | [모의][키] **미국 경제지표 BLS 공식 발표치(저장만)** — BLS Public Data API(`api.bls.gov`, 공식)에서 2년 전 1월부터 CPI-U 전 품목·근원(계절조정, 그리고 전년 대비용 계절조정 전)·비농업 고용·실업률·민간 평균 시급·PPI 최종 수요(·식품·에너지·무역 서비스 제외, 계절조정 전)·JOLTS 구인 11개 시리즈를 한 요청으로(전년 1월~올해) → 스냅샷 `calendar.us_bls_actuals`(시리즈마다 최신 달·앞 달·공식 값에서 센 전월 대비 %·증감·전년 대비 %(`derived` — BLS가 낸 %와 반올림이 다를 수 있음)·이 달을 처음 본 시각(첫 수집은 모름이라 null)·최근 13달, 발표별 최신 달, Nasdaq 오늘 줄 가운데 이름이 같은 것과의 대조 `checks` — Nasdaq이 같은 이름으로 전월·전년 대비 두 줄을 주면 대조하지 않음). **동부 평일 08:30·10:00 + 2~4분**에 묻고(증시 휴장일에도 — BLS는 성금요일 등에도 발표), 오늘 예정 발표(FRED 일정 CPI·고용, Nasdaq 같은 이름 줄)가 아직이거나 BLS가 잠갔거나(`Database is locked` — 발표 직전·도중) 요청이 실패하면 15~25분 뒤 한 번 더(그 시각마다 한 번). 하루 최대 4회. 키 `BLS_API_KEY`가 있으면 v2(하루 500회), 없으면 v1(하루 25회) — 키는 POST 본문에만. 결정 패킷·화면은 읽지 않음(패킷의 실제치는 `calendar.us_consensus` 그대로) — [ADR 0040](adr/0040-fresh-feeds.md) '단계 2 앞당김' |
 | | | `us_consensus_release` | [모의] **미국 지표 실제치 발표 직후** — 오늘(동부) 패킷이 읽는 발표(Nasdaq 이름 CPI·Nonfarm Payrolls·GDP·Core PCE Price Index·Fed Interest Rate Decision 가운데 **그날 한 줄뿐인 이름**의 시각 — CPI·Core PCE는 Nasdaq이 전월비·전년비 두 줄로 같은 이름에 줘 백엔드가 원래부터 값을 붙이지 않으므로 묻지 않음, 오늘 줄을 아직 못 받았으면 FRED 일정 08:30·FOMC 14:00)마다 **발표 + 2~4분**에 Nasdaq을 오늘 날짜 하나만 다시 물어 `calendar.us_consensus`의 오늘 줄만 바꿈(`refetchedAfterRelease`, 다른 날짜·머리 칸 그대로 — 하루 1회 `us_calendar_consensus`와 같은 잠금). 실제치가 비면 15~25분 뒤 한 번 더, Nasdaq 추가 요청은 하루 8회까지, 패킷 발표가 없는 날은 0회. 운영 서버면 TradingView 경제 캘린더(polite)의 다음 시각을 Nasdaq 다시 받기 1~3분 뒤(발표 약 3~7분 뒤, polite 틱 지연 별도)로 당김(하루 6회까지 — 예산·닫힘·포기는 그 태스크 규칙). 저장된 줄이 있는데 빈 응답·이름이 크게 다른 응답은 저장하지 않고, 다시 묻기가 새 실제치를 더하지 못하면 오늘 줄을 바꾸지 않음(받은 시각이 늦어지지 않게). 컨센서스 저장본이 없으면 묻지 않음. 상태는 같은 저장본의 `releaseRefetch`. 패킷 모양은 그대로이고 비농업 고용·FOMC·GDP(한 줄일 때) 발표치가 그날 결정(개장 45분 전)에 실림 — [ADR 0040](adr/0040-fresh-feeds.md) 단계 2 |
 | | | `search_feeds` | **정보 검색 — 새 피드 묶음([ADR 0041](adr/0041-info-search-watch.md) 결정 8, [계약](specs/2026-11-14-info-search-contract.md) §6-1)**: 보도자료·경제지 RSS 12개(연준·ECB·영란은행·BBC 비즈니스·Economist 금융·경제·Bloomberg 시장·CNBC 금융·세계·Nikkei Asia·MarketWatch·Benzinga·Seeking Alpha — FXStreet 뺌) → `observations` `search_feed_headline`(제목·피드가 준 요약 300자(description·summary만 — 본문 칸 안 씀)·원문 주소·매체·시각, 90일 보관) + 수집 상태 `search.feeds.status`. 사건 뉴스와 같은 탄력 방식(피드마다 `search_feeds/<피드>` 줄, 처음 2~25분 흩기, 하한 10분, 조건부 요청, 거부되면 간격 두 배·최대 8배, CNBC 두 피드는 차례로 2~5초). 간격(분): 연준·ECB·영란은행 120~240, BBC 90~180, Economist 180~360, Bloomberg·CNBC 금융·Nikkei 60~120, CNBC 세계 90~180, MarketWatch·Benzinga 45~90, Seeking Alpha 30~60. Nikkei Asia는 시각이 없어 받은 시각(`timeBasis: fetched`). 2년 밖·중국어 제목은 넣지 않음. 피드 읽기는 자체 파서(시각 없는 글을 버리지 않고 본문 칸을 요약으로 쓰지 않게). 정보 검색(저장본 출처 `feeds`)·첫 화면 최근 글·관심 대상 대조·정보 수집 '보도자료·경제지' 보기가 읽음. **모의 매매 패킷은 읽지 않음**. 로컬에서도 돎(사건 뉴스와 같은 공용 세션) |
-| | | `kisa_security_notices` | **보안 공지 — KISA 보호나라 보안공지 게시판([ADR 0046](adr/0046-security-notices.md), 운영자 화면 `/security` 전용)**: 목록 1쪽 → 처음 본 글을 표 `security_notices`에 → 상세 최대 8건(요청 사이 3~6초)의 `취약점 | 제품명 | 영향받는 버전 | 해결 버전` 표를 원문 그대로 `security_notice_rows`에. 평소 3~6시간, 처음 90일을 메우는 동안만 20~40분(같은 탄력 방식 — `fetch_schedule` 줄, 처음 2~25분 흩기). 공용 세션(로컬에서도 돎), 키 없음. 판정은 수집기가 하지 않음 — 아래 '보호나라 보안공지' |
+| | | `kisa_security_notices` | **보안 공지 — KISA 보호나라 보안공지 게시판 + 배포판 보안 추적기([ADR 0046](adr/0046-security-notices.md), 운영자 화면 `/security` 전용)**: 목록 1쪽(처음 90일을 메우는 동안은 같은 실행에서 메우기 쪽도 — 목록 요청 최대 2) → 처음 본 글을 표 `security_notices`에 → 상세 최대 12건의 `취약점 | 제품명 | 영향받는 버전 | 해결 버전` 표를 원문 그대로 `security_notice_rows`에 → 백엔드가 둔 '물어볼 것'(`security_tracker_wants`)을 배포판 보안 추적기(Ubuntu·Debian·Alpine)에 물어 `distro_cve_status`에. 요청 사이 3~6초, 실행 시간 예산 420초. **하루 최대 4번** — KST 하루를 [00,06)·[06,12)·[12,18)·[18,24)로 나눠 구간마다 [시작+30분, 끝−30분] 안 무작위 한 번(실패·거부와 무관하게 한 실행은 다음 구간으로만 — `fetch_schedule` 줄, 처음에도 다음 구간). '오래 못 받음' 30시간. 공용 세션(로컬에서도 돎), 키 없음. 판정은 수집기가 하지 않음 — 아래 '보호나라 보안공지'·'배포판 보안 추적기' |
 
 [우회] = 차단 통과 수집 계층([ADR 0026](adr/0026-polite-fetch-layers.md))으로 받는 태스크. 주기로 돌지 않고 기동 직후에도 받지 않습니다 — 아래 '차단 통과 수집 계층'.
 [키] = 국내 공공 API 키가 있어야 도는 태스크. 키가 없으면 "키 미설정"으로 기록되고
@@ -236,7 +236,7 @@ crumb·쿠키를 받지 못하면 요청마다 다시 받아, 출처가 끊긴 �
 
 - **받는 것**: KISA 보호나라(KrCERT/CC) 보안공지 게시판의 글 번호·제목·게시일, 상세의 4열 버전 표 행(CVE·제품명·영향받는 버전·해결 버전 — 해석하지 않고 원문 그대로), 표 밖 `※` 문장,
   표를 뺀 본문 글자. 표가 없는 글(공고·행사 등)도 넣고 틀 종류로 가립니다.
-- **간격**: 위 표의 `kisa_security_notices`. 상세 하나의 실패는 나머지를 멈추지 않고(글마다 3번까지), 출처 상태를 남겨(`fetch_source_state`) 끊김·형식 바뀜 알림과
+- **간격**: 위 표의 `kisa_security_notices`(하루 최대 4번, 무작위 시각). 상세 하나의 실패는 나머지를 멈추지 않고(글마다 3번까지), 출처 상태를 남겨(`fetch_source_state`) 끊김·형식 바뀜 알림과
   정보 수집 '출처 상태'에 그대로 붙습니다.
 - **판정은 백엔드가 읽을 때** 공지 행과 서버의 버전 목록(수집 태스크가 아님 — `scripts/vultr/inventory.sh`가 모아 수집기 CLI로 넘김, [DEVELOPMENT.md §7](DEVELOPMENT.md))을 대조합니다.
   버전 목록이 없는 곳(로컬·QA)은 제품이 맞는 공지가 모두 '확인 필요'입니다.
@@ -245,6 +245,25 @@ crumb·쿠키를 받지 못하면 요청마다 다시 받아, 출처가 끊긴 �
   '확인 필요'). 메우기가 끝난 뒤 수집이 오래 멈춰 새 글이 1쪽을 넘게 쌓이면 그 사이 글은 다시 찾지 않고, 고쳐진 공지의 상세는 다시 받지 않습니다.
 - **이용 조건**(2026-11-21 확인 — ADR 0046 결정 10): 저작권 정책·이용약관 페이지가 없고 하단 Copyright 한 줄뿐, 목록 화면에 공공누리 표시 없음, `robots.txt`에 `Disallow` 없음.
   그래서 개인·비공개·비상업 운영자 화면에서만 보이고 늘 원문 링크를 함께 둡니다. 글 본문·표는 공개 저장소(시험 고정본·문서·QA 씨앗)에 옮기지 않습니다(시험은 구조만 흉내 낸 합성 HTML).
+
+### 배포판 보안 추적기 ([ADR 0046](adr/0046-security-notices.md) 덧붙임 2026-11-21)
+
+- **무엇을 묻나**: 서버 변경 기록으로 가리지 못한 배포판 패키지의 CVE — 백엔드가 판정하면서 모아 표 `security_tracker_wants`(배포판·스위트·원본 패키지·CVE)에 둡니다.
+  배포판·스위트는 버전 목록의 구역별 `/etc/os-release`(`scripts/vultr/inventory.sh`의 `os` 줄)로 정합니다 — Ubuntu·Debian은 `VERSION_CODENAME`, Alpine은 `v` + `VERSION_ID` 앞 두 마디.
+- **받는 것**(수집기 `kisa_security_notices`의 한 실행 안, 보호나라 상세 다음 — 목록을 받지 못한 실행은 건너뜀): 결과가 없거나 open·unknown이고 20시간·fixed·not_affected이고 7일보다 오래된 것을 오래된 것부터.
+  - Ubuntu: `https://ubuntu.com/security/cves/<CVE>.json`(robots `/security` 허용, Crawl-delay 2) — 원본 패키지·스위트의 상태(released → fixed, not-affected·DNE → not_affected, needed·pending·deferred·needs-triage·ignored → open).
+    커널 CVE는 응답이 수 MB입니다.
+  - Debian: `https://security-tracker.debian.org/tracker/<CVE>` HTML — 고친 판 표의 그 릴리스 줄(판·`(not affected)`·`(unfixed)`), 없으면 추적기 규칙대로
+    같은 패키지의 `(unstable)` 줄이 그 릴리스에도 적용(판이면 원본 패키지 표의 `스위트`·`스위트 (security)` 줄에 fixed가 있을 때 그 판, 모두 vulnerable이면 open).
+    고친 판 표에 그 패키지 줄이 없으면 원본 패키지 표의 판으로 고친 판을 정하지 않습니다(fixed여도 unknown).
+  - Alpine: `https://secdb.alpinelinux.org/<스위트>/main.json`·`community.json`의 `secfixes`(키 `0` → not_affected, 판 → fixed).
+- **요청 상한**: Ubuntu·Debian은 CVE마다 한 요청(같은 CVE의 패키지·스위트 여럿을 한 응답으로), 둘 합쳐 한 실행에 20개. Alpine은 원하는 행이 있는 스위트마다 secdb 두 파일을
+  한 번씩(20개와 별도). 요청 사이 3~6초, 보호나라와 같은 공용 세션·시간 예산. HTTP 404는 unknown.
+- **실패 규칙**: 받지 못함·틀이 다름은 행을 쓰지 않고(직전 결과 그대로) 실행 기록에 건수만, 추적기의 거부는 추적기 조회만 멈춤(보호나라 결과·출처 상태는 그대로).
+  실행 기록에는 요청 수·결과 건수만 남깁니다(판·CVE 번호 없음).
+- **한계**: Debian 원본 패키지 표의 판은 '그 스위트에 지금 있는 판'이라 고친 판의 하한이 아닙니다 — 그래서 고친 판은 고친 판 표(그 릴리스 줄 또는
+  그 릴리스에 적용되는 `(unstable)` 줄)에서만 정하고, 고친 판 표에 그 패키지 줄이 없으면 원본 표가 fixed여도 unknown(모름)으로 둡니다(옛 이미지를
+  '뒤처짐'으로 잘못 알리지 않게). 판정(설치 판과 고친 판의 비교)은 백엔드가 합니다.
 
 ---
 
