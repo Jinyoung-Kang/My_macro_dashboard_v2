@@ -1,0 +1,115 @@
+# 단계 2(작업 C 공용 JS) 측정 (2026-11-22 06:00~06:50 KST, QA 스택 — 백엔드·수집기는 단계 1 빌드 그대로, 로그인 없는 모드, 같은 QA DB)
+
+## 1. 묶음 분석 (npx next analyze --output --snapshot before → export, 고치기 전 f4a29915 코드 — 분석 산출물은 커밋하지 않음)
+client chunks 74 raw KB 3270 gz KB 1334
+0tnb77kgpj_h6.js             raw  432 KB gz  192 KB | recharts 280, src/components/charts 17, d3-scale 14, es-toolkit 14, d3-shape 13
+329_0ytw0saiu.js             raw  387 KB gz  142 KB | src/components/screens 319, src/lib/paperKr.ts 26, src/lib/realtrade.ts 14, src/lib/isa.ts 13, src/lib/brokerage.ts 3
+0g96y10e931oj.js             raw  228 KB gz   76 KB | next 228
+1xe4y5wjejfxn.js             raw  189 KB gz   64 KB | src/lib/paper.ts 108, src/lib/paperRoutes.ts 50, src/lib/paperOverview.ts 12, src/lib/paperKrProfiles.ts 12, src/lib/paperCurrent.ts 3
+1fzwc1a5no7nn.js             raw  156 KB gz   63 KB | next 156
+0cz1d0mv5g_q7.js             raw  110 KB gz   39 KB | next 110
+1qxqxirqhjguu.js             raw   96 KB gz   39 KB | src/components/screens 87, src/hooks/useInfoSearch.ts 4, src/hooks/useInfoSearchWatch.ts 2, src/hooks/useInfoSearchSummary.ts 1, src/hooks/useArticleBody.ts 1
+1uazik7wnbr_r.css            raw   74 KB gz   14 KB | src/app/globals.css 74
+3ajcfwvrum_37.js             raw   54 KB gz   23 KB | src/components/shell 25, @radix-ui/react-toast 11, src/app/(dashboard) 6, src/hooks/useNavResize.ts 3, src/components/MarketClock.tsx 3
+0-3g33hep3fcq.js             raw   46 KB gz   20 KB | src/components/screens 46
+3j86p1ap4hkrz.js             raw   42 KB gz   16 KB | src/lib/infoSearch.ts 42
+199ft50z27g2v.js             raw   41 KB gz   18 KB | src/components/screens 15, src/lib/security.ts 12, src/lib/home.ts 6, src/lib/marketSessions.ts 5, src/lib/marketRows.ts 2
+1j3hx5hhv4piw.js             raw   40 KB gz   14 KB | src/components/ui 23, src/lib/endpoints.ts 9, src/lib/format.ts 5, src/lib/api.ts 2, src/hooks/useScrollStripActive.ts 1
+0k49vde-pyc39.js             raw   38 KB gz   19 KB | src/app/(dashboard) 29, src/lib/macroScreen.ts 4, src/components/RawSnapshotCard.tsx 2, src/components/AutoRefresh.tsx 1, src/lib/ranges.ts 1
+
+group kinds Counter({'render_dependent': 784, 'bootstrap': 38})
+/ {'bootstrap': (5, 431, 161), 'render_dependent': (18, 632, 254)} all 23 415 KB gz
+/macro {'bootstrap': (5, 431, 161), 'render_dependent': (19, 904, 397)} all 24 558 KB gz
+/institutions {'bootstrap': (5, 431, 161), 'render_dependent': (19, 894, 390)} all 24 550 KB gz
+/paper/us {'bootstrap': (5, 431, 161), 'render_dependent': (21, 1474, 597)} all 26 757 KB gz
+/paper/kr {'bootstrap': (5, 431, 161), 'render_dependent': (21, 1474, 597)} all 26 757 KB gz
+/info/overview no groups; candidates ['/info/[tab]', '/institutions', '/institutions/[cik]']
+/s/[market]/[code] {'bootstrap': (5, 431, 161), 'render_dependent': (18, 874, 380)} all 23 541 KB gz
+
+## 2. Lighthouse 3회 중앙값 — 고치기 전(같은 백엔드, 화면만 f4a29915)
+# 2026-11-22 06:20:55 KST lighthouse 13.6.0 N=3 6a515c14 로그인없음
+페이지        폼팩터 성능 접근 모범     FCP     LCP     TBT    CLS JS(KB)  RSC JS수
+/                desktop    99  100  100     250     899       0  0.035    800   32   43   (n=3, 성능 99~99)
+/                mobile     83  100  100     909    4149     205  0.031    759   26   39   (n=3, 성능 82~84)
+/macro           desktop    90  100  100     248    1132     199  0.035    804   28   44   (n=3, 성능 88~94)
+/macro           mobile     47  100  100     908    7932    1912  0.032    781   24   42   (n=3, 성능 46~51)
+/institutions    desktop    99  100  100     249     982       9  0.035    774   24   41   (n=3, 성능 99~99)
+/institutions    mobile     71  100  100     908    4791     248  0.161    774   22   41   (n=3, 성능 70~71)
+/paper/us        desktop    95  100  100     248    1149      10  0.093    748   18   38   (n=3, 성능 95~95)
+/paper/us        mobile     65  100  100     907    5700     344  0.143    748   18   38   (n=3, 성능 65~65)
+/paper/kr        desktop    95  100  100     248    1027       0  0.109    748   18   38   (n=3, 성능 95~95)
+/paper/kr        mobile     72  100  100     907    5126     207  0.143    748   18   38   (n=3, 성능 71~73)
+/info/overview   desktop    98  100  100     248     789       0  0.084    839   46   48   (n=3, 성능 98~99)
+/info/overview   mobile     64  100  100     907    3965     140  0.569    748   28   38   (n=3, 성능 64~65)
+/s/us/NVDA       desktop    98  100  100     249     949       0  0.067    827   27   46   (n=3, 성능 90~98)
+/s/us/NVDA       mobile     72  100  100     908    4516     171  0.197    804   25   44   (n=3, 성능 71~73)
+
+## 3. Lighthouse 3회 중앙값 — 미리 받기만 바꾼 뒤(ee8f2a8b)
+# 2026-11-22 06:10:50 KST lighthouse 13.6.0 N=3 ee8f2a8b 로그인없음
+페이지        폼팩터 성능 접근 모범     FCP     LCP     TBT    CLS JS(KB)  RSC JS수
+/                desktop    99  100  100     247     841       0  0.035    359    0   22   (n=3, 성능 99~99)
+/                mobile     84  100  100     905    4013     194  0.031    359    0   22   (n=3, 성능 84~85)
+/macro           desktop    91  100  100     246    1070     217  0.035    432    0   23   (n=3, 성능 90~93)
+/macro           mobile     52  100  100     907    5417    1932  0.000    432    0   23   (n=3, 성능 52~53)
+/institutions    desktop    99  100  100     247     976      11  0.035    427    0   23   (n=3, 성능 99~99)
+/institutions    mobile     67  100  100     907    4627     386  0.161    427    0   23   (n=3, 성능 66~68)
+/paper/us        desktop    98  100  100     247    1139      21  0.009    601    0   25   (n=3, 성능 98~98)
+/paper/us        mobile     63  100  100     907    5533     449  0.143    601    0   25   (n=3, 성능 60~66)
+/paper/kr        desktop    96  100  100     247     984       0  0.109    601    0   25   (n=3, 성능 96~96)
+/paper/kr        mobile     72  100  100     907    5123     218  0.143    601    0   25   (n=3, 성능 72~73)
+/info/overview   desktop    98  100  100     248     785       0  0.084    302    0   22   (n=3, 성능 98~99)
+/info/overview   mobile     66  100  100     906    3825     116  0.569    302    0   22   (n=3, 성능 66~66)
+/s/us/NVDA       desktop    98  100  100     248     904       0  0.067    419    0   22   (n=3, 성능 98~98)
+/s/us/NVDA       mobile     73  100  100     906    4363     165  0.197    419    0   22   (n=3, 성능 73~74)
+
+## 4. Lighthouse 3회 중앙값 — 단계 2 끝(591e18f6: 미리 받기 + 셸·홈이 lib/searchKey만)
+# 2026-11-22 06:34:19 KST lighthouse 13.6.0 N=3 591e18f6 로그인없음
+페이지        폼팩터 성능 접근 모범     FCP     LCP     TBT    CLS JS(KB)  RSC JS수
+/                desktop   100  100  100     252     803       0  0.035    342    0   21   (n=3, 성능 99~100)
+/                mobile     84  100  100     910    4023     199  0.031    342    0   21   (n=3, 성능 84~86)
+/macro           desktop    91  100  100     250    1120     210  0.035    414    0   22   (n=3, 성능 89~92)
+/macro           mobile     53  100  100     908    5136    1928  0.000    414    0   22   (n=3, 성능 53~53)
+/institutions    desktop    99  100  100     250    1006      13  0.035    427    0   23   (n=3, 성능 99~99)
+/institutions    mobile     68  100  100     909    4625     363  0.161    427    0   23   (n=3, 성능 68~69)
+/paper/us        desktop    96  100  100     247    1136      27  0.093    584    0   24   (n=3, 성능 96~96)
+/paper/us        mobile     64  100  100     908    5393     440  0.143    584    0   24   (n=3, 성능 62~67)
+/paper/kr        desktop    96  100  100     246     978       0  0.109    584    0   24   (n=3, 성능 96~96)
+/paper/kr        mobile     73  100  100     908    4973     210  0.143    584    0   24   (n=3, 성능 72~73)
+/info/overview   desktop    98  100  100     246     743       0  0.084    285    0   21   (n=3, 성능 98~99)
+/info/overview   mobile     67  100  100     907    3683     120  0.569    285    0   21   (n=3, 성능 66~67)
+/s/us/NVDA       desktop    98  100  100     249     907       0  0.067    419    0   22   (n=3, 성능 98~98)
+/s/us/NVDA       mobile     73  100  100     909    4376     165  0.197    419    0   22   (n=3, 성능 73~73)
+
+## 5. 이동 시간 (scripts/qa/nav-timing.js, 폭 1440, 다섯 번 중앙값)
+### 고치기 전(미리 받기가 끝난 뒤 누름, 머무름 100 ms)
+# 2026-11-22 06:02:40 KST nav-timing base=http://127.0.0.1:13002 width=1440 dwell=100ms runs=5
+/ > /macro CPUx1: 중앙 58 ms [70, 55, 67, 58, 58] · 출발 화면의 RSC 미리 받기 중앙 31
+/ > /macro CPUx4: 중앙 212 ms [205, 237, 222, 207, 212] · 출발 화면의 RSC 미리 받기 중앙 32
+/ > /paper/us CPUx1: 중앙 45 ms [45, 126, 45, 45, 103] · 출발 화면의 RSC 미리 받기 중앙 31
+/ > /paper/us CPUx4: 중앙 110 ms [101, 106, 112, 110, 112] · 출발 화면의 RSC 미리 받기 중앙 32
+/macro > /institutions CPUx1: 중앙 78 ms [47, 82, 78, 82, 47] · 출발 화면의 RSC 미리 받기 중앙 28
+/macro > /institutions CPUx4: 중앙 147 ms [119, 159, 147, 163, 112] · 출발 화면의 RSC 미리 받기 중앙 28
+### 미리 받기만 바꾼 뒤(머무름 100 ms)
+# 2026-11-22 06:07:26 KST nav-timing base=http://127.0.0.1:13002 width=1440 dwell=100ms runs=5
+/ > /macro CPUx1: 중앙 58 ms [68, 56, 58, 51, 61] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /macro CPUx4: 중앙 192 ms [205, 193, 192, 190, 188] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx1: 중앙 48 ms [142, 45, 107, 42, 48] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx4: 중앙 129 ms [129, 130, 118, 118, 131] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx1: 중앙 78 ms [93, 78, 73, 76, 78] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx4: 중앙 125 ms [120, 125, 163, 135, 122] · 출발 화면의 RSC 미리 받기 중앙 0
+### 미리 받기만 바꾼 뒤(머무름 0 ms — 가리킨 즉시 누름, 가장 나쁜 경우)
+# 2026-11-22 06:08:58 KST nav-timing base=http://127.0.0.1:13002 width=1440 dwell=0ms runs=5
+/ > /macro CPUx1: 중앙 81 ms [123, 81, 82, 77, 78] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /macro CPUx4: 중앙 240 ms [240, 227, 290, 219, 246] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx1: 중앙 67 ms [157, 139, 63, 67, 63] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx4: 중앙 170 ms [147, 170, 167, 179, 172] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx1: 중앙 52 ms [52, 52, 100, 47, 47] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx4: 중앙 196 ms [191, 227, 140, 196, 222] · 출발 화면의 RSC 미리 받기 중앙 0
+### 단계 2 끝(머무름 100 ms)
+# 2026-11-22 06:42:40 KST nav-timing base=http://127.0.0.1:13002 width=1440 dwell=100ms runs=5
+/ > /macro CPUx1: 중앙 53 ms [72, 51, 57, 53, 52] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /macro CPUx4: 중앙 200 ms [200, 205, 189, 191, 201] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx1: 중앙 106 ms [141, 47, 105, 106, 113] · 출발 화면의 RSC 미리 받기 중앙 0
+/ > /paper/us CPUx4: 중앙 118 ms [137, 115, 115, 119, 118] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx1: 중앙 85 ms [95, 87, 80, 81, 85] · 출발 화면의 RSC 미리 받기 중앙 0
+/macro > /institutions CPUx4: 중앙 125 ms [124, 119, 125, 132, 128] · 출발 화면의 RSC 미리 받기 중앙 0
