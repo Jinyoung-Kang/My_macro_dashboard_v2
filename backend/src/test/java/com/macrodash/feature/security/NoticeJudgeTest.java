@@ -15,6 +15,7 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -505,6 +506,21 @@ class NoticeJudgeTest {
             SecurityNotice plain = new SecurityNotice(12L, "가짜 점검 안내", Template.NO_TABLE, List.of(), "Git 저장소 설정을 점검하라는 가짜 본문");
             assertThat(NoticeJudge.judge(plain, List.of(), inv).products()).extracting(ProductVerdict::aliasId).as("주소 밖의 이름은 그대로 맞음")
                     .contains("git");
+        }
+
+        @Test
+        @Disabled("QA-981 재현 — 고치기 전에는 낱말 풀이 ※ 문장이 조건 문장으로 셈해져 패치됨이 확인 필요로 내려감")
+        @DisplayName("QA-981 낱말 풀이 ※ 문장('약어(풀이) : 설명')은 조건 문장이 아님 — 조건 문장은 그대로 셈")
+        void glossaryNotes() {
+            List<String> notes = NoticeJudge.conditionNotes(List.of(
+                    "※ FPM(Fake Package Manager) : 가짜 응용 프로그램을 설치하고 올리는 가짜 패키지 관리 도구",
+                    "※ 가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)"));
+            assertThat(notes).containsExactly("가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)");
+
+            List<Row> r = rows("PostgreSQL|16 이상 16.50 미만|16.50 이상");
+            Verdict v = NoticeJudge.judge(tableNotice("※ PG(Fake Postgres) : 가짜 데이터베이스 설명", "※ 하단의 참고 사이트를 확인하여 업데이트 수행 [1]"),
+                    r, inventory(comp("postgres", "runtime", "postgres", "16.60")));
+            assertThat(v.status()).isEqualTo(Status.PATCHED);
         }
     }
 
