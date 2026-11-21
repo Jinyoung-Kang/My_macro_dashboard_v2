@@ -5,6 +5,7 @@
  *    (값이 같아도 React가 훅을 가진 부품 함수를 한 번 더 부를 수는 있음 — 그때도 자식은 건너뜀)
  */
 import { act, cleanup, render } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useChartWidth } from "../useChartWidth";
@@ -19,9 +20,11 @@ function Chart({ width, renders }: { width: number | null; renders: number[] }) 
   return null;
 }
 
-function Probe({ renders, api }: { renders: number[]; api: { current: ((w: number) => void) | null } }) {
+function Probe({ renders, resizeRef }: { renders: number[]; resizeRef: { current: ((w: number) => void) | null } }) {
   const { width, containerRef, onResize } = useChartWidth();
-  api.current = onResize;
+  useEffect(() => {
+    resizeRef.current = onResize;
+  }, [onResize, resizeRef]);
   return (
     <div ref={containerRef}>
       <Chart width={width} renders={renders} />
@@ -33,21 +36,21 @@ describe("useChartWidth", () => {
   it("잴 수 있는 상자면 첫 그림 전에 그 너비를 쓰고, 같은 너비의 onResize로는 다시 그리지 않는다", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 341.5 } as DOMRect);
     const renders: number[] = [];
-    const api: { current: ((w: number) => void) | null } = { current: null };
-    render(<Probe renders={renders} api={api} />);
+    const resizeRef: { current: ((w: number) => void) | null } = { current: null };
+    render(<Probe renders={renders} resizeRef={resizeRef} />);
     expect(renders).toEqual([-1, 341.5]);
-    act(() => api.current?.(341.5000001));
+    act(() => resizeRef.current?.(341.5000001));
     expect(renders).toEqual([-1, 341.5]);
-    act(() => api.current?.(300));
+    act(() => resizeRef.current?.(300));
     expect(renders.at(-1)).toBe(300);
   });
 
   it("못 재는 상자(0)면 null로 두고 onResize의 너비를 쓴다", () => {
     const renders: number[] = [];
-    const api: { current: ((w: number) => void) | null } = { current: null };
-    render(<Probe renders={renders} api={api} />);
+    const resizeRef: { current: ((w: number) => void) | null } = { current: null };
+    render(<Probe renders={renders} resizeRef={resizeRef} />);
     expect(renders).toEqual([-1]);
-    act(() => api.current?.(600));
+    act(() => resizeRef.current?.(600));
     expect(renders.at(-1)).toBe(600);
   });
 });
