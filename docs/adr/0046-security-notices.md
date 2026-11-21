@@ -11,7 +11,7 @@
 - 지키는 방법(시험): 표 소유 `ArchitectureRulesTest`·`test_table_ownership.py`, 마이그레이션 `test_migrations.py`(V40), 해석기 `test_kisa_notices.py`(합성 HTML),
   태스크 `test_security_task.py`, 버전 목록 받기 `test_inventory_ingest.py`(가짜 값 — 틀리면 아무것도 쓰지 않음), 호스트 스크립트 `test_vultr_scripts.py`(로그에 버전 없음),
   판정 `VersionOrderTest`·`VersionRangeTest`·`ProductAliasesTest`·`NoticeJudgeTest`, 경로 `AccessPolicyTest`·`RouteInventoryTest`·`SecurityControllerTest`(회원 403·운영자 200), 화면 응답 `SecurityServiceTest`(판정 집계·거르기·쪽·버전 목록 없음)·`SecurityStoreDbTest`, 알림 `SecurityAlertJobTest`(한 번만·실패 뒤 재시도·
-  버전 목록 없으면 0건·글과 로그에 버전 문자열 없음·여럿이면 텔레그램 한 통)·`SecurityStoreDbTest`의 알림 기록. 각 시험 이름은 구현 커밋에서 이 줄에 채웁니다.
+  버전 목록 없으면 0건·글과 로그에 버전 문자열 없음·여럿이면 텔레그램 한 통)·`SecurityStoreDbTest`의 알림 기록. 화면 `security.test.ts`(판정·사유 글)·`securityScreen.test.tsx`(한계 줄·버전 목록 없음·검사 칸·`?ntt=`)·`alertsSecurityNotice.test.tsx`(알림함 링크), 메뉴·지킴 시험(`nav`·`navTree`·`MoreMenu`·`breadcrumbs`·`access`·`endpoints`·`moreTablesScrollHint`·`moreWritesKeep` — 이 화면은 GET만), 화면 감사 경로 `/security`(`scripts/qa/ui-audit-routes.txt`).
 
 ## 배경
 
