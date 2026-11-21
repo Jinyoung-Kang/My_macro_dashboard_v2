@@ -258,7 +258,8 @@ public final class ProductAliases {
             alias("node", "Node.js", Kind.UPSTREAM, Family.MAJOR).sections(SECTION_FRONTEND)
                     .component(ECO_RUNTIME, "node(?:js)?")
                     .name("\\bNode\\.?js\\b")
-                    .exclude("Node-RED").build(),
+                    // 데이터베이스의 Node.js 드라이버(클라이언트 라이브러리)는 런타임이 아닙니다(QA-977).
+                    .exclude("Node-RED|Node\\.?js\\s*(?:Driver|드라이버)").build(),
             alias("python", "Python", Kind.UPSTREAM, Family.MINOR).sections(SECTION_COLLECTOR)
                     .component(ECO_RUNTIME, "python3?")
                     .name("\\bC?Python\\b")

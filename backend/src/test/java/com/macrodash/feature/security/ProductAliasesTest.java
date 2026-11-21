@@ -4,7 +4,6 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -121,7 +120,6 @@ class ProductAliasesTest {
     }
 
     @Test
-    @Disabled("QA-977 — 고치기 전: 'Node.js Driver'가 Node.js 런타임 별칭에 맞음")
     @DisplayName("QA-977 Node.js 드라이버(데이터베이스 클라이언트)는 Node.js 런타임이 아님 — 표 제품명·본문 언급 모두")
     void nodeDriverIsNotNodeRuntime() {
         assertThat(ids("Node.js Driver")).isEmpty();

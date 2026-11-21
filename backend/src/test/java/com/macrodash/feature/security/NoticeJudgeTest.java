@@ -9,7 +9,6 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -429,7 +428,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-977 — 고치기 전: 표 제품명 'Node.js Driver'가 Node.js 런타임 별칭에 맞아 확인 필요")
         @DisplayName("QA-977 데이터베이스의 Node.js 드라이버 공지는 Node.js 런타임과 무관 — 표 제품명·본문 모두")
         void nodeDriverIsNotNodeRuntime() {
             SecurityNotice notice = new SecurityNotice(9L, "가짜 DB 제품 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
