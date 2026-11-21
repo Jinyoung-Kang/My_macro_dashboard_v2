@@ -95,6 +95,8 @@ SCHEDULED_DOMAINS = (
     "gleif.org",
     # 보안 공지(ADR 0046)의 보호나라 보안공지 목록·상세(flex 태스크 kisa_security_notices).
     "boho.or.kr",
+    # 같은 태스크가 묻는 배포판 보안 추적기(ADR 0046 덧붙임 2026-11-21) — Ubuntu CVE JSON·Debian 보안 추적기·Alpine secdb.
+    "ubuntu.com", "debian.org", "alpinelinux.org",
 )
 # 정보 검색 자체 피드(services/search_feeds — 정기 수집이지만 그 피드가 막혀도 정보 검색의 그 피드 하나만 영향)만 부르는 등록 도메인은 받습니다 —
 # 결과에 자주 나오는 매체라 막으면 본문 보기가 대부분 '없음'이 됩니다. 대조 시험이 이 목록 밖의 새 주소를 잡습니다.

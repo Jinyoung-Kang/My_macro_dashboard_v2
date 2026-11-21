@@ -1898,6 +1898,63 @@ def security_notice(ntt_id: int) -> dict | None:
     return {**row, "rows": [dict(r) for r in rows]}
 
 
+# 배포판 보안 추적기(ADR 0046 덧붙임 2026-11-21, V42). security_tracker_wants는 백엔드 표라 읽기만 합니다(백엔드 store.SecurityTrackerStore가 씀 —
+# ADR 0008). distro_cve_status는 태스크 kisa_security_notices가 이 함수로만 씁니다(tests/test_table_ownership.py가 봄).
+def distro_tracker_due(*, now: datetime, open_hours: float, settled_days: float, limit: int = 2000) -> list[dict]:
+    """
+    추적기에 물을 것 → [{distro, suite, package, cve, status, checked_at, wanted_at}] — 백엔드가 둔 wants 가운데 결과 행이 없거나,
+    결과가 open·unknown이고 ``open_hours``시간보다 오래됐거나, fixed·not_affected이고 ``settled_days``일보다 오래된 것.
+    오래된 것부터(결과 행이 없는 것이 먼저, 그다음 확인 시각·원한 시각 순).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT w.distro, w.suite, w.package, w.cve, w.wanted_at, s.status, s.checked_at
+            FROM security_tracker_wants w
+            LEFT JOIN distro_cve_status s
+                   ON s.distro = w.distro AND s.suite = w.suite AND s.package = w.package AND s.cve = w.cve
+            WHERE s.status IS NULL
+               OR (s.status IN ('open', 'unknown') AND s.checked_at < %(open_before)s)
+               OR (s.status IN ('fixed', 'not_affected') AND s.checked_at < %(settled_before)s)
+            ORDER BY s.checked_at ASC NULLS FIRST, w.wanted_at, w.distro, w.suite, w.package, w.cve
+            LIMIT %(limit)s
+            """,
+            {"open_before": now - timedelta(hours=open_hours), "settled_before": now - timedelta(days=settled_days), "limit": int(limit)},
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_distro_cve_status(rows: Iterable[tuple], *, checked_at: datetime) -> int:
+    """
+    추적기에 물어본 결과를 넣거나 바꿉니다 → 쓴 행 수.
+
+    :param rows: (distro, suite, package, cve, status, fixed_version, detail) — status는 fixed(판 필수)·not_affected·open·unknown,
+        detail은 추적기의 원래 상태 글(100자까지). 받지 못한 요청은 부르는 쪽이 넘기지 않습니다(직전 결과 그대로).
+    """
+    rows = [tuple(row) for row in rows]
+    if not rows:
+        return 0
+    with connection() as conn, conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO distro_cve_status (distro, suite, package, cve, status, fixed_version, detail, checked_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (distro, suite, package, cve) DO UPDATE SET
+                status = EXCLUDED.status, fixed_version = EXCLUDED.fixed_version, detail = EXCLUDED.detail,
+                checked_at = EXCLUDED.checked_at
+            """,
+            [(*row[:6], (row[6] or None) and str(row[6])[:100], checked_at) for row in rows],
+        )
+    return len(rows)
+
+
+def distro_cve_statuses() -> list[dict]:
+    """추적기 결과 전부(시험·진단용)."""
+    with connection() as conn:
+        rows = conn.execute("SELECT * FROM distro_cve_status ORDER BY distro, suite, package, cve").fetchall()
+    return [dict(r) for r in rows]
+
+
 # env_inventory·env_components·env_pending_updates는 수집기 CLI app/inventory.py가 이 함수로만 씁니다(ADR 0046 결정 2).
 def replace_env_inventory(doc: dict) -> None:
     """

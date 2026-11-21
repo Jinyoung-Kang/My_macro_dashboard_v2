@@ -16,8 +16,17 @@ flex 그룹 — KISA 보호나라 보안공지(ADR 0046). 운영자 화면 '보�
   외부 호출 없이 끝납니다(일정 그대로).
 [출처 상태] 실행마다 ``store.note_source_state``(ok·blocked·format·failed) — 백엔드 SourceAlertJob의 끊김·형식 바뀜 알림과 수집 현황이 그대로
   붙습니다(ADR 0046 결정 4). '오래 못 받음'은 ``STALE_AFTER_MINUTES``(30시간 — 구간 넷을 건너뛰어도 넘지 않게).
-[실패 규칙] 목록 1쪽을 받지 못하면 EmptyResult(저장한 글 그대로). 출처가 거부하면(403·429 — 공용 세션의 거부 래치) 그 예외를 그대로 올려
-  실행 기록에 '거부됨'으로 남깁니다. 상세 하나의 실패는 나머지를 멈추지 않습니다(거부만 그 실행의 보호나라 요청을 멈춤).
+[실패 규칙] 목록 1쪽을 받지 못하면 EmptyResult(저장한 글 그대로 — 추적기도 건너뜀). 출처가 거부하면(403·429 — 공용 세션의 거부 래치) 그 예외를
+  그대로 올려 실행 기록에 '거부됨'으로 남깁니다. 상세 하나의 실패는 나머지를 멈추지 않습니다(거부만 그 실행의 보호나라 요청을 멈춤).
+[배포판 보안 추적기] (ADR 0046 덧붙임 2026-11-21) 같은 실행에서 보호나라 상세 다음에, 백엔드가 표 ``security_tracker_wants``에 둔 '물어볼 것'
+  (변경 기록으로 가리지 못한 배포판·스위트·원본 패키지·CVE) 가운데 결과(표 ``distro_cve_status``)가 없거나, open·unknown이고
+  ``TRACKER_OPEN_HOURS``시간·fixed·not_affected이고 ``TRACKER_SETTLED_DAYS``일보다 오래된 것을 오래된 것부터 묻습니다. 읽기는
+  ``services.distro_trackers``(Ubuntu CVE JSON·Debian 보안 추적기 HTML·Alpine secdb).
+  - Ubuntu·Debian은 CVE마다 요청 하나(같은 CVE의 패키지·스위트 여럿을 한 응답으로), 둘 합쳐 한 실행에 ``TRACKER_REQUEST_LIMIT``개까지.
+    HTTP 404는 unknown. Alpine은 원하는 행이 있는 스위트마다 secdb ``main``·``community``를 한 번씩(상한과 별도 — 스위트 ``TRACKER_ALPINE_SUITES``개까지).
+  - 요청 사이 3~6초, 보호나라와 같은 공용 세션과 시간 예산. 받지 못함(연결·5xx 등)·틀이 다름은 행을 쓰지 않고(직전 결과 그대로) 실행 메시지에
+    건수만. 추적기의 거부(공용 세션의 거부 래치)는 추적기 조회만 멈춥니다(보호나라 결과는 이미 저장, 출처 상태는 보호나라 것만).
+  - 실행 메시지에는 요청 수·결과 건수만 남깁니다(판 값·CVE 번호 없음 — 공개 저장소·로그).
 """
 from __future__ import annotations
 
@@ -30,7 +39,7 @@ import requests
 
 from .. import http, kst, store
 from ..http import get_session
-from ..services import kisa_notices
+from ..services import distro_trackers, kisa_notices
 from ..services.info_text import ShapeError
 from . import flex
 from .base import EmptyResult
@@ -53,6 +62,13 @@ REQUEST_TIMEOUT = 20.0
 # 새 요청을 더 시작하지 않는 경과 시간(초) — flex 상한(runner.TASK_DEADLINE_SECONDS["flex"] = 600초)에서 마지막 요청 하나(쉼 + 공용 세션의
 # 다시 보내기 포함)가 들어갈 자리를 남깁니다.
 TIME_LIMIT_SECONDS = 420.0
+# 배포판 보안 추적기(모듈 설명 '배포판 보안 추적기').
+TRACKER_REQUEST_LIMIT = 20            # 한 실행의 Ubuntu·Debian 요청 합계 상한
+TRACKER_ALPINE_SUITES = 4             # 한 실행에 secdb를 받는 Alpine 스위트 상한(스위트마다 main·community 두 요청 — 위 상한과 별도)
+TRACKER_OPEN_HOURS = 20               # open·unknown을 다시 묻는 간격
+TRACKER_SETTLED_DAYS = 7              # fixed·not_affected를 다시 묻는 간격
+_TRACKER_NAMES = {"ubuntu": "Ubuntu", "debian": "Debian", "alpine": "Alpine"}
+_STATUS_NAMES = {"fixed": "고침", "not_affected": "영향 없음", "open": "열림", "unknown": "모름"}
 
 # 시험이 난수·시계·쉼을 바꿔 끼우는 자리입니다.
 _rng = random.Random()
@@ -97,9 +113,13 @@ class _Failed(Exception):
     """받지 못함(연결·HTTP 상태) — 출처 상태 'failed'."""
 
 
-def _get(url: str) -> bytes:
+class _OutOfTime(Exception):
+    """실행의 시간 예산을 넘김 — 추적기 요청을 더 시작하지 않음."""
+
+
+def _get(url: str, *, missing_ok: bool = False) -> bytes | None:
     """
-    공용 세션으로 한 번 받습니다 → 본문.
+    공용 세션으로 한 번 받습니다 → 본문(``missing_ok``이면 HTTP 404에 None).
 
     :raises http.SourceRejected: 출처가 거부함(공용 세션의 거부 래치)
     :raises _Failed: 연결 오류·200이 아닌 상태
@@ -110,6 +130,8 @@ def _get(url: str) -> bytes:
         raise
     except requests.exceptions.RequestException as exc:
         raise _Failed(http.brief_error(exc)) from None
+    if missing_ok and response.status_code == 404:
+        return None
     if response.status_code != 200:
         raise _Failed(f"HTTP {response.status_code}")
     return response.content
@@ -221,6 +243,11 @@ def task_kisa_security_notices() -> str:
 
     remaining = store.security_pending_details(1, max_attempts=MAX_ATTEMPTS, since=cutoff)
     still_backfilling = _backfill_page(store.security_list_bounds(), cutoff) is not None
+    try:
+        tracker_parts = _ask_trackers(started)
+    except Exception as exc:  # noqa: BLE001 — 추적기의 탈은 보호나라 결과·출처 상태를 막지 않음
+        logger.warning("배포판 보안 추적기 조회가 멈춤(%s)", type(exc).__name__)
+        tracker_parts = [f"추적기 조회 멈춤 — {type(exc).__name__}"]
 
     if rejected is not None:
         _note("blocked", str(rejected))
@@ -243,5 +270,115 @@ def task_kisa_security_notices() -> str:
         parts.append(f"{BACKFILL_DAYS}일 메우는 중")
     elif remaining:
         parts.append("받을 상세 남음")
+    parts.extend(tracker_parts)
     parts.append(f"다음 {kst.stamp(next_at)}")
     return " · ".join(parts)
+
+
+def _ask_trackers(started: float) -> list[str]:
+    """
+    배포판 보안 추적기에 묻고 결과를 표 distro_cve_status에 씁니다 → 실행 메시지 조각(모듈 설명 '배포판 보안 추적기').
+    """
+    due_rows = store.distro_tracker_due(now=_now(), open_hours=TRACKER_OPEN_HOURS, settled_days=TRACKER_SETTLED_DAYS)
+    if not due_rows:
+        return ["추적기 물을 것 없음"]
+    alpine: dict[str, list[dict]] = {}
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in due_rows:
+        if row["distro"] == "alpine":
+            alpine.setdefault(row["suite"], []).append(row)
+        else:
+            groups.setdefault((row["distro"], row["cve"]), []).append(row)
+
+    asked = dict.fromkeys(_TRACKER_NAMES, 0)
+    results = dict.fromkeys(_STATUS_NAMES, 0)
+    failed = shaped = 0
+    stop: str | None = None
+
+    def fetch(distro: str, url: str) -> bytes | None:
+        """요청 하나 — 시간 예산을 넘겼으면 _OutOfTime(새 요청을 시작하지 않음)."""
+        if _clock() - started > TIME_LIMIT_SECONDS:
+            raise _OutOfTime
+        _sleep(_rng.uniform(*GAP_SECONDS))
+        asked[distro] += 1
+        return _get(url, missing_ok=True)
+
+    def save(pairs: list[tuple[dict, distro_trackers.Status]]) -> None:
+        store.save_distro_cve_status(
+            [(row["distro"], row["suite"], row["package"], row["cve"], st.status, st.fixed_version, st.detail) for row, st in pairs],
+            checked_at=_now())
+        for _, st in pairs:
+            results[st.status] += 1
+
+    try:
+        for suite, rows in list(alpine.items())[:TRACKER_ALPINE_SUITES]:
+            try:
+                urls = [distro_trackers.alpine_url(suite, repo) for repo in distro_trackers.ALPINE_REPOS]
+            except ValueError:
+                shaped += 1                              # secdb 주소로 쓸 수 없는 스위트(edge 등) — 묻지 않음
+                continue
+            indexes = []
+            for repo, url in zip(distro_trackers.ALPINE_REPOS, urls):
+                try:
+                    body = fetch("alpine", url)
+                    indexes.append({} if body is None else distro_trackers.parse_alpine(body, suite, repo))
+                except _Failed:
+                    failed += 1
+                    break
+                except ShapeError:
+                    shaped += 1
+                    break
+            if len(indexes) != len(distro_trackers.ALPINE_REPOS):
+                continue                                 # 둘 다 봐야 unknown을 말할 수 있음 — 이 스위트는 쓰지 않음
+            pairs = []
+            for row in rows:
+                try:
+                    pairs.append((row, distro_trackers.alpine_status(indexes, row["package"], row["cve"], distro_trackers.ALPINE_REPOS)))
+                except ShapeError:
+                    shaped += 1
+            save(pairs)
+
+        sent = 0
+        for (distro, cve), rows in groups.items():
+            if sent >= TRACKER_REQUEST_LIMIT:
+                break
+            sent += 1
+            url = distro_trackers.ubuntu_url(cve) if distro == "ubuntu" else distro_trackers.debian_url(cve)
+            try:
+                body = fetch(distro, url)
+                if body is None:
+                    pairs = [(row, distro_trackers.Status("unknown", None, "HTTP 404")) for row in rows]
+                else:
+                    record = distro_trackers.parse_ubuntu(body, cve) if distro == "ubuntu" else distro_trackers.parse_debian(body, cve)
+                    pairs = []
+                    for row in rows:
+                        try:
+                            if distro == "ubuntu":
+                                pairs.append((row, distro_trackers.ubuntu_status(record, row["package"], row["suite"])))
+                            else:
+                                pairs.append((row, distro_trackers.debian_status(record, row["package"], row["suite"])))
+                        except ShapeError:
+                            shaped += 1
+            except _Failed:
+                failed += 1
+                continue
+            except ShapeError:
+                shaped += 1
+                continue
+            save(pairs)
+    except http.SourceRejected:
+        stop = "추적기 거부로 멈춤"
+    except _OutOfTime:
+        stop = "시간 예산으로 추적기 멈춤"
+
+    written = sum(results.values())
+    parts = [f"추적기 요청 {sum(asked.values())}({'·'.join(f'{name} {asked[key]}' for key, name in _TRACKER_NAMES.items())})",
+             f"추적기 결과 {written}({'·'.join(f'{name} {results[key]}' for key, name in _STATUS_NAMES.items())})"]
+    if failed or shaped:
+        parts.append(f"추적기 실패 {failed + shaped}(받지 못함 {failed}·모양이 다름 {shaped})")
+    if stop:
+        parts.append(stop)
+    if len(due_rows) > written:
+        parts.append(f"추적기 남음 {len(due_rows) - written}")
+    logger.info("배포판 보안 추적기 — 요청 %d·결과 %d·실패 %d", sum(asked.values()), written, failed + shaped)
+    return parts

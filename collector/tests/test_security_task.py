@@ -27,10 +27,12 @@ import pytest
 import requests
 
 from app import http, tasks
+from app.services import distro_trackers as dt
 from app.services import kisa_notices
 from app.tasks import flex
 from app.tasks import security as task
 from app.tasks.base import EmptyResult
+from tests.test_distro_trackers import _alpine, _debian, _ubuntu
 
 NOW = datetime(2026, 11, 21, 3, 0, tzinfo=timezone.utc)      # KST 11-21 12:00
 TODAY = date(2026, 11, 21)
@@ -101,9 +103,9 @@ class FakeBoard:
         board = self
 
         class _Response:
-            def __init__(self, status: int, body: str):
+            def __init__(self, status: int, body: str | bytes):
                 self.status_code = status
-                self.content = body.encode("utf-8")
+                self.content = body if isinstance(body, bytes) else body.encode("utf-8")
 
         class _Session:
             def get(self, url, timeout=None):
@@ -114,6 +116,8 @@ class FakeBoard:
                     raise outcome
                 if outcome is not None:
                     return _Response(*outcome)
+                if "boho.or.kr" not in url:
+                    return _Response(404, "")             # 추적기 주소 가운데 override에 없는 것
                 query = parse_qs(urlsplit(url).query)
                 if "/list.do" in url:
                     return _Response(200, board.list_html(int(query["pageIndex"][0])))
@@ -126,6 +130,9 @@ class FakeBoard:
 
     def details(self) -> list[int]:
         return [int(parse_qs(urlsplit(url).query)["nttId"][0]) for url in self.calls if "/view.do" in url]
+
+    def trackers(self) -> list[str]:
+        return [url for url in self.calls if "boho.or.kr" not in url]
 
 
 @pytest.fixture()
@@ -508,3 +515,206 @@ def test_상세를_다시_받으면_표_행을_통째로_바꾼다(store, board)
     with pytest.raises(ValueError, match="목록에 없는 공지"):
         store.save_security_detail(1, kisa_notices.parse_detail(_detail_html(post)))
 
+
+# ==============================================================================
+# 5. 배포판 보안 추적기(ADR 0046 덧붙임 2026-11-21) — 응답은 tests/test_distro_trackers의 합성 틀(지어낸 CVE·판·패키지)
+# ==============================================================================
+C1, C2, C3 = "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003"
+
+
+def _want(store, distro: str, suite: str, package: str, cve: str, *, minutes_ago: int = 0) -> None:
+    """백엔드가 두는 '물어볼 것' 한 행(시험만 직접 넣음 — 수집기 코드는 이 표에 쓰지 않음)."""
+    with store.connection() as conn:
+        conn.execute("INSERT INTO security_tracker_wants (distro, suite, package, cve, wanted_at) VALUES (%s, %s, %s, %s, %s)",
+                     (distro, suite, package, cve, NOW - timedelta(minutes=minutes_ago)))
+
+
+def _checked(store, distro: str, suite: str, package: str, cve: str, status: str, ago: timedelta, fixed: str | None = None) -> None:
+    store.save_distro_cve_status([(distro, suite, package, cve, status, fixed, "합성")], checked_at=NOW - ago)
+
+
+def _statuses(store) -> dict[tuple[str, str, str, str], tuple[str, str | None, str]]:
+    return {(r["distro"], r["suite"], r["package"], r["cve"]): (r["status"], r["fixed_version"], r["detail"])
+            for r in store.distro_cve_statuses()}
+
+
+def test_물을_것은_결과가_없거나_open_unknown_20시간_fixed_not_affected_7일보다_오래된_것을_오래된_것부터(store):
+    plan = [
+        ("CVE-2099-0101", None),                                          # 결과 없음 — 가장 먼저
+        ("CVE-2099-0102", ("open", timedelta(hours=21))),
+        ("CVE-2099-0103", ("open", timedelta(hours=19))),                  # 아직
+        ("CVE-2099-0104", ("unknown", timedelta(hours=20, minutes=1))),
+        ("CVE-2099-0105", ("fixed", timedelta(days=8))),
+        ("CVE-2099-0106", ("fixed", timedelta(days=6))),                   # 아직
+        ("CVE-2099-0107", ("not_affected", timedelta(days=7, hours=1))),
+        ("CVE-2099-0108", ("not_affected", timedelta(days=2))),            # 아직
+        ("CVE-2099-0109", ("unknown", timedelta(hours=1))),                # 아직
+    ]
+    for index, (cve, checked) in enumerate(plan):
+        _want(store, "debian", "fakedeb", "fakessl", cve, minutes_ago=index)
+        if checked:
+            _checked(store, "debian", "fakedeb", "fakessl", cve, checked[0], checked[1], "1.0-1" if checked[0] == "fixed" else None)
+    _checked(store, "debian", "fakedeb", "fakeother", "CVE-2099-0199", "open", timedelta(days=30))     # 원하지 않는 결과 행
+
+    due = store.distro_tracker_due(now=NOW, open_hours=task.TRACKER_OPEN_HOURS, settled_days=task.TRACKER_SETTLED_DAYS)
+
+    assert [row["cve"] for row in due] == ["CVE-2099-0101", "CVE-2099-0105", "CVE-2099-0107", "CVE-2099-0102", "CVE-2099-0104"]
+    assert (task.TRACKER_OPEN_HOURS, task.TRACKER_SETTLED_DAYS, task.TRACKER_REQUEST_LIMIT) == (20, 7, 20)
+    assert store.distro_tracker_due(now=NOW, open_hours=20, settled_days=7, limit=2)[1]["cve"] == "CVE-2099-0105"
+
+
+def test_보호나라_다음에_Ubuntu·Debian을_CVE마다_한_번_묻고_상태를_쓴다(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=10)
+    _want(store, "ubuntu", "oldcode", "fakessl", C1, minutes_ago=9)       # 같은 CVE — 같은 응답
+    _want(store, "debian", "fakedeb", "fakessl", C1, minutes_ago=8)
+    _want(store, "debian", "fakedeb", "fakexz", C1, minutes_ago=7)
+    _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=6)       # 404 → unknown
+    board.override[dt.ubuntu_url(C1)] = (200, _ubuntu())
+    board.override[dt.debian_url(C1)] = (200, _debian())
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    assert board.trackers() == [dt.ubuntu_url(C1), dt.debian_url(C1), dt.ubuntu_url(C2)], "오래된 것부터, CVE마다 한 번"
+    assert board.calls.index(dt.ubuntu_url(C1)) > max(i for i, url in enumerate(board.calls) if "view.do" in url), "보호나라 상세 다음"
+    assert len(board.sleeps) == len(board.calls) - 1 and all(3.0 <= s <= 6.0 for s in board.sleeps), "추적기 요청 사이도 3~6초"
+    assert _statuses(store) == {
+        ("ubuntu", "fakecode", "fakessl", C1): ("fixed", "9.9.9-0fake1.1", "released"),
+        ("ubuntu", "oldcode", "fakessl", C1): ("open", None, "needed"),
+        ("debian", "fakedeb", "fakessl", C1): ("fixed", "2.0-1+deb2u1", "fakedeb (security): fixed; fakedeb: fixed"),
+        ("debian", "fakedeb", "fakexz", C1): ("not_affected", None, "(not affected)"),
+        ("ubuntu", "fakecode", "fakessl", C2): ("unknown", None, "HTTP 404"),
+    }
+    assert all(row["checked_at"] == NOW for row in store.distro_cve_statuses())
+    assert ("추적기 요청 3(Ubuntu 2·Debian 1·Alpine 0) · 추적기 결과 5(고침 2·영향 없음 1·열림 1·모름 1)") in detail
+    assert "남음" not in detail and "CVE-" not in detail and "9.9.9" not in detail and "2.0-1" not in detail, "건수만(번호·판 없음)"
+    assert store.source_state(task.TASK_NAME)["status"] == "ok"
+
+    board.calls.clear()
+    board.clock["now"] = _next_due()
+    assert "추적기 물을 것 없음" in task.task_kisa_security_notices() and board.trackers() == [], "다음 구간에는 다시 묻지 않음"
+    board.clock["now"] = NOW + timedelta(hours=21)
+    _due_now(board)
+    task.task_kisa_security_notices()
+    assert board.trackers() == [dt.ubuntu_url(C1), dt.ubuntu_url(C2)], "20시간 뒤 open·unknown만 다시(fixed·not_affected는 7일)"
+
+
+def test_Ubuntu·Debian_요청은_한_실행에_20개까지_오래된_것부터(store, board):
+    for n in range(25):
+        _want(store, "debian" if n % 2 else "ubuntu", "fakecode", "fakessl", f"CVE-2099-{n + 100:04d}", minutes_ago=100 - n)
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    asked = [url.rsplit("/", 1)[-1].removesuffix(".json") for url in board.trackers()]
+    assert asked == [f"CVE-2099-{n + 100:04d}" for n in range(20)]
+    assert "추적기 요청 20(Ubuntu 10·Debian 10·Alpine 0) · 추적기 결과 20(고침 0·영향 없음 0·열림 0·모름 20)" in detail
+    assert "추적기 남음 5" in detail
+
+    board.calls.clear()
+    board.clock["now"] = _next_due()
+    task.task_kisa_security_notices()
+    assert [url.rsplit("/", 1)[-1].removesuffix(".json") for url in board.trackers()] == [f"CVE-2099-{n + 100:04d}" for n in range(20, 25)]
+
+
+def test_Alpine_secdb는_스위트마다_main·community를_한_번씩이고_20개_상한과_따로(store, board):
+    for n in range(20):
+        _want(store, "ubuntu", "fakecode", "fakessl", f"CVE-2099-{n + 100:04d}", minutes_ago=50 - n)
+    _want(store, "alpine", "v9.99", "fakessl", C1, minutes_ago=60)
+    _want(store, "alpine", "v9.99", "fakeweb", C1, minutes_ago=60)
+    _want(store, "alpine", "v9.99", "fakessl", "CVE-2099-0009", minutes_ago=60)
+    _want(store, "alpine", "v9.99", "fakessl", "CVE-2099-0002", minutes_ago=60)
+    board.override[dt.alpine_url("v9.99", "main")] = (200, _alpine({"fakessl": {"0": ["CVE-2099-0002"], "9.9.9-r1": [C1]}}))
+    board.override[dt.alpine_url("v9.99", "community")] = (200, _alpine({"fakeweb": {"5.0-r2": [C1]}}, repo="community"))
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    trackers = board.trackers()
+    assert [url for url in trackers if "alpinelinux" in url] == [dt.alpine_url("v9.99", "main"), dt.alpine_url("v9.99", "community")]
+    assert len([url for url in trackers if "ubuntu.com" in url]) == 20
+    statuses = _statuses(store)
+    assert statuses[("alpine", "v9.99", "fakessl", C1)] == ("fixed", "9.9.9-r1", "secfixes (main)")
+    assert statuses[("alpine", "v9.99", "fakeweb", C1)] == ("fixed", "5.0-r2", "secfixes (community)")
+    assert statuses[("alpine", "v9.99", "fakessl", "CVE-2099-0002")] == ("not_affected", None, "secfixes 0 (main)")
+    assert statuses[("alpine", "v9.99", "fakessl", "CVE-2099-0009")] == ("unknown", None, "no cve entry")
+    assert "추적기 요청 22(Ubuntu 20·Debian 0·Alpine 2)" in detail and "남음" not in detail
+
+
+def test_Alpine_secdb_하나를_받지_못하면_그_스위트는_쓰지_않는다(store, board):
+    _want(store, "alpine", "v9.99", "fakessl", C1)
+    board.override[dt.alpine_url("v9.99", "main")] = (200, _alpine({"fakessl": {"9.9.9-r1": [C1]}}))
+    board.override[dt.alpine_url("v9.99", "community")] = (502, "")
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    assert _statuses(store) == {} and "추적기 실패 1(받지 못함 1·모양이 다름 0)" in detail and "추적기 남음 1" in detail
+
+
+def test_추적기가_거부하면_추적기_조회만_멈추고_보호나라_결과는_그대로(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
+    _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
+    _want(store, "debian", "fakedeb", "fakessl", C3, minutes_ago=1)
+    board.override[dt.ubuntu_url(C1)] = http.SourceRejected("ubuntu.com", "HTTP 403")
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    assert board.trackers() == [dt.ubuntu_url(C1)], "거부 뒤 다른 추적기도 묻지 않음"
+    assert "상세 12건" in detail and "추적기 거부로 멈춤" in detail and "추적기 남음 3" in detail
+    assert store.security_notice(BASE_ID + 500)["detail_status"] == "ok" and _statuses(store) == {}
+    assert store.source_state(task.TASK_NAME)["status"] == "ok", "출처 상태는 보호나라 것만"
+
+
+def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과를_둔다(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
+    _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
+    _want(store, "debian", "fakedeb", "fakessl", C3, minutes_ago=1)
+    _checked(store, "ubuntu", "fakecode", "fakessl", C1, "open", timedelta(hours=30))
+    board.override[dt.ubuntu_url(C1)] = (503, "")
+    board.override[dt.ubuntu_url(C2)] = (200, _ubuntu(cve="CVE-2099-0999"))
+    board.override[dt.debian_url(C3)] = (200, _debian(cve=C3))
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    statuses = _statuses(store)
+    assert statuses == {("ubuntu", "fakecode", "fakessl", C1): ("open", None, "합성"),
+                        ("debian", "fakedeb", "fakessl", C3): ("fixed", "2.0-1+deb2u1", "fakedeb (security): fixed; fakedeb: fixed")}
+    assert [r["checked_at"] for r in store.distro_cve_statuses() if r["cve"] == C1] == [NOW - timedelta(hours=30)], "직전 결과 그대로"
+    assert "추적기 결과 1(고침 1·영향 없음 0·열림 0·모름 0) · 추적기 실패 2(받지 못함 1·모양이 다름 1) · 추적기 남음 2" in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "ok", "추적기 실패는 보호나라 출처 상태에 섞지 않음"
+
+
+def test_목록을_받지_못한_실행은_추적기도_건너뛴다(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", C1)
+    board.override[kisa_notices.list_url(1)] = (503, "")
+    _due_now(board)
+
+    with pytest.raises(EmptyResult):
+        task.task_kisa_security_notices()
+    assert board.trackers() == []
+
+
+def test_시간_예산을_넘겼으면_추적기_요청을_시작하지_않는다(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", C1)
+    _due_now(board)
+    board.advance_per_request = 100.0
+
+    detail = task.task_kisa_security_notices()
+
+    assert board.trackers() == [] and "시간 예산으로 추적기 멈춤" in detail and "추적기 남음 1" in detail
+
+
+def test_추적기_단계의_뜻밖의_오류는_보호나라_결과와_출처_상태를_막지_않는다(store, board, monkeypatch):
+    def broken(**kwargs):
+        raise RuntimeError("합성 오류")
+
+    monkeypatch.setattr(task.store, "distro_tracker_due", broken)
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    assert "상세 12건" in detail and "추적기 조회 멈춤 — RuntimeError" in detail and "합성 오류" not in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "ok"
