@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import {
   AutoRefreshControl,
   LIVE_THRESHOLD_SECONDS,
@@ -26,14 +26,14 @@ import type {
   MacroOverview,
   RiskIndicators,
 } from "@/lib/types";
-import { FxCompareSection } from "./FxCompareSection";
-import { IndicatorsSection } from "./IndicatorsSection";
-import { SpreadSection } from "./SpreadSection";
-import { RiskSection } from "./RiskSection";
-import { AdvancedSection } from "./AdvancedSection";
-import { SingleChartSection } from "./SingleChartSection";
-import { ScrapedSection } from "./ScrapedSection";
-import { EconCalendarSection } from "./EconCalendarSection";
+import { FxCompareSection as FxCompareSectionBody } from "./FxCompareSection";
+import { IndicatorsSection as IndicatorsSectionBody } from "./IndicatorsSection";
+import { SpreadSection as SpreadSectionBody } from "./SpreadSection";
+import { RiskSection as RiskSectionBody } from "./RiskSection";
+import { AdvancedSection as AdvancedSectionBody } from "./AdvancedSection";
+import { SingleChartSection as SingleChartSectionBody } from "./SingleChartSection";
+import { ScrapedSection as ScrapedSectionBody } from "./ScrapedSection";
+import { EconCalendarSection as EconCalendarSectionBody } from "./EconCalendarSection";
 import { CriteriaDetails } from "./CriteriaDetails";
 import { endpoints } from "@/lib/endpoints";
 
@@ -72,6 +72,21 @@ const SPREAD_COLUMNS: readonly Column<(typeof SPREAD_TABLE)[number]>[] = [
   { key: "reading", header: "시장의 심리 및 해석", cell: (row) => row.reading },
   { key: "outcome", header: "경제적 귀결", cell: (row) => row.outcome },
 ];
+
+/*
+ * 구역은 memo로 감쌉니다(ADR 0047 결정 8, 성능 개선 작업 B2). 화면 꼭대기 상태(실시간 시세·1분 시계·자동 갱신 간격·세 응답) 가운데 하나가 바뀌면
+ * 예전에는 여덟 구역이 모두 다시 그려졌고, 차트 구역은 그때마다 Recharts가 선 경로를 다시 계산했습니다(CPU 4배에서 한 번에 0.4초 안팎). 받는 값이
+ * 같은 구역은 다시 그리지 않습니다 — 스스로 자료를 읽는 구역(환율 비교·개별 차트·참고 시세·경제 캘린더)은 받는 값이 없고, 나머지는 응답 객체와
+ * useApi의 reload(useCallback)만 받습니다. 보이는 내용·순서·구조는 그대로입니다.
+ */
+const FxCompareSection = memo(FxCompareSectionBody);
+const IndicatorsSection = memo(IndicatorsSectionBody);
+const SpreadSection = memo(SpreadSectionBody);
+const RiskSection = memo(RiskSectionBody);
+const AdvancedSection = memo(AdvancedSectionBody);
+const SingleChartSection = memo(SingleChartSectionBody);
+const ScrapedSection = memo(ScrapedSectionBody);
+const EconCalendarSection = memo(EconCalendarSectionBody);
 
 export default function MacroPage() {
   // 운영자 전용 카드(경제 캘린더)를 그릴지 — 사용자를 아직 모르면(세션 응답 전) 그리지 않습니다.
