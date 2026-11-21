@@ -37,6 +37,8 @@ import java.util.regex.Pattern;
  *       {@code DISTRO_NO_PENDING}. 실행 중인 것만 보는 별칭({@link ProductAliases.Alias#runningOnly()} — 커널)은 런타임 구성 요소가 있으면
  *       그것만 변경 기록으로 판정하고 패키지 줄은 보류(해당)에만 씁니다. 컨테이너 안 패키지는 보류 목록·변경 기록이 없어 늘
  *       {@code DISTRO_NO_PENDING}. 공지의 버전 표와 비교하지 않습니다.</li>
+ *   <li>PPA 판 규칙({@link ProductAliases.Alias#distroUnlessPpa()} — Git, QA-979): 상류 번호 별칭의 dpkg 구성 요소는 판이 PPA면 그 상류 판으로
+ *       아래 상류 번호 판정을, 배포판 판이면 위 배포판 패키지 판정을 받습니다.</li>
  *   <li>상류 번호({@link Kind#UPSTREAM}): 행마다 — 제조사가 다르면 {@code VENDOR_DIFFERS}, 영향 칸을 못 읽으면 {@code PARSE_FAILED},
  *       설치 버전이 영향 구간 안이면 해당(아래 끝이 없는 구간은 위 끝의 계열로 좁힘 — {@link VersionRange#scopedToFamily}, QA-975). 그 밖에는 같은 계열의 행일 때만 — 해결 칸을 못 읽으면 {@code PARSE_FAILED}, 설치 버전이
  *       해결 버전 이상이면 패치됨, 아니면 {@code OUT_OF_TABLE}. 다른 계열의 행은 판정에 쓰지 않고, 같은 계열의 행이 하나도 없으면
@@ -226,8 +228,22 @@ public final class NoticeJudge {
             }
             return out;
         }
+        Set<String> cves = null;
         for (Component c : cov.components()) {
-            out.addAll(upstream(alias, c, rows));
+            if (alias.distroUnlessPpa() && ProductAliases.ECO_DPKG.equals(c.ecosystem())) {
+                // dpkg 판이 PPA면 상류 판으로 공지 표와, 배포판 판이면 배포판 경로로(QA-979 — Git).
+                Optional<String> ppa = DistroVersion.ppaUpstream(c.version());
+                if (ppa.isPresent()) {
+                    out.addAll(upstream(alias, c, ppa.get(), rows));
+                } else {
+                    if (cves == null) {
+                        cves = rowCves(rows);
+                    }
+                    out.add(distro(alias, c, inventory, cves));
+                }
+                continue;
+            }
+            out.addAll(upstream(alias, c, c.version(), rows));
         }
         return out;
     }
@@ -280,14 +296,17 @@ public final class NoticeJudge {
         return out;
     }
 
-    /** 상류 번호 — 행마다 비교하고, 같은 계열의 행이 하나도 없으면 {@code OUT_OF_TABLE}을 더합니다. */
-    private static List<Match> upstream(Alias alias, Component c, List<Row> rows) {
+    /**
+     * 상류 번호 — 행마다 비교하고, 같은 계열의 행이 하나도 없으면 {@code OUT_OF_TABLE}을 더합니다. {@code version}은 견줄 설치 버전
+     * (보통 구성 요소의 버전, PPA 판이면 그 상류 판 — 근거의 설치 버전은 원문 그대로 남깁니다).
+     */
+    private static List<Match> upstream(Alias alias, Component c, String version, List<Row> rows) {
         List<Match> out = new ArrayList<>();
         if (!alias.versionComparable()) {
             out.add(componentLevel(alias, c, Status.CHECK, Reason.NAME_MATCH));
             return out;
         }
-        Optional<Version> installed = VersionOrder.parse(c.version());
+        Optional<Version> installed = VersionOrder.parse(version);
         if (installed.isEmpty()) {
             out.add(componentLevel(alias, c, Status.CHECK, Reason.PARSE_FAILED));
             return out;

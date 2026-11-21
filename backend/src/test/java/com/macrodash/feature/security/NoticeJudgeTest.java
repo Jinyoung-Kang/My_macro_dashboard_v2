@@ -10,7 +10,6 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -629,7 +628,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-979 — 고치기 전: APT가 별칭 표에 없어 그 공지가 무관")
         @DisplayName("QA-979 APT — 'APT (Ubuntu)' 표 행은 배포판 패키지 apt로 판정, 한국어 'APT 공격' 본문은 맞지 않음")
         void aptRows() {
             Component apt = pkg("host", "dpkg", "apt", "9.8.4fake1", "apt");
@@ -650,7 +648,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-979 — 고치기 전: Git이 별칭 표에 없어 그 공지가 무관")
         @DisplayName("QA-979 Git — PPA 판은 상류 판으로 공지 표와 견주고(설치 판은 원문 그대로 근거에), 배포판 판은 배포판 경로(보류·변경 기록)")
         void gitPpaAndDistro() {
             List<Row> gitRows = rows("Git|9.56.1 미만|9.56.1", "Git|9.55.0 이상 9.55.4 미만|9.55.4");
@@ -673,7 +670,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-979 — 고치기 전: Brotli가 별칭 표에 없어 그 공지가 무관")
         @DisplayName("QA-979 Brotli — dpkg·apk 원본 brotli를 배포판 패키지로 판정, brotlicffi 행은 무관")
         void brotli() {
             Component deb = pkg("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli");

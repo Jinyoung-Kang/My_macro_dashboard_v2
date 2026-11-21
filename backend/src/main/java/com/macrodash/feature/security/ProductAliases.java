@@ -126,10 +126,12 @@ public final class ProductAliases {
      *                          예: runc는 containerd.io 패키지에 들어 있어 그 패키지 버전이 runc 버전이 아님)
      * @param runningOnly       배포판(DISTRO) 별칭에서 실행 중인 것(런타임 구성 요소)이 있으면 변경 기록 판정은 그것만 — 같은 별칭의 패키지 줄은
      *                          apt 보안 보류(해당)에만 쓰고 확인 필요를 만들지 않음(커널: 옛 판·서명·메타 패키지 — ADR 0046 덧붙임 2026-11-21)
+     * @param distroUnlessPpa   상류 번호(UPSTREAM) 별칭의 dpkg 구성 요소 — 판이 PPA(데비안 개정에 {@code ppa})면 에포크·개정을 뗀 상류 판으로
+     *                          공지 표와 견주고, 그 밖(배포판 판)은 배포판 경로(보류·변경 기록·추적기)로 판정(Git — QA-979)
      */
     public record Alias(String id, String label, Kind kind, Family family, String vendor, List<String> sections,
                         List<ComponentKey> components, List<ProductName> names, Pattern exclude, boolean textMatch,
-                        boolean versionComparable, boolean runningOnly) {
+                        boolean versionComparable, boolean runningOnly, boolean distroUnlessPpa) {
 
         public Alias {
             sections = List.copyOf(sections);
@@ -295,7 +297,7 @@ public final class ProductAliases {
             alias("python", "Python", Kind.UPSTREAM, Family.MINOR).sections(SECTION_COLLECTOR)
                     .component(ECO_RUNTIME, "python3?")
                     .name("\\bC?Python\\b")
-                    .exclude("Python\\s+(?:Requests|urllib3|lxml|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]+-python\\b")
+                    .exclude("Python\\s+(?:Requests|urllib3|lxml|Brotli|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]+-python\\b")
                     .build(),
             alias("chrome", "Chrome", Kind.UPSTREAM, Family.SINGLE).sections(SECTION_BROWSER)
                     .component(ECO_RUNTIME, "(?:google-)?chrome")
@@ -346,6 +348,22 @@ public final class ProductAliases {
             alias("sudo", "sudo", Kind.DISTRO, Family.SINGLE).sections(SECTION_HOST)
                     .component(ECO_DPKG, "sudo")
                     .name("\\bsudo\\b").noText().build(),
+            // APT — 표 행의 제품명만(한국어 공지의 'APT 공격·APT 그룹'과 겹쳐 본문에서 찾지 않음 — QA-979).
+            alias("apt", "APT", Kind.DISTRO, Family.SINGLE).sections(SECTION_HOST, SECTION_COLLECTOR, SECTION_BROWSER)
+                    .component(ECO_DPKG, "apt")
+                    .name("^APT\\b|\\bAPT\\s*\\((?:Debian|Ubuntu)\\)").noText().build(),
+            alias("brotli", "Brotli", Kind.DISTRO, Family.SINGLE).sections(ALL_SECTIONS)
+                    .component(ECO_DPKG, "brotli").component(ECO_APK, "brotli")
+                    .name("\\bBrotli\\b")
+                    .exclude("brotlicffi|brotlipy|python-brotli|Python\\s+Brotli|Brotli\\s*\\(\\s*Python|Brotli\\s+(?:for\\s+)?Python")
+                    .build(),
+            // Git — 서버는 PPA 판(상류 번호 그대로)일 수 있어 상류 번호 별칭이고, 배포판 판이면 배포판 경로(QA-979).
+            alias("git", "Git", Kind.UPSTREAM, Family.MINOR).sections(SECTION_HOST)
+                    .component(ECO_DPKG, "git")
+                    .name("\\bGit\\b")
+                    .exclude("Git\\s*LFS|git-lfs|GitLab|GitHub|Gitea|Gitee|GitKraken|libgit2|Gitblit|GitOps|TortoiseGit|SmartGit|JGit|"
+                            + "Git\\s+Credential\\s+Manager|Git\\s+Extensions|GitPython|[\\w.]+-git\\b")
+                    .distroUnlessPpa().build(),
 
             // 백엔드 의존성(jar)
             alias("spring-framework", "Spring Framework", Kind.UPSTREAM, Family.MINOR).sections(SECTION_BACKEND)
@@ -423,6 +441,7 @@ public final class ProductAliases {
         private boolean textMatch = true;
         private boolean versionComparable = true;
         private boolean runningOnly;
+        private boolean distroUnlessPpa;
 
         Builder(String id, String label, Kind kind, Family family) {
             this.id = id;
@@ -480,9 +499,14 @@ public final class ProductAliases {
             return this;
         }
 
+        Builder distroUnlessPpa() {
+            this.distroUnlessPpa = true;
+            return this;
+        }
+
         Alias build() {
             return new Alias(id, label, kind, family, vendor, sections, components, names, exclude, textMatch, versionComparable,
-                    runningOnly);
+                    runningOnly, distroUnlessPpa);
         }
     }
 }

@@ -4,7 +4,6 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -155,7 +154,6 @@ class ProductAliasesTest {
     }
 
     @Test
-    @Disabled("QA-979 — 고치기 전: 이 스택에 설치된 APT·Brotli·Git이 별칭 표에 없음")
     @DisplayName("QA-979 APT(표 행만)·Brotli·Git 별칭 — 이름 겹침(한국어 'APT 공격'·GitLab·brotlicffi 등)은 맞지 않음")
     void aptBrotliGit() {
         assertThat(ids("APT")).containsExactly("apt");
