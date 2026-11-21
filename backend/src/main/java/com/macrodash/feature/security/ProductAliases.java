@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
  *
  * <p>제품명은 대소문자를 가리지 않는 정규식으로 맞춥니다. 표 행의 제품명은 제외 정규식이 어디에든 맞으면 그 별칭이 아니고(이름 겹침 —
  * PostgreSQL↔pgAdmin, Next.js↔Nextcloud, Java↔JavaScript 등), 제목·본문은 제외 정규식에 맞는 구절을 지운 뒤 찾습니다. 단어 경계 {@code \b}는
- * 영문·숫자만 글자로 보므로 {@code PostgreSQL에서}처럼 한국어가 바로 붙어도 맞습니다.
+ * 영문·숫자만 글자로 보므로 {@code PostgreSQL에서}처럼 한국어가 바로 붙어도 맞습니다. Windows 전용 제품명(Linux 계열 이름이 함께 적히지 않은
+ * {@code OpenSSH for Windows}·{@code Microsoft OpenSSH} 등 — QA-978)은 어느 별칭에도 맞지 않고, 제목·본문에서는 그 구절을 지운 뒤 찾습니다.
  *
  * <p>구성 요소는 종류({@code ecosystem})가 같고 이름 정규식이 {@code name}이나 원본 패키지({@code sourcePackage})에 통째로 맞으면 그 별칭입니다
  * (dpkg·apk는 원본 패키지 {@code openssl}로 {@code libssl…}까지 묶음, pypi는 PEP 503 정규화 뒤 비교).
@@ -136,12 +137,18 @@ public final class ProductAliases {
             names = List.copyOf(names);
         }
 
-        /** 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 제외 정규식이 어디에든 맞으면 아님. */
+        /**
+         * 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 제외 정규식이 어디에든 맞거나 Windows 전용 제품명이면
+         * ({@link #windowsOnlyProduct}) 아님.
+         */
         public Optional<ProductName> matchProduct(String product) {
             if (product == null || product.isBlank()) {
                 return Optional.empty();
             }
             String text = normalizeText(product);
+            if (windowsOnlyProduct(text)) {
+                return Optional.empty();
+            }
             if (exclude != null && exclude.matcher(text).find()) {
                 return Optional.empty();
             }
@@ -153,7 +160,10 @@ public final class ProductAliases {
             return Optional.empty();
         }
 
-        /** 제목·본문에 이 별칭이 나오는지 — 제외 구절을 지운 뒤 찾습니다. {@code textMatch}가 꺼져 있으면 늘 아님. */
+        /**
+         * 제목·본문에 이 별칭이 나오는지 — 제외 구절을 지우고, 이어서 Windows 전용 구절({@link #WINDOWS_PHRASE})을 지운 뒤 찾습니다
+         * (제외가 먼저 — 'Docker Desktop for Windows'에서 'Docker'만 남지 않게). {@code textMatch}가 꺼져 있으면 늘 아님.
+         */
         public boolean mentionedIn(String text) {
             if (!textMatch || text == null || text.isBlank()) {
                 return false;
@@ -162,6 +172,7 @@ public final class ProductAliases {
             if (exclude != null) {
                 haystack = exclude.matcher(haystack).replaceAll(" ");
             }
+            haystack = WINDOWS_PHRASE.matcher(haystack).replaceAll(" ");
             for (ProductName n : names) {
                 if (n.pattern().matcher(haystack).find()) {
                     return true;
@@ -218,6 +229,25 @@ public final class ProductAliases {
             }
         }
         return out;
+    }
+
+    /**
+     * Windows 전용 제품(QA-978) — 이 스택은 Linux 서버라, 표 행의 제품명에 Windows(·{@code Windows용})나 Windows 전용 OpenSSH 이름이 있고
+     * Linux·리눅스·Ubuntu·Debian이 함께 적히지 않았으면 어느 별칭에도 맞지 않습니다({@code Full Client (Windows, Linux, macOS)}는 맞음).
+     */
+    private static final Pattern WINDOWS_PRODUCT = Pattern.compile(
+            "\\bWindows|\\bWin32-OpenSSH\\b|\\bMicrosoft\\s+OpenSSH\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LINUX_PRODUCT = Pattern.compile("\\bLinux\\b|리눅스|\\bUbuntu\\b|\\bDebian\\b", Pattern.CASE_INSENSITIVE);
+    /**
+     * 제목·본문에서 지우는 Windows 전용 구절(QA-978) — {@code <이름> for Windows}(앞에 Microsoft가 붙은 꼴 포함)·{@code Microsoft OpenSSH}·
+     * {@code Win32-OpenSSH}. 정기 업데이트 공지 본문의 'OpenSSH for Windows CVE-… Microsoft OpenSSH for Windows …' 줄이 서버의 OpenSSH에 맞지 않게.
+     */
+    static final Pattern WINDOWS_PHRASE = Pattern.compile(
+            "(?:\\bMicrosoft\\s+)?[\\w.+-]+\\s+for\\s+Windows\\b|\\bMicrosoft\\s+OpenSSH\\b|\\bWin32-OpenSSH\\b", Pattern.CASE_INSENSITIVE);
+
+    /** 표 행 제품명이 Windows 전용인지({@link #WINDOWS_PRODUCT}) — Linux 계열 이름이 함께 있으면 아님. */
+    static boolean windowsOnlyProduct(String product) {
+        return WINDOWS_PRODUCT.matcher(product).find() && !LINUX_PRODUCT.matcher(product).find();
     }
 
     static String normalizeText(String text) {

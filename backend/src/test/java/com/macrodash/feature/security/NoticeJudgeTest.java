@@ -10,7 +10,6 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -449,7 +448,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-978 — 고치기 전: Windows 전용 제품명(OpenSSH for Windows·Microsoft OpenSSH)이 서버의 OpenSSH 별칭에 맞아 확인 필요")
         @DisplayName("QA-978 Windows 전용 제품은 서버 별칭에 맞지 않음 — 표 없는 정기 업데이트 공지의 본문·표 행 모두, Linux가 함께 적힌 행은 맞음")
         void windowsOnlyNames() {
             EnvInventory inv = inventory(pkg("host", "dpkg", "openssh-server", "1:9.9p9-9fake1", "openssh"),

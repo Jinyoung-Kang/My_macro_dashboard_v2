@@ -4,7 +4,6 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -131,7 +130,6 @@ class ProductAliasesTest {
     }
 
     @Test
-    @Disabled("QA-978 — 고치기 전: Windows 전용 제품명이 서버 별칭(OpenSSH 등)에 맞음")
     @DisplayName("QA-978 Windows 전용 제품명(Linux·Ubuntu·Debian이 함께 적히지 않은 것)은 어느 별칭에도 맞지 않음 — 표 제품명·본문 구절 모두")
     void windowsOnlyNames() {
         assertThat(ids("OpenSSH for Windows")).isEmpty();
