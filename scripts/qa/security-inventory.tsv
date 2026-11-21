@@ -1,0 +1,21 @@
+inventory	1	2099-01-01T00:00:00+00:00	1	2099-01-01T00:00:00+00:00
+section	host	ok	-
+section	postgres	ok	-
+section	backend	ok	-
+section	frontend	ok	-
+section	collector	ok	-
+section	browser	ok	-
+section	caddy	ok	-
+os	host	ubuntu	24.04	noble
+os	collector	debian	13	trixie
+os	browser	debian	13	trixie
+os	backend	alpine	3.24.90	-
+os	postgres	alpine	3.24.90	-
+os	frontend	alpine	3.24.90	-
+os	caddy	alpine	3.24.90	-
+component	postgres	runtime	postgres	90.2	-
+component	frontend	runtime	node	80.7	-
+component	collector	runtime	python	70.1.9	-
+component	host	dpkg	libbrotli1	90.0-1ubuntu0.1	brotli
+component	collector	dpkg	libbrotli1	90.0-1	brotli
+component	backend	apk	brotli-libs	90.0-r0	brotli
