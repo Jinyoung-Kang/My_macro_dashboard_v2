@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -495,7 +494,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-980 재현 — 고치기 전에는 본문 참고 주소의 git 낱말이 Git 별칭에 맞음")
         @DisplayName("QA-980 본문의 참고 주소(URL)는 이름 맞춤에 쓰지 않음 — 커널 공지의 'git.kernel.org/…/vulns.git'이 Git 별칭에 맞지 않음")
         void urlsAreNotMentions() {
             EnvInventory inv = inventory(pkg("host", "dpkg", "git", "1:99.1.0-0ppa1~fake1", "git"));

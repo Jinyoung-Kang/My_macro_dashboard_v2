@@ -75,6 +75,8 @@ public final class NoticeJudge {
     private static final Pattern OS_UPDATE_GUIDE = Pattern.compile(
             "^보안\\s*업데이트가\\s*공개된\\s*운영\\s*체제를\\s*운영하고\\s*있을\\s*경우[,\\s]*참고\\s*사이트의\\s*내용을\\s*참조하여\\s*"
                     + "보안\\s*조치\\s*또는\\s*업데이트\\s*수행(?:\\s*\\([^()]{0,80}\\))?[\\s\\[\\]\\d~,.\\-]*$");
+    /** 본문의 주소 — 이름 맞춤 전에 지웁니다(QA-980). 공백·꺾쇠·따옴표·닫는 괄호 앞까지. */
+    private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?|ftp)://[^\\s<>\"')\\]]+");
     private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d{4,7}(?!\\d)", Pattern.CASE_INSENSITIVE);
 
     private NoticeJudge() {
@@ -88,7 +90,8 @@ public final class NoticeJudge {
     public static Verdict judge(SecurityNotice notice, List<Row> rows, EnvInventory inventory, ProductAliases aliases) {
         List<Row> tableRows = rows == null ? List.of() : rows;
         List<String> notes = conditionNotes(notice.conditionNotes());
-        String text = notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText());
+        // 참고 주소(URL)는 이름 맞춤에 쓰지 않습니다 — 커널 공지의 'git.kernel.org/…/vulns.git'이 Git 별칭에 맞던 것(QA-980).
+        String text = URL.matcher(notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText())).replaceAll(" ");
 
         List<ProductVerdict> products = new ArrayList<>();
         List<Match> matches = new ArrayList<>();
