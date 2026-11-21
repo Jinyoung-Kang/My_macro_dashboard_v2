@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import { AuthAlert, AuthCard, AuthField, AuthFieldError, AuthMessage } from "@/components/auth/AuthCard";
 import { AuthSubmit } from "@/components/auth/AuthSubmit";

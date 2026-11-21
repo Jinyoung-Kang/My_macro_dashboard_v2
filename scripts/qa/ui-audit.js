@@ -1156,4 +1156,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { choosePageScroller };
+module.exports = { choosePageScroller, launchChrome, Cdp, sleep };

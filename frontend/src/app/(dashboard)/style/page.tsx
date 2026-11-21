@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useMemo, useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { DataTable, Empty, HeatmapTable, InspectorFrame, InspectorTrigger, KpiStrip, PropertyList, ReadingGuide } from "@/components/patterns";

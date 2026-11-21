@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { FormEvent, useEffect, useId, useState } from "react";
 import { AuthAlert, AuthMessage, credentialsRejected } from "@/components/auth/AuthCard";
 import { AuthSubmit } from "@/components/auth/AuthSubmit";

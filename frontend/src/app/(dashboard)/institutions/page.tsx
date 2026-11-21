@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useState } from "react";
 import { MultiLineSeries, WeightHeatmap } from "@/components/charts";
 import { FilterList, type FilterListPendingRow, KpiStrip, Skeleton, SplitPane } from "@/components/patterns";

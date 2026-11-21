@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useRef } from "react";
 import { underlineTabClasses } from "@/components/ui/classes";
 import { LockIcon } from "@/components/ui/icons";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useId, type ReactElement, type ReactNode } from "react";
 import { AlertTriangleIcon, CheckIcon } from "@/components/ui/icons";
 import { Tooltip } from "./Tooltip";

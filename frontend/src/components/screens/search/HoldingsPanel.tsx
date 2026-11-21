@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { ErrorState, Loading } from "@/components/ui";
 import { LINK_CLASSES } from "@/components/ui/classes";
 import { useApi } from "@/hooks/useApi";

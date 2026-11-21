@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import type { ReactNode, Ref } from "react";
 import { AUTH_CARD, AUTH_LINK, AUTH_MESSAGE, AUTH_MESSAGE_TONE, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui/classes";

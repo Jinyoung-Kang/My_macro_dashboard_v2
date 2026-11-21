@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { Banner, buttonClasses } from "@/components/ui";
 import { XIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";

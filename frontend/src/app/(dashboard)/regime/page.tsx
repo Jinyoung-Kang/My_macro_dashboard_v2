@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useId, useState, type ReactNode } from "react";
 import { type Column, DataTable, EntityHeader, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, LINK_CLASSES, Loading, Panel, Select, SKELETON_BAR, Tag, tabId, Tabs } from "@/components/ui";

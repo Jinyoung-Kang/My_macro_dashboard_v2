@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useEntityCrumbLabel } from "@/hooks/useEntityCrumb";
 import { breadcrumbs, foldedBreadcrumbs } from "@/lib/breadcrumbs";

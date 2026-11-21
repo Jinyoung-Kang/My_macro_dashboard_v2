@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { type ReactElement, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { Skeleton } from "@/components/patterns";

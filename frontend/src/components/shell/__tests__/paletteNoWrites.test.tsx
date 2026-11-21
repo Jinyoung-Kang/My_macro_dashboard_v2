@@ -64,6 +64,8 @@ const PALETTE_MODULES = [
 const ALLOWED_IMPORTS = new Set([
   "react",
   "next/link",
+  // 가리킬 때만 미리 받는 링크(ADR 0047) — next/link를 감싼 것.
+  "@/components/ui/IntentLink",
   "next/navigation",
   "@/components/ui/classes",
   "@/components/ui/Dialog",

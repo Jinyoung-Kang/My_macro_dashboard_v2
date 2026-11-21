@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { ChangeChip, type Column, DataTable, EstimateBadge, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
 import { Freshness, LINK_CLASSES, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";

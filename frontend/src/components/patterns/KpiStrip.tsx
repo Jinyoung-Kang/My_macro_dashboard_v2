@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import type { JSX, ReactNode } from "react";
 
 import { FOCUS_RING } from "@/components/ui/classes";

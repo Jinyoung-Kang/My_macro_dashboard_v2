@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import type { ReactNode } from "react";
 import { Empty, PropertyList, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Freshness, Panel } from "@/components/ui";

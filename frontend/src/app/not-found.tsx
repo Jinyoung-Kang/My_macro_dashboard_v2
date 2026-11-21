@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AUTH_LINK_SHORT } from "@/components/auth/classes";
 

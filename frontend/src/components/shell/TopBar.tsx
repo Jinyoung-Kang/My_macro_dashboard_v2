@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { MarketClock } from "@/components/MarketClock";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useWideShell } from "@/hooks/useWideShell";

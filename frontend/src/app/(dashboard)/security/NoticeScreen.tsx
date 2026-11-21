@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useState } from "react";
 import { DataTable, EntityHeader, FilterList, Skeleton, type Column } from "@/components/patterns";
 import { Callout, ErrorState, LINK_CLASSES, PageHeader, Panel, Tag, buttonClasses } from "@/components/ui";

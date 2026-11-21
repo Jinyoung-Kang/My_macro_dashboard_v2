@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useId, useState, type JSX, type ReactNode } from "react";
 
 import { buttonClasses, FOCUS_RING, Freshness, NativeSelect, SEGMENT_TRACK, segmentClasses, Tag, TEXT_TARGET } from "@/components/ui";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { ChangeChip, InspectorSubheading, PropertyList, type PropertyItem } from "@/components/patterns";
 import { LINK_CLASSES, Tag } from "@/components/ui";
 import { ExternalLinkIcon } from "@/components/ui/icons";

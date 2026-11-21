@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, type PropertyItem, RangeTabs, Skeleton } from "@/components/patterns";

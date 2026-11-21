@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { type ReactNode, useEffect, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StaleBadge } from "@/components/patterns";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import type { ReactNode } from "react";
 // 패턴 배럴(@/components/patterns)이 아니라 파일에서 가져옵니다 — 배럴은 모든 패턴 모듈을 실어 정보 검색 경로의 첫 적재가 커집니다(entityGrid.ts와 같은 까닭).
 import { EntityHeader as EntityHeaderPattern, type EntityKindSpec } from "@/components/patterns/EntityHeader";

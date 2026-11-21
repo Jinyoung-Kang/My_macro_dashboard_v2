@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import type { ReactNode } from "react";
 import { DataTable, InspectorSubheading } from "@/components/patterns";
 import { EMPTY } from "@/lib/format";

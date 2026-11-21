@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useId, type JSX, type ReactNode } from "react";
 
 import { SELECTED_BAR } from "@/components/ui/classes";

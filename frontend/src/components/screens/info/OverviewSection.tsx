@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { type KpiItem, KpiStrip } from "@/components/patterns";
 import { Callout, Card, ErrorState, LINK_CLASSES, Loading } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";

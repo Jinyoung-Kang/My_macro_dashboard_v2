@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useCallback, useEffect, useId, useRef } from "react";
 import { FOCUS_RING } from "@/components/ui/classes";
 import { LockIcon, PanelLeftIcon } from "@/components/ui/icons";

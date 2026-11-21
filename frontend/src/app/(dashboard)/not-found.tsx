@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { PageHeader } from "@/components/ui";
 import { FOCUS_RING, TEXT_TARGET } from "@/components/ui/classes";
 

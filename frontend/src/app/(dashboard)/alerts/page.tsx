@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { FormEvent, useEffect, useId, useRef, useState, type FocusEvent, type MouseEvent } from "react";
 import { DataTable, FilterList, PropertyList, Timeline, type FilterListItem, type TimelineEntry } from "@/components/patterns";
 import { Button, buttonClasses, Callout, ErrorState, FIELD_INPUT, FIELD_LABEL, Freshness, LINK_CLASSES, Loading, PageHeader, Panel, Select, Tag, useFocusAfterWrite } from "@/components/ui";

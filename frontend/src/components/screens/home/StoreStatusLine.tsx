@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { Fragment } from "react";
 import { Empty, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";

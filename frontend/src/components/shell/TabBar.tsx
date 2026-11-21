@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { tabCurrent, visibleTabs } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
 import { TabIcon } from "./icons";

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { PageHeader } from "@/components/ui";
 import { buttonClasses, FOCUS_RING, TEXT_TARGET } from "@/components/ui/classes";
 import { ERROR_RETRY_LABEL, ERROR_SCREEN_TEXT, ERROR_SCREEN_TITLE, errorDigest } from "@/lib/errorScreen";

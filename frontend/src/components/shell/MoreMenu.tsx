@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { lockedFor } from "@/lib/access";
 import { INFO_GROUP, KR_MARKET_GROUP, TABS, visibleItems, type NavItem } from "@/lib/nav";

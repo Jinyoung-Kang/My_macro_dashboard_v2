@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { InspectorSubheading, Skeleton } from "@/components/patterns";
 import { Callout, ErrorState, buttonClasses } from "@/components/ui";
 import { ExternalLinkIcon, StatusText } from "@/components/ui/icons";

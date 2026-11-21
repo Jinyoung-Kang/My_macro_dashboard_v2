@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AUTH_LINK_SHORT, AUTH_SUBMIT } from "@/components/auth/classes";
 import { ERROR_RETRY_LABEL, ERROR_SCREEN_TEXT, ERROR_SCREEN_TITLE, errorDigest } from "@/lib/errorScreen";

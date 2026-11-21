@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/IntentLink";
 import { useState, type ReactNode } from "react";
 import { Pager } from "@/components/Pager";
 import { type Column, DataTable, InspectorFrame, InspectorTrigger, type InspectorContext, PropertyList, type PropertyItem } from "@/components/patterns";
