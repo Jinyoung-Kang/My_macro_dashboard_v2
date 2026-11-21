@@ -2,7 +2,6 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,7 +70,6 @@ class StoreRepositoryTaskSummaryDbTest {
     }
 
     @Test
-    @Disabled("QA-982 재현 — 통계가 있으면 계획기가 기본 키를 거꾸로 훑어 드문 태스크마다 표 대부분을 읽음(고친 뒤 켬)")
     @DisplayName("QA-982 요약은 통계가 있든 없든 기본 키를 거꾸로 훑지 않고 읽는 블록이 2천 개 아래")
     void planDoesNotScanPrimaryKeyBackward() {
         for (boolean analyzed : new boolean[]{false, true}) {

@@ -598,7 +598,11 @@ public class StoreRepository {
      *
      * <p>기록에 있는 태스크 이름을 (task, id DESC) 인덱스에서 하나씩 건너뛰며 찾고, 태스크마다
      * 첫 행만 읽습니다. 예전 {@code DISTINCT ON}은 실행 기록 전체를 정렬해 1년치(43만 행)에서
-     * 116ms가 걸렸습니다(지금 0.3ms). 결과는 같습니다.
+     * 116ms가 걸렸습니다. 결과는 같습니다.
+     *
+     * <p>태스크 조건은 같음이 아니라 범위({@code >= AND <=})이고 정렬은 {@code r.task, r.id DESC}입니다(QA-982). 같음 조건이면 계획기가
+     * 정렬을 {@code id DESC}로 줄인 뒤 통계가 있을 때 기본 키를 거꾸로 훑기도 했습니다(드문 태스크마다 표 대부분 — QA DB 4만 행에서 72ms).
+     * 범위 조건이면 기본 키로 그 정렬을 만들 수 없어 늘 (task, id DESC) 인덱스를 씁니다.
      *
      * <p>좀비가 도는 동안의 empty 안내 행({@link #STILL_RUNNING_PREFIX})은 건너뛰고 그 앞 실행(✗ 시간 초과)을 씁니다 — 그 행을
      * 고르면 실제로는 멈춰 있는 태스크가 상태 화면의 '현재 오류'에서 빠졌습니다(QA-139). 실행 기록에는 그대로 남습니다.
@@ -618,9 +622,9 @@ public class StoreRepository {
             + "SELECT latest.* FROM names n "
             + "CROSS JOIN LATERAL ("
             + " SELECT task, speed, status, started_at, duration_ms, detail, run_id"
-            + " FROM collector_task_runs r WHERE r.task = n.task"
+            + " FROM collector_task_runs r WHERE r.task >= n.task AND r.task <= n.task"
             + " AND NOT (r.status = 'empty' AND r.detail IS NOT NULL AND r.detail LIKE ?)"
-            + " ORDER BY r.id DESC LIMIT 1"
+            + " ORDER BY r.task, r.id DESC LIMIT 1"
             + ") latest "
             + "ORDER BY latest.task";
 

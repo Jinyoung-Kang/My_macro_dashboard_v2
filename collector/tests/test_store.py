@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
 from app import catalog
 
 
@@ -360,7 +358,6 @@ def test_QA982_태스크_요약은_예전_정의_DISTINCT_ON과_같은_행을_�
     assert summary[_RARE[0]]["status"] in ("ok", "error")      # '아직 진행 중' 안내 행은 건너뜀
 
 
-@pytest.mark.xfail(strict=True, reason="QA-982: 통계가 있으면 계획기가 기본 키를 거꾸로 훑어 기록 없는·드문 태스크마다 표 대부분을 읽음")
 def test_QA982_태스크_요약은_통계가_있든_없든_기본_키를_거꾸로_훑지_않는다(store):
     names = _seed_task_runs(store)
     for analyzed in (False, True):

@@ -1262,7 +1262,12 @@ def read_task_summary(task_names: Sequence[str] | None = None) -> list[dict]:
     태스크가 상태 화면에 영원히 남고, 누를 수 없는 "다시 실행" 버튼이 생깁니다.
 
     태스크마다 (task, id DESC) 인덱스의 첫 행만 읽습니다. 예전 DISTINCT ON은 실행 기록
-    전체를 정렬해, 1년치(43만 행)에서 125ms가 걸렸습니다(지금 0.14ms).
+    전체를 정렬해, 1년치(43만 행)에서 125ms가 걸렸습니다.
+
+    태스크 조건을 ``r.task = t.task``가 아니라 범위(``>= AND <=``)로 쓰고 ``ORDER BY r.task, r.id DESC``로 정렬합니다(QA-982).
+    같음 조건이면 계획기가 task를 상수로 보고 정렬을 ``id DESC``로 줄인 뒤, 통계가 있을 때 기본 키를 거꾸로 훑는 계획을 고르기도
+    했습니다 — 기록이 없거나 드문 태스크마다 표 대부분을 읽어 QA DB(4만 행)에서 168ms. 범위 조건이면 기본 키로는 그 정렬을 만들 수
+    없어 늘 (task, id DESC) 인덱스를 씁니다(같은 DB에서 0.9ms, 결과 행은 같음).
 
     좀비가 도는 동안의 empty 안내 행(STILL_RUNNING_PREFIX)은 건너뛰고 그 앞 실행(✗ 시간 초과)을 씁니다 — 그 행을
     고르면 실제로는 멈춰 있는 태스크가 상태 화면의 '현재 오류'에서 빠졌습니다(QA-139). 실행 기록에는 그대로 남습니다.
@@ -1296,9 +1301,9 @@ def _task_summary_sql(task_names: Sequence[str] | None) -> tuple[str, list[Any]]
         CROSS JOIN LATERAL (
             SELECT task, speed, status, started_at, duration_ms, detail, run_id
             FROM collector_task_runs r
-            WHERE r.task = t.task
+            WHERE r.task >= t.task AND r.task <= t.task
               AND NOT (r.status = 'empty' AND r.detail IS NOT NULL AND r.detail LIKE %s)
-            ORDER BY r.id DESC LIMIT 1
+            ORDER BY r.task, r.id DESC LIMIT 1
         ) latest
         ORDER BY latest.task
     """
