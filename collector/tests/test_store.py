@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 
 from app import catalog
 
@@ -291,6 +292,87 @@ def test_task_summary_is_last_recorded_row_per_task_in_name_order(store):
     named = store.read_task_summary(["radar_rankings", "never_ran", "fx_history", "fx_history"])
     assert [(row["task"], row["status"]) for row in named] == [("fx_history", "ok"), ("radar_rankings", "error")]
     assert store.read_task_summary([]) == []
+
+
+
+# ---- QA-982: 태스크 요약 질의의 계획 -------------------------------------------------------------------------------
+# 실행 기록 4만 행 — 자주 도는 태스크 10개가 뒤쪽(큰 id)을 차지하고, 드물게 도는 태스크 31개는 앞쪽(작은 id)에만 있음.
+# 등록 이름은 기록이 있는 41개 + 한 번도 돌지 않은 28개(운영·QA의 69개와 같은 꼴). 값은 모두 가짜.
+_FREQUENT = [f"qa982_frequent_{i:02d}" for i in range(10)]
+_RARE = [f"qa982_rare_{i:02d}" for i in range(31)]
+_NEVER = [f"qa982_never_{i:02d}" for i in range(28)]
+
+
+def _seed_task_runs(store_module) -> list[str]:
+    with store_module.connection() as conn:
+        conn.execute(
+            "INSERT INTO collector_task_runs (task, speed, status, started_at, duration_ms, detail) "
+            "SELECT (%s::text[])[1 + (g %% 31)], 'slow', CASE WHEN g %% 7 = 0 THEN 'error' ELSE 'ok' END, "
+            "       timestamptz '2026-08-01' + g * interval '1 minute', g %% 500, NULL "
+            "FROM generate_series(0, 3099) g",
+            (_RARE,),
+        )
+        conn.execute(
+            "INSERT INTO collector_task_runs (task, speed, status, started_at, duration_ms, detail) "
+            "SELECT (%s::text[])[1 + (g %% 10)], 'fast', 'ok', timestamptz '2026-09-01' + g * interval '1 minute', g %% 500, NULL "
+            "FROM generate_series(0, 36899) g",
+            (_FREQUENT,),
+        )
+        # 드문 태스크 하나는 마지막 행이 '아직 진행 중' 안내(QA-139) — 요약은 그 앞 행을 써야 합니다.
+        conn.execute(
+            "INSERT INTO collector_task_runs (task, speed, status, started_at, duration_ms, detail) "
+            "VALUES (%s, 'slow', 'empty', timestamptz '2026-10-01', 0, %s)",
+            (_RARE[0], store_module.STILL_RUNNING_PREFIX + " — 가짜 안내"),
+        )
+    return _FREQUENT + _RARE + _NEVER
+
+
+def _explain(store_module, sql: str, params: list) -> dict:
+    with store_module.connection() as conn:
+        row = conn.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql, params).fetchone()
+    return row["QUERY PLAN"][0]["Plan"]
+
+
+def _backward_pkey_scans(node: dict) -> list[str]:
+    found = []
+    if (node.get("Relation Name") == "collector_task_runs" and node.get("Scan Direction") == "Backward"
+            and str(node.get("Index Name", "")).endswith("_pkey")):
+        found.append(node["Index Name"])
+    for child in node.get("Plans", []):
+        found += _backward_pkey_scans(child)
+    return found
+
+
+def test_QA982_태스크_요약은_예전_정의_DISTINCT_ON과_같은_행을_같은_순서로_돌려준다(store):
+    names = _seed_task_runs(store)
+    reference_sql = (
+        "SELECT DISTINCT ON (task) task, speed, status, started_at, duration_ms, detail, run_id FROM collector_task_runs "
+        "WHERE (%s::text[] IS NULL OR task = ANY(%s::text[])) "
+        "AND NOT (status = 'empty' AND detail IS NOT NULL AND detail LIKE %s) ORDER BY task, id DESC"
+    )
+    for task_names in (names, None):
+        with store.connection() as conn:
+            expected = [dict(r) for r in conn.execute(
+                reference_sql, (task_names, task_names, store.STILL_RUNNING_PREFIX + "%")).fetchall()]
+        assert store.read_task_summary(task_names) == expected
+    summary = {row["task"]: row for row in store.read_task_summary(names)}
+    assert len(summary) == 41
+    assert summary[_RARE[0]]["status"] in ("ok", "error")      # '아직 진행 중' 안내 행은 건너뜀
+
+
+@pytest.mark.xfail(strict=True, reason="QA-982: 통계가 있으면 계획기가 기본 키를 거꾸로 훑어 기록 없는·드문 태스크마다 표 대부분을 읽음")
+def test_QA982_태스크_요약은_통계가_있든_없든_기본_키를_거꾸로_훑지_않는다(store):
+    names = _seed_task_runs(store)
+    for analyzed in (False, True):
+        if analyzed:
+            with store.connection() as conn:
+                conn.execute("ANALYZE collector_task_runs")
+        for task_names in (names, None):
+            sql, params = store._task_summary_sql(task_names)
+            plan = _explain(store, sql, params)
+            label = f"통계 {'있음' if analyzed else '없음'} · 이름 {'등록 69개' if task_names else '기록에서'}"
+            assert _backward_pkey_scans(plan) == [], label
+            assert plan["Shared Hit Blocks"] + plan["Shared Read Blocks"] < 2_000, label
 
 
 def test_purge_retired_datasets(store):
