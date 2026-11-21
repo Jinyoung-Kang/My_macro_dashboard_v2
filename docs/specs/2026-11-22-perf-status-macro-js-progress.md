@@ -49,3 +49,10 @@ D-6 새 의존성·스키마 변경·백엔드 새 경로 없음.
 | postgres CPU 평균(1·5·20·50명) | 75 · 455 · 920 · 974% | 21 · 108 · 184 · 169% | — |
 
   응답 대조: 두 API의 JSON이 고치기 전후 시각 칸을 빼고 같음.
+
+- 시험: `make test` 통과(수집기 3564·36 건너뜀, 백엔드 4019 — JDK 25·21 둘 다, 화면 5010). main `f4a29915`, CI 6/6.
+- **배포: 2026-11-22(일) 06:08~06:10 KST Vultr `main@f4a29915`**(매매·결정 시각 없음). 운영 확인(읽기만):
+  - 수집기 `/status`(서버 루프백, 6회): 첫 호출 127 ms(행 수 기억이 빔) 뒤 6~11 ms — 배포 전 103~148 ms. `/status?view=light` 2.5~3.0 ms.
+  - `/api/status/issues`(PC에서 tailnet, 7회): 49~60 ms(첫 140 ms) — 같은 길의 `/api/alerts/unread-count` 34~40 ms가 왕복 바닥이라 서버 몫은 15 ms 안팎. `/api/status` 54~72 ms.
+  - 새 요약 질의의 운영 계획(`EXPLAIN`만): `Index Scan using idx_task_runs_task`, `Limit` 비용 0.41..3.96.
+  - 컨테이너 여섯 정상, 배포 뒤 백엔드·수집기 ERROR 0.
