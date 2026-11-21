@@ -11,12 +11,13 @@ tasks/security.py, 물을 것은 백엔드가 표 ``security_tracker_wants``에 
   released → fixed(판 = description) · not-affected·DNE → not_affected · needed·pending·deferred·needs-triage·ignored → open ·
   그 패키지·스위트가 없음 → unknown. (HTTP 404 → unknown은 태스크가 정함.)
 [Debian] ``https://security-tracker.debian.org/tracker/<CVE>`` HTML — 고친 판 표(Package·Type·Release·Fixed Version·…)에서 Package·Release가 맞는 줄:
-  판 → fixed · ``(not affected)`` → not_affected · ``(unfixed)`` → open. 그 줄이 없으면 원본 패키지 표(Source Package·Release·Version·Status —
-  원본 칸이 여러 줄을 묶고, Release 칸은 ``trixie (security), trixie``처럼 쉼표로 여럿)에서 그 원본의 ``스위트``·``스위트 (security)`` 줄:
-  fixed인 줄이 있으면 fixed(판 = 접미사 없는 줄이 fixed면 그 판, 아니면 security 줄의 판) · 모두 vulnerable이면 open · undetermined가 섞이면 unknown ·
-  ``not affected``면 not_affected. 원본이 표에 없음(또는 CVE에 패키지 기록이 아예 없음) → unknown. 표 틀이 다르면 ShapeError.
-  한계: 원본 패키지 표의 판은 '그 스위트에 지금 있는 판'이라 고친 판의 하한보다 높을 수 있습니다(설치 판이 그보다 낮으면 판정이 '뒤처짐'으로
-  기울어짐 — 모르는 것을 안전으로 두지 않는 쪽).
+  판 → fixed · ``(not affected)`` → not_affected · ``(unfixed)`` → open. 그 릴리스 전용 줄이 없으면 Debian 추적기의 규칙대로 같은 패키지의
+  ``(unstable)`` 줄이 그 릴리스에도 적용됩니다 — 판 V면 원본 패키지 표(Source Package·Release·Version·Status — 원본 칸이 여러 줄을 묶고, Release 칸은
+  ``trixie (security), trixie``처럼 쉼표로 여럿)의 그 원본 ``스위트``·``스위트 (security)`` 줄 가운데 fixed가 하나라도 있으면 fixed(판 = V),
+  모두 vulnerable이면 open, 그 밖(undetermined·줄 없음)은 unknown · ``(not affected)`` → not_affected · ``(unfixed)`` → open.
+  고친 판 표에 그 패키지 줄이 하나도 없으면 원본 패키지 표만으로 판을 정하지 않습니다(그 표의 판은 '그 스위트에 지금 있는 판'이라 고친 판의
+  하한이 아님 — 옛 이미지를 '뒤처짐'으로 잘못 알리지 않게): fixed여도 unknown, 모두 vulnerable이면 open, ``not affected``면 not_affected.
+  원본이 표에 없음(또는 CVE에 패키지 기록이 아예 없음) → unknown. 표 틀이 다르면 ShapeError.
 [Alpine] ``https://secdb.alpinelinux.org/<스위트>/main.json``·``community.json`` — ``packages[].pkg.name``이 원본 패키지(apk ``o:``)인 항목의
   ``secfixes``(판 → CVE 목록)에서 CVE를 찾음(항목은 ``CVE-… 다른 번호`` 꼴일 수 있어 첫 낱말로 봄). 키가 ``0``이면 not_affected, 그 밖의 키는
   fixed(판 = 키, 여럿이면 문서 순서의 처음). 패키지가 없거나 패키지에 그 CVE가 없으면 unknown(main·community 둘 다 본 뒤 — 태스크).
@@ -218,25 +219,31 @@ def debian_status(record: DebianRecord, package: str, suite: str) -> Status:
 
     :raises ShapeError: 모르는 상태 글이거나 판 칸 모양이 다름(그 조회만)
     """
-    for name, release, version in record.fixed:
-        if name == package and release == suite:
-            if version == "(not affected)":
-                return Status("not_affected", None, version)
-            if version == "(unfixed)":
-                return Status("open", None, version)
-            return _fixed(version, "fixed", "Debian 고친 판 표")
-    lines = [(release, version, state) for release, version, state in record.sources.get(package, [])
-             if release in (suite, f"{suite} (security)")]
+    rows = [(release, version) for name, release, version in record.fixed if name == package]
+    exact = [version for release, version in rows if release == suite]
+    if exact:
+        version = exact[0]
+        if version == "(not affected)":
+            return Status("not_affected", None, version)
+        if version == "(unfixed)":
+            return Status("open", None, version)
+        return _fixed(version, "fixed", "Debian 고친 판 표")
+    unstable = [version for release, version in rows if release == "(unstable)"]
+    if unstable and unstable[0] in ("(not affected)", "(unfixed)"):
+        return Status("not_affected" if unstable[0] == "(not affected)" else "open", None, f"{unstable[0]} (unstable)")
+
+    lines = [(release, state) for release, _, state in record.sources.get(package, []) if release in (suite, f"{suite} (security)")]
     if not lines:
         return Status("unknown", None, "no entry")
-    if any(state not in _DEBIAN_SOURCE_STATUS for _, _, state in lines):
+    if any(state not in _DEBIAN_SOURCE_STATUS for _, state in lines):
         raise ShapeError("Debian 원본 패키지 표에 모르는 상태 글이 있음")
-    detail = _detail("; ".join(f"{release}: {state}" for release, _, state in lines))
-    plain = [version for release, version, state in lines if release == suite and state == "fixed"]
-    security = [version for release, version, state in lines if release != suite and state == "fixed"]
-    if plain or security:
-        return _fixed((plain or security)[0], detail, "Debian 원본 패키지 표")
-    states = {state for _, _, state in lines}
+    detail = _detail("; ".join(f"{release}: {state}" for release, state in lines))
+    states = {state for _, state in lines}
+    if "fixed" in states:
+        if unstable:
+            # 릴리스 전용 줄이 없으면 (unstable)의 고친 판이 그 릴리스에도 적용 — 원본 표의 판(지금 있는 판)은 고친 판의 하한이 아님.
+            return _fixed(unstable[0], "fixed (unstable)", "Debian 고친 판 표")
+        return Status("unknown", None, "fixed; no fixed-version row")
     if states == {"vulnerable"}:
         return Status("open", None, detail)
     if states == {"not affected"}:

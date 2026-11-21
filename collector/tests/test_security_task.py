@@ -581,7 +581,7 @@ def test_보호나라_다음에_Ubuntu·Debian을_CVE마다_한_번_묻고_상�
     assert _statuses(store) == {
         ("ubuntu", "fakecode", "fakessl", C1): ("fixed", "9.9.9-0fake1.1", "released"),
         ("ubuntu", "oldcode", "fakessl", C1): ("open", None, "needed"),
-        ("debian", "fakedeb", "fakessl", C1): ("fixed", "2.0-1+deb2u1", "fakedeb (security): fixed; fakedeb: fixed"),
+        ("debian", "fakedeb", "fakessl", C1): ("fixed", "2.0-1", "fixed (unstable)"),
         ("debian", "fakedeb", "fakexz", C1): ("not_affected", None, "(not affected)"),
         ("ubuntu", "fakecode", "fakessl", C2): ("unknown", None, "HTTP 404"),
     }
@@ -681,7 +681,7 @@ def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과
 
     statuses = _statuses(store)
     assert statuses == {("ubuntu", "fakecode", "fakessl", C1): ("open", None, "합성"),
-                        ("debian", "fakedeb", "fakessl", C3): ("fixed", "2.0-1+deb2u1", "fakedeb (security): fixed; fakedeb: fixed")}
+                        ("debian", "fakedeb", "fakessl", C3): ("fixed", "2.0-1", "fixed (unstable)")}
     assert [r["checked_at"] for r in store.distro_cve_statuses() if r["cve"] == C1] == [NOW - timedelta(hours=30)], "직전 결과 그대로"
     assert "추적기 결과 1(고침 1·영향 없음 0·열림 0·모름 0) · 추적기 실패 2(받지 못함 1·모양이 다름 1) · 추적기 남음 2" in detail
     assert store.source_state(task.TASK_NAME)["status"] == "ok", "추적기 실패는 보호나라 출처 상태에 섞지 않음"

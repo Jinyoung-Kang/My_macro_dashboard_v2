@@ -253,14 +253,17 @@ crumb·쿠키를 받지 못하면 요청마다 다시 받아, 출처가 끊긴 �
 - **받는 것**(수집기 `kisa_security_notices`의 한 실행 안, 보호나라 상세 다음 — 목록을 받지 못한 실행은 건너뜀): 결과가 없거나 open·unknown이고 20시간·fixed·not_affected이고 7일보다 오래된 것을 오래된 것부터.
   - Ubuntu: `https://ubuntu.com/security/cves/<CVE>.json`(robots `/security` 허용, Crawl-delay 2) — 원본 패키지·스위트의 상태(released → fixed, not-affected·DNE → not_affected, needed·pending·deferred·needs-triage·ignored → open).
     커널 CVE는 응답이 수 MB입니다.
-  - Debian: `https://security-tracker.debian.org/tracker/<CVE>` HTML — 고친 판 표(판·`(not affected)`·`(unfixed)`), 없으면 원본 패키지 표의 `스위트`·`스위트 (security)` 줄.
+  - Debian: `https://security-tracker.debian.org/tracker/<CVE>` HTML — 고친 판 표의 그 릴리스 줄(판·`(not affected)`·`(unfixed)`), 없으면 추적기 규칙대로
+    같은 패키지의 `(unstable)` 줄이 그 릴리스에도 적용(판이면 원본 패키지 표의 `스위트`·`스위트 (security)` 줄에 fixed가 있을 때 그 판, 모두 vulnerable이면 open).
+    고친 판 표에 그 패키지 줄이 없으면 원본 패키지 표의 판으로 고친 판을 정하지 않습니다(fixed여도 unknown).
   - Alpine: `https://secdb.alpinelinux.org/<스위트>/main.json`·`community.json`의 `secfixes`(키 `0` → not_affected, 판 → fixed).
 - **요청 상한**: Ubuntu·Debian은 CVE마다 한 요청(같은 CVE의 패키지·스위트 여럿을 한 응답으로), 둘 합쳐 한 실행에 20개. Alpine은 원하는 행이 있는 스위트마다 secdb 두 파일을
   한 번씩(20개와 별도). 요청 사이 3~6초, 보호나라와 같은 공용 세션·시간 예산. HTTP 404는 unknown.
 - **실패 규칙**: 받지 못함·틀이 다름은 행을 쓰지 않고(직전 결과 그대로) 실행 기록에 건수만, 추적기의 거부는 추적기 조회만 멈춤(보호나라 결과·출처 상태는 그대로).
   실행 기록에는 요청 수·결과 건수만 남깁니다(판·CVE 번호 없음).
-- **한계**: 추적기의 '고친 판'이 그 스위트에서 처음 고친 판이 아니라 지금 있는 판일 수 있습니다(Debian 원본 패키지 표로 정한 경우) — 설치 판이 그보다 낮으면 판정이 '뒤처짐'으로
-  기울어집니다(모르는 것을 안전으로 두지 않는 쪽). 판정(설치 판과 고친 판의 비교)은 백엔드가 합니다.
+- **한계**: Debian 원본 패키지 표의 판은 '그 스위트에 지금 있는 판'이라 고친 판의 하한이 아닙니다 — 그래서 고친 판은 고친 판 표(그 릴리스 줄 또는
+  그 릴리스에 적용되는 `(unstable)` 줄)에서만 정하고, 고친 판 표에 그 패키지 줄이 없으면 원본 표가 fixed여도 unknown(모름)으로 둡니다(옛 이미지를
+  '뒤처짐'으로 잘못 알리지 않게). 판정(설치 판과 고친 판의 비교)은 백엔드가 합니다.
 
 ---
 

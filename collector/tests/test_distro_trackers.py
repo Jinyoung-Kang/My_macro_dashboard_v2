@@ -5,8 +5,9 @@ tests/test_distro_trackers.py
 고정하는 규칙
   1. Ubuntu JSON: 원본 패키지·스위트의 상태 글 → released는 fixed(판 = description), not-affected·DNE는 not_affected, needed·pending·deferred·
      needs-triage·ignored는 open, 그 패키지·스위트가 없으면 unknown. 모르는 상태 글·판 칸 모양이 다르면 그 조회만 ShapeError.
-  2. Debian HTML: 고친 판 표의 줄(판·(not affected)·(unfixed))이 먼저, 없으면 원본 패키지 표의 '스위트'·'스위트 (security)' 줄(쉼표로 묶인 Release
-     칸을 폄 — 접미사 없는 줄의 fixed 판이 먼저), 원본이 없으면 unknown. 머리·표 틀이 다르면 ShapeError.
+  2. Debian HTML: 고친 판 표의 그 릴리스 줄(판·(not affected)·(unfixed))이 먼저, 없으면 같은 패키지의 (unstable) 줄이 그 릴리스에도 적용(판이면
+     원본 패키지 표의 '스위트'·'스위트 (security)' 줄 — 쉼표로 묶인 Release 칸을 폄 — 에 fixed가 있을 때 그 판, 모두 vulnerable이면 open).
+     고친 판 표에 그 패키지 줄이 없으면 원본 표의 판(지금 있는 판)을 쓰지 않음(fixed여도 unknown). 머리·표 틀이 다르면 ShapeError.
   3. Alpine secdb: secfixes 키 0 → not_affected, 그 밖의 키 → fixed(판 = 키), 항목의 첫 낱말이 CVE, main·community 순서, 없으면 unknown.
   4. 메시지(ShapeError)에 판 값이 없음.
 
@@ -58,11 +59,18 @@ _DEBIAN_SOURCE_ROWS = """
 <tr><td></td><td>fakedeb (security)</td><td>7.0-1+deb2u1</td><td>fixed</td></tr>
 <tr><td><a href="/tracker/source-package/fakeodd">fakeodd</a> (<a href="https://example.org/pkg/fakeodd">PTS</a>)</td><td>fakedeb</td>
     <td><span class="purple">8.0-1</span></td><td><span class="purple">undetermined</span></td></tr>
+<tr><td><a href="/tracker/source-package/fakenew">fakenew</a> (<a href="https://example.org/pkg/fakenew">PTS</a>)</td><td>fakedeb</td>
+    <td><span class="red">6.0-1</span></td><td><span class="red">vulnerable</span></td></tr>
+<tr><td></td><td>sid</td><td>6.0-3</td><td>fixed</td></tr>
+<tr><td><a href="/tracker/source-package/fakeplain">fakeplain</a> (<a href="https://example.org/pkg/fakeplain">PTS</a>)</td><td>fakedeb</td>
+    <td><span class="red">9.0-1</span></td><td><span class="red">vulnerable</span></td></tr>
 """
 _DEBIAN_FIXED_ROWS = """
 <tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>source</td><td>olddeb</td><td>1.0-1+deb1u1</td><td></td>
     <td><a href="/tracker/DSA-0000-1">DSA-0000-1</a></td><td></td></tr>
-<tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>source</td><td>(unstable)</td><td>3.0-1</td><td></td><td></td><td></td></tr>
+<tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>source</td><td>(unstable)</td><td>2.0-1</td><td></td><td></td><td></td></tr>
+<tr><td><a href="/tracker/source-package/fakenew">fakenew</a></td><td>source</td><td>(unstable)</td><td>6.0-2</td><td></td><td></td><td></td></tr>
+<tr><td><a href="/tracker/source-package/fakenot">fakenot</a></td><td>source</td><td>(unstable)</td><td>(not affected)</td><td></td><td></td><td></td></tr>
 <tr><td><a href="/tracker/source-package/fakexz">fakexz</a></td><td>source</td><td>fakedeb</td><td>(not affected)</td><td></td><td></td><td></td></tr>
 <tr><td><a href="/tracker/source-package/fakexz">fakexz</a></td><td>source</td><td>(unstable)</td><td>4.0-1</td><td></td><td></td><td></td></tr>
 <tr><td><a href="/tracker/source-package/fakeweb">fakeweb</a></td><td>source</td><td>(unstable)</td><td><span class="red">(unfixed)</span></td>
@@ -167,18 +175,22 @@ def test_Ubuntu_틀이_다르면_ShapeError(body):
 # Debian
 # ==============================================================================
 @pytest.mark.parametrize("package, suite, status, fixed, detail", [
-    ("fakessl", "olddeb", "fixed", "1.0-1+deb1u1", "fixed"),                        # 고친 판 표의 줄
+    ("fakessl", "olddeb", "fixed", "1.0-1+deb1u1", "fixed"),                        # 고친 판 표의 그 릴리스 줄
     ("fakexz", "fakedeb", "not_affected", None, "(not affected)"),
     ("fakekern", "fakedeb", "open", None, "(unfixed)"),
-    ("fakessl", "fakedeb", "fixed", "2.0-1+deb2u1", "fakedeb (security): fixed; fakedeb: fixed"),     # 원본 표 — 묶인 Release 칸
-    ("fakessl", "nextdeb", "fixed", "3.0-1", "nextdeb: fixed"),
-    ("fakelib", "fakedeb", "fixed", "7.0-1", "fakedeb: fixed; fakedeb (security): fixed"),           # 접미사 없는 줄이 먼저
-    ("fakeweb", "fakedeb", "open", None, "fakedeb: vulnerable; fakedeb (security): vulnerable"),
+    ("fakessl", "fakedeb", "fixed", "2.0-1", "fixed (unstable)"),                   # 릴리스 줄 없음 → (unstable)의 판, 원본 표(묶인 Release 칸)는 fixed
+    ("fakessl", "nextdeb", "fixed", "2.0-1", "fixed (unstable)"),
+    ("fakenew", "fakedeb", "open", None, "fakedeb: vulnerable"),                     # (unstable)은 고쳤지만 그 릴리스는 아직 vulnerable
+    ("fakenew", "sid", "fixed", "6.0-2", "fixed (unstable)"),
+    ("fakenot", "fakedeb", "not_affected", None, "(not affected) (unstable)"),
+    ("fakeweb", "fakedeb", "open", None, "(unfixed) (unstable)"),
+    ("fakelib", "fakedeb", "unknown", None, "fixed; no fixed-version row"),          # 고친 판 표에 그 패키지 줄이 없으면 원본 표의 판을 쓰지 않음
+    ("fakeplain", "fakedeb", "open", None, "fakedeb: vulnerable"),
     ("fakeodd", "fakedeb", "unknown", None, "fakedeb: undetermined"),
     ("fakessl", "nosuchdeb", "unknown", None, "no entry"),
     ("nosuchpkg", "fakedeb", "unknown", None, "no entry"),
 ])
-def test_Debian_고친_판_표가_먼저이고_없으면_원본_패키지_표(package, suite, status, fixed, detail):
+def test_Debian_릴리스_줄이_먼저이고_없으면_unstable_줄이_그_릴리스에도_적용(package, suite, status, fixed, detail):
     record = dt.parse_debian(_debian(), CVE)
 
     result = dt.debian_status(record, package, suite)
@@ -186,11 +198,20 @@ def test_Debian_고친_판_표가_먼저이고_없으면_원본_패키지_표(pa
     assert (result.status, result.fixed_version, result.detail) == (status, fixed, detail)
 
 
-def test_Debian_원본_표에서_security_줄만_고쳤으면_그_판():
-    rows = """<tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>fakedeb</td><td><span class="red">2.0-1</span></td>
-        <td><span class="red">vulnerable</span></td></tr><tr><td></td><td>fakedeb (security)</td><td>2.0-1+deb2u3</td><td>fixed</td></tr>"""
+def test_Debian_원본_표의_지금_판을_고친_판으로_쓰지_않는다():
+    """재현: 고친 판 표에 그 릴리스 줄이 없을 때 원본 표의 판(그 스위트에 지금 있는 판)을 고친 판으로 쓰면, 고친 판(unstable 2.0-1)보다 높고
+    지금 판보다 낮은 옛 이미지(예: 2.0-1+deb2u1)가 '뒤처짐'(해당)으로 잘못 알려졌습니다."""
+    rows = """<tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>fakedeb (security), fakedeb</td><td>2.0-1+deb2u5</td>
+        <td>fixed</td></tr><tr><td></td><td>sid</td><td>3.0-1</td><td>fixed</td></tr>"""
+    unstable = """<tr><td><a href="/tracker/source-package/fakessl">fakessl</a></td><td>source</td><td>(unstable)</td><td>2.0-1</td>
+        <td></td><td></td><td></td></tr>"""
+
+    result = dt.debian_status(dt.parse_debian(_debian(source_rows=rows, fixed_rows=unstable), CVE), "fakessl", "fakedeb")
+    assert (result.status, result.fixed_version) == ("fixed", "2.0-1"), "그 릴리스에 적용되는 (unstable)의 고친 판"
+
     result = dt.debian_status(dt.parse_debian(_debian(source_rows=rows, fixed_rows=""), CVE), "fakessl", "fakedeb")
-    assert (result.status, result.fixed_version) == ("fixed", "2.0-1+deb2u3")
+    assert (result.status, result.fixed_version, result.detail) == ("unknown", None, "fixed; no fixed-version row"), \
+        "고친 판 표에 그 패키지 줄이 없으면 판을 정하지 않음"
 
 
 def test_Debian_패키지_기록이_없는_CVE는_모두_unknown():
