@@ -32,6 +32,6 @@
 
 ## 결과
 
-- QA 스택(단발 7회 중앙값): `/api/status/issues` 302 → 17 ms, `/api/status` 242 → 13 ms(기억이 빈 첫 호출은 약 100 ms). 수집기 `/status` 6 ms, `/status?view=light` 3 ms.
+- QA 스택(단발 7회 중앙값): `/api/status/issues` 302 → 17 ms, `/api/status` 242 → 13 ms(기억이 빈 첫 호출은 4회 73~104 ms, 중앙 91 ms). 수집기 `/status` 6 ms, `/status?view=light` 3 ms.
   11경로 혼합 동시 50명: 177 → 581건/초, p95 2,449 → 266 ms(2026-11-04 250건/초·562 ms보다 나음), postgres CPU 평균 974 → 169%. 표는 진행 기록과 `docs/qa/evidence/2026-11-22-perf/`.
 - 남은 위험: 행 수는 길어야 60초 지난 값이다(상태 화면의 '행 수'는 참고용 — 판단에 쓰지 않음). 범위 조건의 뜻을 모르고 같음 조건으로 '정리'하면 계획이 다시 흔들린다 — 시험이 막는다.
