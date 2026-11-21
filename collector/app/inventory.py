@@ -1,16 +1,17 @@
 """
 app/inventory.py
-보안 공지(ADR 0046 결정 1·2) — 운영 환경의 버전 목록 받기. ``python -m app.inventory < 목록``
+보안 공지(ADR 0046 결정 1·2, 덧붙임 2026-11-21 '배포판 패키지 변경 기록') — 운영 환경의 버전 목록 받기. ``python -m app.inventory < 목록``
 
 호스트 스크립트(scripts/vultr/inventory.sh)가 ``docker compose exec -T collector python -m app.inventory``의 표준입력으로 넘깁니다. 검증에 하나라도
-실패하면 **아무것도 쓰지 않고** 끝납니다(종료 코드 2). 통과하면 표 셋(env_inventory·env_components·env_pending_updates)을 한 트랜잭션으로
-통째로 바꿉니다(늘 '마지막으로 모은 한 벌'). 쓰는 곳은 ``app.store`` 하나이고 이 모듈은 그것만 가져옵니다(ADR 0008).
+실패하면 **아무것도 쓰지 않고** 끝납니다(종료 코드 2). 통과하면 표 넷(env_inventory·env_components·env_pending_updates·env_changelog_cves)을
+한 트랜잭션으로 통째로 바꿉니다(늘 '마지막으로 모은 한 벌'). 쓰는 곳은 ``app.store`` 하나이고 이 모듈은 그것만 가져옵니다(ADR 0008).
 
 [입력] UTF-8, 줄마다 탭으로 나눈 칸. 빈 줄은 건너뜁니다. 비어 있는 칸은 ``-``.
   inventory  1  <모은 시각 ISO 8601, 시간대 포함>  <호스트 구역 포함 0|1>  <apt 목록을 마지막으로 새로 받은 시각 ISO 8601 | ->     (첫 줄, 한 번)
   section    <구역>  <ok|failed|skipped>  <사유 | ->
   component  <구역>  <생태계>  <이름>  <버전>  <원본 | ->
   pending    <패키지>  <아키텍처 | ->  <설치 버전>  <후보 버전>  <저장소(쉼표로 여럿)>
+  changelog  <원본 패키지 | kernel>  <버전>  <CVE 번호>
 
   - 구역: 소문자·숫자·``_``·``-``. 지금 쓰는 것은 일곱 — host(서버 OS 패키지·커널·Docker·Compose·Tailscale·apt 보류)·postgres·backend·
     frontend·collector·browser·caddy(컨테이너 OS 패키지도 그 컨테이너의 구역). 구역마다 한 줄. component는 상태가 ok인 구역에만,
@@ -21,6 +22,9 @@ app/inventory.py
   - 이름·버전은 원문 그대로 두고 해석하지 않습니다(판정은 백엔드 — ADR 0046 결정 5). 같은 줄이 두 번 오면 한 번으로 셉니다.
   - 보안 여부는 저장소 이름 가운데 하나가 ``-security``로 끝나는지로 가립니다(Ubuntu ``noble-security``, Ubuntu Pro ESM ``noble-infra-security``·
     ``noble-apps-security``).
+  - changelog는 서버 배포판 패키지의 변경 기록(changelog.Debian.gz)에 적힌 CVE 번호 — ok인 ``host`` 구역이 있을 때만 받습니다. 패키지는 dpkg 원본
+    패키지 이름(component 줄의 원본 칸과 같은 값)·버전은 그 바이너리 패키지의 설치 버전이고, 실행 중인 커널은 이름 ``kernel``·버전 ``uname -r``
+    (runtime kernel 줄과 같은 값)입니다. CVE 번호는 ``CVE-연도-숫자 4~7자리``. 같은 줄이 두 번 오면 한 번으로 셉니다.
 
 [출력] 성공하면 건수 한 줄만(버전 없음 — 배포 출력·syslog에 그대로 남음). 실패하면 줄 번호와 사유만(칸 값을 싣지 않음).
 """
@@ -39,6 +43,7 @@ ECOSYSTEMS = ("runtime", "dpkg", "apk", "maven", "npm", "pypi")
 # 원본(source 패키지) 칸을 반드시 채우는 생태계 — 배포판 공지(openssl·openssh·curl·glibc·커널) 맞추기가 여기에 기댑니다.
 NEEDS_ORIGIN = ("dpkg", "apk")
 HOST_SECTIONS = ("host",)
+_CVE = re.compile(r"^CVE-\d{4}-\d{4,7}$")
 MAX_LINES = 100_000
 MAX_FIELD_CHARS = 300
 MAX_REASON_CHARS = 200
@@ -63,6 +68,7 @@ class Inventory:
     sections: dict[str, dict] = field(default_factory=dict)
     components: list[tuple[str, str, str, str, str | None]] = field(default_factory=list)
     pending: list[tuple[str, str, str, str, str, bool]] = field(default_factory=list)
+    changelog: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def is_security(repos: str) -> bool:
@@ -103,6 +109,7 @@ def parse(text: str) -> Inventory:
     inventory: Inventory | None = None
     raw_components: list[tuple[int, list[str]]] = []
     raw_pending: list[tuple[int, list[str]]] = []
+    raw_changelog: list[tuple[int, list[str]]] = []
     for number, raw in enumerate(lines, start=1):
         if not raw.strip():
             continue
@@ -149,6 +156,10 @@ def parse(text: str) -> Inventory:
             if len(cells) != 6:
                 raise InvalidInventory(f"줄 {number}: pending 칸이 {len(cells)}개(6개여야 함)")
             raw_pending.append((number, cells))
+        elif kind == "changelog":
+            if len(cells) != 4:
+                raise InvalidInventory(f"줄 {number}: changelog 칸이 {len(cells)}개(4개여야 함)")
+            raw_changelog.append((number, cells))
         else:
             raise InvalidInventory(f"줄 {number}: 모르는 줄 종류")
     if inventory is None:
@@ -185,6 +196,17 @@ def parse(text: str) -> Inventory:
         repos = _field(cells[5], number, "저장소")
         inventory.pending.append((package, arch, _field(cells[3], number, "설치 버전"), _field(cells[4], number, "후보 버전"),
                                   repos, is_security(repos)))
+    if raw_changelog and inventory.sections.get("host", {}).get("status") != "ok":
+        raise InvalidInventory("changelog 줄이 있는데 ok인 host 구역이 없음")
+    cves: set[tuple[str, str, str]] = set()
+    for number, cells in raw_changelog:
+        row = (_field(cells[1], number, "패키지"), _field(cells[2], number, "버전"), cells[3].strip())
+        if not _CVE.match(row[2]):
+            raise InvalidInventory(f"줄 {number}: CVE 번호 모양이 다름")
+        if row in cves:
+            continue
+        cves.add(row)
+        inventory.changelog.append(row)
 
     counts: dict[str, int] = {}
     for source, *_ in inventory.components:
@@ -194,6 +216,8 @@ def parse(text: str) -> Inventory:
             entry["count"] = counts.get(name, 0)
             if name == "host":
                 entry["pending"] = len(inventory.pending)
+                if inventory.changelog:
+                    entry["changelog"] = len(inventory.changelog)
     return inventory
 
 
@@ -204,6 +228,8 @@ def summary(inventory: Inventory) -> str:
     failed = sorted(name for name, entry in inventory.sections.items() if entry["status"] == "failed")
     line = (f"버전 목록 받음 — 구역 {len(statuses)}(ok {statuses.count('ok')}·failed {statuses.count('failed')}·"
             f"skipped {statuses.count('skipped')}) · 구성 요소 {len(inventory.components)} · 보류 {len(inventory.pending)}(보안 {security})")
+    if inventory.changelog:
+        line += f" · 변경 기록 CVE {len(inventory.changelog)}"
     return line + (f" · 실패 구역 {', '.join(failed)}" if failed else "")
 
 
@@ -223,7 +249,7 @@ def main(stdin=None, stdout=None, stderr=None) -> int:
         store.replace_env_inventory({
             "collected_at": inventory.collected_at, "host_included": inventory.host_included,
             "apt_lists_at": inventory.apt_lists_at, "sections": inventory.sections,
-            "components": inventory.components, "pending": inventory.pending,
+            "components": inventory.components, "pending": inventory.pending, "changelog": inventory.changelog,
         })
     except Exception as exc:  # noqa: BLE001
         print(f"버전 목록을 저장하지 못함 — {type(exc).__name__}", file=stderr)

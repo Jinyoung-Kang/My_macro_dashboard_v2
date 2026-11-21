@@ -281,3 +281,21 @@ def test_V40_보안_공지_표_여섯은_두_번_적용해도_되고_틀을_지�
     conn.execute("INSERT INTO env_pending_updates (package, installed, candidate, repos, security) "
                  "VALUES ('fake-pkg', '1.0-1', '1.0-2', 'fake-security', true)")
     conn.execute("INSERT INTO security_alerts (ntt_id, alerted_at) VALUES (1, now())")
+
+
+def test_V41_변경_기록_CVE_표는_두_번_적용해도_되고_번호_모양을_지킨다(conn):
+    """보안 공지(ADR 0046 덧붙임 2026-11-21) — 서버 배포판 패키지 변경 기록의 CVE 번호. 값은 가짜(공개 저장소)."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v41 = next(m for m in found if m.version == 41)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 41])
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 41]) == [41]
+    conn.execute(v41.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v41.sql)
+
+    conn.execute("INSERT INTO env_changelog_cves (package, version, cve) VALUES ('fake-ssl', '9.9.9-0fake1', 'CVE-2099-0001')")
+    conn.execute("INSERT INTO env_changelog_cves (package, version, cve) VALUES ('kernel', '0.0.1-fake', 'CVE-2099-1234567')")
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO env_changelog_cves (package, version, cve) VALUES ('fake-ssl', '9.9.9-0fake1', 'CVE-2099-0001')")
+    for bad in ("CVE-2099-123", "cve-2099-0001", "CVE-2099-12345678", "CVE-2099-0001 "):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute("INSERT INTO env_changelog_cves (package, version, cve) VALUES ('fake-ssl', '1', %s)", (bad,))

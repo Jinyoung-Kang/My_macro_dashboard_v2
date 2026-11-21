@@ -203,10 +203,11 @@ def test_수집기는_관심_대상_알림_칸을_읽지도_쓰지도_않는다(
     assert not re.search(r"\bnotify\b", source), "알림 칸은 읽지 않음(이름 두 칸 name_ko·name_en만 V38에서 더 읽음)"
 
 
-# 보안 공지(ADR 0046, V40) — 수집기 표 다섯은 store.py만 씁니다. 공지 둘은 태스크 kisa_security_notices가, 버전 목록 셋은 CLI app/inventory.py가
+# 보안 공지(ADR 0046, V40·V41) — 수집기 표 여섯은 store.py만 씁니다. 공지 둘은 태스크 kisa_security_notices가, 버전 목록 넷은 CLI app/inventory.py가
 # store 함수로 씁니다(태스크·CLI 모듈에는 SQL이 없음).
-SECURITY_TABLES = ("security_notices", "security_notice_rows", "env_inventory", "env_components", "env_pending_updates")
-SECURITY_TABLE_WRITE = re.compile(r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(SECURITY_TABLES) + r")\b")
+SECURITY_TABLES = ("security_notices", "security_notice_rows", "env_inventory", "env_components", "env_pending_updates",
+                   "env_changelog_cves")
+SECURITY_TABLE_WRITE = re.compile(r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE|COPY)\s+(" + "|".join(SECURITY_TABLES) + r")\b")
 
 
 def test_보안_공지_수집기_표는_store_py만_쓴다():

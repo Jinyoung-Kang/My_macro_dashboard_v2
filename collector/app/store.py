@@ -1901,14 +1901,16 @@ def security_notice(ntt_id: int) -> dict | None:
 # env_inventory·env_components·env_pending_updates는 수집기 CLI app/inventory.py가 이 함수로만 씁니다(ADR 0046 결정 2).
 def replace_env_inventory(doc: dict) -> None:
     """
-    버전 목록 한 벌로 표 셋을 통째로 바꿉니다(한 트랜잭션 — 중간에 실패하면 앞의 목록이 그대로 남음).
+    버전 목록 한 벌로 표 넷을 통째로 바꿉니다(한 트랜잭션 — 중간에 실패하면 앞의 목록이 그대로 남음).
 
     :param doc: {collected_at, host_included, apt_lists_at, sections, components[(source, ecosystem, name, version, source_package)],
-                 pending[(package, arch, installed, candidate, repos, security)]} — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것
+                 pending[(package, arch, installed, candidate, repos, security)], changelog[(package, version, cve)](V41 — 없으면 빈 표)}
+                 — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것
     """
     with transaction(), connection() as conn:
         conn.execute("DELETE FROM env_components")
         conn.execute("DELETE FROM env_pending_updates")
+        conn.execute("DELETE FROM env_changelog_cves")
         conn.execute(
             """
             INSERT INTO env_inventory (id, collected_at, received_at, host_included, apt_lists_at, sections)
@@ -1929,10 +1931,15 @@ def replace_env_inventory(doc: dict) -> None:
                     "INSERT INTO env_pending_updates (package, arch, installed, candidate, repos, security) VALUES (%s, %s, %s, %s, %s, %s)",
                     [tuple(row) for row in doc["pending"]],
                 )
+            if doc.get("changelog"):
+                # 서버에서 만 줄 안팎 — 한 줄씩 INSERT하지 않고 COPY로.
+                with cur.copy("COPY env_changelog_cves (package, version, cve) FROM STDIN") as copy:
+                    for row in doc["changelog"]:
+                        copy.write_row(tuple(row))
 
 
 def env_inventory() -> dict | None:
-    """버전 목록 한 벌(시험·진단용) → {inventory, components, pending}. 받은 적이 없으면 None."""
+    """버전 목록 한 벌(시험·진단용) → {inventory, components, pending, changelog}. 받은 적이 없으면 None."""
     with connection() as conn:
         head = conn.execute("SELECT * FROM env_inventory WHERE id = 1").fetchone()
         if head is None:
@@ -1941,7 +1948,9 @@ def env_inventory() -> dict | None:
                                   "ORDER BY source, ecosystem, name, version").fetchall()
         pending = conn.execute("SELECT package, arch, installed, candidate, repos, security FROM env_pending_updates "
                                "ORDER BY package, arch").fetchall()
-    return {"inventory": head, "components": [dict(r) for r in components], "pending": [dict(r) for r in pending]}
+        changelog = conn.execute("SELECT package, version, cve FROM env_changelog_cves ORDER BY package, version, cve").fetchall()
+    return {"inventory": head, "components": [dict(r) for r in components], "pending": [dict(r) for r in pending],
+            "changelog": [dict(r) for r in changelog]}
 
 
 # ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)

@@ -5,7 +5,9 @@
 # 모으는 구역(구역마다 실패를 따로 잡고 나머지는 보냄 — 구역 상태 ok·failed·skipped를 함께 넘김):
 #   host       서버에서만(.env의 COMPOSE_FILE에 compose.vultr.yml — reboot-check.sh와 같은 판별, 아니면 skipped):
 #              dpkg-query(설치된 패키지·원본 패키지), uname -r(커널), docker(서버 버전)·docker compose·tailscale 버전,
-#              apt 보류 목록(apt list --upgradable — apt-get update는 하지 않고 목록을 마지막으로 받은 시각을 함께 넘김)
+#              apt 보류 목록(apt list --upgradable — apt-get update는 하지 않고 목록을 마지막으로 받은 시각을 함께 넘김),
+#              배포판 패키지 변경 기록의 CVE 번호(ADR 0046 덧붙임 2026-11-21 — 설치된 패키지마다 /usr/share/doc/<패키지>/changelog.Debian.gz,
+#              원본 패키지·버전마다 겹침 없이. 실행 중인 커널은 이름이 '-<uname -r>'로 끝나는 패키지들의 것을 합쳐 'kernel'로. 외부 호출 없음)
 #   postgres   SHOW server_version(scripts/db-common.sh의 run_psql) + 컨테이너 OS 패키지
 #   backend    JDK(/opt/java/openjdk/release) + jar 의존성(BOOT-INF/lib/*.jar 이름) + 컨테이너 OS 패키지
 #   frontend   Node + node_modules 최상위(범위 폴더 @… 한 단계 더) package.json + 컨테이너 OS 패키지
@@ -122,6 +124,7 @@ esac
 sections=""
 components=""
 pending=""
+changelog=""
 
 # 구역 하나를 적습니다 — ok이면 본문 줄이 모두 '생태계<탭>이름<탭>버전<탭>원본'이어야 함(아니면 failed '출력 모양이 다름').
 add_section() {
@@ -154,6 +157,31 @@ host_lines() {
     printf 'runtime\ttailscale\t%s\t-\n' "$v"
 }
 
+# 변경 기록 한 파일의 CVE 번호(한 줄에 하나, 겹칠 수 있음). 파일이 없거나 읽지 못하면 아무것도 찍지 않음. 끝 숫자가 4~7자리가 아닌 것은
+# 잘라 읽지 않고 버림(수집기가 'CVE-연도-숫자 4~7자리'만 받음 — 하나라도 틀리면 목록 전체를 받지 않으므로).
+changelog_cves() {
+    [ -r "$1" ] || return 0
+    { zcat -- "$1" 2>/dev/null || true; } | { grep -oE 'CVE-[0-9]{4}-[0-9]+' || true; } | awk 'length($0) >= 13 && length($0) <= 16'
+}
+
+# 변경 기록 — 호스트 구역 본문(component 줄)의 dpkg 줄마다 그 패키지의 변경 기록, 실행 중인 커널(runtime kernel 줄의 버전 = uname -r)은
+# 이름이 '-<그 버전>'으로 끝나는 패키지들의 변경 기록을 합침. → 'changelog<탭>원본<탭>버전<탭>CVE'(겹침 없이).
+changelog_lines() {
+    local body="$1" doc="${INV_DOC_DIR:-/usr/share/doc}" kernel f
+    kernel="$(awk -F '\t' '$1 == "runtime" && $2 == "kernel" { print $3; exit }' <<< "$body")"
+    {
+        awk -F '\t' '$1 == "dpkg" { print $2 "\t" $3 "\t" $4 }' <<< "$body" |
+            while IFS=$'\t' read -r pkg version origin; do
+                changelog_cves "$doc/$pkg/changelog.Debian.gz" | awk -v o="$origin" -v v="$version" '{ print "changelog\t" o "\t" v "\t" $0 }'
+            done
+        if [ -n "$kernel" ]; then
+            for f in "$doc"/*-"$kernel"/changelog.Debian.gz; do
+                changelog_cves "$f"
+            done | awk -v k="$kernel" '{ print "changelog\tkernel\t" k "\t" $0 }'
+        fi
+    } | sort -u
+}
+
 # apt 보류 — '이름/저장소[,저장소] 후보 아키텍처 [upgradable from: 설치]'(첫 줄 'Listing...'). → pending 줄.
 pending_lines() {
     local list
@@ -172,6 +200,8 @@ case ":$(env_file_value COMPOSE_FILE):" in
             add_section host ok - "$body"
             pending="$apt_body"
             [ -z "$pending" ] || pending+=$'\n'
+            changelog="$(changelog_lines "$body")" || changelog=""
+            [ -z "$changelog" ] || changelog+=$'\n'
             stamp="${INV_APT_STAMP:-/var/lib/apt/periodic/update-success-stamp}"
             if [ -e "$stamp" ]; then
                 apt_at="$(date -u -d "@$(stat -c %Y "$stamp")" +%Y-%m-%dT%H:%M:%SZ)" || apt_at="-"
@@ -211,7 +241,7 @@ trap 'rm -f "$doc" "$out"' EXIT
 chmod 600 "$doc"
 {
     printf 'inventory\t1\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$host_flag" "$apt_at"
-    printf '%s' "$sections" "$components" "$pending"
+    printf '%s' "$sections" "$components" "$pending" "$changelog"
 } > "$doc"
 
 rc=0

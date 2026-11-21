@@ -12,6 +12,7 @@ PC용 instance.sh·firewall-pc-ip.sh(api-common.sh)는 Vultr API를 흉내 내�
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
@@ -1560,6 +1561,14 @@ _INV_APK = ("C:Q1fake=\nP:.fake-rundeps\nV:20260101.000000\nA:noarch\n\n"
             "C:Q1fake=\nP:fake-musl\nV:1.0.0-r0\nA:x86_64\no:fake-musl\nF:lib\n\n"
             "C:Q1fake=\nP:fake-ssl3\nV:9.9.9-r1\nA:x86_64\no:fake-ssl\n\n"
             "C:Q1fake=\nP:fake-noorigin\nV:0.1-r0\nA:x86_64\n")
+_INV_CHANGELOGS = {
+    "fake-ssl-lib": ("fake-ssl (9.9.9-0fake1) fakecode-security; urgency=medium\n"
+                     "  * SECURITY UPDATE: fake issue\n    - CVE-2099-0001\n  * SECURITY UPDATE: another\n    - CVE-2099-0002, CVE-2099-0001\n"
+                     "  * not a real id: CVE-2099-123 and CVE-2099-12345678\n"),
+    "linux-modules-0.0.1-fake-generic": "linux (0.0.1-1.1) fakecode; urgency=medium\n  - CVE-2099-7777\n",
+    "linux-image-0.0.1-fake-generic": "linux-signed (0.0.1-1.1) fakecode; urgency=medium\n  * signed (CVE-2099-8888)\n",
+    "linux-modules-0.0.0-old-generic": "linux (0.0.0-1.1) fakecode; urgency=medium\n  - CVE-2099-9999\n",
+}
 _INV_VERSIONS = ("9.9.9", "90.1.2", "9.1.0", "0.90.1", "0.0.1-fake", "99.1", "99.0.1", "1.2.3", "90.0.1", "3.99.0", "999.0.1.2",
                  "9.8.7", "1.0.0-r0")
 
@@ -1583,8 +1592,14 @@ def inv(tmp_path, fakes):
     stamp = files / "update-success-stamp"
     stamp.touch()
     os.utime(stamp, (1_795_000_000, 1_795_000_000))
+    # 호스트 배포판 패키지의 변경 기록(ADR 0046 덧붙임 2026-11-21) — 가짜 패키지 하나와 가짜 커널 판 둘(실행 중·옛 판). fake-shell은 변경 기록 없음.
+    docs = files / "doc"
+    for package, text in _INV_CHANGELOGS.items():
+        (docs / package).mkdir(parents=True)
+        (docs / package / "changelog.Debian.gz").write_bytes(gzip.compress(text.encode("utf-8")))
     env = tools._env(fakes, FAKE_INV_DOC=str(files / "doc.tsv"), INV_APK_DB=str(files / "installed"),
-                     INV_JAVA_RELEASE=str(files / "release"), INV_APP_JAR="/fake/app.jar", INV_APT_STAMP=str(stamp))
+                     INV_JAVA_RELEASE=str(files / "release"), INV_APP_JAR="/fake/app.jar", INV_APT_STAMP=str(stamp),
+                     INV_DOC_DIR=str(docs))
     return root, env
 
 
@@ -1645,6 +1660,27 @@ def test_inventory는_서버에서_일곱_구역을_모아_수집기_검증을_�
     for version in _INV_VERSIONS:
         assert version not in result.stdout + result.stderr + "\n".join(logs), f"버전({version})은 출력·syslog에 남기지 않음"
     assert SECRET not in result.stdout + result.stderr
+
+
+def test_inventory는_호스트_배포판_패키지_변경_기록의_CVE를_원본_버전마다_넘기고_실행_중인_커널은_kernel로_합친다(inv, fakes):
+    result = _inventory(inv)
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(_sent(inv).changelog) == [
+        ("fake-ssl", "9.9.9-0fake1", "CVE-2099-0001"), ("fake-ssl", "9.9.9-0fake1", "CVE-2099-0002"),
+        ("kernel", "0.0.1-fake-generic", "CVE-2099-7777"), ("kernel", "0.0.1-fake-generic", "CVE-2099-8888"),
+    ], "원본·버전마다 겹침 없이, 끝 숫자가 4~7자리가 아닌 번호와 실행 중이 아닌 커널 판은 빼고"
+    assert "CVE-2099" not in result.stdout + result.stderr, "번호는 출력에 남기지 않음"
+    assert _host_calls(fakes).count("dpkg-query -W -f=${db:Status-Abbrev}\\t${Package}\\t${Version}\\t${source:Package}\\n") == 3, \
+        "변경 기록은 호스트 구역 본문으로 — dpkg-query를 더 부르지 않음"
+
+
+def test_inventory는_서버가_아니면_변경_기록도_넘기지_않는다(inv, fakes):
+    root, _ = inv
+    (root / ".env").write_text("COMPOSE_FILE=docker-compose.yml\n", encoding="utf-8")
+
+    assert _inventory(inv).returncode == 0
+    assert _sent(inv).changelog == []
 
 
 def test_inventory는_서버가_아니면_호스트_구역을_건너뛰고_호스트_명령을_부르지_않는다(inv, fakes):

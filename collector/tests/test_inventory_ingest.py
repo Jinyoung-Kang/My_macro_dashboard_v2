@@ -9,6 +9,8 @@ tests/test_inventory_ingest.py
   4. component는 상태가 ok인 구역에만, pending은 ok인 host 구역이 있을 때만. 호스트 구역 포함이 0이면 host는 ok일 수 없음.
      생태계는 runtime·dpkg·apk·maven·npm·pypi 여섯이고 dpkg·apk는 원본(source 패키지) 칸을 반드시 채운다(판정 갈래와의 이름 약속).
   5. 모듈은 app.store만 가져온다(쓰는 곳 하나 — ADR 0008).
+  6. changelog(배포판 패키지 변경 기록의 CVE — ADR 0046 덧붙임 2026-11-21)는 ok인 host 구역이 있을 때만, 번호는 'CVE-연도-숫자 4~7자리'.
+     같은 줄은 한 번으로, 넷째 표 env_changelog_cves도 같은 트랜잭션으로 통째로 바꾸고 건수만 찍는다(번호 없음).
 
 값은 모두 가짜입니다(공개 저장소 — 서버의 실제 버전은 운영 DB에만).
 """
@@ -81,6 +83,32 @@ def test_받으면_표_셋을_바꾸고_건수_한_줄만_찍는다(store):
     ]
 
 
+def test_변경_기록_CVE를_받아_넷째_표에_두고_건수만_찍는다(store):
+    text = GOOD + "\n".join([
+        "changelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-0001",
+        "changelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-0001",                         # 같은 줄 — 한 번으로
+        "changelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-1234567",
+        "changelog\tkernel\t0.0.1-1-fake\tCVE-2099-7777",
+        "",
+    ])
+
+    code, out, err = _run(text)
+
+    assert code == 0 and err == ""
+    assert out.strip().endswith(" · 변경 기록 CVE 3 · 실패 구역 backend")
+    assert "CVE-2099" not in out, "번호는 찍지 않음"
+    saved = store.env_inventory()
+    assert saved["changelog"] == [
+        {"package": "fake-ssl", "version": "9.9.9-0fake1", "cve": "CVE-2099-0001"},
+        {"package": "fake-ssl", "version": "9.9.9-0fake1", "cve": "CVE-2099-1234567"},
+        {"package": "kernel", "version": "0.0.1-1-fake", "cve": "CVE-2099-7777"},
+    ]
+    assert saved["inventory"]["sections"]["host"] == {"status": "ok", "count": 3, "pending": 3, "changelog": 3}
+
+    assert _run(GOOD)[0] == 0
+    assert store.env_inventory()["changelog"] == [], "다시 받으면 변경 기록도 통째로 바뀜(없으면 빈 표)"
+
+
 def test_다시_받으면_앞의_목록을_통째로_바꾼다(store):
     assert _run(GOOD)[0] == 0
     smaller = "\n".join([
@@ -126,6 +154,14 @@ def test_다시_받으면_앞의_목록을_통째로_바꾼다(store):
     ("\n".join(line for line in GOOD.split("\n") if not line.startswith("component\thost")).replace("section\thost\tok\t-", "section\thost\tfailed\t-"),
      "ok인 host 구역이 없음"),
     (GOOD.replace("Z\t1\t", "Z\t0\t"), "호스트 구역 포함이 0인데 host"),
+    (GOOD + "changelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-123\n", "CVE 번호 모양"),
+    (GOOD + "changelog\tfake-ssl\t9.9.9-0fake1\tcve-2099-0001\n", "CVE 번호 모양"),
+    (GOOD + "changelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-12345678\n", "CVE 번호 모양"),
+    (GOOD + "changelog\t-\t9.9.9-0fake1\tCVE-2099-0001\n", "패키지 칸이 비어 있음"),
+    (GOOD + "changelog\tfake-ssl\tCVE-2099-0001\n", "changelog 칸이 3개"),
+    ("\n".join(line for line in GOOD.split("\n") if not line.startswith(("component\thost", "pending")))
+     .replace("section\thost\tok\t-", "section\thost\tfailed\t-") + "\nchangelog\tfake-ssl\t9.9.9-0fake1\tCVE-2099-0001\n",
+     "changelog 줄이 있는데 ok인 host 구역이 없음"),
 ])
 def test_하나라도_틀리면_아무것도_쓰지_않는다(store, text, why):
     assert _run(GOOD)[0] == 0
