@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -93,19 +94,24 @@ public class SecurityService {
         if (head.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(toInventory(head.get(), store.components(), store.pending()));
+        return Optional.of(toInventory(head.get(), store.components(), store.pending(), store.changelogCves()));
     }
 
     static EnvInventory toInventory(SecurityStore.Inventory head, List<SecurityStore.Component> components,
-                                    List<SecurityStore.Pending> pending) {
+                                    List<SecurityStore.Pending> pending, List<SecurityStore.ChangelogCve> changelog) {
         Map<String, EnvInventory.SectionStatus> sections = new LinkedHashMap<>();
         for (SecurityStore.Section section : head.sections()) {
             sections.put(section.name(), EnvInventory.SectionStatus.fromDb(section.status()));
         }
+        Map<EnvInventory.PackageVersion, Set<String>> cves = new HashMap<>();
+        for (SecurityStore.ChangelogCve row : changelog == null ? List.<SecurityStore.ChangelogCve>of() : changelog) {
+            cves.computeIfAbsent(new EnvInventory.PackageVersion(row.pkg(), row.version()), key -> new HashSet<>()).add(row.cve());
+        }
         return new EnvInventory(sections,
                 components.stream().map(c -> new EnvInventory.Component(c.source(), c.ecosystem(), c.name(), c.version(),
                         c.sourcePackage())).toList(),
-                pending.stream().map(p -> new EnvInventory.Pending(p.pkg(), p.installed(), p.candidate(), p.security())).toList());
+                pending.stream().map(p -> new EnvInventory.Pending(p.pkg(), p.installed(), p.candidate(), p.security())).toList(),
+                cves);
     }
 
     /** 공지 전부를 판정합니다(게시일 최근부터). {@code inventory}가 {@code null}이면 버전 목록 없음. */
@@ -197,7 +203,7 @@ public class SecurityService {
             return out;
         }
         Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending())).orElse(null);
+        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending(), store.changelogCves())).orElse(null);
         List<Judged> all = judgeAll(inventory);
 
         List<Judged> searched = q == null ? all : all.stream().filter(j -> matchesQuery(j, q)).toList();
@@ -239,7 +245,7 @@ public class SecurityService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그 번호의 보안 공지가 없습니다."));
         Instant now = clock.instant();
         Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending())).orElse(null);
+        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending(), store.changelogCves())).orElse(null);
         List<SecurityStore.NoticeRow> rows = store.rows(nttId);
         Verdict verdict = judge(notice, rows, inventory);
         Judged judged = new Judged(notice, rows, verdict);
@@ -422,6 +428,7 @@ public class SecurityService {
         out.put("status", m.status().code());
         out.put("reason", m.reason() == null ? null : m.reason().name());
         out.put("otherFamily", m.otherFamily());
+        out.put("basis", m.basis() == null ? null : m.basis().name());
         return out;
     }
 

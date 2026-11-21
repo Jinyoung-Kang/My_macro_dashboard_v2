@@ -1,24 +1,54 @@
 package com.macrodash.feature.security;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * 판정 입력 — 운영 환경의 버전 목록 한 벌(ADR 0046 결정 1·2, 표 {@code env_inventory}·{@code env_components}·{@code env_pending_updates}).
+ * 판정 입력 — 운영 환경의 버전 목록 한 벌(ADR 0046 결정 1·2, 표 {@code env_inventory}·{@code env_components}·{@code env_pending_updates}·
+ * {@code env_changelog_cves}).
  * 버전 목록이 아예 없으면 판정에 {@code null}을 넘깁니다(제품이 맞는 공지는 모두 확인 필요 {@code NO_INVENTORY}).
  *
  * @param sections   구역 이름 → 상태. 구역 이름은 {@link ProductAliases}의 {@code SECTION_*}(구성 요소의 {@code source}와 같은 값)
  * @param components 구성 요소
  * @param pending    서버의 apt 보류 목록(호스트 구역에 딸림)
+ * @param changelog  서버 배포판 패키지 변경 기록의 CVE 번호(호스트 구역에 딸림 — ADR 0046 덧붙임 2026-11-21). 열쇠는 dpkg 원본 패키지 이름·
+ *                   설치 버전, 실행 중인 커널은 {@code kernel}·{@code uname -r}
  */
-public record EnvInventory(Map<String, SectionStatus> sections, List<Component> components, List<Pending> pending) {
+public record EnvInventory(Map<String, SectionStatus> sections, List<Component> components, List<Pending> pending,
+                           Map<PackageVersion, Set<String>> changelog) {
 
     public EnvInventory {
         sections = sections == null ? Map.of() : Map.copyOf(sections);
         components = components == null ? List.of() : List.copyOf(components);
         pending = pending == null ? List.of() : List.copyOf(pending);
+        Map<PackageVersion, Set<String>> copy = new HashMap<>();
+        if (changelog != null) {
+            changelog.forEach((key, cves) -> copy.put(key, Set.copyOf(cves)));
+        }
+        changelog = Map.copyOf(copy);
+    }
+
+    /** 변경 기록 없이(로컬·QA처럼 호스트 구역이 없는 곳, 시험). */
+    public EnvInventory(Map<String, SectionStatus> sections, List<Component> components, List<Pending> pending) {
+        this(sections, components, pending, Map.of());
+    }
+
+    /** 변경 기록의 열쇠 — 원본 패키지(또는 {@code kernel})와 버전. */
+    public record PackageVersion(String pkg, String version) {
+    }
+
+    /** 그 패키지·버전의 변경 기록에 {@code cves}가 모두 있는지. {@code cves}가 비었거나 그 변경 기록이 없으면 아님. */
+    public boolean changelogHasAll(String pkg, String version, Collection<String> cves) {
+        if (cves == null || cves.isEmpty()) {
+            return false;
+        }
+        Set<String> known = changelog.get(new PackageVersion(pkg, version));
+        return known != null && known.containsAll(cves);
     }
 
     /** 그 구역을 이번에 제대로 모았는지 — 표에 없는 구역은 모르는 것으로 봅니다. */

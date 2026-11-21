@@ -6,6 +6,7 @@ import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
 import com.macrodash.feature.security.ProductAliases.ProductName;
 import com.macrodash.feature.security.SecurityNotice.Row;
+import com.macrodash.feature.security.Verdict.Basis;
 import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
@@ -17,7 +18,9 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -29,8 +32,11 @@ import java.util.regex.Pattern;
  *       표가 없는 공지는 {@code NO_VERSION_TABLE}, 표가 있는데 그 제품 행이 없거나 상세 전이면 {@code NAME_MATCH}).</li>
  *   <li>버전 목록이 없으면 확인 필요 {@code NO_INVENTORY}. 별칭의 구역을 모두 모았는데 구성 요소가 없으면 설치돼 있지 않은 것(무관),
  *       모으지 못한 구역이 있으면 그 구역은 {@code NO_INVENTORY}.</li>
- *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당, 없으면 {@code DISTRO_NO_PENDING}.
- *       컨테이너 안 패키지는 보류 목록이 없어 늘 {@code DISTRO_NO_PENDING}. 공지의 버전 표와 비교하지 않습니다.</li>
+ *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당. 없으면 공지 표에서 그 제품 행의 CVE가
+ *       모두 그 패키지(원본·버전)의 변경 기록에 있을 때 패치됨(근거 {@link Basis#CHANGELOG} — ADR 0046 덧붙임 2026-11-21), 그 밖은
+ *       {@code DISTRO_NO_PENDING}. 실행 중인 것만 보는 별칭({@link ProductAliases.Alias#runningOnly()} — 커널)은 런타임 구성 요소가 있으면
+ *       그것만 변경 기록으로 판정하고 패키지 줄은 보류(해당)에만 씁니다. 컨테이너 안 패키지는 보류 목록·변경 기록이 없어 늘
+ *       {@code DISTRO_NO_PENDING}. 공지의 버전 표와 비교하지 않습니다.</li>
  *   <li>상류 번호({@link Kind#UPSTREAM}): 행마다 — 제조사가 다르면 {@code VENDOR_DIFFERS}, 영향 칸을 못 읽으면 {@code PARSE_FAILED},
  *       설치 버전이 영향 구간 안이면 해당(아래 끝이 없는 구간은 위 끝의 계열로 좁힘 — {@link VersionRange#scopedToFamily}, QA-975). 그 밖에는 같은 계열의 행일 때만 — 해결 칸을 못 읽으면 {@code PARSE_FAILED}, 설치 버전이
  *       해결 버전 이상이면 패치됨, 아니면 {@code OUT_OF_TABLE}. 다른 계열의 행은 판정에 쓰지 않고, 같은 계열의 행이 하나도 없으면
@@ -50,6 +56,14 @@ public final class NoticeJudge {
     private static final Pattern BOILERPLATE = Pattern.compile(
             "^(?:하단의\\s*)?참고\\s*(?:사이트|자료)[^※]{0,40}?업데이트(?:\\s*(?:수행|권고|필요|바람))?[\\s\\[\\]\\d~,.\\-]*$");
     private static final Pattern REFERENCES_ONLY = Pattern.compile("^[\\s\\[\\]\\d~,.\\-]*$");
+    /**
+     * 판정에 쓰지 않는 관용 {@code ※} 문장 둘째 — 운영체제 공지 끝의 '보안 업데이트가 공개된 운영체제를 운영하고 있을 경우, 참고 사이트의 내용을
+     * 참조하여 보안 조치 또는 업데이트 수행(…)' 꼴(조건이 아니라 안내 — ADR 0046 덧붙임 2026-11-21).
+     */
+    private static final Pattern OS_UPDATE_GUIDE = Pattern.compile(
+            "^보안\\s*업데이트가\\s*공개된\\s*운영\\s*체제를\\s*운영하고\\s*있을\\s*경우[,\\s]*참고\\s*사이트의\\s*내용을\\s*참조하여\\s*"
+                    + "보안\\s*조치\\s*또는\\s*업데이트\\s*수행(?:\\s*\\([^()]{0,80}\\))?[\\s\\[\\]\\d~,.\\-]*$");
+    private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d{4,7}(?!\\d)", Pattern.CASE_INSENSITIVE);
 
     private NoticeJudge() {
     }
@@ -110,7 +124,8 @@ public final class NoticeJudge {
             }
             for (String piece : note.split("※")) {
                 String text = ProductAliases.normalizeText(piece);
-                if (text.isEmpty() || REFERENCES_ONLY.matcher(text).matches() || BOILERPLATE.matcher(text).matches()) {
+                if (text.isEmpty() || REFERENCES_ONLY.matcher(text).matches() || BOILERPLATE.matcher(text).matches()
+                        || OS_UPDATE_GUIDE.matcher(text).matches()) {
                     continue;
                 }
                 out.add(text);
@@ -197,30 +212,72 @@ public final class NoticeJudge {
         for (String section : cov.missingSections()) {
             out.add(aliasLevel(alias, section, Status.CHECK, Reason.NO_INVENTORY));
         }
-        for (Component c : cov.components()) {
-            if (alias.kind() == Kind.DISTRO) {
-                out.add(distro(alias, c, inventory));
-            } else {
-                out.addAll(upstream(alias, c, rows));
+        if (alias.kind() == Kind.DISTRO) {
+            Set<String> cves = rowCves(rows);
+            boolean running = alias.runningOnly()
+                    && cov.components().stream().anyMatch(c -> ProductAliases.ECO_RUNTIME.equals(c.ecosystem()));
+            for (Component c : cov.components()) {
+                if (!running || ProductAliases.ECO_RUNTIME.equals(c.ecosystem())) {
+                    out.add(distro(alias, c, inventory, cves));
+                } else if (pendingSecurity(c, inventory)) {
+                    // 실행 중인 것만 보는 별칭(커널)의 패키지 줄 — 보안 보류면 해당, 그 밖은 근거로 남기지 않음(옛 판·서명·메타 패키지).
+                    out.add(componentLevel(alias, c, Status.AFFECTED, null));
+                }
             }
+            return out;
+        }
+        for (Component c : cov.components()) {
+            out.addAll(upstream(alias, c, rows));
         }
         return out;
     }
 
-    /** 배포판 패키지 — 버전 표가 아니라 apt 보류(보안) 목록으로. 보류 목록은 호스트에만 있습니다. */
-    private static Match distro(Alias alias, Component c, EnvInventory inventory) {
+    /**
+     * 배포판 패키지 — 버전 표가 아니라 apt 보류(보안) 목록과 변경 기록으로. 둘 다 호스트에만 있습니다.
+     * 보안 보류면 해당, 아니면 {@code cves}(그 제품 행의 CVE 전부)가 그 패키지 원본·버전(실행 중인 커널은 {@code kernel}·{@code uname -r})의
+     * 변경 기록에 모두 있을 때 패치됨, 그 밖은 확인 필요 {@code DISTRO_NO_PENDING}(변경 기록에 없다고 취약하다는 뜻은 아님).
+     */
+    private static Match distro(Alias alias, Component c, EnvInventory inventory, Set<String> cves) {
         if (!ProductAliases.SECTION_HOST.equals(c.source())) {
             return componentLevel(alias, c, Status.CHECK, Reason.DISTRO_NO_PENDING);
         }
         if (!inventory.sectionOk(ProductAliases.SECTION_HOST)) {
             return componentLevel(alias, c, Status.CHECK, Reason.NO_INVENTORY);
         }
-        for (EnvInventory.Pending p : inventory.pending()) {
-            if (p.security() && c.name().equals(p.pkg())) {
-                return componentLevel(alias, c, Status.AFFECTED, null);
-            }
+        if (pendingSecurity(c, inventory)) {
+            return componentLevel(alias, c, Status.AFFECTED, null);
+        }
+        if (inventory.changelogHasAll(c.sourcePackageName().orElse(c.name()), c.version(), cves)) {
+            return new Match(alias.id(), null, null, null, c.source(), c.name(), c.version(), Status.PATCHED, null, false,
+                    Basis.CHANGELOG);
         }
         return componentLevel(alias, c, Status.CHECK, Reason.DISTRO_NO_PENDING);
+    }
+
+    private static boolean pendingSecurity(Component c, EnvInventory inventory) {
+        for (EnvInventory.Pending p : inventory.pending()) {
+            if (p.security() && c.name().equals(p.pkg())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 그 제품 행들의 CVE 번호 전부(대문자). 번호를 읽지 못한 행이 하나라도 있으면 빈 집합 — 변경 기록으로 판정하지 않습니다. */
+    static Set<String> rowCves(List<Row> rows) {
+        Set<String> out = new LinkedHashSet<>();
+        for (Row row : rows) {
+            boolean found = false;
+            Matcher m = CVE_ID.matcher(row.cve() == null ? "" : row.cve());
+            while (m.find()) {
+                out.add(m.group().toUpperCase(Locale.ROOT));
+                found = true;
+            }
+            if (!found) {
+                return Set.of();
+            }
+        }
+        return out;
     }
 
     /** 상류 번호 — 행마다 비교하고, 같은 계열의 행이 하나도 없으면 {@code OUT_OF_TABLE}을 더합니다. */
@@ -328,15 +385,15 @@ public final class NoticeJudge {
     // ---- 근거 만들기 ---------------------------------------------------------------------------------------------
 
     private static Match aliasLevel(Alias alias, String section, Status status, Reason reason) {
-        return new Match(alias.id(), null, null, null, section, null, null, status, reason, false);
+        return new Match(alias.id(), null, null, null, section, null, null, status, reason, false, null);
     }
 
     private static Match componentLevel(Alias alias, Component c, Status status, Reason reason) {
-        return new Match(alias.id(), null, null, null, c.source(), c.name(), c.version(), status, reason, false);
+        return new Match(alias.id(), null, null, null, c.source(), c.name(), c.version(), status, reason, false, null);
     }
 
     private static Match rowLevel(Alias alias, Component c, Row row, Status status, Reason reason, boolean otherFamily) {
         return new Match(alias.id(), row.index(), row.cve(), row.product(), c.source(), c.name(), c.version(), status, reason,
-                otherFamily);
+                otherFamily, null);
     }
 }

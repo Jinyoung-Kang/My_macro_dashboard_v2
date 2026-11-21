@@ -48,6 +48,7 @@ class SecurityStoreDbTest {
         jdbc.update("DELETE FROM env_components");
         jdbc.update("DELETE FROM env_pending_updates");
         jdbc.update("DELETE FROM env_inventory");
+        jdbc.update("DELETE FROM env_changelog_cves");
     }
 
     @Test
@@ -110,6 +111,18 @@ class SecurityStoreDbTest {
         assertThat(store.components().get(1).sourcePackage()).isNull();
         assertThat(store.pending()).extracting(SecurityStore.Pending::pkg).containsExactly("z-fake", "a-fake");
         assertThat(store.pending().get(0).security()).isTrue();
+    }
+
+    @Test
+    @DisplayName("변경 기록 CVE(V41) — 없으면 빈 목록, 있으면 원본 패키지·버전·번호 그대로")
+    void changelogCves() {
+        assertThat(store.changelogCves()).isEmpty();
+        jdbc.update("INSERT INTO env_changelog_cves (package, version, cve) VALUES "
+                + "('fake-openssl', '9.9.9-0fake1', 'CVE-2099-0001'), ('kernel', '0.0.1-fake-generic', 'CVE-2099-7777')");
+
+        assertThat(store.changelogCves()).containsExactlyInAnyOrder(
+                new SecurityStore.ChangelogCve("fake-openssl", "9.9.9-0fake1", "CVE-2099-0001"),
+                new SecurityStore.ChangelogCve("kernel", "0.0.1-fake-generic", "CVE-2099-7777"));
     }
 
     @Test

@@ -264,6 +264,26 @@ class SecurityServiceTest {
     }
 
     @Test
+    @DisplayName("한 건 — 배포판 패키지가 변경 기록 근거로 패치됨이면 근거 줄에 basis CHANGELOG(ADR 0046 덧붙임 2026-11-21)")
+    @SuppressWarnings("unchecked")
+    void detailChangelogBasis() {
+        fakeInventory(store, Instant.parse("2026-11-21T07:20:00Z"));
+        when(store.components()).thenReturn(List.of(
+                new SecurityStore.Component("host", "runtime", "kernel", "9.9.0-3-fake", null),
+                new SecurityStore.Component("host", "dpkg", "linux-generic", "9.9.0.3.3", "linux-meta")));
+        when(store.changelogCves()).thenReturn(List.of(new SecurityStore.ChangelogCve("kernel", "9.9.0-3-fake", "CVE-2099-7777")));
+        notices.add(notice(9101, "가짜 Linux 제품 보안 업데이트 권고", "2026-11-20", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9101, 0, "CVE-2099-7777", "Linux Kernel", "9.0 이상 9.9.5 미만", "9.9.5"));
+
+        Map<String, Object> out = service.notice(9101);
+
+        assertThat((Map<String, Object>) out.get("notice")).containsEntry("verdict", "patched");
+        assertThat((List<Map<String, Object>>) out.get("generalMatches")).singleElement()
+                .satisfies(m -> assertThat(m).containsEntry("component", "kernel").containsEntry("status", "patched")
+                        .containsEntry("basis", "CHANGELOG").containsEntry("reason", null));
+    }
+
+    @Test
     @DisplayName("없는 번호·표가 없으면 404, 표가 없으면 목록은 available:false")
     void notFound() {
         fiveNotices();

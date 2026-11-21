@@ -86,6 +86,12 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
         VENDOR_DIFFERS
     }
 
+    /** 판정 근거의 종류(확인 필요 사유와 따로 — ADR 0046 덧붙임 2026-11-21). 근거가 버전 표·apt 보류 목록이면 {@code null}입니다. */
+    public enum Basis {
+        /** 서버 배포판 패키지의 변경 기록(changelog.Debian.gz)에 공지 표의 그 제품 행 CVE가 모두 있음 — 배포판 패키지의 패치됨 근거. */
+        CHANGELOG
+    }
+
     /**
      * 제품(별칭) 하나의 판정.
      *
@@ -114,8 +120,9 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
      * @param status           이 근거의 판정
      * @param reason           확인 필요 사유(그 밖이면 {@code null})
      * @param otherFamily      다른 계열의 행이라 이 구성 요소의 판정에 쓰지 않음(그때 {@code status}는 무관)
+     * @param basis            판정 근거의 종류(변경 기록이면 {@link Basis#CHANGELOG}, 그 밖이면 {@code null})
      */
     public record Match(String aliasId, Integer rowIndex, String cve, String rowProduct, String source, String component,
-                        String installedVersion, Status status, Reason reason, boolean otherFamily) {
+                        String installedVersion, Status status, Reason reason, boolean otherFamily, Basis basis) {
     }
 }

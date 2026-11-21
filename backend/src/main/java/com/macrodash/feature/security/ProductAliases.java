@@ -123,10 +123,12 @@ public final class ProductAliases {
      * @param textMatch         표가 없는 공지·표에 없는 제품을 제목·본문에서 찾을지(흔한 낱말이라 잘못 맞기 쉬우면 {@code false})
      * @param versionComparable 설치 버전을 공지의 번호와 견줄 수 있는지({@code false}면 표에 맞아도 늘 확인 필요 {@code NAME_MATCH} —
      *                          예: runc는 containerd.io 패키지에 들어 있어 그 패키지 버전이 runc 버전이 아님)
+     * @param runningOnly       배포판(DISTRO) 별칭에서 실행 중인 것(런타임 구성 요소)이 있으면 변경 기록 판정은 그것만 — 같은 별칭의 패키지 줄은
+     *                          apt 보안 보류(해당)에만 쓰고 확인 필요를 만들지 않음(커널: 옛 판·서명·메타 패키지 — ADR 0046 덧붙임 2026-11-21)
      */
     public record Alias(String id, String label, Kind kind, Family family, String vendor, List<String> sections,
                         List<ComponentKey> components, List<ProductName> names, Pattern exclude, boolean textMatch,
-                        boolean versionComparable) {
+                        boolean versionComparable, boolean runningOnly) {
 
         public Alias {
             sections = List.copyOf(sections);
@@ -296,7 +298,7 @@ public final class ProductAliases {
             alias("linux-kernel", "Linux 커널", Kind.DISTRO, Family.SINGLE).sections(SECTION_HOST)
                     .component(ECO_RUNTIME, "kernel")
                     .component(ECO_DPKG, "linux(?:-signed|-meta)?(?:-hwe(?:-[\\d.]+)?)?")
-                    .name("(?:Linux|리눅스)\\s*(?:Kernel|커널)").build(),
+                    .name("(?:Linux|리눅스)\\s*(?:Kernel|커널)").runningOnly().build(),
             alias("openssh", "OpenSSH", Kind.DISTRO, Family.SINGLE).sections(ALL_SECTIONS)
                     .component(ECO_DPKG, "openssh").component(ECO_APK, "openssh")
                     .name("\\bOpenSSH\\b").build(),
@@ -390,6 +392,7 @@ public final class ProductAliases {
         private Pattern exclude;
         private boolean textMatch = true;
         private boolean versionComparable = true;
+        private boolean runningOnly;
 
         Builder(String id, String label, Kind kind, Family family) {
             this.id = id;
@@ -442,8 +445,14 @@ public final class ProductAliases {
             return this;
         }
 
+        Builder runningOnly() {
+            this.runningOnly = true;
+            return this;
+        }
+
         Alias build() {
-            return new Alias(id, label, kind, family, vendor, sections, components, names, exclude, textMatch, versionComparable);
+            return new Alias(id, label, kind, family, vendor, sections, components, names, exclude, textMatch, versionComparable,
+                    runningOnly);
         }
     }
 }

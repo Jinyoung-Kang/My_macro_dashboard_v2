@@ -207,7 +207,7 @@ class ArchitectureRulesTest {
             "(?i)(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE)\\s+(snapshots|timeseries|observations|"
                     + "collector_runs|collector_task_runs|refresh_requests|schema_migrations|fetch_hosts|fetch_schedule|"
                     + "info_items|fetch_source_state|search_watch_items|fetch_budgets|"
-                    + "security_notices|security_notice_rows|env_inventory|env_components|env_pending_updates)\\b");
+                    + "security_notices|security_notice_rows|env_inventory|env_components|env_pending_updates|env_changelog_cves)\\b");
 
     @Test
     @DisplayName("백엔드는 수집기 테이블에 쓰지 않는다 — 테이블마다 쓰는 프로세스는 하나(ADR 0008)")

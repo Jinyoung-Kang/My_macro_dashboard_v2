@@ -5,6 +5,7 @@ import com.macrodash.feature.security.EnvInventory.Pending;
 import com.macrodash.feature.security.EnvInventory.SectionStatus;
 import com.macrodash.feature.security.SecurityNotice.Row;
 import com.macrodash.feature.security.SecurityNotice.Template;
+import com.macrodash.feature.security.Verdict.Basis;
 import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
@@ -18,6 +19,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,6 +56,13 @@ class NoticeJudgeTest {
         Map<String, SectionStatus> sections = new LinkedHashMap<>(inv.sections());
         sections.put(section, status);
         return new EnvInventory(sections, inv.components(), inv.pending());
+    }
+
+    /** 변경 기록 한 벌을 더한 버전 목록(ADR 0046 덧붙임 2026-11-21) — 패키지·버전 하나에 CVE 여럿. */
+    private static EnvInventory withChangelog(EnvInventory inv, String pkg, String version, String... cves) {
+        Map<EnvInventory.PackageVersion, Set<String>> changelog = new LinkedHashMap<>(inv.changelog());
+        changelog.put(new EnvInventory.PackageVersion(pkg, version), Set.of(cves));
+        return new EnvInventory(inv.sections(), inv.components(), inv.pending(), changelog);
     }
 
     private static SecurityNotice tableNotice(String... notes) {
@@ -497,6 +506,110 @@ class NoticeJudgeTest {
                     .containsExactly(Reason.DISTRO_NO_PENDING);
             EnvInventory pending = inventory(List.of(new Pending("linux-generic", "a", "b", true)), running, meta);
             assertThat(judge(rows("Linux Kernel|9.0 이상 9.9.5 미만|9.9.5"), pending).status()).isEqualTo(Status.AFFECTED);
+        }
+
+        // ---- 변경 기록(ADR 0046 덧붙임 2026-11-21) ----
+
+        private final List<Row> sslTwoCves = List.of(
+                new Row(0, "CVE-2099-0001", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"),
+                new Row(1, "cve-2099-0002, CVE-2099-0003", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+
+        @Test
+        @DisplayName("변경 기록 — 그 제품 행의 CVE가 원본·버전의 변경 기록에 모두 있으면 패치됨(근거 CHANGELOG), 하나라도 없으면 확인 필요")
+        void changelogPatched() {
+            EnvInventory all = withChangelog(inventory(hostSsl, hostSslBin), "openssl", "9.9.9-0fake1.1",
+                    "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003", "CVE-2099-0999");
+            Verdict v = judge(sslTwoCves, all);
+            assertThat(v.status()).isEqualTo(Status.PATCHED);
+            assertThat(v.reasons()).isEmpty();
+            assertThat(v.matches()).extracting(Match::basis).containsOnly(Basis.CHANGELOG);
+            assertThat(v.matches()).extracting(Match::component).containsExactly("libssl9t64", "openssl");
+
+            EnvInventory partial = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.1", "CVE-2099-0001", "CVE-2099-0002");
+            Verdict missing = judge(sslTwoCves, partial);
+            assertThat(missing.status()).isEqualTo(Status.CHECK);
+            assertThat(missing.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(missing.matches()).extracting(Match::basis).containsOnlyNulls();
+
+            EnvInventory otherVersion = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.0",
+                    "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            assertThat(judge(sslTwoCves, otherVersion).reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+        }
+
+        @Test
+        @DisplayName("변경 기록 — 보안 보류가 먼저(해당), CVE를 읽지 못한 행이 있으면·컨테이너 안 패키지면 변경 기록을 쓰지 않음")
+        void changelogLimits() {
+            EnvInventory pending = withChangelog(inventory(List.of(new Pending("libssl9t64", "a", "b", true)), hostSsl), "openssl",
+                    "9.9.9-0fake1.1", "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            assertThat(judge(sslTwoCves, pending).status()).isEqualTo(Status.AFFECTED);
+
+            List<Row> noCve = List.of(new Row(0, "CVE-2099-0001", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"),
+                    new Row(1, "-", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+            EnvInventory known = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.1", "CVE-2099-0001");
+            assertThat(judge(noCve, known).reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+
+            Component apk = pkg("caddy", "apk", "libssl9t64", "9.9.9-0fake1.1", "openssl");
+            EnvInventory container = withChangelog(inventory(apk), "openssl", "9.9.9-0fake1.1",
+                    "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            assertThat(judge(sslTwoCves, container).reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+        }
+
+        @Test
+        @DisplayName("변경 기록 — 패치됨이어도 표 밖 조건 문장이 있으면 확인 필요, 운영체제 업데이트 안내 문장은 조건이 아님")
+        void changelogWithNotes() {
+            EnvInventory inv = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.1",
+                    "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            Verdict condition = NoticeJudge.judge(tableNotice("※ 가짜 설정을 켠 경우에만 영향"), sslTwoCves, inv);
+            assertThat(condition.status()).isEqualTo(Status.CHECK);
+            assertThat(condition.reasons()).containsExactly(Reason.CONDITION_NOTE);
+
+            Verdict guide = NoticeJudge.judge(tableNotice("※ 보안 업데이트가 공개된 운영체제를 운영하고 있을 경우, 참고 사이트의 내용을 참조하여 "
+                    + "보안 조치 또는 업데이트 수행(각 OS별 보안 업데이트 상세 버전은 아래 링크 참고) [2]"), sslTwoCves, inv);
+            assertThat(guide.status()).isEqualTo(Status.PATCHED);
+            assertThat(guide.conditionNotes()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("커널 — 실행 중인 커널이 있으면 그 변경 기록(kernel·uname)만 판정, 옛 판·서명·메타 패키지는 보안 보류일 때만 근거")
+        void kernelRunningOnly() {
+            Component running = comp("host", "runtime", "kernel", "9.9.0-3-fake");
+            Component image = pkg("host", "dpkg", "linux-image-9.9.0-3-fake", "9.9.0-3.3", "linux-signed");
+            Component modules = pkg("host", "dpkg", "linux-modules-9.9.0-3-fake", "9.9.0-3.3", "linux");
+            Component old = pkg("host", "dpkg", "linux-modules-9.9.0-1-fake", "9.9.0-1.1", "linux");
+            Component meta = pkg("host", "dpkg", "linux-generic", "9.9.0.3.3", "linux-meta");
+            List<Row> kernelRows = List.of(new Row(0, "CVE-2099-7777", "Linux Kernel", "9.0 이상 9.9.5 미만", "9.9.5"));
+
+            EnvInventory patched = withChangelog(inventory(running, image, modules, old, meta), "kernel", "9.9.0-3-fake",
+                    "CVE-2099-7777");
+            Verdict v = judge(kernelRows, patched);
+            assertThat(v.status()).isEqualTo(Status.PATCHED);
+            assertThat(v.matches()).extracting(Match::component).containsExactly("kernel");
+            assertThat(v.matches()).extracting(Match::basis).containsExactly(Basis.CHANGELOG);
+
+            Verdict notInLog = judge(kernelRows, withChangelog(inventory(running, image, modules, old, meta), "kernel", "9.9.0-3-fake",
+                    "CVE-2099-0001"));
+            assertThat(notInLog.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(notInLog.matches()).extracting(Match::component).containsExactly("kernel");
+
+            EnvInventory metaPending = withChangelog(inventory(List.of(new Pending("linux-generic", "a", "b", true)), running, image,
+                    modules, old, meta), "kernel", "9.9.0-3-fake", "CVE-2099-7777");
+            Verdict affected = judge(kernelRows, metaPending);
+            assertThat(affected.status()).isEqualTo(Status.AFFECTED);
+            assertThat(affected.matches()).extracting(Match::component).containsExactly("kernel", "linux-generic");
+
+            // 실행 중인 커널 줄이 없으면 패키지마다(예전 방식) — 서명·메타 패키지에는 변경 기록 CVE가 없어 확인 필요가 남음.
+            EnvInventory noRunning = withChangelog(inventory(modules, meta), "linux", "9.9.0-3.3", "CVE-2099-7777");
+            Verdict perPackage = judge(kernelRows, noRunning);
+            assertThat(perPackage.status()).isEqualTo(Status.CHECK);
+            assertThat(perPackage.matches()).extracting(Match::status).containsExactly(Status.PATCHED, Status.CHECK);
+        }
+
+        @Test
+        @DisplayName("행의 CVE 읽기 — 한 칸에 여럿·소문자도, 7자리를 넘는 번호는 아님, 하나도 없는 행이 있으면 빈 집합")
+        void rowCves() {
+            assertThat(NoticeJudge.rowCves(sslTwoCves)).containsExactly("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            assertThat(NoticeJudge.rowCves(List.of(new Row(0, "CVE-2099-12345678", "OpenSSL", "-", "-")))).isEmpty();
+            assertThat(NoticeJudge.rowCves(List.of())).isEmpty();
         }
     }
 

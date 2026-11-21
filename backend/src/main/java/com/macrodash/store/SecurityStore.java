@@ -77,6 +77,13 @@ public class SecurityStore {
     public record Pending(String pkg, String arch, String installed, String candidate, String repos, boolean security) {
     }
 
+    /**
+     * 서버 배포판 패키지 변경 기록의 CVE 한 건(표 {@code env_changelog_cves}, V41 — ADR 0046 덧붙임 2026-11-21).
+     * {@code pkg}는 dpkg 원본 패키지 이름, 실행 중인 커널이면 {@code kernel}({@code version}은 {@code uname -r}).
+     */
+    public record ChangelogCve(String pkg, String version, String cve) {
+    }
+
     /** 그 태스크의 출처 판정(표 {@code fetch_source_state}의 한 행). */
     public record SourceState(String status, int streak, String reason, Instant lastOkAt, Instant lastRunAt,
                               int staleAfterMinutes) {
@@ -150,6 +157,15 @@ public class SecurityStore {
                         + "ORDER BY security DESC, package, arch",
                 (rs, rowNum) -> new Pending(rs.getString("package"), rs.getString("arch"), rs.getString("installed"),
                         rs.getString("candidate"), rs.getString("repos"), rs.getBoolean("security")));
+    }
+
+    /** 변경 기록 CVE 전부 — 수집기가 아직 V41을 적용하지 않았으면 빈 목록(서버에서 만 줄 안팎, 호스트 구역이 없는 곳은 0줄). */
+    public List<ChangelogCve> changelogCves() {
+        if (!schema.tableExists("env_changelog_cves")) {
+            return List.of();
+        }
+        return jdbc.query("SELECT package, version, cve FROM env_changelog_cves",
+                (rs, rowNum) -> new ChangelogCve(rs.getString("package"), rs.getString("version"), rs.getString("cve")));
     }
 
     /** 그 태스크의 출처 판정 — 표가 없거나 기록이 없으면 비어 있음. */
