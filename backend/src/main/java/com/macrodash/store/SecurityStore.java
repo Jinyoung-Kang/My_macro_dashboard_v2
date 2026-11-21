@@ -18,7 +18,8 @@ import java.util.Optional;
 
 /**
  * 보안 공지(ADR 0046)의 수집기 표 읽기 — 보호나라 공지({@code security_notices}·{@code security_notice_rows})와 운영 환경의 버전 목록
- * ({@code env_inventory}·{@code env_components}·{@code env_pending_updates}), 그 태스크의 출처 판정({@code fetch_source_state}). 수집기가 쓰는 표라
+ * ({@code env_inventory}·{@code env_components}·{@code env_pending_updates}·{@code env_changelog_cves}), 배포판 보안 추적기에 물어 본 결과
+ * ({@code distro_cve_status}, V42), 그 태스크의 출처 판정({@code fetch_source_state}). 수집기가 쓰는 표라
  * 백엔드는 <b>읽기만</b> 합니다(ADR 0008). 스냅숏을 읽지 않으므로 수집을 일으키지 않습니다.
  *
  * <p>store는 기능 패키지를 모르므로(ADR 0001) 표의 행을 이 클래스의 레코드로 내리고, 판정 입력으로 옮기는 일은 서비스가 합니다.
@@ -65,8 +66,30 @@ public class SecurityStore {
      * @param status ok·failed·skipped(원문 — 모르는 값도 그대로)
      * @param count  그 구역에서 받은 구성 요소 수(없으면 null)
      * @param reason 실패·건너뜀 사유 한 줄(없으면 null)
+     * @param os     그 구역의 /etc/os-release(구역 객체의 {@code "os"} — ADR 0046 덧붙임 2026-11-21 '배포판 보안 추적기'). 없으면 null
      */
-    public record Section(String name, String status, Integer count, String reason) {
+    public record Section(String name, String status, Integer count, String reason, Os os) {
+
+        /** os 없이(V42 전 버전 목록·시험). */
+        public Section(String name, String status, Integer count, String reason) {
+            this(name, status, count, reason, null);
+        }
+    }
+
+    /** 구역의 /etc/os-release 세 값({@code ID}·{@code VERSION_ID}·{@code VERSION_CODENAME}) — 없는 값은 null. */
+    public record Os(String id, String versionId, String codename) {
+    }
+
+    /**
+     * 배포판 보안 추적기에 물어 본 결과 한 행(표 {@code distro_cve_status}, V42 — 수집기가 씀).
+     *
+     * @param status       fixed·not_affected·open·unknown(원문)
+     * @param fixedVersion 고친 판(fixed일 때만)
+     * @param detail       추적기의 원래 상태 글(표시용)
+     * @param checkedAt    물은 시각
+     */
+    public record TrackerStatus(String distro, String suite, String pkg, String cve, String status, String fixedVersion,
+                                String detail, Instant checkedAt) {
     }
 
     /** 구성 요소 한 개(표 {@code env_components}). {@code sourcePackage}는 dpkg·apk의 원본 패키지, jdk는 배포처(release 파일의 IMPLEMENTOR). */
@@ -168,6 +191,20 @@ public class SecurityStore {
                 (rs, rowNum) -> new ChangelogCve(rs.getString("package"), rs.getString("version"), rs.getString("cve")));
     }
 
+    /**
+     * 추적기 결과 전부 — 수집기가 아직 V42를 적용하지 않았으면 빈 목록. 물어볼 것({@code security_tracker_wants})만큼이라 수백 줄 안쪽입니다
+     * (물어볼 것에서 빠진 행도 지우지 않아 조금씩 늘 수 있음).
+     */
+    public List<TrackerStatus> trackerStatuses() {
+        if (!schema.tableExists("distro_cve_status")) {
+            return List.of();
+        }
+        return jdbc.query("SELECT distro, suite, package, cve, status, fixed_version, detail, checked_at FROM distro_cve_status",
+                (rs, rowNum) -> new TrackerStatus(rs.getString("distro"), rs.getString("suite"), rs.getString("package"),
+                        rs.getString("cve"), rs.getString("status"), rs.getString("fixed_version"), rs.getString("detail"),
+                        instant(rs, "checked_at")));
+    }
+
     /** 그 태스크의 출처 판정 — 표가 없거나 기록이 없으면 비어 있음. */
     public Optional<SourceState> sourceState(String task) {
         if (!schema.tableExists("fetch_source_state")) {
@@ -212,7 +249,10 @@ public class SecurityStore {
         return List.copyOf(out);
     }
 
-    /** 구역 상태 JSON({구역: {status, count, reason?}}) → 구역 목록. 모양이 틀린 칸은 null로 둡니다(없는 값을 만들지 않음). */
+    /**
+     * 구역 상태 JSON({구역: {status, count, reason?, os?: {id, versionId, codename}}}) → 구역 목록. 모양이 틀린 칸은 null로 둡니다(없는 값을
+     * 만들지 않음).
+     */
     private List<Section> sections(String json) {
         List<Section> out = new ArrayList<>();
         JsonNode node = readTree(json);
@@ -224,9 +264,16 @@ public class SecurityStore {
             String status = value.path("status").isString() ? value.path("status").asString() : null;
             Integer count = value.path("count").isIntegralNumber() ? value.path("count").asInt() : null;
             String reason = value.path("reason").isString() ? value.path("reason").asString() : null;
-            out.add(new Section(entry.getKey(), status, count, reason));
+            JsonNode os = value.path("os");
+            Os osValue = os.isObject() ? new Os(text(os, "id"), text(os, "versionId"), text(os, "codename")) : null;
+            out.add(new Section(entry.getKey(), status, count, reason, osValue));
         }
         return List.copyOf(out);
+    }
+
+    private static String text(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isString() ? value.asString() : null;
     }
 
     private JsonNode readTree(String json) {

@@ -1,5 +1,6 @@
 package com.macrodash.feature.security;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -66,7 +67,7 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
         }
     }
 
-    /** 확인 필요 사유 여덟(ADR 0046 결정 6). */
+    /** 확인 필요 사유 아홉(ADR 0046 결정 6, {@link #DISTRO_OPEN}은 덧붙임 2026-11-21 '배포판 보안 추적기'). 순서가 API의 사유 순서입니다. */
     public enum Reason {
         /** 버전 칸(영향·해결)이나 설치 버전을 해석하지 못함. */
         PARSE_FAILED,
@@ -83,13 +84,79 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
         /** 이름만 맞음 — 표에는 없고 제목·본문에만 나오거나(상세 전 포함), 설치 버전을 공지의 번호와 견줄 수 없는 제품. */
         NAME_MATCH,
         /** 제조사가 다름(Oracle Java SE 공지와 Temurin 등) — 번호가 구간 안이어도 확인 필요. */
-        VENDOR_DIFFERS
+        VENDOR_DIFFERS,
+        /**
+         * 배포판 패키지의 CVE 가운데 배포판 보안 추적기에 아직 고치지 않음(open)으로 적힌 것이 있음 — 고친 판이 나오지 않았거나 배포판이 미룸
+         * (뒤처진 CVE가 없고 영향 없음·덮임만으로 가려지지 않을 때).
+         */
+        DISTRO_OPEN
     }
 
     /** 판정 근거의 종류(확인 필요 사유와 따로 — ADR 0046 덧붙임 2026-11-21). 근거가 버전 표·apt 보류 목록이면 {@code null}입니다. */
     public enum Basis {
         /** 서버 배포판 패키지의 변경 기록(changelog.Debian.gz)에 공지 표의 그 제품 행 CVE가 모두 있음 — 배포판 패키지의 패치됨 근거. */
-        CHANGELOG
+        CHANGELOG,
+        /**
+         * 배포판 보안 추적기(Ubuntu·Debian·Alpine)를 하나라도 썼음 — 패치됨(설치 판 ≥ 고친 판이거나 영향 없음, 나머지는 변경 기록), 해당(고친 판이
+         * 나왔는데 설치 판이 낮음), 무관(모든 CVE가 영향 없음)의 근거.
+         */
+        TRACKER
+    }
+
+    /** 배포판 보안 추적기의 CVE 하나의 상태 — API 값은 {@link #code()}(fixed·not_affected·open·unknown·none). */
+    public enum TrackerStatus {
+        /** 그 스위트에 고친 판이 있음(고친 판을 함께 적음). */
+        FIXED,
+        /** 영향 없음(그 스위트에 패키지가 없음 포함). */
+        NOT_AFFECTED,
+        /** 아직 고치지 않음. */
+        OPEN,
+        /** 추적기에 그 패키지·스위트의 기록이 없음. */
+        UNKNOWN,
+        /** 아직 묻지 않음(물어볼 것에 올렸고 수집기가 다음 실행에서 물음). */
+        NONE;
+
+        public String code() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        /** 표 {@code distro_cve_status.status} 값을 읽습니다. 모르는 값은 {@link #UNKNOWN}(모르는 것을 안전으로 두지 않음). */
+        public static TrackerStatus fromDb(String value) {
+            if (value != null) {
+                for (TrackerStatus s : values()) {
+                    if (s != NONE && s.code().equals(value.strip())) {
+                        return s;
+                    }
+                }
+            }
+            return UNKNOWN;
+        }
+    }
+
+    /**
+     * 배포판 추적기 근거 — 배포판 패키지 근거 한 줄에서 변경 기록으로 덮이지 않은 CVE마다 추적기 상태.
+     *
+     * @param distro 배포판(ubuntu·debian·alpine — 그 구역의 os-release ID)
+     * @param suite  스위트(Ubuntu·Debian은 코드명, Alpine은 {@code v} + 앞 두 마디)
+     * @param pkg    물은 원본 패키지(dpkg {@code source:Package}·apk {@code o:}, 실행 중인 커널은 {@code linux})
+     * @param cves   CVE마다 상태(공지 표의 그 제품 행 순서)
+     */
+    public record Tracker(String distro, String suite, String pkg, List<TrackerCve> cves) {
+
+        public Tracker {
+            cves = List.copyOf(cves);
+        }
+    }
+
+    /**
+     * 추적기 근거의 CVE 하나.
+     *
+     * @param cve          CVE 번호
+     * @param status       상태({@link TrackerStatus#NONE}이면 아직 묻지 않음)
+     * @param fixedVersion 고친 판(fixed일 때만, 그 밖은 {@code null})
+     * @param checkedAt    추적기에 물은 시각(묻지 않았으면 {@code null})
+     */
+    public record TrackerCve(String cve, TrackerStatus status, String fixedVersion, Instant checkedAt) {
     }
 
     /**
@@ -120,9 +187,17 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
      * @param status           이 근거의 판정
      * @param reason           확인 필요 사유(그 밖이면 {@code null})
      * @param otherFamily      다른 계열의 행이라 이 구성 요소의 판정에 쓰지 않음(그때 {@code status}는 무관)
-     * @param basis            판정 근거의 종류(변경 기록이면 {@link Basis#CHANGELOG}, 그 밖이면 {@code null})
+     * @param basis            판정 근거의 종류(변경 기록이면 {@link Basis#CHANGELOG}, 추적기를 썼으면 {@link Basis#TRACKER}, 그 밖이면 {@code null})
+     * @param tracker          배포판 추적기 근거 — 추적기를 쓸 수 있는 배포판 패키지 근거(그 구역의 os를 알고 배포판이 ubuntu·debian·alpine)에서
+     *                         변경 기록으로 덮이지 않은 CVE가 있을 때만, 그 밖은 {@code null}
      */
     public record Match(String aliasId, Integer rowIndex, String cve, String rowProduct, String source, String component,
-                        String installedVersion, Status status, Reason reason, boolean otherFamily, Basis basis) {
+                        String installedVersion, Status status, Reason reason, boolean otherFamily, Basis basis, Tracker tracker) {
+
+        /** 추적기 근거가 없는 근거 줄. */
+        public Match(String aliasId, Integer rowIndex, String cve, String rowProduct, String source, String component,
+                     String installedVersion, Status status, Reason reason, boolean otherFamily, Basis basis) {
+            this(aliasId, rowIndex, cve, rowProduct, source, component, installedVersion, status, reason, otherFamily, basis, null);
+        }
     }
 }

@@ -1,8 +1,11 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.EnvInventory.Component;
+import com.macrodash.feature.security.EnvInventory.OsRelease;
 import com.macrodash.feature.security.EnvInventory.Pending;
 import com.macrodash.feature.security.EnvInventory.SectionStatus;
+import com.macrodash.feature.security.EnvInventory.TrackerEntry;
+import com.macrodash.feature.security.EnvInventory.TrackerKey;
 import com.macrodash.feature.security.SecurityNotice.Row;
 import com.macrodash.feature.security.SecurityNotice.Template;
 import com.macrodash.feature.security.Verdict.Basis;
@@ -10,10 +13,13 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
+import com.macrodash.feature.security.Verdict.TrackerCve;
+import com.macrodash.feature.security.Verdict.TrackerStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -55,14 +61,31 @@ class NoticeJudgeTest {
     private static EnvInventory withSection(EnvInventory inv, String section, SectionStatus status) {
         Map<String, SectionStatus> sections = new LinkedHashMap<>(inv.sections());
         sections.put(section, status);
-        return new EnvInventory(sections, inv.components(), inv.pending());
+        return new EnvInventory(sections, inv.components(), inv.pending(), inv.changelog(), inv.os(), inv.tracker());
     }
 
     /** 변경 기록 한 벌을 더한 버전 목록(ADR 0046 덧붙임 2026-11-21) — 패키지·버전 하나에 CVE 여럿. */
     private static EnvInventory withChangelog(EnvInventory inv, String pkg, String version, String... cves) {
         Map<EnvInventory.PackageVersion, Set<String>> changelog = new LinkedHashMap<>(inv.changelog());
         changelog.put(new EnvInventory.PackageVersion(pkg, version), Set.of(cves));
-        return new EnvInventory(inv.sections(), inv.components(), inv.pending(), changelog);
+        return new EnvInventory(inv.sections(), inv.components(), inv.pending(), changelog, inv.os(), inv.tracker());
+    }
+
+    /** 구역의 os-release를 더한 버전 목록(배포판 보안 추적기 — 가짜 코드명·판). */
+    private static EnvInventory withOs(EnvInventory inv, String section, String id, String versionId, String codename) {
+        Map<String, OsRelease> os = new LinkedHashMap<>(inv.os());
+        os.put(section, new OsRelease(id, versionId, codename));
+        return new EnvInventory(inv.sections(), inv.components(), inv.pending(), inv.changelog(), os, inv.tracker());
+    }
+
+    static final Instant CHECKED = Instant.parse("2026-11-21T06:00:00Z");
+
+    /** 추적기 결과 한 행을 더한 버전 목록. */
+    private static EnvInventory withTracker(EnvInventory inv, String distro, String suite, String pkg, String cve, TrackerStatus status,
+                                            String fixedVersion) {
+        Map<TrackerKey, TrackerEntry> tracker = new LinkedHashMap<>(inv.tracker());
+        tracker.put(new TrackerKey(distro, suite, pkg, cve), new TrackerEntry(status, fixedVersion, CHECKED));
+        return new EnvInventory(inv.sections(), inv.components(), inv.pending(), inv.changelog(), inv.os(), tracker);
     }
 
     private static SecurityNotice tableNotice(String... notes) {
@@ -688,6 +711,244 @@ class NoticeJudgeTest {
             assertThat(NoticeJudge.rowCves(sslTwoCves)).containsExactly("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
             assertThat(NoticeJudge.rowCves(List.of(new Row(0, "CVE-2099-12345678", "OpenSSL", "-", "-")))).isEmpty();
             assertThat(NoticeJudge.rowCves(List.of())).isEmpty();
+        }
+    }
+
+    // ---- 배포판 보안 추적기(ADR 0046 덧붙임 2026-11-21) ----
+
+    @Nested
+    @DisplayName("배포판 보안 추적기 — 변경 기록에 없는 CVE를 그 구역 배포판·스위트·원본 패키지의 추적기 결과로")
+    class Trackers {
+
+        private static final String SUITE = "fakenoble";
+        private final Component hostSsl = pkg("host", "dpkg", "libssl9t64", "9.9.9-0fake1.2", "openssl");
+        private final List<Row> sslRows = List.of(
+                new Row(0, "CVE-2099-0001", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"),
+                new Row(1, "CVE-2099-0002, CVE-2099-0003", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+
+        private EnvInventory ubuntuHost(Component... components) {
+            return withOs(inventory(components), "host", "ubuntu", "99.04", SUITE);
+        }
+
+        private EnvInventory track(EnvInventory inv, String cve, TrackerStatus status, String fixed) {
+            return withTracker(inv, "ubuntu", SUITE, "openssl", cve, status, fixed);
+        }
+
+        private Match only(Verdict v) {
+            return v.matches().stream().filter(m -> m.aliasId().equals("openssl")).findFirst().orElseThrow();
+        }
+
+        @Test
+        @DisplayName("덮임 — 고친 판 ≤ 설치 판이면 패치됨(근거 TRACKER), 추적기 근거에 CVE마다 상태·고친 판·확인 시각")
+        void covered() {
+            EnvInventory inv = ubuntuHost(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                inv = track(inv, cve, TrackerStatus.FIXED, "9.9.9-0fake1.1");
+            }
+            inv = track(inv, "CVE-2099-0003", TrackerStatus.FIXED, "9.9.9-0fake1.2");
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.PATCHED);
+            Match m = only(v);
+            assertThat(m.basis()).isEqualTo(Basis.TRACKER);
+            assertThat(m.reason()).isNull();
+            assertThat(m.tracker().distro()).isEqualTo("ubuntu");
+            assertThat(m.tracker().suite()).isEqualTo(SUITE);
+            assertThat(m.tracker().pkg()).isEqualTo("openssl");
+            assertThat(m.tracker().cves()).extracting(TrackerCve::cve).containsExactly("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            assertThat(m.tracker().cves()).extracting(TrackerCve::status).containsOnly(TrackerStatus.FIXED);
+            assertThat(m.tracker().cves().get(2).fixedVersion()).isEqualTo("9.9.9-0fake1.2");
+            assertThat(m.tracker().cves().get(0).checkedAt()).isEqualTo(CHECKED);
+        }
+
+        @Test
+        @DisplayName("뒤처짐 — 고친 판이 나왔는데 설치 판이 낮으면 해당(근거 TRACKER), 열림이 섞여도 해당")
+        void behind() {
+            EnvInventory inv = track(track(track(ubuntuHost(hostSsl), "CVE-2099-0001", TrackerStatus.FIXED, "9.9.9-0fake1.3"),
+                    "CVE-2099-0002", TrackerStatus.OPEN, null), "CVE-2099-0003", TrackerStatus.FIXED, "9.9.9-0fake1.1");
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.AFFECTED);
+            assertThat(v.reasons()).isEmpty();
+            assertThat(only(v).basis()).isEqualTo(Basis.TRACKER);
+            assertThat(only(v).status()).isEqualTo(Status.AFFECTED);
+        }
+
+        @Test
+        @DisplayName("영향 없음 전부 — 무관(근거 TRACKER), 덮임과 섞이면 패치됨")
+        void notAffected() {
+            EnvInventory inv = ubuntuHost(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                inv = track(inv, cve, TrackerStatus.NOT_AFFECTED, null);
+            }
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.UNRELATED);
+            assertThat(product(v, "openssl").status()).isEqualTo(Status.UNRELATED);
+            assertThat(only(v).basis()).isEqualTo(Basis.TRACKER);
+            assertThat(only(v).tracker().cves()).extracting(TrackerCve::status).containsOnly(TrackerStatus.NOT_AFFECTED);
+
+            Verdict mixed = judge(sslRows, track(inv, "CVE-2099-0002", TrackerStatus.FIXED, "9.9.9-0fake1.0"));
+            assertThat(mixed.status()).isEqualTo(Status.PATCHED);
+            assertThat(only(mixed).basis()).isEqualTo(Basis.TRACKER);
+        }
+
+        @Test
+        @DisplayName("열림 — 뒤처짐이 없고 열림이 있으면 확인 필요 DISTRO_OPEN(사유 거르기에도)")
+        void open() {
+            EnvInventory inv = track(track(track(ubuntuHost(hostSsl), "CVE-2099-0001", TrackerStatus.FIXED, "9.9.9-0fake1.1"),
+                    "CVE-2099-0002", TrackerStatus.OPEN, null), "CVE-2099-0003", TrackerStatus.UNKNOWN, null);
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(v.reasons()).containsExactly(Reason.DISTRO_OPEN);
+            assertThat(only(v).basis()).isNull();
+            assertThat(only(v).tracker().cves()).extracting(TrackerCve::status)
+                    .containsExactly(TrackerStatus.FIXED, TrackerStatus.OPEN, TrackerStatus.UNKNOWN);
+            assertThat(only(v).tracker().cves().get(1).fixedVersion()).isNull();
+        }
+
+        @Test
+        @DisplayName("모름 — 추적기에 기록 없음(unknown)·아직 묻지 않음(none)·고친 판을 견줄 수 없음은 확인 필요 DISTRO_NO_PENDING")
+        void unknown() {
+            EnvInventory inv = track(track(ubuntuHost(hostSsl), "CVE-2099-0001", TrackerStatus.FIXED, "9.9.9-0fake1.1"),
+                    "CVE-2099-0002", TrackerStatus.UNKNOWN, null);
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(v.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(only(v).tracker().cves()).extracting(TrackerCve::status)
+                    .containsExactly(TrackerStatus.FIXED, TrackerStatus.UNKNOWN, TrackerStatus.NONE);
+            assertThat(only(v).tracker().cves().get(2).checkedAt()).isNull();
+
+            EnvInventory badFixed = ubuntuHost(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                badFixed = track(badFixed, cve, TrackerStatus.FIXED, "판 아님");
+            }
+            assertThat(judge(sslRows, badFixed).reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+        }
+
+        @Test
+        @DisplayName("변경 기록과 섞임 — 변경 기록에 있는 CVE는 덮임(추적기 근거에 넣지 않음), 나머지는 추적기로. 모두 변경 기록이면 CHANGELOG·추적기 근거 없음")
+        void mixedWithChangelog() {
+            EnvInventory inv = withChangelog(ubuntuHost(hostSsl), "openssl", "9.9.9-0fake1.2", "CVE-2099-0001");
+            inv = track(track(inv, "CVE-2099-0002", TrackerStatus.FIXED, "9.9.9-0fake1.1"), "CVE-2099-0003", TrackerStatus.NOT_AFFECTED, null);
+            Verdict v = judge(sslRows, inv);
+            assertThat(v.status()).isEqualTo(Status.PATCHED);
+            assertThat(only(v).basis()).isEqualTo(Basis.TRACKER);
+            assertThat(only(v).tracker().cves()).extracting(TrackerCve::cve).containsExactly("CVE-2099-0002", "CVE-2099-0003");
+
+            EnvInventory all = withChangelog(ubuntuHost(hostSsl), "openssl", "9.9.9-0fake1.2", "CVE-2099-0001", "CVE-2099-0002",
+                    "CVE-2099-0003");
+            Verdict log = judge(sslRows, all);
+            assertThat(log.status()).isEqualTo(Status.PATCHED);
+            assertThat(only(log).basis()).isEqualTo(Basis.CHANGELOG);
+            assertThat(only(log).tracker()).isNull();
+        }
+
+        @Test
+        @DisplayName("보안 보류로 해당·CVE를 읽지 못한 행이 있으면 추적기를 쓰지 않음(추적기 근거 없음)")
+        void pendingAndUnreadableRows() {
+            EnvInventory inv = ubuntuHost(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                inv = track(inv, cve, TrackerStatus.NOT_AFFECTED, null);
+            }
+            EnvInventory pending = new EnvInventory(inv.sections(), inv.components(),
+                    List.of(new Pending("libssl9t64", "a", "b", true)), inv.changelog(), inv.os(), inv.tracker());
+            Verdict affected = judge(sslRows, pending);
+            assertThat(affected.status()).isEqualTo(Status.AFFECTED);
+            assertThat(only(affected).tracker()).isNull();
+            assertThat(only(affected).basis()).isNull();
+
+            List<Row> unreadable = List.of(sslRows.get(0), new Row(1, "-", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+            Verdict noCve = judge(unreadable, inv);
+            assertThat(noCve.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(only(noCve).tracker()).isNull();
+        }
+
+        @Test
+        @DisplayName("os 없음·추적기 밖 배포판·코드명 없음 — 추적기를 쓰지 않음(지금과 같이 DISTRO_NO_PENDING, 추적기 근거 없음)")
+        void noOs() {
+            EnvInventory noOs = inventory(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                noOs = track(noOs, cve, TrackerStatus.NOT_AFFECTED, null);
+            }
+            Verdict v = judge(sslRows, noOs);
+            assertThat(v.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(only(v).tracker()).isNull();
+
+            assertThat(only(judge(sslRows, withOs(noOs, "host", "fedora", "99", null))).tracker()).isNull();
+            assertThat(only(judge(sslRows, withOs(noOs, "host", "ubuntu", "99.04", null))).tracker()).isNull();
+            assertThat(only(judge(sslRows, withOs(noOs, "host", "ubuntu", "99.04", "Fake Noble"))).tracker()).isNull();
+        }
+
+        @Test
+        @DisplayName("실행 중인 커널 — 추적기 패키지 linux, 설치 판은 이름이 -<uname -r>로 끝나고 원본이 linux인 dpkg 패키지의 판")
+        void runningKernel() {
+            Component running = comp("host", "runtime", "kernel", "9.9.0-3-fake");
+            Component image = pkg("host", "dpkg", "linux-image-9.9.0-3-fake", "9.9.0-3.9", "linux-signed");
+            Component modules = pkg("host", "dpkg", "linux-modules-9.9.0-3-fake", "9.9.0-3.3", "linux");
+            Component old = pkg("host", "dpkg", "linux-modules-9.9.0-1-fake", "9.9.0-1.1", "linux");
+            List<Row> kernelRows = List.of(new Row(0, "CVE-2099-7777", "Linux Kernel", "9.0 이상 9.9.5 미만", "9.9.5"));
+            EnvInventory inv = ubuntuHost(running, image, old, modules);
+            assertThat(NoticeJudge.runningKernelPackage(running, inv)).contains("9.9.0-3.3");
+
+            Verdict patched = judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.FIXED, "9.9.0-3.3"));
+            assertThat(patched.status()).isEqualTo(Status.PATCHED);
+            assertThat(patched.matches()).singleElement().satisfies(m -> {
+                assertThat(m.component()).isEqualTo("kernel");
+                assertThat(m.basis()).isEqualTo(Basis.TRACKER);
+                assertThat(m.tracker().pkg()).isEqualTo("linux");
+            });
+            Verdict behind = judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.FIXED, "9.9.0-4.4"));
+            assertThat(behind.status()).isEqualTo(Status.AFFECTED);
+
+            // 실행 중인 판의 linux 원본 패키지가 없으면 고친 판과 견줄 수 없음 — 모름.
+            EnvInventory noModules = ubuntuHost(running, image, old);
+            assertThat(NoticeJudge.runningKernelPackage(running, noModules)).isEmpty();
+            Verdict unknown = judge(kernelRows, withTracker(noModules, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.FIXED,
+                    "9.9.0-3.3"));
+            assertThat(unknown.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(unknown.matches()).singleElement().satisfies(m -> assertThat(m.tracker().cves()).singleElement()
+                    .satisfies(c -> assertThat(c.status()).isEqualTo(TrackerStatus.FIXED)));
+            // 열림·영향 없음은 설치 판 없이도 씀.
+            Verdict open = judge(kernelRows, withTracker(noModules, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.OPEN, null));
+            assertThat(open.reasons()).containsExactly(Reason.DISTRO_OPEN);
+        }
+
+        @Test
+        @DisplayName("Alpine — 스위트는 v + VERSION_ID 앞 두 마디, apk 원본 패키지·apk 판 규칙으로 견줌")
+        void alpine() {
+            Component apk = pkg("caddy", "apk", "libssl9", "9.9.9-r1", "openssl");
+            EnvInventory inv = withOs(inventory(apk), "caddy", "alpine", "3.99.4", null);
+            EnvInventory behind = inv;
+            EnvInventory patched = inv;
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                behind = withTracker(behind, "alpine", "v3.99", "openssl", cve, TrackerStatus.FIXED, "9.9.9-r2");
+                patched = withTracker(patched, "alpine", "v3.99", "openssl", cve, TrackerStatus.FIXED, "9.9.9_rc1-r5");
+            }
+            assertThat(judge(sslRows, behind).status()).isEqualTo(Status.AFFECTED);
+            Verdict p = judge(sslRows, patched);
+            assertThat(p.status()).isEqualTo(Status.PATCHED);
+            assertThat(only(p).tracker().suite()).isEqualTo("v3.99");
+
+            assertThat(new OsRelease("alpine", "3.99.4", null).trackerSuite()).contains("v3.99");
+            assertThat(new OsRelease("alpine", "3.99", null).trackerSuite()).contains("v3.99");
+            assertThat(new OsRelease("alpine", "03.099.1", null).trackerSuite()).contains("v3.99");
+            assertThat(new OsRelease("alpine", "3.99.0_alpha20990101", null).trackerSuite()).isEmpty();
+            assertThat(new OsRelease("alpine", null, null).trackerSuite()).isEmpty();
+            assertThat(new OsRelease("debian", "99", "fakeforky").trackerSuite()).contains("fakeforky");
+            assertThat(new OsRelease("debian", "99", "fakeforky").trackerDistro()).contains("debian");
+            assertThat(new OsRelease("fedora", "99", "x").trackerDistro()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("컨테이너 dpkg(Debian)도 추적기로 — 종류가 배포판과 맞지 않는 구성 요소(apk 구역에 dpkg 등)는 쓰지 않음")
+        void containerDebian() {
+            Component deb = pkg("collector", "dpkg", "libssl9", "9.9.9-1~fake13u1", "openssl");
+            EnvInventory inv = withOs(inventory(deb), "collector", "debian", "99", "fakeforky");
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                inv = withTracker(inv, "debian", "fakeforky", "openssl", cve, TrackerStatus.FIXED, "9.9.9-1~fake13u1");
+            }
+            assertThat(judge(sslRows, inv).status()).isEqualTo(Status.PATCHED);
+
+            EnvInventory mismatch = withOs(inv, "collector", "alpine", "3.99.1", null);
+            assertThat(only(judge(sslRows, mismatch)).tracker()).isNull();
         }
     }
 

@@ -283,6 +283,80 @@ class SecurityServiceTest {
                         .containsEntry("basis", "CHANGELOG").containsEntry("reason", null));
     }
 
+    /** 호스트 Ubuntu(가짜 코드명)·collector Debian 구역에 배포판 패키지 — 추적기 시험용(판은 모두 가짜). */
+    private void trackerInventory() {
+        List<SecurityStore.Section> sections = new ArrayList<>();
+        for (String name : List.of("caddy", "postgres", "backend", "frontend", "browser")) {
+            sections.add(new SecurityStore.Section(name, "ok", 1, null));
+        }
+        sections.add(new SecurityStore.Section("host", "ok", 3, null, new SecurityStore.Os("ubuntu", "99.04", "fakenoble")));
+        sections.add(new SecurityStore.Section("collector", "ok", 1, null, new SecurityStore.Os("debian", "99", "fakeforky")));
+        when(store.inventoryReady()).thenReturn(true);
+        when(store.inventory()).thenReturn(Optional.of(new SecurityStore.Inventory(COLLECTED, COLLECTED.plusSeconds(5), true, null,
+                sections)));
+        when(store.components()).thenReturn(List.of(
+                new SecurityStore.Component("host", "dpkg", "libssl9t64", "9.9.9-0fake1.2", "openssl"),
+                new SecurityStore.Component("host", "dpkg", "curl", "9.1.0-1fake1", "curl"),
+                new SecurityStore.Component("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli")));
+        when(store.pending()).thenReturn(List.of(new SecurityStore.Pending("curl", "amd64", "9.1.0-1fake1", "9.1.0-1fake2",
+                "fakenoble-security", true)));
+        when(store.changelogCves()).thenReturn(List.of(new SecurityStore.ChangelogCve("openssl", "9.9.9-0fake1.2", "CVE-2099-5001")));
+        when(store.trackerStatuses()).thenReturn(List.of(
+                new SecurityStore.TrackerStatus("ubuntu", "fakenoble", "openssl", "CVE-2099-5002", "fixed", "9.9.9-0fake1.3", "released",
+                        Instant.parse("2026-11-21T06:00:00Z")),
+                new SecurityStore.TrackerStatus("debian", "fakeforky", "brotli", "CVE-2099-6001", "open", null, "(unfixed)",
+                        Instant.parse("2026-11-21T06:01:00Z"))));
+        // 9101: OpenSSL — 5001은 변경 기록, 5002는 추적기에서 고친 판이 설치 판보다 높음(해당), 5003은 아직 묻지 않음.
+        notices.add(notice(9101, "가짜 OpenSSL 보안 업데이트 권고", "2026-11-20", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9101, 0, "CVE-2099-5001, CVE-2099-5002, CVE-2099-5003", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+        // 9102: curl — 보안 보류로 해당(추적기에 묻지 않음).
+        notices.add(notice(9102, "가짜 curl 보안 업데이트 권고", "2026-11-19", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9102, 0, "CVE-2099-5101", "curl", "9.0 이상 9.2 미만", "9.2"));
+        // 9103: Brotli — 추적기에 열림(확인 필요 DISTRO_OPEN).
+        notices.add(notice(9103, "가짜 Brotli 보안 업데이트 권고", "2026-11-18", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9103, 0, "CVE-2099-6001", "Brotli", "9.1.1 미만", "9.1.1"));
+        // 9104: 상세 실패 공지에 남은 행(물어볼 것에 넣지 않음).
+        notices.add(notice(9104, "가짜 OpenSSL 보안 업데이트 권고 2", "2026-11-17", "failed", "product_table", List.of(), null));
+        rows.add(row(9104, 0, "CVE-2099-5901", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+    }
+
+    @Test
+    @DisplayName("한 건 — 배포판 추적기 근거(tracker: distro·suite·package·CVE마다 상태·고친 판·확인 시각, 묻지 않은 것은 none), 근거 TRACKER")
+    @SuppressWarnings("unchecked")
+    void detailTracker() {
+        trackerInventory();
+
+        Map<String, Object> out = service.notice(9101);
+
+        assertThat((Map<String, Object>) out.get("notice")).containsEntry("verdict", "affected").containsEntry("reasons", List.of());
+        Map<String, Object> match = ((List<Map<String, Object>>) out.get("generalMatches")).stream()
+                .filter(m -> "libssl9t64".equals(m.get("component"))).findFirst().orElseThrow();
+        assertThat(match).containsEntry("status", "affected").containsEntry("basis", "TRACKER").containsEntry("reason", null);
+        Map<String, Object> tracker = (Map<String, Object>) match.get("tracker");
+        assertThat(tracker).containsEntry("distro", "ubuntu").containsEntry("suite", "fakenoble").containsEntry("package", "openssl");
+        List<Map<String, Object>> cves = (List<Map<String, Object>>) tracker.get("cves");
+        assertThat(cves).extracting(c -> c.get("cve")).as("변경 기록에 있는 5001은 넣지 않음").containsExactly("CVE-2099-5002", "CVE-2099-5003");
+        assertThat(cves.get(0)).containsEntry("status", "fixed").containsEntry("fixedVersion", "9.9.9-0fake1.3")
+                .containsEntry("checkedAt", "2026-11-21T06:00:00Z");
+        assertThat(cves.get(1)).containsEntry("status", "none").containsEntry("fixedVersion", null).containsEntry("checkedAt", null);
+
+        Map<String, Object> curl = service.notice(9102);
+        assertThat(((List<Map<String, Object>>) curl.get("generalMatches"))).singleElement()
+                .satisfies(m -> assertThat(m).containsEntry("status", "affected").containsEntry("tracker", null).containsEntry("basis", null));
+    }
+
+    @Test
+    @DisplayName("사유 DISTRO_OPEN — 사유별 건수와 거르기 인자에 들어감")
+    void distroOpenReason() {
+        trackerInventory();
+
+        Map<String, Object> check = service.notices("check", null, null, null, null);
+        assertThat(map(check.get("reasonCounts"))).containsEntry("DISTRO_OPEN", 1L);
+        Map<String, Object> open = service.notices(null, "DISTRO_OPEN", null, null, null);
+        assertThat(items(open)).extracting(i -> i.get("nttId")).containsExactly(9103L);
+        assertThat(items(open).get(0)).containsEntry("verdict", "check").containsEntry("reasons", List.of("DISTRO_OPEN"));
+    }
+
     @Test
     @DisplayName("없는 번호·표가 없으면 404, 표가 없으면 목록은 available:false")
     void notFound() {

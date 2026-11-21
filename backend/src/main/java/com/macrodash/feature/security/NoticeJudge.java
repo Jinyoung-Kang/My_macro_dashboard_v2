@@ -1,6 +1,9 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.EnvInventory.Component;
+import com.macrodash.feature.security.EnvInventory.OsRelease;
+import com.macrodash.feature.security.EnvInventory.TrackerEntry;
+import com.macrodash.feature.security.EnvInventory.TrackerKey;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
@@ -11,6 +14,9 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
+import com.macrodash.feature.security.Verdict.Tracker;
+import com.macrodash.feature.security.Verdict.TrackerCve;
+import com.macrodash.feature.security.Verdict.TrackerStatus;
 import com.macrodash.feature.security.VersionOrder.Version;
 
 import java.util.ArrayList;
@@ -32,11 +38,15 @@ import java.util.regex.Pattern;
  *       표가 없는 공지는 {@code NO_VERSION_TABLE}, 표가 있는데 그 제품 행이 없거나 상세 전이면 {@code NAME_MATCH}).</li>
  *   <li>버전 목록이 없으면 확인 필요 {@code NO_INVENTORY}. 별칭의 구역을 모두 모았는데 구성 요소가 없으면 설치돼 있지 않은 것(무관),
  *       모으지 못한 구역이 있으면 그 구역은 {@code NO_INVENTORY}.</li>
- *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당. 없으면 공지 표에서 그 제품 행의 CVE가
- *       모두 그 패키지(원본·버전)의 변경 기록에 있을 때 패치됨(근거 {@link Basis#CHANGELOG} — ADR 0046 덧붙임 2026-11-21), 그 밖은
+ *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당. 없으면 공지 표에서 그 제품 행의 CVE마다
+ *       — 그 패키지(원본·버전)의 변경 기록에 있으면 덮임(호스트만 — ADR 0046 덧붙임 2026-11-21), 아니면 배포판 보안 추적기의 결과(그 구역
+ *       os의 배포판·스위트, 원본 패키지 — 덧붙임 '배포판 보안 추적기'): 고친 판 ≤ 설치 판이면 덮임, 고친 판 &gt; 설치 판이면 뒤처짐, 영향 없음,
+ *       열림, 그 밖(모름·묻지 않음·판을 견줄 수 없음)은 모름. 뒤처짐이 하나라도 있으면 해당(근거 {@link Basis#TRACKER}), 모두 덮임·영향 없음이고
+ *       덮임이 있으면 패치됨(추적기를 썼으면 {@code TRACKER}, 아니면 {@link Basis#CHANGELOG}), 모두 영향 없음이면 무관({@code TRACKER}),
+ *       그 밖은 열림이 있으면 {@code DISTRO_OPEN}, 없으면 {@code DISTRO_NO_PENDING}. CVE를 읽지 못한 행이 있으면 변경 기록·추적기를 쓰지 않고
  *       {@code DISTRO_NO_PENDING}. 실행 중인 것만 보는 별칭({@link ProductAliases.Alias#runningOnly()} — 커널)은 런타임 구성 요소가 있으면
- *       그것만 변경 기록으로 판정하고 패키지 줄은 보류(해당)에만 씁니다. 컨테이너 안 패키지는 보류 목록·변경 기록이 없어 늘
- *       {@code DISTRO_NO_PENDING}. 공지의 버전 표와 비교하지 않습니다.</li>
+ *       그것만 변경 기록·추적기로 판정하고(추적기 패키지는 {@code linux}, 설치 판은 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인
+ *       dpkg 패키지의 판) 패키지 줄은 보류(해당)에만 씁니다. 공지의 버전 표와 비교하지 않습니다.</li>
  *   <li>PPA 판 규칙({@link ProductAliases.Alias#distroUnlessPpa()} — Git, QA-979): 상류 번호 별칭의 dpkg 구성 요소는 판이 PPA면 그 상류 판으로
  *       아래 상류 번호 판정을, 배포판 판이면 위 배포판 패키지 판정을 받습니다.</li>
  *   <li>상류 번호({@link Kind#UPSTREAM}): 행마다 — 제조사가 다르면 {@code VENDOR_DIFFERS}, 영향 칸을 못 읽으면 {@code PARSE_FAILED},
@@ -249,25 +259,149 @@ public final class NoticeJudge {
     }
 
     /**
-     * 배포판 패키지 — 버전 표가 아니라 apt 보류(보안) 목록과 변경 기록으로. 둘 다 호스트에만 있습니다.
-     * 보안 보류면 해당, 아니면 {@code cves}(그 제품 행의 CVE 전부)가 그 패키지 원본·버전(실행 중인 커널은 {@code kernel}·{@code uname -r})의
-     * 변경 기록에 모두 있을 때 패치됨, 그 밖은 확인 필요 {@code DISTRO_NO_PENDING}(변경 기록에 없다고 취약하다는 뜻은 아님).
+     * 배포판 패키지 — 버전 표가 아니라 apt 보류(보안) 목록·변경 기록(둘 다 호스트에만)·배포판 보안 추적기로(클래스 설명의 셋째 항목).
+     * 변경 기록에 없다고 취약하다는 뜻은 아니고, 추적기에서 모르는 것은 패치됨·무관으로 두지 않습니다.
      */
     private static Match distro(Alias alias, Component c, EnvInventory inventory, Set<String> cves) {
-        if (!ProductAliases.SECTION_HOST.equals(c.source())) {
-            return componentLevel(alias, c, Status.CHECK, Reason.DISTRO_NO_PENDING);
-        }
-        if (!inventory.sectionOk(ProductAliases.SECTION_HOST)) {
+        boolean host = ProductAliases.SECTION_HOST.equals(c.source());
+        if (host && !inventory.sectionOk(ProductAliases.SECTION_HOST)) {
             return componentLevel(alias, c, Status.CHECK, Reason.NO_INVENTORY);
         }
-        if (pendingSecurity(c, inventory)) {
+        if (host && pendingSecurity(c, inventory)) {
             return componentLevel(alias, c, Status.AFFECTED, null);
         }
-        if (inventory.changelogHasAll(c.sourcePackageName().orElse(c.name()), c.version(), cves)) {
-            return new Match(alias.id(), null, null, null, c.source(), c.name(), c.version(), Status.PATCHED, null, false,
-                    Basis.CHANGELOG);
+        if (cves.isEmpty()) {
+            return componentLevel(alias, c, Status.CHECK, Reason.DISTRO_NO_PENDING);
         }
-        return componentLevel(alias, c, Status.CHECK, Reason.DISTRO_NO_PENDING);
+        String changelogPkg = c.sourcePackageName().orElse(c.name());
+        Optional<TrackerTarget> target = trackerTarget(c, inventory);
+        List<TrackerCve> asked = new ArrayList<>();
+        int covered = 0;
+        int byTracker = 0;
+        int notAffected = 0;
+        int behind = 0;
+        int open = 0;
+        int unknown = 0;
+        for (String cve : cves) {
+            if (host && inventory.changelogHas(changelogPkg, c.version(), cve)) {
+                covered++;
+                continue;
+            }
+            if (target.isEmpty()) {
+                unknown++;
+                continue;
+            }
+            TrackerTarget t = target.get();
+            Optional<TrackerEntry> entry = inventory.trackerOf(new TrackerKey(t.distro(), t.suite(), t.pkg(), cve));
+            if (entry.isEmpty()) {
+                asked.add(new TrackerCve(cve, TrackerStatus.NONE, null, null));
+                unknown++;
+                continue;
+            }
+            TrackerEntry e = entry.get();
+            boolean fixed = e.status() == TrackerStatus.FIXED;
+            asked.add(new TrackerCve(cve, e.status(), fixed ? e.fixedVersion() : null, e.checkedAt()));
+            switch (e.status()) {
+                case FIXED -> {
+                    Optional<Integer> cmp = t.installed() == null ? Optional.empty()
+                            : DistroVersion.compare(t.scheme(), t.installed(), e.fixedVersion());
+                    if (cmp.isEmpty()) {
+                        unknown++;
+                    } else if (cmp.get() >= 0) {
+                        covered++;
+                        byTracker++;
+                    } else {
+                        behind++;
+                    }
+                }
+                case NOT_AFFECTED -> {
+                    notAffected++;
+                    byTracker++;
+                }
+                case OPEN -> open++;
+                default -> unknown++;
+            }
+        }
+        Tracker tracker = target.isPresent() && !asked.isEmpty()
+                ? new Tracker(target.get().distro(), target.get().suite(), target.get().pkg(), asked) : null;
+        if (behind > 0) {
+            // 고친 판이 나왔는데 설치 판이 낮음 — 알림 대상.
+            return distroMatch(alias, c, Status.AFFECTED, null, Basis.TRACKER, tracker);
+        }
+        if (unknown == 0 && open == 0 && covered > 0) {
+            return distroMatch(alias, c, Status.PATCHED, null, byTracker > 0 ? Basis.TRACKER : Basis.CHANGELOG, tracker);
+        }
+        if (unknown == 0 && open == 0 && notAffected == cves.size()) {
+            return distroMatch(alias, c, Status.UNRELATED, null, Basis.TRACKER, tracker);
+        }
+        return distroMatch(alias, c, Status.CHECK, open > 0 ? Reason.DISTRO_OPEN : Reason.DISTRO_NO_PENDING, null, tracker);
+    }
+
+    private static Match distroMatch(Alias alias, Component c, Status status, Reason reason, Basis basis, Tracker tracker) {
+        return new Match(alias.id(), null, null, null, c.source(), c.name(), c.version(), status, reason, false, basis, tracker);
+    }
+
+    /**
+     * 추적기에 물을 자리 — 배포판·스위트(그 구역의 os)·원본 패키지와 견줄 설치 판.
+     *
+     * @param installed 견줄 설치 판(실행 중인 커널은 그 판의 {@code linux} 원본 dpkg 패키지 판, 찾지 못하면 {@code null} — 고친 판과 견줄 수 없음)
+     */
+    private record TrackerTarget(String distro, String suite, String pkg, DistroVersion.Scheme scheme, String installed) {
+    }
+
+    /** 추적기에 묻는 실행 중인 커널의 원본 패키지 이름(Ubuntu·Debian 추적기의 커널 항목). */
+    static final String KERNEL_SOURCE = "linux";
+
+    /**
+     * 그 구성 요소를 추적기에 물을 수 있으면 그 자리 — 구역의 os를 알고 배포판이 ubuntu·debian·alpine이며, 구성 요소의 종류가 그 배포판의 것
+     * (dpkg·apk)이거나 실행 중인 커널(런타임 {@code kernel}, dpkg 배포판)일 때만.
+     */
+    private static Optional<TrackerTarget> trackerTarget(Component c, EnvInventory inventory) {
+        Optional<OsRelease> os = inventory.osOf(c.source());
+        if (os.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<String> distro = os.get().trackerDistro();
+        Optional<String> suite = os.get().trackerSuite();
+        Optional<DistroVersion.Scheme> scheme = distro.flatMap(DistroVersion.Scheme::forDistro);
+        if (distro.isEmpty() || suite.isEmpty() || scheme.isEmpty()) {
+            return Optional.empty();
+        }
+        String pkg;
+        String installed;
+        if (ProductAliases.ECO_RUNTIME.equals(c.ecosystem())) {
+            if (scheme.get() != DistroVersion.Scheme.DPKG || !"kernel".equals(c.name())) {
+                return Optional.empty();
+            }
+            pkg = KERNEL_SOURCE;
+            installed = runningKernelPackage(c, inventory).orElse(null);
+        } else {
+            String eco = scheme.get() == DistroVersion.Scheme.DPKG ? ProductAliases.ECO_DPKG : ProductAliases.ECO_APK;
+            if (!eco.equals(c.ecosystem())) {
+                return Optional.empty();
+            }
+            pkg = c.sourcePackageName().orElse(c.name());
+            installed = c.version();
+        }
+        if (!EnvInventory.PACKAGE.matcher(pkg).matches()) {
+            return Optional.empty();
+        }
+        return Optional.of(new TrackerTarget(distro.get(), suite.get(), pkg, scheme.get(), installed));
+    }
+
+    /** 실행 중인 커널({@code uname -r})의 패키지 판 — 같은 구역의 dpkg 구성 요소 가운데 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인 것. */
+    static Optional<String> runningKernelPackage(Component kernel, EnvInventory inventory) {
+        if (kernel.version().isBlank()) {
+            return Optional.empty();
+        }
+        String suffix = "-" + kernel.version();
+        for (Component c : inventory.components()) {
+            if (kernel.source().equals(c.source()) && ProductAliases.ECO_DPKG.equals(c.ecosystem()) && c.name().endsWith(suffix)
+                    && c.sourcePackageName().filter(KERNEL_SOURCE::equals).isPresent()) {
+                return Optional.of(c.version());
+            }
+        }
+        return Optional.empty();
     }
 
     private static boolean pendingSecurity(Component c, EnvInventory inventory) {

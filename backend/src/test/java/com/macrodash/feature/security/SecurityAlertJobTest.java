@@ -239,6 +239,43 @@ class SecurityAlertJobTest {
         assertThat(table.values()).allSatisfy(a -> assertThat(a.telegramSentAt()).isEqualTo(NOW));
     }
 
+    /** 호스트 Ubuntu(가짜 코드명)의 OpenSSL — 추적기의 고친 판이 설치 판보다 높아 해당(판은 모두 가짜). */
+    private void trackerAffected() {
+        List<SecurityStore.Section> sections = new ArrayList<>();
+        for (String name : List.of("caddy", "postgres", "backend", "frontend", "collector", "browser")) {
+            sections.add(new SecurityStore.Section(name, "ok", 1, null));
+        }
+        sections.add(new SecurityStore.Section("host", "ok", 1, null, new SecurityStore.Os("ubuntu", "99.04", "fakenoble")));
+        when(store.inventory()).thenReturn(Optional.of(new SecurityStore.Inventory(Instant.parse("2026-11-20T22:20:00Z"),
+                Instant.parse("2026-11-20T22:20:05Z"), true, null, sections)));
+        when(store.components()).thenReturn(List.of(new SecurityStore.Component("host", "dpkg", "libssl9t64", "9.9.9-0fake7.2", "openssl")));
+        when(store.pending()).thenReturn(List.of());
+        when(store.trackerStatuses()).thenReturn(List.of(new SecurityStore.TrackerStatus("ubuntu", "fakenoble", "openssl", "CVE-2099-8001",
+                "fixed", "9.9.9-0fake7.3", "released", Instant.parse("2026-11-21T01:00:00Z"))));
+        notices.add(SecurityServiceTest.notice(9201, "가짜 OpenSSL 보안 업데이트 권고", "2026-11-20", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(SecurityServiceTest.row(9201, 0, "CVE-2099-8001", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+        rows.add(SecurityServiceTest.row(9201, 1, "CVE-2099-8002", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+    }
+
+    @Test
+    @DisplayName("추적기로 해당(고친 판이 나왔는데 깔리지 않음)도 같은 길로 알리고, 글·로그에 설치 판·고친 판 문자열이 없다")
+    void trackerAffectedAlerts() {
+        trackerAffected();
+
+        assertThat(job().run()).isEqualTo(new SecurityAlertJob.Outcome(1, 1));
+
+        assertThat(events).containsOnlyKeys("security_notice:9201");
+        assertThat(events.get("security_notice:9201").get(0)).isEqualTo("보안 공지 해당 — OpenSSL");
+        List<String> texts = new ArrayList<>(sent);
+        events.values().forEach(texts::addAll);
+        appender.list.forEach(e -> texts.add(e.getFormattedMessage()));
+        for (String text : texts) {
+            for (String version : List.of("9.9.9", "fake7", "fakenoble", "9.9.20")) {
+                assertThat(text).as("글: " + text).doesNotContain(version);
+            }
+        }
+    }
+
     @Test
     @DisplayName("텔레그램·알림함 글·로그에 설치 버전과 버전 칸 문자열이 없다(실패 경로 포함)")
     void noVersionStrings() {

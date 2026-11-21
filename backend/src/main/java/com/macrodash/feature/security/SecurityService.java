@@ -94,24 +94,39 @@ public class SecurityService {
         if (head.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(toInventory(head.get(), store.components(), store.pending(), store.changelogCves()));
+        return Optional.of(loadInventory(head.get()));
+    }
+
+    /** 버전 목록 머리 하나에 구성 요소·보류·변경 기록·추적기 결과를 붙여 판정 입력으로. */
+    private EnvInventory loadInventory(SecurityStore.Inventory head) {
+        return toInventory(head, store.components(), store.pending(), store.changelogCves(), store.trackerStatuses());
     }
 
     static EnvInventory toInventory(SecurityStore.Inventory head, List<SecurityStore.Component> components,
-                                    List<SecurityStore.Pending> pending, List<SecurityStore.ChangelogCve> changelog) {
+                                    List<SecurityStore.Pending> pending, List<SecurityStore.ChangelogCve> changelog,
+                                    List<SecurityStore.TrackerStatus> tracker) {
         Map<String, EnvInventory.SectionStatus> sections = new LinkedHashMap<>();
+        Map<String, EnvInventory.OsRelease> os = new HashMap<>();
         for (SecurityStore.Section section : head.sections()) {
             sections.put(section.name(), EnvInventory.SectionStatus.fromDb(section.status()));
+            if (section.os() != null) {
+                os.put(section.name(), new EnvInventory.OsRelease(section.os().id(), section.os().versionId(), section.os().codename()));
+            }
         }
         Map<EnvInventory.PackageVersion, Set<String>> cves = new HashMap<>();
         for (SecurityStore.ChangelogCve row : changelog == null ? List.<SecurityStore.ChangelogCve>of() : changelog) {
             cves.computeIfAbsent(new EnvInventory.PackageVersion(row.pkg(), row.version()), key -> new HashSet<>()).add(row.cve());
         }
+        Map<EnvInventory.TrackerKey, EnvInventory.TrackerEntry> trackerEntries = new HashMap<>();
+        for (SecurityStore.TrackerStatus row : tracker == null ? List.<SecurityStore.TrackerStatus>of() : tracker) {
+            trackerEntries.put(new EnvInventory.TrackerKey(row.distro(), row.suite(), row.pkg(), row.cve()),
+                    new EnvInventory.TrackerEntry(Verdict.TrackerStatus.fromDb(row.status()), row.fixedVersion(), row.checkedAt()));
+        }
         return new EnvInventory(sections,
                 components.stream().map(c -> new EnvInventory.Component(c.source(), c.ecosystem(), c.name(), c.version(),
                         c.sourcePackage())).toList(),
                 pending.stream().map(p -> new EnvInventory.Pending(p.pkg(), p.installed(), p.candidate(), p.security())).toList(),
-                cves);
+                cves, os, trackerEntries);
     }
 
     /** 공지 전부를 판정합니다(게시일 최근부터). {@code inventory}가 {@code null}이면 버전 목록 없음. */
@@ -203,7 +218,7 @@ public class SecurityService {
             return out;
         }
         Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending(), store.changelogCves())).orElse(null);
+        EnvInventory inventory = head.map(this::loadInventory).orElse(null);
         List<Judged> all = judgeAll(inventory);
 
         List<Judged> searched = q == null ? all : all.stream().filter(j -> matchesQuery(j, q)).toList();
@@ -245,7 +260,7 @@ public class SecurityService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그 번호의 보안 공지가 없습니다."));
         Instant now = clock.instant();
         Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(h -> toInventory(h, store.components(), store.pending(), store.changelogCves())).orElse(null);
+        EnvInventory inventory = head.map(this::loadInventory).orElse(null);
         List<SecurityStore.NoticeRow> rows = store.rows(nttId);
         Verdict verdict = judge(notice, rows, inventory);
         Judged judged = new Judged(notice, rows, verdict);
@@ -429,6 +444,27 @@ public class SecurityService {
         out.put("reason", m.reason() == null ? null : m.reason().name());
         out.put("otherFamily", m.otherFamily());
         out.put("basis", m.basis() == null ? null : m.basis().name());
+        out.put("tracker", trackerJson(m.tracker()));
+        return out;
+    }
+
+    /** 추적기 근거 — {@code {distro, suite, package, cves: [{cve, status, fixedVersion, checkedAt}]}}, 없으면 null. */
+    private static Map<String, Object> trackerJson(Verdict.Tracker tracker) {
+        if (tracker == null) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("distro", tracker.distro());
+        out.put("suite", tracker.suite());
+        out.put("package", tracker.pkg());
+        out.put("cves", tracker.cves().stream().map(c -> {
+            Map<String, Object> cve = new LinkedHashMap<>();
+            cve.put("cve", c.cve());
+            cve.put("status", c.status().code());
+            cve.put("fixedVersion", c.fixedVersion());
+            cve.put("checkedAt", iso(c.checkedAt()));
+            return cve;
+        }).toList());
         return out;
     }
 

@@ -19,7 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 보안 공지 저장소 읽기(ADR 0046, V40) — 실제 표(테스트 DB)에서 공지·표 행·버전 목록·출처 판정을 읽는지. 수집기가 쓰는 표라 여기서 넣는 행은 시험
  * 고정본입니다(값은 모두 가짜 — 글 번호는 9.9억대, 출처 판정 태스크는 {@code test-}). 버전 목록 표 셋은 늘 한 벌이라 시험이 끝나면 비웁니다.
- * 백엔드가 쓰는 알림 기록({@code security_alerts}, {@link SecurityAlertStore})도 함께 봅니다.
+ * 백엔드가 쓰는 알림 기록({@code security_alerts}, {@link SecurityAlertStore})도 함께 봅니다. V42의 추적기 결과({@code distro_cve_status} — 수집기 표,
+ * 시험 행은 스위트 {@code testfake…})도 봅니다.
  */
 class SecurityStoreDbTest {
 
@@ -49,6 +50,7 @@ class SecurityStoreDbTest {
         jdbc.update("DELETE FROM env_pending_updates");
         jdbc.update("DELETE FROM env_inventory");
         jdbc.update("DELETE FROM env_changelog_cves");
+        jdbc.update("DELETE FROM distro_cve_status WHERE suite LIKE 'testfake%'");
     }
 
     @Test
@@ -123,6 +125,48 @@ class SecurityStoreDbTest {
         assertThat(store.changelogCves()).containsExactlyInAnyOrder(
                 new SecurityStore.ChangelogCve("fake-openssl", "9.9.9-0fake1", "CVE-2099-0001"),
                 new SecurityStore.ChangelogCve("kernel", "0.0.1-fake-generic", "CVE-2099-7777"));
+    }
+
+    @Test
+    @DisplayName("구역의 os(V42 덧붙임 — 구역 객체의 os) — 있으면 id·versionId·codename(없는 값 null), 없거나 객체가 아니면 null")
+    void sectionOs() {
+        jdbc.update("INSERT INTO env_inventory (id, collected_at, host_included, sections) VALUES (1, ?, true, '{"
+                + "\"host\": {\"status\": \"ok\", \"count\": 2, \"os\": {\"id\": \"ubuntu\", \"versionId\": \"99.04\", \"codename\": \"testfakenoble\"}}, "
+                + "\"caddy\": {\"status\": \"ok\", \"count\": 1, \"os\": {\"id\": \"alpine\", \"versionId\": \"3.99.1\", \"codename\": null}}, "
+                + "\"postgres\": {\"status\": \"ok\", \"count\": 1}, "
+                + "\"browser\": {\"status\": \"ok\", \"count\": 1, \"os\": \"debian\"}}'::jsonb)",
+                Timestamp.from(Instant.parse("2026-11-20T22:20:00Z")));
+
+        List<SecurityStore.Section> sections = store.inventory().orElseThrow().sections();
+        assertThat(sections).containsExactlyInAnyOrder(
+                new SecurityStore.Section("host", "ok", 2, null, new SecurityStore.Os("ubuntu", "99.04", "testfakenoble")),
+                new SecurityStore.Section("caddy", "ok", 1, null, new SecurityStore.Os("alpine", "3.99.1", null)),
+                new SecurityStore.Section("postgres", "ok", 1, null),
+                new SecurityStore.Section("browser", "ok", 1, null));
+    }
+
+    @Test
+    @DisplayName("추적기 결과(V42 distro_cve_status) — 넷 상태·고친 판·원래 상태 글·확인 시각을 그대로 읽음")
+    void trackerStatuses() {
+        jdbc.update("INSERT INTO distro_cve_status (distro, suite, package, cve, status, fixed_version, detail, checked_at) VALUES "
+                        + "('ubuntu', 'testfakenoble', 'openssl', 'CVE-2099-0001', 'fixed', '9.9.9-0fake1.3', 'released', ?), "
+                        + "('ubuntu', 'testfakenoble', 'linux', 'CVE-2099-0002', 'open', NULL, 'needed', ?), "
+                        + "('debian', 'testfakeforky', 'brotli', 'CVE-2099-0003', 'not_affected', NULL, '(not affected)', ?), "
+                        + "('alpine', 'testfake3.99', 'openssl', 'CVE-2099-0004', 'unknown', NULL, NULL, ?)",
+                Timestamp.from(Instant.parse("2026-11-21T01:00:00Z")), Timestamp.from(Instant.parse("2026-11-21T01:01:00Z")),
+                Timestamp.from(Instant.parse("2026-11-21T01:02:00Z")), Timestamp.from(Instant.parse("2026-11-21T01:03:00Z")));
+
+        List<SecurityStore.TrackerStatus> rows = store.trackerStatuses().stream().filter(r -> r.suite().startsWith("testfake")).toList();
+
+        assertThat(rows).containsExactlyInAnyOrder(
+                new SecurityStore.TrackerStatus("ubuntu", "testfakenoble", "openssl", "CVE-2099-0001", "fixed", "9.9.9-0fake1.3", "released",
+                        Instant.parse("2026-11-21T01:00:00Z")),
+                new SecurityStore.TrackerStatus("ubuntu", "testfakenoble", "linux", "CVE-2099-0002", "open", null, "needed",
+                        Instant.parse("2026-11-21T01:01:00Z")),
+                new SecurityStore.TrackerStatus("debian", "testfakeforky", "brotli", "CVE-2099-0003", "not_affected", null, "(not affected)",
+                        Instant.parse("2026-11-21T01:02:00Z")),
+                new SecurityStore.TrackerStatus("alpine", "testfake3.99", "openssl", "CVE-2099-0004", "unknown", null, null,
+                        Instant.parse("2026-11-21T01:03:00Z")));
     }
 
     @Test
