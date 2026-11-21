@@ -430,6 +430,18 @@ class NoticeJudgeTest {
             assertThat(runc.status()).isEqualTo(Status.CHECK);
             assertThat(runc.reasons()).containsExactly(Reason.NAME_MATCH);
         }
+
+        @Test
+        @Disabled("QA-977 — 고치기 전: 표 제품명 'Node.js Driver'가 Node.js 런타임 별칭에 맞아 확인 필요")
+        @DisplayName("QA-977 데이터베이스의 Node.js 드라이버 공지는 Node.js 런타임과 무관 — 표 제품명·본문 모두")
+        void nodeDriverIsNotNodeRuntime() {
+            SecurityNotice notice = new SecurityNotice(9L, "가짜 DB 제품 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
+                    "o Node.js Driver에서 발생하는 가짜 취약점");
+            Verdict v = NoticeJudge.judge(notice, rows("Node.js Driver|7.0.0 이상 9.8.0 미만|9.8.0 이상"),
+                    inventory(comp("frontend", "runtime", "node", "v30.1.0")));
+            assertThat(v.status()).isEqualTo(Status.UNRELATED);
+            assertThat(v.products()).isEmpty();
+        }
     }
 
     // ---- 배포판 ----
