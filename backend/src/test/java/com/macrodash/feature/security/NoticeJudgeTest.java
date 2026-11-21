@@ -520,6 +520,38 @@ class NoticeJudgeTest {
                     r, inventory(comp("postgres", "runtime", "postgres", "16.60")));
             assertThat(v.status()).isEqualTo(Status.PATCHED);
         }
+
+        @Test
+        @DisplayName("이름 맞춤에서 빼는 ※ 문장(덧붙임 2026-11-22) — 영향 없음 문장·Windows 전용 문장, 영향 받음·완화 조치·Linux 병기·제외가 섞이면 그대로")
+        void excludedNotes() {
+            assertThat(NoticeJudge.excludedNote(" 가짜 glibc 기반 배포판과 가짜 환경은 영향 없음 [2]")).isTrue();
+            assertThat(NoticeJudge.excludedNote(" 가짜 2.0 이후 판은 해당되지 않음")).isTrue();
+            assertThat(NoticeJudge.excludedNote(" 가짜 2.0 이후 판은 영향을 받지 않음")).isTrue();
+            assertThat(NoticeJudge.excludedNote(" 가짜 1.0 이전은 영향 없음, 가짜 2.0은 영향을 받음")).as("영향 받음이 섞임").isFalse();
+            assertThat(NoticeJudge.excludedNote(" 가짜 모듈을 비활성화하면 영향 없음")).as("완화 조치").isFalse();
+            assertThat(NoticeJudge.excludedNote(" 가짜 예제 폴더는 지우더라도(삭제) 가짜 서비스 동작에는 영향 없음")).as("운영 안내").isFalse();
+            assertThat(NoticeJudge.excludedNote(" Windows용 가짜 PHP에서 cURL 압축 풀기를 켠 경우 영향을 받을 수 있음 [3]")).isTrue();
+            assertThat(NoticeJudge.excludedNote(" 윈도우 가짜 클라이언트만 해당")).isTrue();
+            assertThat(NoticeJudge.excludedNote(" Windows 및 Linux용 가짜 클라이언트에서 cURL을 쓰는 경우 영향")).as("Linux 병기").isFalse();
+            assertThat(NoticeJudge.excludedNote(" Windows를 제외한 가짜 플랫폼에서 영향")).as("제외").isFalse();
+            assertThat(NoticeJudge.excludedNote(" 가짜 설정을 켠 경우에만 영향")).isFalse();
+
+            EnvInventory inv = inventory(pkg("host", "dpkg", "libc6", "9.39-0fake1", "glibc"), pkg("host", "dpkg", "curl", "9.5.0-2fake1", "curl"));
+            SecurityNotice excluded = new SecurityNotice(13L, "가짜 제품 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
+                    "o 가짜 제품 개요\n※ 가짜 glibc 기반 배포판은 영향 없음\n※ Windows용 가짜 PHP에서 cURL 압축 풀기를 켠 경우 영향 [3]");
+            assertThat(NoticeJudge.judge(excluded, rows("가짜 제품|9.0 이상 9.9 미만|9.9"), inv).products()).isEmpty();
+
+            SecurityNotice sameLine = new SecurityNotice(14L, "가짜 제품 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
+                    "※ 가짜 glibc 기반 배포판은 영향 없음 ※ 가짜 curl 압축 풀기를 켠 경우 영향");
+            assertThat(NoticeJudge.judge(sameLine, rows("가짜 제품|9.0 이상 9.9 미만|9.9"), inv).products())
+                    .extracting(ProductVerdict::aliasId).as("한 줄의 ※ 문장마다 따로 봄").containsExactly("curl");
+
+            SecurityNotice outside = new SecurityNotice(15L, "가짜 제품 보안 업데이트 권고", Template.PRODUCT_TABLE, List.of(),
+                    "o 가짜 glibc 취약점 개요 — 가짜 환경은 영향 없음\n※ Windows용 가짜 PHP에서 cURL 압축 풀기를 켠 경우 영향");
+            Verdict v = NoticeJudge.judge(outside, rows("가짜 제품|9.0 이상 9.9 미만|9.9"), inv);
+            assertThat(v.products()).extracting(ProductVerdict::aliasId).as("※ 밖의 글은 그대로 셈").containsExactly("glibc");
+            assertThat(v.reasons()).containsExactly(Reason.NAME_MATCH);
+        }
     }
 
     // ---- 배포판 ----

@@ -35,7 +35,8 @@ import java.util.regex.Pattern;
  * <p>제품(별칭)마다:
  * <ol>
  *   <li>공지 표의 제품명이 별칭에 맞는 행을 모읍니다. 맞는 행이 없으면 제목·본문에 별칭이 나오는지 봅니다(나오면 확인 필요 —
- *       표가 없는 공지는 {@code NO_VERSION_TABLE}, 표가 있는데 그 제품 행이 없거나 상세 전이면 {@code NAME_MATCH}).</li>
+ *       표가 없는 공지는 {@code NO_VERSION_TABLE}, 표가 있는데 그 제품 행이 없거나 상세 전이면 {@code NAME_MATCH}). 참고 주소(QA-980)와
+ *       본문 {@code ※} 문장 가운데 영향 없음·Windows 전용 문장({@link #withoutExcludedNotes}, 덧붙임 2026-11-22)은 이름 맞춤에 쓰지 않습니다.</li>
  *   <li>버전 목록이 없으면 확인 필요 {@code NO_INVENTORY}. 별칭의 구역을 모두 모았는데 구성 요소가 없으면 설치돼 있지 않은 것(무관),
  *       모으지 못한 구역이 있으면 그 구역은 {@code NO_INVENTORY}.</li>
  *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당. 없으면 공지 표에서 그 제품 행의 CVE마다
@@ -84,8 +85,54 @@ public final class NoticeJudge {
      */
     private static final Pattern GLOSSARY = Pattern.compile("^[A-Za-z][A-Za-z0-9 .+/-]{0,39}\\s*\\([^()]{1,80}\\)\\s*[:：]\\s*\\S.*$");
     private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d{4,7}(?!\\d)", Pattern.CASE_INSENSITIVE);
+    /**
+     * 이름 맞춤에 쓰지 않는 {@code ※} 문장 첫째 — 영향이 없다고 적은 문장('glibc 기반 배포판 … 은 영향 없음' 꼴). 같은 문장에 영향을 받는다는 말
+     * ({@link #AFFECTS})이나 완화 조치(끄기·지우기·임시 조치 등 — {@link #MITIGATION}, 그 조치를 하지 않으면 영향이 있다는 뜻이거나 운영 안내)가 함께 있으면
+     * 빼지 않습니다.
+     * ADR 0046 덧붙임 2026-11-22.
+     */
+    private static final Pattern NOT_AFFECTED = Pattern.compile(
+            "영향\\s*(?:이|은)?\\s*없|영향을?\\s*받지\\s*않|해당\\s*(?:사항\\s*)?(?:이\\s*)?없|해당(?:하|되)지\\s*않");
+    private static final Pattern AFFECTS = Pattern.compile("영향을?\\s*받(?!지)|영향이?\\s*있");
+    private static final Pattern MITIGATION = Pattern.compile("비활성|임시|완화|우회|차단|해제|삭제|제거|끄면|끈\\s|꺼\\s*두");
+    /**
+     * 이름 맞춤에 쓰지 않는 {@code ※} 문장 둘째 — Windows 전용 문장('Windows용 PHP에서 … 경우' 꼴). Linux 계열·모든 운영체제가 함께 적혔거나
+     * Windows를 빼는 말('제외'·'이외')이 있으면 빼지 않습니다. 이 스택은 Linux 서버입니다(QA-978과 같은 까닭).
+     */
+    private static final Pattern WINDOWS_NOTE = Pattern.compile("\\bWindows|윈도우", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_WINDOWS_ONLY = Pattern.compile(
+            "\\bLinux\\b|리눅스|\\bUbuntu\\b|\\bDebian\\b|\\bAlpine\\b|\\bUnix\\b|유닉스|모든\\s*(?:운영\\s*체제|플랫폼|OS\\b)|제외|이외",
+            Pattern.CASE_INSENSITIVE);
 
     private NoticeJudge() {
+    }
+
+    /**
+     * 이름 맞춤에 쓸 글 — 줄마다 {@code ※}로 나눠, {@code ※} 뒤 문장 가운데 영향 없음 문장({@link #NOT_AFFECTED})과 Windows 전용 문장
+     * ({@link #WINDOWS_NOTE})을 뺍니다. {@code ※} 앞의 글(제목·개요)과 표 행은 그대로입니다. 조건 문장 목록({@link #conditionNotes})은 바꾸지 않습니다.
+     */
+    static String withoutExcludedNotes(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        for (String line : text.split("\n", -1)) {
+            String[] pieces = line.split("※", -1);
+            out.append(pieces[0]);
+            for (int i = 1; i < pieces.length; i++) {
+                if (!excludedNote(pieces[i])) {
+                    out.append('※').append(pieces[i]);
+                }
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    /** 이름 맞춤에서 빼는 {@code ※} 문장인지 — 영향 없음 문장이거나 Windows 전용 문장. */
+    static boolean excludedNote(String piece) {
+        String text = ProductAliases.normalizeText(piece);
+        boolean notAffected = NOT_AFFECTED.matcher(text).find() && !AFFECTS.matcher(text).find()
+                && !MITIGATION.matcher(text).find();
+        boolean windowsOnly = WINDOWS_NOTE.matcher(text).find() && !NOT_WINDOWS_ONLY.matcher(text).find();
+        return notAffected || windowsOnly;
     }
 
     /** 처음 별칭 표({@link ProductAliases#defaults()})로 판정합니다. {@code inventory}가 {@code null}이면 버전 목록 없음. */
@@ -97,7 +144,9 @@ public final class NoticeJudge {
         List<Row> tableRows = rows == null ? List.of() : rows;
         List<String> notes = conditionNotes(notice.conditionNotes());
         // 참고 주소(URL)는 이름 맞춤에 쓰지 않습니다 — 커널 공지의 'git.kernel.org/…/vulns.git'이 Git 별칭에 맞던 것(QA-980).
-        String text = URL.matcher(notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText())).replaceAll(" ");
+        // 본문의 ※ 문장 가운데 영향 없음·Windows 전용 문장도 이름 맞춤에 쓰지 않습니다(덧붙임 2026-11-22).
+        String text = withoutExcludedNotes(
+                URL.matcher(notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText())).replaceAll(" "));
 
         List<ProductVerdict> products = new ArrayList<>();
         List<Match> matches = new ArrayList<>();
