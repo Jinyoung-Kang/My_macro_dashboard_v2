@@ -244,6 +244,19 @@ class NoticeJudgeTest {
         }
 
         @Test
+        @Disabled("QA-976 — 고치기 전: 아래 끝의 마일스톤 표기(-M5·.M1)를 못 읽어 해석 실패")
+        @DisplayName("QA-976 Tomcat 꼴 'A-M5 이상 B 미만' — 해결 버전 이상이면 패치됨, 구간 안이면 해당")
+        void milestoneLowerBound() {
+            List<Row> tomcat = rows("Apache Tomcat|31.0.0-M5 이상 31.0.9 미만|31.0.9 이상",
+                    "Apache Tomcat|30.1.0-M1 이상 30.1.50 미만|30.1.50 이상",
+                    "Apache Tomcat|29.0.0.M1 이상 29.0.40 미만|29.0.40 이상");
+            assertThat(judge(tomcat, inventory(comp("backend", "maven", "tomcat-embed-core", "31.0.9"))).status())
+                    .isEqualTo(Status.PATCHED);
+            assertThat(judge(tomcat, inventory(comp("backend", "maven", "tomcat-embed-core", "31.0.8"))).status())
+                    .isEqualTo(Status.AFFECTED);
+        }
+
+        @Test
         @DisplayName("해결 칸 나열 — 같은 계열의 해결 버전과 비교")
         void fixedList() {
             List<Row> r = rows("Node.js|30.0.0 이상 30.4.0 미만, 31.0.0 이상 31.2.0 미만|30.4.0, 31.2.0");

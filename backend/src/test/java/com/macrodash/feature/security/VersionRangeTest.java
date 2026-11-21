@@ -1,6 +1,7 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.VersionOrder.Version;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -57,6 +58,21 @@ class VersionRangeTest {
         assertThat(single.contains(v("12.2.1.4"))).isTrue();
         assertThat(single.contains(v("12.2.1.4.1"))).isFalse();
         assertThat(range("17.0.21.0.3").contains(v("17.0.21.0.3"))).isTrue();
+    }
+
+    @Test
+    @Disabled("QA-976 — 고치기 전: 아래 끝의 출시 전 표기(-M5·.M1·-RC1)를 못 읽어 칸 전체가 해석 실패")
+    @DisplayName("QA-976 아래 끝의 출시 전 표기('A-M5 이상'·'A.M1 이상'·'A-RC1 초과') — 출시 버전끼리 견주면 'A 이상'과 같음")
+    void preReleaseLowerBound() {
+        VersionRange r = range("31.0.0-M5 이상 31.0.9 미만");
+        assertThat(r.contains(v("31.0.0"))).isTrue();
+        assertThat(r.contains(v("31.0.8"))).isTrue();
+        assertThat(r.contains(v("31.0.9"))).isFalse();
+        assertThat(r.contains(v("30.9.9"))).isFalse();
+        assertThat(range("29.0.0.M1 이상 29.0.40 미만").contains(v("29.0.39"))).isTrue();
+        assertThat(range("29.0.0-RC1 초과 29.0.40 미만").contains(v("29.0.0"))).isTrue();
+        assertThat(range("31.0.0-beta2 이상").contains(v("31.0.0"))).isTrue();
+        assertThat(range("31.0.0-M5 이상").contains(v("30.9"))).isFalse();
     }
 
     @ParameterizedTest
