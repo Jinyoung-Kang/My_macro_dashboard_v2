@@ -4,6 +4,7 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -151,6 +152,50 @@ class ProductAliasesTest {
         assertThat(openssh.mentionedIn("OpenSSH for Windows와 별개로 OpenSSH 서버의 가짜 취약점")).isTrue();
         // 겹침 제외가 먼저 — 'Docker Desktop for Windows'가 지워진 뒤 'Docker'만 남지 않음.
         assertThat(alias("docker").mentionedIn("Docker Desktop for Windows 가짜 취약점")).isFalse();
+    }
+
+    @Test
+    @Disabled("QA-979 — 고치기 전: 이 스택에 설치된 APT·Brotli·Git이 별칭 표에 없음")
+    @DisplayName("QA-979 APT(표 행만)·Brotli·Git 별칭 — 이름 겹침(한국어 'APT 공격'·GitLab·brotlicffi 등)은 맞지 않음")
+    void aptBrotliGit() {
+        assertThat(ids("APT")).containsExactly("apt");
+        assertThat(ids("APT (Ubuntu)")).containsExactly("apt");
+        assertThat(ids("APT(Debian)")).containsExactly("apt");
+        assertThat(ids("Brotli")).containsExactly("brotli");
+        assertThat(ids("Google Brotli")).containsExactly("brotli");
+        assertThat(ids("Git")).containsExactly("git");
+        assertThat(ids("Git (Ubuntu)")).containsExactly("git");
+        for (String other : List.of("가짜 APT 그룹 도구", "brotlicffi", "brotlipy", "Python Brotli", "python-brotli", "GitLab Community Edition",
+                "GitHub Enterprise Server", "Gitea", "Gitee", "GitKraken", "Git LFS", "git-lfs", "libgit2", "Gitblit", "GitOps 도구",
+                "TortoiseGit", "Git Credential Manager", "go-git", "Git for Windows")) {
+            assertThat(ids(other)).as(other).isEmpty();
+        }
+
+        // APT는 본문에서 찾지 않음(한국어 공지의 'APT 공격·APT 그룹'과 겹침).
+        assertThat(alias("apt").mentionedIn("APT (Ubuntu) 가짜 취약점")).isFalse();
+        assertThat(alias("apt").mentionedIn("가짜 APT 공격 그룹 주의")).isFalse();
+        assertThat(alias("brotli").mentionedIn("Brotli 압축 라이브러리의 가짜 취약점")).isTrue();
+        assertThat(alias("brotli").mentionedIn("brotlicffi 가짜 취약점")).isFalse();
+        assertThat(alias("git").mentionedIn("Git 가짜 취약점")).isTrue();
+        assertThat(alias("git").mentionedIn("GitLab과 GitHub 가짜 취약점")).isFalse();
+        assertThat(alias("git").mentionedIn("Git LFS 가짜 취약점")).isFalse();
+
+        assertThat(alias("apt").kind()).isEqualTo(Kind.DISTRO);
+        assertThat(alias("brotli").kind()).isEqualTo(Kind.DISTRO);
+        assertThat(alias("git").kind()).isEqualTo(Kind.UPSTREAM);
+        assertThat(alias("git").family()).isEqualTo(Family.MINOR);
+        assertThat(alias("apt").sections()).containsExactly("host", "collector", "browser");
+        assertThat(alias("brotli").sections()).containsExactlyElementsOf(ProductAliases.ALL_SECTIONS);
+        assertThat(alias("git").sections()).containsExactly("host");
+
+        assertThat(alias("apt").matchesComponent(new Component("host", "dpkg", "apt", "9.8.4fake1", "apt"))).isTrue();
+        assertThat(alias("apt").matchesComponent(new Component("collector", "dpkg", "libapt-pkg9.9", "9.8.4fake1", "apt"))).isTrue();
+        assertThat(alias("apt").matchesComponent(new Component("caddy", "apk", "apt", "9.8.4-r0", null))).isFalse();
+        assertThat(alias("brotli").matchesComponent(new Component("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli"))).isTrue();
+        assertThat(alias("brotli").matchesComponent(new Component("caddy", "apk", "brotli-libs", "9.1.0-r0", "brotli"))).isTrue();
+        assertThat(alias("brotli").matchesComponent(new Component("collector", "pypi", "brotli", "9.1.0", null))).isFalse();
+        assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "git-man", "1:9.56.1-0ppa1~ubuntu99.04.1", "git"))).isTrue();
+        assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "libgit2-9.9", "9.9.0-1", "libgit2"))).isFalse();
     }
 
     @Test

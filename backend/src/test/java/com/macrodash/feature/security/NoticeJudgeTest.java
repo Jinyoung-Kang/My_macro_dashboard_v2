@@ -10,6 +10,7 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -625,6 +626,64 @@ class NoticeJudgeTest {
             Verdict perPackage = judge(kernelRows, noRunning);
             assertThat(perPackage.status()).isEqualTo(Status.CHECK);
             assertThat(perPackage.matches()).extracting(Match::status).containsExactly(Status.PATCHED, Status.CHECK);
+        }
+
+        @Test
+        @Disabled("QA-979 — 고치기 전: APT가 별칭 표에 없어 그 공지가 무관")
+        @DisplayName("QA-979 APT — 'APT (Ubuntu)' 표 행은 배포판 패키지 apt로 판정, 한국어 'APT 공격' 본문은 맞지 않음")
+        void aptRows() {
+            Component apt = pkg("host", "dpkg", "apt", "9.8.4fake1", "apt");
+            Component lib = pkg("host", "dpkg", "libapt-pkg9.9", "9.8.4fake1", "apt");
+            List<Row> aptRows = rows("APT (Ubuntu)|9.8.0 이상 9.8.4fakeubuntu0.1 미만|9.8.4fakeubuntu0.1");
+            Verdict v = judge(aptRows, inventory(apt, lib));
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(product(v, "apt").reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(v.matches()).extracting(Match::component).containsExactly("apt", "libapt-pkg9.9");
+            EnvInventory pending = inventory(List.of(new Pending("apt", "a", "b", true)), apt, lib);
+            assertThat(judge(aptRows, pending).status()).isEqualTo(Status.AFFECTED);
+
+            SecurityNotice korean = new SecurityNotice(11L, "가짜 APT 공격 주의 권고", Template.NO_TABLE, List.of(),
+                    "가짜 APT 공격 그룹이 가짜 악성코드를 유포");
+            Verdict k = NoticeJudge.judge(korean, List.of(), inventory(apt, lib));
+            assertThat(k.status()).isEqualTo(Status.UNRELATED);
+            assertThat(k.products()).isEmpty();
+        }
+
+        @Test
+        @Disabled("QA-979 — 고치기 전: Git이 별칭 표에 없어 그 공지가 무관")
+        @DisplayName("QA-979 Git — PPA 판은 상류 판으로 공지 표와 견주고(설치 판은 원문 그대로 근거에), 배포판 판은 배포판 경로(보류·변경 기록)")
+        void gitPpaAndDistro() {
+            List<Row> gitRows = rows("Git|9.56.1 미만|9.56.1", "Git|9.55.0 이상 9.55.4 미만|9.55.4");
+            Verdict patched = judge(gitRows, inventory(pkg("host", "dpkg", "git", "1:9.56.1-0ppa1~ubuntu99.04.1", "git")));
+            assertThat(patched.status()).isEqualTo(Status.PATCHED);
+            assertThat(patched.matches()).extracting(Match::otherFamily).containsExactly(false, true);
+            assertThat(patched.matches().get(0).installedVersion()).isEqualTo("1:9.56.1-0ppa1~ubuntu99.04.1");
+            assertThat(judge(gitRows, inventory(pkg("host", "dpkg", "git", "1:9.56.0-0ppa1~ubuntu99.04.1", "git"))).status())
+                    .isEqualTo(Status.AFFECTED);
+
+            Component distroGit = pkg("host", "dpkg", "git", "1:9.43.0-1fakeubuntu7.3", "git");
+            Verdict distro = judge(gitRows, inventory(distroGit));
+            assertThat(distro.status()).isEqualTo(Status.CHECK);
+            assertThat(distro.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(distro.matches()).extracting(Match::rowIndex).containsOnlyNulls();
+            assertThat(judge(gitRows, inventory(List.of(new Pending("git", "a", "b", true)), distroGit)).status())
+                    .isEqualTo(Status.AFFECTED);
+            assertThat(judge(gitRows, withChangelog(inventory(distroGit), "git", "1:9.43.0-1fakeubuntu7.3", "CVE-2099-1000",
+                    "CVE-2099-1001")).status()).isEqualTo(Status.PATCHED);
+        }
+
+        @Test
+        @Disabled("QA-979 — 고치기 전: Brotli가 별칭 표에 없어 그 공지가 무관")
+        @DisplayName("QA-979 Brotli — dpkg·apk 원본 brotli를 배포판 패키지로 판정, brotlicffi 행은 무관")
+        void brotli() {
+            Component deb = pkg("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli");
+            Component alp = pkg("caddy", "apk", "brotli-libs", "9.1.0-r0", "brotli");
+            Verdict v = judge(rows("Brotli|9.1.1 미만|9.1.1"), inventory(deb, alp));
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(product(v, "brotli").reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(v.matches()).extracting(Match::component).containsExactly("libbrotli1", "brotli-libs");
+
+            assertThat(judge(rows("brotlicffi|9.0 이상 9.1 미만|9.1"), inventory(deb, alp)).status()).isEqualTo(Status.UNRELATED);
         }
 
         @Test
