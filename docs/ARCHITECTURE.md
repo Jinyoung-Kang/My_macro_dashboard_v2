@@ -55,10 +55,10 @@ ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-b
 보안 공지([ADR 0046](adr/0046-security-notices.md))는 수집 태스크가 아닌 길이 하나 더 있습니다 — 서버의 버전 목록입니다.
 
 ```
-[Vultr 호스트] scripts/vultr/inventory.sh(cron·deploy.sh 끝) ── 호스트 dpkg·apt 보류·Docker·Tailscale + docker compose exec로 컨테이너 여섯
+[Vultr 호스트] scripts/vultr/inventory.sh(cron·deploy.sh 끝) ── 호스트 dpkg·apt 보류·변경 기록 CVE·Docker·Tailscale + docker compose exec로 컨테이너 여섯
       │ 표준입력(탭 구분 줄)
       ▼
-docker compose exec -T collector python -m app.inventory ──(검증 통과 때만, 한 트랜잭션)──► env_inventory · env_components · env_pending_updates
+docker compose exec -T collector python -m app.inventory ──(검증 통과 때만, 한 트랜잭션)──► env_inventory · env_components · env_pending_updates · env_changelog_cves
 보호나라 게시판 ──► Collector kisa_security_notices(flex) ──► security_notices · security_notice_rows
                                                      Backend SecurityService(읽을 때 판정) ──► /api/security/* ──► 화면 /security
                                                      Backend SecurityAlertJob ──► 알림함 · 텔레그램 운영 봇(security_alerts에 기록)
