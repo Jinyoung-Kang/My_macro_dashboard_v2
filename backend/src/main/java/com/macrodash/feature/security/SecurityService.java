@@ -6,6 +6,7 @@ import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.store.SecurityStore;
+import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.support.InvalidRequestException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -147,6 +148,29 @@ public class SecurityService {
         List<SecurityNotice.Row> tableRows = rows.stream()
                 .map(r -> new SecurityNotice.Row(r.rowNo(), r.cve(), r.product(), r.affected(), r.fixed())).toList();
         return NoticeJudge.judge(input, tableRows, inventory, aliases);
+    }
+
+    /**
+     * 배포판 보안 추적기에 물어볼 것(ADR 0046 덧붙임 2026-11-21) — 상세를 받은 공지(detail ok)의 판정 근거 가운데 추적기 근거가 있는 것의
+     * (배포판, 스위트, 원본 패키지, CVE) 전부. 추적기 근거는 변경 기록으로 덮이지 않은 CVE만 담고, 보안 보류로 해당인 구성 요소·CVE를 읽지 못한
+     * 행·os를 모르는 구역에는 없습니다. 알림 작업이 주기마다 표 {@code security_tracker_wants}를 이 집합으로 맞춥니다.
+     */
+    public static Set<SecurityTrackerStore.Want> trackerWants(List<Judged> judged) {
+        Set<SecurityTrackerStore.Want> out = new LinkedHashSet<>();
+        for (Judged j : judged) {
+            if (!"ok".equals(j.notice().detailStatus())) {
+                continue;
+            }
+            for (Match m : j.verdict().matches()) {
+                if (m.tracker() == null) {
+                    continue;
+                }
+                for (Verdict.TrackerCve cve : m.tracker().cves()) {
+                    out.add(new SecurityTrackerStore.Want(m.tracker().distro(), m.tracker().suite(), m.tracker().pkg(), cve.cve()));
+                }
+            }
+        }
+        return out;
     }
 
     /** 판정이 '해당'인 제품의 이름(별칭 표 순서) — 알림 글에 씁니다. */

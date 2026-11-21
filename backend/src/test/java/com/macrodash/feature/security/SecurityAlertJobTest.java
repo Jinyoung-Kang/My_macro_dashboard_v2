@@ -7,6 +7,7 @@ import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.AlertStore;
 import com.macrodash.store.SecurityAlertStore;
 import com.macrodash.store.SecurityStore;
+import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.store.UserStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -50,6 +53,9 @@ class SecurityAlertJobTest {
 
     private SecurityStore store;
     private SecurityAlertStore records;
+    private SecurityTrackerStore trackers;
+    /** 맞추기에 넘긴 물어볼 것(주기마다 한 벌). */
+    private final List<Set<SecurityTrackerStore.Want>> synced = new ArrayList<>();
     private AlertStore alerts;
     private UserStore users;
     private PaperTelegram telegram;
@@ -89,6 +95,14 @@ class SecurityAlertJobTest {
             ids.forEach(id -> table.computeIfPresent(id, (k, a) -> new SecurityAlertStore.Alert(a.nttId(), a.alertedAt(), a.alertEventId(),
                     call.getArgument(1))));
             return ids.size();
+        });
+
+        trackers = mock(SecurityTrackerStore.class);
+        when(trackers.ready()).thenReturn(true);
+        when(trackers.replaceAll(any())).thenAnswer(call -> {
+            Collection<SecurityTrackerStore.Want> wants = call.getArgument(0);
+            synced.add(Set.copyOf(wants));
+            return new SecurityTrackerStore.SyncResult(wants.size(), 0, 0);
         });
 
         alerts = mock(AlertStore.class);
@@ -134,7 +148,7 @@ class SecurityAlertJobTest {
 
     private SecurityAlertJob job() {
         SecurityService service = new SecurityService(store, ProductAliases.defaults(), Clock.fixed(NOW, ZoneOffset.UTC));
-        return new SecurityAlertJob(service, records, alerts, users, telegram, Clock.fixed(NOW, ZoneOffset.UTC));
+        return new SecurityAlertJob(service, records, trackers, alerts, users, telegram, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     /** 해당 — 가짜 PostgreSQL 16.42가 16.x 행의 영향 구간 안(그 행의 CVE 하나 — 15.x 행의 둘은 다른 계열이라 세지 않음). */
@@ -274,6 +288,46 @@ class SecurityAlertJobTest {
                 assertThat(text).as("글: " + text).doesNotContain(version);
             }
         }
+    }
+
+    @Test
+    @DisplayName("주기마다 물어볼 것을 맞춘다 — 해당이 없어도, 버전 목록이 없거나 표가 없으면 맞추지 않음")
+    void syncsTrackerWants() {
+        trackerAffected();
+
+        job().run();
+        assertThat(synced).singleElement().satisfies(wants -> assertThat(wants).containsExactlyInAnyOrder(
+                new SecurityTrackerStore.Want("ubuntu", "fakenoble", "openssl", "CVE-2099-8001"),
+                new SecurityTrackerStore.Want("ubuntu", "fakenoble", "openssl", "CVE-2099-8002")));
+
+        // 해당 공지가 없어도(패치됨) 맞춤.
+        when(store.trackerStatuses()).thenReturn(List.of(
+                new SecurityStore.TrackerStatus("ubuntu", "fakenoble", "openssl", "CVE-2099-8001", "fixed", "9.9.9-0fake7.1", null, NOW),
+                new SecurityStore.TrackerStatus("ubuntu", "fakenoble", "openssl", "CVE-2099-8002", "not_affected", null, null, NOW)));
+        assertThat(job().run()).isEqualTo(SecurityAlertJob.Outcome.NONE);
+        assertThat(synced).hasSize(2);
+
+        when(trackers.ready()).thenReturn(false);
+        job().run();
+        assertThat(synced).hasSize(2);
+
+        when(trackers.ready()).thenReturn(true);
+        when(store.inventory()).thenReturn(Optional.empty());
+        job().run();
+        assertThat(synced).as("버전 목록이 없으면 표를 비우지 않음").hasSize(2);
+        verify(trackers, never()).replaceAll(eq(Set.of()));
+    }
+
+    @Test
+    @DisplayName("물어볼 것 맞추기가 실패해도 알림은 그대로 — 로그에는 건수와 예외 종류만")
+    void trackerSyncFailureDoesNotBlockAlerts() {
+        trackerAffected();
+        doThrow(new IllegalStateException("가짜 실패 fakenoble openssl")).when(trackers).replaceAll(any());
+
+        assertThat(job().run()).isEqualTo(new SecurityAlertJob.Outcome(1, 1));
+
+        assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(m -> assertThat(m).contains("맞추기 실패(2건)", "IllegalStateException").doesNotContain("fakenoble"));
     }
 
     @Test

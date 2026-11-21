@@ -1,6 +1,7 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.store.SecurityStore;
+import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -355,6 +357,21 @@ class SecurityServiceTest {
         Map<String, Object> open = service.notices(null, "DISTRO_OPEN", null, null, null);
         assertThat(items(open)).extracting(i -> i.get("nttId")).containsExactly(9103L);
         assertThat(items(open).get(0)).containsEntry("verdict", "check").containsEntry("reasons", List.of("DISTRO_OPEN"));
+    }
+
+    @Test
+    @DisplayName("물어볼 것 — 상세 ok 공지의 추적기 근거 CVE 전부(변경 기록으로 덮인 것·보안 보류로 해당인 구성 요소·상세 실패 공지 빼고)")
+    void trackerWants() {
+        trackerInventory();
+        List<SecurityService.Judged> judged = service.judgeAll(service.loadInventory().orElseThrow());
+
+        Set<SecurityTrackerStore.Want> wants = SecurityService.trackerWants(judged);
+
+        assertThat(wants).containsExactlyInAnyOrder(
+                new SecurityTrackerStore.Want("ubuntu", "fakenoble", "openssl", "CVE-2099-5002"),
+                new SecurityTrackerStore.Want("ubuntu", "fakenoble", "openssl", "CVE-2099-5003"),
+                new SecurityTrackerStore.Want("debian", "fakeforky", "brotli", "CVE-2099-6001"));
+        assertThat(SecurityService.trackerWants(List.of())).isEmpty();
     }
 
     @Test

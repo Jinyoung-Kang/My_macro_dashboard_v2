@@ -5,6 +5,7 @@ import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.store.AlertStore;
 import com.macrodash.store.SecurityAlertStore;
+import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.store.UserStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -38,6 +40,10 @@ import java.util.stream.Collectors;
  *       않습니다({@code StoreReader.quietly}와 같은 뜻 — ADR 0008).</li>
  *   <li><b>글에는 제품 이름·CVE 건수·화면 자리만</b>: 설치 버전·버전 칸 원문은 텔레그램·알림함 글·로그에 넣지 않습니다(저장소가 공개라 서버의 실제 버전은 DB에만).
  *       로그에는 건수·글 번호·예외 종류만 남깁니다.</li>
+ *   <li><b>배포판 추적기에 물어볼 것 맞추기</b>(ADR 0046 덧붙임 2026-11-21): 같은 주기에 판정에서 모은 '물어볼 것'
+ *       ({@link SecurityService#trackerWants})으로 표 {@code security_tracker_wants}를 맞춥니다(수집기가 다음 실행에서 물음). 버전 목록이 없으면
+ *       맞추지 않고(표를 비우지 않음), 실패해도 알림은 그대로 봅니다(로그에 건수·예외 종류만). 추적기로 해당이 된 공지(고친 판이 나왔는데 깔리지
+ *       않음)도 같은 길로 알립니다.</li>
  * </ul>
  */
 @Service
@@ -58,21 +64,23 @@ public class SecurityAlertJob {
 
     private final SecurityService security;
     private final SecurityAlertStore records;
+    private final SecurityTrackerStore trackers;
     private final AlertStore alerts;
     private final UserStore users;
     private final PaperTelegram telegram;
     private final Clock clock;
 
     @Autowired
-    public SecurityAlertJob(SecurityService security, SecurityAlertStore records, AlertStore alerts, UserStore users,
-                            PaperTelegram telegram) {
-        this(security, records, alerts, users, telegram, Clock.systemUTC());
+    public SecurityAlertJob(SecurityService security, SecurityAlertStore records, SecurityTrackerStore trackers, AlertStore alerts,
+                            UserStore users, PaperTelegram telegram) {
+        this(security, records, trackers, alerts, users, telegram, Clock.systemUTC());
     }
 
-    SecurityAlertJob(SecurityService security, SecurityAlertStore records, AlertStore alerts, UserStore users, PaperTelegram telegram,
-                     Clock clock) {
+    SecurityAlertJob(SecurityService security, SecurityAlertStore records, SecurityTrackerStore trackers, AlertStore alerts,
+                     UserStore users, PaperTelegram telegram, Clock clock) {
         this.security = security;
         this.records = records;
+        this.trackers = trackers;
         this.alerts = alerts;
         this.users = users;
         this.telegram = telegram;
@@ -101,8 +109,9 @@ public class SecurityAlertJob {
         if (inventory.isEmpty()) {
             return Outcome.NONE;            // 버전 목록 없음 — 해당이 나올 수 없음
         }
-        List<SecurityService.Judged> affected = security.judgeAll(inventory.get()).stream()
-                .filter(j -> j.verdict().status() == Status.AFFECTED).toList();
+        List<SecurityService.Judged> all = security.judgeAll(inventory.get());
+        syncTrackerWants(all);
+        List<SecurityService.Judged> affected = all.stream().filter(j -> j.verdict().status() == Status.AFFECTED).toList();
         if (affected.isEmpty()) {
             return Outcome.NONE;
         }
@@ -145,6 +154,27 @@ public class SecurityAlertJob {
             }
         }
         return new Outcome(inboxed, telegrammed);
+    }
+
+    /**
+     * 배포판 추적기에 물어볼 것을 이번 판정으로 맞춥니다. 표가 없으면(V42 전) 건너뛰고, 실패는 로그 한 줄(건수·예외 종류)로 — 알림은 그대로 봅니다.
+     */
+    private void syncTrackerWants(List<SecurityService.Judged> judged) {
+        int wanted = -1;
+        try {
+            if (!trackers.ready()) {
+                return;
+            }
+            Set<SecurityTrackerStore.Want> wants = SecurityService.trackerWants(judged);
+            wanted = wants.size();
+            SecurityTrackerStore.SyncResult result = trackers.replaceAll(wants);
+            if (result.inserted() > 0 || result.deleted() > 0 || result.skipped() > 0) {
+                log.info("배포판 추적기 물어볼 것 — {}건(새로 {}건, 지움 {}건, 건너뜀 {}건)", wanted, result.inserted(), result.deleted(),
+                        result.skipped());
+            }
+        } catch (RuntimeException e) {
+            log.warn("배포판 추적기 물어볼 것 맞추기 실패({}건) — 알림은 그대로 봅니다: {}", Math.max(wanted, 0), e.getClass().getSimpleName());
+        }
     }
 
     /** 알림함 사건과 운영자마다의 배달, 기록 한 행을 한 트랜잭션으로. 다른 실행이 먼저 기록했으면 되돌립니다. */

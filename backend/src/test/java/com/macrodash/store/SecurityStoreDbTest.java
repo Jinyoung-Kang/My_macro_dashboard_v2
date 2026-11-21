@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 보안 공지 저장소 읽기(ADR 0046, V40) — 실제 표(테스트 DB)에서 공지·표 행·버전 목록·출처 판정을 읽는지. 수집기가 쓰는 표라 여기서 넣는 행은 시험
  * 고정본입니다(값은 모두 가짜 — 글 번호는 9.9억대, 출처 판정 태스크는 {@code test-}). 버전 목록 표 셋은 늘 한 벌이라 시험이 끝나면 비웁니다.
  * 백엔드가 쓰는 알림 기록({@code security_alerts}, {@link SecurityAlertStore})도 함께 봅니다. V42의 추적기 결과({@code distro_cve_status} — 수집기 표,
- * 시험 행은 스위트 {@code testfake…})도 봅니다.
+ * 시험 행은 스위트 {@code testfake…})와 백엔드가 쓰는 물어볼 것({@code security_tracker_wants}, {@link SecurityTrackerStore} — 통째로 맞추므로 시험이
+ * 표 전체를 비움)도 봅니다.
  */
 class SecurityStoreDbTest {
 
@@ -51,6 +53,7 @@ class SecurityStoreDbTest {
         jdbc.update("DELETE FROM env_inventory");
         jdbc.update("DELETE FROM env_changelog_cves");
         jdbc.update("DELETE FROM distro_cve_status WHERE suite LIKE 'testfake%'");
+        jdbc.update("DELETE FROM security_tracker_wants");
     }
 
     @Test
@@ -167,6 +170,33 @@ class SecurityStoreDbTest {
                         Instant.parse("2026-11-21T01:02:00Z")),
                 new SecurityStore.TrackerStatus("alpine", "testfake3.99", "openssl", "CVE-2099-0004", "unknown", null, null,
                         Instant.parse("2026-11-21T01:03:00Z")));
+    }
+
+    @Test
+    @DisplayName("물어볼 것 맞추기(V42 security_tracker_wants) — 새 행 넣기·빠진 행 지우기·있는 행의 처음 시각 그대로·모양이 틀린 값 건너뜀")
+    void trackerWants() {
+        SecurityTrackerStore trackers = new SecurityTrackerStore(jdbc, new SchemaCheck(jdbc));
+        assertThat(trackers.ready()).isTrue();
+        SecurityTrackerStore.Want a = new SecurityTrackerStore.Want("ubuntu", "testfakenoble", "openssl", "CVE-2099-0001");
+        SecurityTrackerStore.Want b = new SecurityTrackerStore.Want("ubuntu", "testfakenoble", "linux", "CVE-2099-0002");
+        SecurityTrackerStore.Want c = new SecurityTrackerStore.Want("alpine", "v3.99", "openssl", "CVE-2099-0003");
+
+        assertThat(trackers.replaceAll(Set.of(a, b))).isEqualTo(new SecurityTrackerStore.SyncResult(2, 0, 0));
+        Timestamp firstAt = jdbc.queryForObject("SELECT wanted_at FROM security_tracker_wants WHERE package = 'openssl' AND cve = 'CVE-2099-0001'",
+                Timestamp.class);
+
+        SecurityTrackerStore.Want badSuite = new SecurityTrackerStore.Want("ubuntu", "Test Fake", "openssl", "CVE-2099-0004");
+        SecurityTrackerStore.Want badDistro = new SecurityTrackerStore.Want("fedora", "testfake", "openssl", "CVE-2099-0005");
+        SecurityTrackerStore.Want badCve = new SecurityTrackerStore.Want("ubuntu", "testfakenoble", "openssl", "CVE-99-1");
+        assertThat(trackers.replaceAll(List.of(a, c, badSuite, badDistro, badCve)))
+                .isEqualTo(new SecurityTrackerStore.SyncResult(1, 1, 3));
+        assertThat(trackers.wants()).containsExactly(c, a);
+        assertThat(jdbc.queryForObject("SELECT wanted_at FROM security_tracker_wants WHERE package = 'openssl' AND cve = 'CVE-2099-0001'",
+                Timestamp.class)).as("있는 행은 처음 넣은 시각 그대로").isEqualTo(firstAt);
+
+        assertThat(trackers.replaceAll(List.of(a, c))).isEqualTo(new SecurityTrackerStore.SyncResult(0, 0, 0));
+        assertThat(trackers.replaceAll(List.of())).isEqualTo(new SecurityTrackerStore.SyncResult(0, 2, 0));
+        assertThat(trackers.wants()).isEmpty();
     }
 
     @Test
