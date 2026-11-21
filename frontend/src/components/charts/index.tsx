@@ -59,6 +59,7 @@ import {
   TOOLTIP_BOX,
 } from "./frame";
 import { ChartSizeHold } from "./sizeHold";
+import { useChartWidth } from "./useChartWidth";
 import { LineChart as SingleLineChart } from "./LineChart";
 
 /*
@@ -425,8 +426,8 @@ export function MultiLineSeries({
   const specsOf = (side: "left" | "right") =>
     series.filter((entry) => (entry.axis ?? "left") === side).map((entry) => ({ key: entry.key, label: entry.name }));
   const usesRight = series.some((entry) => entry.axis === "right");
-  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다(선 차트 LineChart와 같음). 재기 전에는 null(첫·마지막만).
-  const [width, setWidth] = useState<number | null>(null);
+  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다(선 차트 LineChart와 같음). 재기 전에는 null(첫·마지막만). 차트가 붙기 전에 먼저 잽니다(useChartWidth).
+  const { width, containerRef, onResize } = useChartWidth();
   const leftLabel = (value: number) => `${formatChartNumber(value, precision)}${unit}`;
   const rightLabel = (value: number) => formatChartNumber(value, rightPrecision);
   // 눈금 — 선 차트(LineChart)와 같은 규칙(lib/lineChart의 lineYAxis: 둥근 간격, 0은 zeroLine일 때만). 고정 범위(domain)면 그 범위 안의 둥근 간격.
@@ -458,7 +459,7 @@ export function MultiLineSeries({
     <figure className="m-0">
       <ChartLegend entries={legend} />
       <ChartSizeHold>
-      <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
+      <ResponsiveContainer ref={containerRef} width="100%" height={height} onResize={onResize}>
         <LineChart
           data={data}
           margin={{ top: 8, right: 8, bottom: 0, left: 0 }}

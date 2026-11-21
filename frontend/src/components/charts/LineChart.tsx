@@ -50,6 +50,7 @@ import {
   TOOLTIP_BOX,
 } from "./frame";
 import { ChartSizeHold } from "./sizeHold";
+import { useChartWidth } from "./useChartWidth";
 
 /** 히어로 선 — 중립 잉크 하나(방향색을 입히지 않음, 명세 A4). 문지르는 세로 커서는 옅은 경계색. */
 const HERO_INK = "var(--text)";
@@ -220,8 +221,8 @@ export function LineChart({
   const hero = variant === "hero";
   // 터치를 뗀 뒤 커서를 감추는 표시 — 다음 터치·마우스 움직임에서 풉니다.
   const [released, setReleased] = useState(false);
-  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다. 재기 전에는 null(첫·마지막만).
-  const [width, setWidth] = useState<number | null>(null);
+  // 그림 너비(px) — X 중간 눈금 개수를 고릅니다. 재기 전에는 null(첫·마지막만). 차트가 붙기 전에 먼저 잽니다(useChartWidth).
+  const { width, containerRef, onResize } = useChartWidth();
   const colors = lineSeriesColors(
     hero ? series.map((entry) => (entry.color ? entry : { ...entry, color: HERO_INK })) : series,
     Object.values(SERIES_COLORS),
@@ -275,7 +276,7 @@ export function LineChart({
     : null;
 
   const chart = (
-    <ResponsiveContainer width="100%" height={fixedHeight ?? "100%"} onResize={(nextWidth) => setWidth(nextWidth)}>
+    <ResponsiveContainer ref={containerRef} width="100%" height={fixedHeight ?? "100%"} onResize={onResize}>
       {/*
         이름은 Tab으로 닿는 SVG 자체에 붙입니다 — Recharts 접근성 층이 SVG에 role="application"·tabindex=0을 달아 화살표로 점을
         고르게 하므로, 이름이 없으면 화면 낭독기가 이름 없는 'application'만 읽습니다(DonutChart와 같은 이유).
