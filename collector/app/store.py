@@ -1905,7 +1905,8 @@ def replace_env_inventory(doc: dict) -> None:
 
     :param doc: {collected_at, host_included, apt_lists_at, sections, components[(source, ecosystem, name, version, source_package)],
                  pending[(package, arch, installed, candidate, repos, security)], changelog[(package, version, cve)](V41 — 없으면 빈 표)}
-                 — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것
+                 — 검증은 부르는 쪽(app/inventory.py)이 끝낸 것. sections는 구역 이름 → {status, reason?, count?, pending?, changelog?,
+                 os?{id, versionId, codename}}(os는 그 구역의 /etc/os-release — 표를 바꾸지 않고 이 JSON에만, 백엔드가 추적기 스위트를 정함)
     """
     with transaction(), connection() as conn:
         conn.execute("DELETE FROM env_components")
