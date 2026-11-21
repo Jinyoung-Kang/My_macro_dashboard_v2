@@ -20,7 +20,16 @@
  * paperRouteFromPath와 같은지는 breadcrumbs.test가 대조합니다.
  */
 import { GROUP_HOMES, activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from "./nav";
-import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
+import {
+  indicatorHref,
+  institutionHref,
+  parseCik,
+  parseIndicatorKey,
+  parseSecurityNoticeNo,
+  parseStockRoute,
+  securityNoticeHref,
+  stockHref,
+} from "./detail";
 import type { SessionUser } from "./types";
 
 /**
@@ -34,6 +43,9 @@ const STOCK_SECTION: Record<"us" | "kr", string> = { us: "종목(미국)", kr: "
 
 /** 지표 상세의 중간 칸 — 매크로 지표 화면(지표 카드가 있는 곳). */
 const MACRO_HREF = "/macro";
+
+/** 보안 공지 목록 — 그 아래 `/<번호>`가 공지 상세입니다. */
+const SECURITY_HREF = "/security";
 
 /**
  * 모의매매 탭 주소 조각 → 이름과 그 탭이 있는 시장(lib/paper PAPER_TABS의 개요 밖 탭과 같음 — 시험이 대조). 'ISA 계좌'는 한국 화면에만 있습니다.
@@ -70,8 +82,16 @@ const NO_DETAIL: DetailCrumbs = { crumbs: [], entityHref: null };
  */
 export const SEARCH_ENTITY_HREF = "/search";
 
-/** 대상 칸(상세 세 종류·모의매매 탭) — 탭·하위 화면 칸 뒤에 붙입니다. */
-function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => string | null): DetailCrumbs {
+/**
+ * 대상 칸(상세 세 종류·모의매매 탭·보안 공지 상세) — 탭·하위 화면 칸 뒤에 붙입니다. `visible`은 탭이 보일 때의 주소, `itemShown`은 그 하위 화면이 이 사용자에게
+ * 보이는가(보안 공지처럼 탭 안의 운영자 전용 화면 아래 대상 — 회원이 주소로 열면 링크 없이).
+ */
+function detailCrumbs(
+  pathname: string,
+  tab: NavTab,
+  visible: (href: string) => string | null,
+  itemShown: (href: string) => boolean,
+): DetailCrumbs {
   if (tab.key === "search") {
     // 정보 검색 — 대상 칸은 넘겨받은 이름이 있을 때만(이름 없이 보일 식별자 칸은 없음). allCrumbs·entityCrumbLabel이 이름으로 칸을 만듭니다.
     return pathname.replace(/\/$/, "") === SEARCH_ENTITY_HREF ? { crumbs: [], entityHref: SEARCH_ENTITY_HREF } : NO_DETAIL;
@@ -117,6 +137,13 @@ function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => 
     const href = cik ? institutionHref(cik) : null;
     return cik && href ? { crumbs: [{ label: `CIK ${cik}`, href: visible(href) }], entityHref: href } : NO_DETAIL;
   }
+  if (tab.key === "more") {
+    // 보안 공지 상세(/security/<번호> — 운영자 전용, ADR 0046) — 대상 칸은 '공지 <번호>', 화면이 공지 제목을 넘기면 그 제목.
+    const raw = singleSegment(pathname, `${SECURITY_HREF}/`);
+    const ntt = raw === null ? null : parseSecurityNoticeNo(raw);
+    const href = ntt ? securityNoticeHref(ntt) : null;
+    return ntt && href ? { crumbs: [{ label: `공지 ${ntt}`, href: itemShown(SECURITY_HREF) ? visible(href) : null }], entityHref: href } : NO_DETAIL;
+  }
   return NO_DETAIL;
 }
 
@@ -135,7 +162,7 @@ function matchedEntityName(detail: DetailCrumbs, entity: { href: string; label: 
 export function entityCrumbLabel(pathname: string, entity?: { href: string; label: string } | null): string | null {
   const tab = activeTab(pathname);
   if (!tab) return null;
-  const detail = detailCrumbs(pathname, tab, (href) => href);
+  const detail = detailCrumbs(pathname, tab, (href) => href, () => true);
   if (detail.entityHref === null) return null;
   return matchedEntityName(detail, entity) || (detail.crumbs.at(-1)?.label ?? null);
 }
@@ -171,7 +198,7 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
     }
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
-  const detail = detailCrumbs(pathname, tab, visible);
+  const detail = detailCrumbs(pathname, tab, visible, (href) => shown.has(href));
   const named = matchedEntityName(detail, entity);
   // 이름이 있으면 대상 칸 글을 그 이름으로 — 식별자 칸이 없는 대상(정보 검색 — QA-861)은 이름 칸 하나를 더합니다(지금 화면이라 링크 없음).
   const tail = !named
@@ -186,7 +213,8 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
  * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
  * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더,
  * `/info/kr` → 더보기 › 정보 수집(→ /info/overview) › 국내 시장·수급, `/search` + {href:'/search', label:'엔비디아'}(정보 검색 대상 화면이 넘긴 이름 —
- * QA-861) → 정보 검색(→ /search) › 엔비디아(이름이 없으면 '정보 검색' 한 칸).
+ * QA-861) → 정보 검색(→ /search) › 엔비디아(이름이 없으면 '정보 검색' 한 칸), `/security/900001` → 더보기 › 보안 공지(→ /security) › 공지 900001
+ * (공지 화면이 제목을 넘기면 그 제목).
  * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
  * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
  * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
