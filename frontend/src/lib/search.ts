@@ -11,7 +11,7 @@
 import { visibleMenus } from "./access";
 import { indicatorHref, institutionHref, kindText, stockHref } from "./detail";
 import { withoutLeadingIcon } from "./format";
-import { searchHref } from "./infoSearch";
+import { searchHref } from "./searchKey";
 import type { NavSearchItem, TabKey } from "./nav";
 import { assetMonogram } from "./patternRows";
 import type { DetailSymbolsResponse, MacroOverview, SessionUser, StockUniverseResponse } from "./types";

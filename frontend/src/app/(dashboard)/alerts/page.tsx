@@ -13,7 +13,7 @@ import { apiDelete, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
-import { searchWatchInboxHref } from "@/lib/infoSearch";
+import { searchWatchInboxHref } from "@/lib/searchKey";
 import { securityInboxHref } from "@/lib/security";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 

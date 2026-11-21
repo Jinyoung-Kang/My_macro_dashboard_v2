@@ -7,7 +7,7 @@ import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { homeReadFailed, KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
-import { searchWatchInboxHref } from "@/lib/infoSearch";
+import { searchWatchInboxHref } from "@/lib/searchKey";
 import { securityInboxHref } from "@/lib/security";
 import type { StatusIssuesResponse } from "@/lib/types";
 import { HOME_LINK, SectionError } from "./HomeCard";

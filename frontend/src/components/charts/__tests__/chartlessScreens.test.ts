@@ -85,3 +85,16 @@ describe("차트가 없는 화면은 recharts에 닿지 않는다", () => {
     expect(reach([entry("app/(dashboard)/macro/page.tsx")]).chartPaths.length).toBeGreaterThan(0);
   });
 });
+
+describe("모든 화면이 함께 싣는 셸과 홈은 정보 검색 전체 모듈(lib/infoSearch.ts)에 닿지 않는다", () => {
+  // 명령 팔레트(lib/search.ts)·홈 알림 요약이 함수 하나씩 쓰려고 166 KB 모듈 전체를 끌고 오던 것(묶음 42 KB — 2026-11-22 분석). 그 함수들은
+  // lib/searchKey.ts에 있습니다(ADR 0047 결정 7, 작업 C4).
+  it.each([
+    ["대시보드 레이아웃·셸", ["app/layout.tsx", "app/(dashboard)/layout.tsx"]],
+    ["홈('/')", ["app/(dashboard)/page.tsx"]],
+  ])("%s", (_name, starts) => {
+    const { files } = reach(starts.map(entry));
+    expect([...files].map((file) => relative(root, file))).not.toContain("lib/infoSearch.ts");
+    expect([...files].map((file) => relative(root, file))).toContain("lib/searchKey.ts");
+  });
+});
