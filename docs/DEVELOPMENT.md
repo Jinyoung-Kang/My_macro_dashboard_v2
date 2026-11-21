@@ -594,9 +594,11 @@ getent hosts api.telegram.org && cd ~/My_macro_dashboard_v2 && docker compose ps
 
 이름 조회가 비고 `/etc/resolv.conf`가 Tailscale 리졸버(`100.100.100.100`)를 가리키면 `sudo bash scripts/vultr/tailscale-up.sh`를 다시 돌린 뒤(이미 tailnet에 있으면
 키를 읽지 않음 — Tailscale DNS를 끄고 원래 설정으로 되돌림, ADR 0023 개정 2026-11-12) 앱 컨테이너를 재시작합니다(`docker compose restart backend collector frontend
-browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale은 Ubuntu 보안 저장소 밖이라 자동으로 오르지 않습니다: Docker는
+browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale·Git은 Ubuntu 보안 저장소 밖이라 자동으로 오르지 않습니다: Docker는
 `sudo apt-get install --only-upgrade docker-ce docker-ce-cli docker-ce-rootless-extras docker-compose-plugin`(컨테이너 모두 재시작), Tailscale은 올리는 동안
-Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --only-upgrade tailscale`.
+Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --only-upgrade tailscale`, Git은 `sudo apt-get install --only-upgrade git git-man`
+(2026-11-21부터 Git 관리자 PPA `ppa:git-core/ppa` — ADR 0023 개정 2026-11-21). 여럿을 한 번에 올릴 때는 SSH가 끊겨도 끝까지 돌도록 `sudo systemd-run`으로
+`apt-get -y --with-new-pkgs upgrade`를 띄우고(출력은 파일로) `systemctl is-active <단위>`로 끝났는지 봅니다 — Tailscale이 다시 뜨면 Tailscale SSH로 그대로 이어집니다.
 
 Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정 2026-11-12)는 `sudo canonical-livepatch status`에서 `supported`·`checkState: checked`와
 `upgradeRequiredDate`(그 날짜 전에 새 커널로 재부팅)를 봅니다. 연결 상태는 `pro status`. 서버를 새로 만들면 `sudo pro attach`를 토큰 없이 돌려 나온 코드를

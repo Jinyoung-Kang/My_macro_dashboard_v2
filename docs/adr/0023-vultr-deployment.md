@@ -203,3 +203,23 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
   systemd의 추적용 scope로 옮기는데, root가 아니면 사용자 세션 버스로 하고 cron에는 그 버스가 없습니다(linger 꺼짐 — ssh 세션이 떠 있는 동안만 있음).
   서버에서 systemd 단위(ubuntu)로 버스를 없는 경로로 가리키면 같은 오류가 나고, 같은 자리의 root·`sudo -n`으로는 읽혀, 점검 스크립트가 root가 아니면
   `sudo -n`으로 읽게 했습니다. linger를 켜 사용자 관리자를 늘 띄우는 길은 서버 설정이 늘어 고르지 않았습니다. 판정 규칙은 그대로입니다.
+
+## 개정 — 2026-11-21 (호스트 패키지 올림·재부팅, Git은 관리자 PPA)
+
+- **무엇을 했나**(2026-11-21 토요일 18:26~18:45 KST, 사용자 요청 — 보호나라 공지 2026-10-29~11-20 대조 뒤): 서버에 올릴 수 있는 패키지 33개가 쌓여 있었습니다
+  (모두 Ubuntu 보안 저장소 밖 — `noble-updates`의 커널·systemd·snapd와 Docker·Tailscale 저장소 — 이라 자동 보안 업데이트가 설치하지 않은 것).
+  `apt-get -y --with-new-pkgs upgrade`를 `systemd-run` 단위로 돌려 33개를 올리고(새로 설치 7, 남은 것 0) 18:37쯤 재부팅했습니다:
+  커널 6.8.0-149 → 6.8.0-151, Docker 29.9.3 → 29.10.0, containerd.io 2.4.2-4, Tailscale 1.104.6 → 1.104.7, systemd 255.4-1ubuntu8.19.
+  토요일 저녁이라 한국·미국 장과 결정 시각 밖이고 권장 재부팅 창(16:00~22:00 KST) 안입니다. 실제 매매는 켜져(KR LIVE) 있었고 재부팅 전후로 그대로입니다.
+- **확인**(DEVELOPMENT §7 '재부팅 뒤 확인'): `getent hosts api.telegram.org` 조회됨·`/etc/resolv.conf`는 Tailscale 리졸버가 아님(11-12 개정의 설정이 재부팅을 넘겨 유지됨 —
+  `tailscale-up.sh`를 다시 돌리지 않음), 컨테이너 여섯 모두 건강, 재부팅 뒤 백엔드 ERROR 0건, `reboot-check.sh --summary` '재부팅 필요 없음 · Livepatch 정상'
+  (`upgradeRequiredDate` 2027-11-23 → 2027-12-11), `inventory.sh`로 `/security` 화면의 버전 목록을 다시 올림. 컨테이너는 두 번 다시 떴습니다(Docker 패키지가 오를 때와 재부팅 때).
+  Tailscale은 `systemd-run` 단위 안에서 올라 SSH가 끊겨도 작업이 이어졌고, 비상용 22는 쓰지 않았습니다(시작 전에 접속되는지만 확인).
+  배포는 하지 않았습니다 — 같은 날 15:51 배포본(main@4778b482)이 그대로 돌고, 그 배포가 `--pull`로 받은 백엔드 기반 이미지가 이미 OpenJDK 2026-11 공지의 고친 판입니다.
+- **Git은 관리자 PPA로**(같은 날 18:4x KST, 사용자 결정): 보호나라 2026-11 Git 공지(참고 링크 GHSA-vp2w-7xxj-jvxr · CVE-2026-105437, 고친 판 2.56.1 등)에 대해 Ubuntu는 아직 패키지를 내지 않았습니다
+  (Ubuntu 보안 추적에서 CVE-2026-105437의 noble 상태 'needs-triage', 11-21 확인). 서버는 이 저장소만 GitHub에서 받으므로 공지의 조건(공격자가 만든 저장소를 받음)에 걸릴 일은 거의 없지만,
+  기다리지 않고 Git 관리자 PPA(`ppa:git-core/ppa`)를 더해 2.43.0 → 2.56.1로 올렸습니다. 올린 뒤 `git fetch origin`·`git status`가 그대로 됩니다.
+- **남은 위험**: PPA는 자동 보안 업데이트의 허용 목록(Ubuntu·ESM 저장소)에 없어 Git은 이제 Docker·Tailscale처럼 손으로 올립니다(DEVELOPMENT §7 '재부팅 뒤 확인'의 명령).
+  Ubuntu가 나중에 2.43 줄의 고친 패키지를 내도 PPA 판이 더 높아 그쪽으로 돌아가지 않습니다 — 되돌리려면 PPA 목록 파일(`/etc/apt/sources.list.d/git-core-ubuntu-ppa-noble.sources`)을 지우고
+  `apt-get install git=<Ubuntu 판> git-man=<Ubuntu 판>`. `noble-updates`의 패키지(커널 포함)도 보안 저장소로 오지 않는 한 자동으로 오르지 않으므로, `/security` 화면이나
+  `apt list --upgradable`에 쌓이면 이번처럼 창 안에서 손으로 올립니다. 이번에 쓰이지 않게 된 옛 커널 묶음은 지우지 않았습니다(`apt autoremove`는 돌리지 않음).
