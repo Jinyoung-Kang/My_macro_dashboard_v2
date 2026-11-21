@@ -1,0 +1,205 @@
+# 성능 기준선 원자료 (2026-11-22 04:27~04:40 KST, 계획 세션)
+
+조건
+- 이 PC(WSL2, AMD Ryzen 9 7940HS, 12 스레드, 23 GiB)의 QA 스택(compose 프로젝트 my_macrodash_v2_qa, 외부 호출 차단 프록시).
+  Vultr 값이 아니다.
+- QA 스택은 다른 세션이 보안 공지 작업 폴더에서 로그인 없는 모드(QA_NO_LOGIN=1)로 띄운 것을 그대로 썼다. 이미지 2026-11-21 23:49 KST.
+  main@13527d26과의 차이는 보안 공지 판정 코드(NoticeJudge·Verdict)와 문서뿐이다.
+- QA DB 595 MB: timeseries 1,520,827행, observations 798,747행, collector_task_runs 39,202행(태스크 이름 41종), snapshots 101,
+  paper_orders 33, paper_decisions 15. 모의 매매 자료가 작아 모의매매 경로는 운영보다 가볍게 나온다.
+- 측정 도중(혼합 부하 뒤, Lighthouse 전) QA DB에 ANALYZE를 한 번 실행했다. 그 뒤에도 아래 3절의 느린 계획은 그대로였다.
+- 기존 측정 스크립트(scripts/bench-api.sh, scripts/qa/lighthouse.sh, scripts/qa/k6/api-load.js)는 로그인이 필요해 401로 실패했고,
+  같은 방식의 임시 스크립트(쿠키 없음)로 쟀다. 임시 스크립트는 저장소에 없다 — 지시문 단계 0이 다시 만든다.
+- 도구: curl(단발 — 첫 호출 버림, 7회 중앙값), k6 2.3.0(docker grafana/k6, 닫힌 고리·생각 시간 0, 단계마다 60초),
+  Lighthouse 13.6.0(npx, /usr/bin/google-chrome 머리 없는 모드, 화면마다 1회, 쿠키 없음).
+
+========================================================================
+1. 단발 API 응답 시간 (ms, 첫 호출 / 그 뒤 7회 중앙값 / 최대 / gzip 바이트 / 상태)
+========================================================================
+# 2026-11-22 04:27:31 KST nproc=12 6.18.58.1-microsoft-standard-WSL2
+Mem:              23          15           2           3           8           7
+endpoint                                                                       첫(ms) 중앙 최대    bytes  code
+/api/macro/overview                                                                36     30     37    11874   200
+/api/macro/risk                                                                    36     11     15     1233   200
+/api/macro/advanced                                                                26     21     27     1642   200
+/api/macro/fx?ids=usdkrw,dxy,eurusd,usdjpy&period=5y&mode=index                    31     11     15    17549   200
+/api/macro/spread?longId=DGS10&shortId=DGS2                                        11     10     16     4349   200
+/api/liquidity?years=3                                                              7      5      6     9710   200
+/api/sector/rotation?period=1M                                                     26     10     13     3661   200
+/api/sector/momentum                                                               10      9     10     2860   200
+/api/sec13f/institutions                                                            2      2      2     1102   200
+/api/guru/profiles                                                               1165      3      3     2178   200
+/api/guru/similarity                                                               62      3      3     3236   200
+/api/guru/risk?cik=0001067983&benchmark=SPY&years=1                               284      3      4     2177   200
+/api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1                            102      2      3     1577   200
+/api/cot/extremes?name=Gold&percentile=95&lookbackWeeks=52                          6      2      2      119   200
+/api/krx/futures?days=60                                                            9      3      3     2209   200
+/api/krx/investor-trend                                                             6      2      2     1291   200
+/api/radar/ranking                                                                 11      4      4     1526   200
+/api/radar/consensus                                                                8      4      5     1727   200
+/api/kr/investor-flows                                                             14      4      5     2562   200
+/api/kr/stock-flows?codes=005930,000660                                            19      4      5     1105   200
+/api/analytics/regime?years=5                                                       3      3      3     2652   200
+/api/analytics/correlation?x=fred:DGS10&y=fred:DGS2&window=60&years=3&mode=change     16     12     14    14830   200
+/api/status                                                                       321    289    297     5694   200
+/api/status/issues                                                                374    303    772     3297   200
+/api/snapshot/text                                                                157      2      3     6049   200
+/api/alerts/unread-count                                                            2      2      2       12   200
+/api/paper/overview?market=US                                                      23     21     25     3640   200
+/api/paper/overview?market=KR                                                       7      7     10     2381   200
+/api/paper/status?market=US                                                        28     28     32     3030   200
+/api/paper/status?market=KR                                                        12     12     14     1325   200
+/api/detail/quote?market=us&code=AAPL                                               7      4      4      496   200
+
+========================================================================
+2. 혼합 부하 (k6, 11경로 무작위, 동시 1·5·20·50명 각 60초)
+   경로: home_regime=/api/analytics/regime?years=5, home_issues=/api/status/issues, home_unread=/api/alerts/unread-count,
+   macro_overview=/api/macro/overview, paper_overview_us|kr=/api/paper/overview?market=US|KR, paper_status_us|kr=/api/paper/status?market=US|KR,
+   sec13f_institutions=/api/sec13f/institutions, detail_quote_us=/api/detail/quote?market=us&code=AAPL, live_prices=/api/live/prices?items=US:AAPL
+   (live_prices는 외부가 막혀 1~2초 걸리는 것이 섞인다 — 2026-11-04 측정과 같음)
+========================================================================
+vu1: 전체 p50 5.9 p95 311.1 p99 1008.7 max 2017.3ms · 20.0 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 1.7 p95 2.3 p99 3.0
+   home_issues          p50 307.1 p95 379.0 p99 398.6
+   home_unread          p50 1.3 p95 1.9 p99 3.1
+   macro_overview       p50 16.0 p95 18.7 p99 20.5
+   paper_overview_us    p50 17.0 p95 22.2 p99 24.5
+   paper_overview_kr    p50 5.6 p95 8.4 p99 12.2
+   paper_status_us      p50 25.8 p95 30.3 p99 31.7
+   paper_status_kr      p50 9.3 p95 12.3 p99 13.1
+   sec13f_institutions  p50 1.0 p95 1.8 p99 2.1
+   detail_quote_us      p50 2.8 p95 4.3 p99 5.3
+   live_prices          p50 2.9 p95 1009.4 p99 1010.0
+vu5: 전체 p50 5.7 p95 367.6 p99 419.4 max 2038.4ms · 99.5 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 1.5 p95 2.3 p99 4.2
+   home_issues          p50 363.1 p95 407.0 p99 430.4
+   home_unread          p50 1.2 p95 1.7 p99 3.0
+   macro_overview       p50 16.8 p95 20.4 p99 23.5
+   paper_overview_us    p50 17.6 p95 22.1 p99 24.4
+   paper_overview_kr    p50 5.5 p95 7.8 p99 9.3
+   paper_status_us      p50 27.2 p95 33.4 p99 36.6
+   paper_status_kr      p50 9.6 p95 12.5 p99 14.9
+   sec13f_institutions  p50 1.0 p95 1.4 p99 2.8
+   detail_quote_us      p50 2.6 p95 3.9 p99 5.3
+   live_prices          p50 2.7 p95 899.2 p99 1010.8
+vu20: 전체 p50 10.7 p95 976.9 p99 1208.9 max 2026.7ms · 180.4 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 1.9 p95 10.4 p99 17.1
+   home_issues          p50 990.7 p95 1289.7 p99 1459.7
+   home_unread          p50 1.4 p95 10.1 p99 15.6
+   macro_overview       p50 30.9 p95 63.3 p99 76.4
+   paper_overview_us    p50 27.2 p95 68.1 p99 92.0
+   paper_overview_kr    p50 7.6 p95 26.6 p99 46.4
+   paper_status_us      p50 47.0 p95 100.2 p99 135.0
+   paper_status_kr      p50 14.6 p95 47.4 p99 69.7
+   sec13f_institutions  p50 1.0 p95 7.7 p99 14.1
+   detail_quote_us      p50 3.7 p95 12.6 p99 17.8
+   live_prices          p50 4.8 p95 917.3 p99 1522.3
+vu50: 전체 p50 32.5 p95 2304.8 p99 3017.0 max 3644.1ms · 180.3 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 5.9 p95 31.8 p99 64.7
+   home_issues          p50 2362.8 p95 3137.8 p99 3407.8
+   home_unread          p50 5.2 p95 30.8 p99 53.8
+   macro_overview       p50 61.4 p95 149.0 p99 249.0
+   paper_overview_us    p50 75.8 p95 216.1 p99 338.7
+   paper_overview_kr    p50 31.1 p95 124.0 p99 185.7
+   paper_status_us      p50 112.8 p95 310.7 p99 494.0
+   paper_status_kr      p50 56.0 p95 216.5 p99 330.8
+   sec13f_institutions  p50 3.0 p95 22.6 p99 47.9
+   detail_quote_us      p50 12.6 p95 332.6 p99 722.5
+   live_prices          p50 14.6 p95 1010.9 p99 1822.0
+
+자원(docker stats 3초 간격 — 단계별 CPU 평균·최대, 메모리 최대)
+vu1 my_macrodash_v2_qa-backend-1 cpu_avg=17% cpu_max=35% mem_max=434.2MiB
+vu1 my_macrodash_v2_qa-collector-1 cpu_avg=2% cpu_max=3% mem_max=137.6MiB
+vu1 my_macrodash_v2_qa-postgres-1 cpu_avg=69% cpu_max=120% mem_max=304MiB
+vu5 my_macrodash_v2_qa-backend-1 cpu_avg=56% cpu_max=88% mem_max=440.8MiB
+vu5 my_macrodash_v2_qa-collector-1 cpu_avg=7% cpu_max=11% mem_max=138.3MiB
+vu5 my_macrodash_v2_qa-postgres-1 cpu_avg=382% cpu_max=535% mem_max=326MiB
+vu20 my_macrodash_v2_qa-backend-1 cpu_avg=113% cpu_max=194% mem_max=468.9MiB
+vu20 my_macrodash_v2_qa-collector-1 cpu_avg=18% cpu_max=28% mem_max=142.2MiB
+vu20 my_macrodash_v2_qa-postgres-1 cpu_avg=859% cpu_max=1046% mem_max=344.3MiB
+vu50 my_macrodash_v2_qa-backend-1 cpu_avg=126% cpu_max=243% mem_max=540.3MiB
+vu50 my_macrodash_v2_qa-collector-1 cpu_avg=17% cpu_max=23% mem_max=145.5MiB
+vu50 my_macrodash_v2_qa-postgres-1 cpu_avg=855% cpu_max=1003% mem_max=366.3MiB
+
+2026-11-04 같은 방식의 값(docs/qa/2026-11-04-qa-results.md 3-1): 1명 27.5건/초·p50 6.0·p95 71.7 / 5명 121.4·7.5·88.4 /
+20명 206.2·23.4·206.4 / 50명 250.8·100.6·562 ms. home_issues p50 70.6(1명)·131.3(20명). postgres CPU 평균 36·198·316·400%.
+
+========================================================================
+3. 상태 질의 (수집기 /status → store.store_stats)
+========================================================================
+수집기 /status 직접 5회: 0.244 0.248 0.232 0.225 0.231초 (ANALYZE 뒤) — 백엔드 /api/status/issues 5회: 0.307 0.321 0.305 0.311 0.291초
+
+store_stats 안의 함수별 소요(QA 수집기 컨테이너 안, 5회 중앙값 ms)
+  list_snapshots 1.0 / count_timeseries 23.6 / count_observations 37.0 / read_last_run 0.8 / read_task_summary 167.7 /
+  missing_datasets 0.8 / store_stats 전체 230.6
+  등록 태스크 69, 실행 기록이 있는 태스크 41, 기록이 없는 태스크 28
+
+read_task_summary의 계획(QA, EXPLAIN ANALYZE BUFFERS)
+  Sort (actual time=189.136..189.143 rows=41)
+    -> Nested Loop (actual time=4.002..188.981 rows=41)   Buffers: shared hit=859093
+       -> HashAggregate (rows=69)   -- 태스크 이름 69개
+       -> Limit (cost=0.29..3.23 rows=1) (actual time=2.736..2.736 rows=1 loops=69)
+          -> Index Scan Backward using collector_task_runs_pkey on collector_task_runs r (cost=0.29..2241.97 rows=763)
+             Filter: (task = ...) AND NOT (status = 'empty' AND detail LIKE ...)
+             Rows Removed by Filter: 22233
+  Execution Time: 189.238 ms
+  색인: collector_task_runs_pkey (id), idx_task_runs_run (run_id), idx_task_runs_task (task, id DESC)
+
+고치는 방법 네 가지 비교(QA, 같은 인자, 7회 중앙값 — 결과 행은 넷 다 같음)
+  V1 지금: WHERE r.task = t.task ... ORDER BY r.id DESC LIMIT 1                         -> pkey 역방향, 163.5 ms, 버퍼 859,780
+  V2: ORDER BY r.task, r.id DESC                                                         -> pkey 역방향, 160.1 ms, 버퍼 859,777
+  V3: WHERE r.task >= t.task AND r.task <= t.task ... ORDER BY r.task, r.id DESC LIMIT 1 -> idx_task_runs_task, 0.9 ms, 버퍼 220
+  V4: ORDER BY r.id + 0 DESC                                                             -> idx_task_runs_task, 15.4 ms, 버퍼 14,013
+
+운영 서버(읽기만, 2026-11-22 04:3x KST)
+  수집기 /status 5회: 148 103 105 106 105 ms
+  collector_task_runs 추정 60,794행(15 MB), task 종류 추정 68, 마지막 자동 통계 갱신 2026-11-20 23:17 UTC
+  timeseries 추정 1,531,517행, observations 추정 843,798행
+  같은 질의의 계획(EXPLAIN만 — 실행하지 않음): Index Scan using idx_task_runs_task (cost=0.41..2712.71 rows=954), Limit cost 0.41..3.26
+  -> 운영은 지금 올바른 색인을 쓴다. QA의 느린 계획(Limit cost 0.29..3.23)과 추정 비용이 거의 같다.
+
+========================================================================
+4. 화면 (Lighthouse 13.6.0 — 모바일은 느린 4G·CPU 4배 감속을 가정한 모의값)
+========================================================================
+페이지        폼팩터 성능 접근성 모범  FCP(ms)  LCP(ms)  TBT(ms)    CLS    JS(KB)
+/                desktop     99   100   100      255      963       28  0.035       800
+/                mobile      82   100   100      909     4157      229  0.031       759
+/macro           desktop     89   100   100      248     1144      246  0.035       803
+/macro           mobile      46   100   100      906     7977     2129  0.032       780
+/institutions    desktop     99   100   100      250     1026       11  0.035       773
+/institutions    mobile      71   100   100      907     4797      254  0.161       773
+/paper/us        desktop     96   100   100      247     1145       15  0.093       748
+/paper/us        mobile      69   100   100      906     5684      326  0.089       748
+/paper/kr        desktop     95   100   100      248     1070       13  0.109       748
+/paper/kr        mobile      72   100   100      908     5126      225  0.143       748
+/info/overview   desktop     99   100   100      247      791        0  0.071       839
+/info/overview   mobile      72   100   100      907     3842      167  0.282       748
+/s/us/NVDA       desktop     97   100   100      247      942        0  0.096       826
+/s/us/NVDA       mobile      72   100   100      906     4511      200  0.197       804
+
+2026-11-05 값(docs/qa/2026-11-05-qa-report.md 5절, 데스크톱/모바일): 홈 성능 83/55·CLS 0.337/0.279, 매크로 80/64·CLS 0.305/0.151,
+모의매매(미국) 99/72·CLS 0/0.
+
+화면이 받는 것(Lighthouse network-requests)
+  홈 모바일: 요청 78 — 스크립트 39건 전송 759 KB(원본 2,330 KB, 전부 우선순위 Low), fetch 36건(RSC 미리 받기 26 + API 10)
+  홈 데스크톱: 스크립트 43건 800 KB, fetch 41건(RSC 미리 받기 31 + API 10)
+  매크로 모바일: 요청 82 — 스크립트 42건 780 KB(원본 2,390 KB), fetch 36건(RSC 미리 받기 24 + API 12), EventSource 1
+  RSC 미리 받기 대상(홈): / /alerts /institutions /macro /markets/i/kospi /markets/i/sp500 /markets/i/us10y /markets/i/usdkrw /more
+                          /paper/us /regime /search /status (데스크톱은 /info/status /security 더)
+  RSC 미리 받기 대상(매크로): / /alerts /correlation /cot /info/status /institutions /liquidity /macro /more /paper/us /search /sector
+  쓰지 않는 JS 추정(unused-javascript): 홈 282 KiB, 매크로 257 KiB
+  화면 안 API: 홈 /api/status/issues 383 ms, 나머지 4~34 ms / 매크로 /api/live/prices/stream 2,018 ms(외부 차단), 나머지 5~19 ms
+
+메인 스레드(Lighthouse, 모의 감속 기준)
+  매크로 모바일: TBT 2,129 ms, 메인 스레드 6.0초 = 스크립트 실행 3,749 + 스타일·레이아웃 1,452 + 그 밖 402 + GC 159 + 파싱 157
+                 스크립트별: react-dom 묶음 4,940 ms(스크립팅 3,347), 그 밖은 각 160 ms 이하. 긴 작업 1,335·385·335·258·209 ms. DOM 2,295개
+  매크로 데스크톱: TBT 246 ms, 메인 스레드 1.3초, react-dom 묶음 1,013 ms, 긴 작업 258 ms, DOM 2,464개
+  홈 모바일: TBT 229 ms, 메인 스레드 1.7초(스크립트 실행 917) / 모의매매(미국) 모바일: TBT 326 ms, 2.3초
+  감속 없는 관측 LCP: 홈 289 ms, 매크로 모바일 3,205 ms·데스크톱 516 ms, 모의매매(미국) 420 ms, 정보 개요 276 ms
+  LCP 요소: 매크로 모바일 = 상단의 '실시간 시세: ... ProxyError' 안내 문장(외부 차단 때문에 약 2초 뒤에 뜸 — QA 스택에서만 생김),
+            매크로 데스크톱 = '수집 출처 1곳이 끊겼습니다' 띠. QA 스택의 LCP는 이 안내들에 끌려간다.
+
+정적 JS 전체(QA 화면 컨테이너 /app/.next/static)
+  76개 파일, 원본 3,272,998 B, 이어 붙여 gzip 996,902 B (2026-10-18: 36개, 1,324,059 B, gzip 398,921 B)
+  큰 묶음(원본, 묶음 이름은 빌드마다 바뀜): 432 KB(recharts·d3·redux 글자열이 든 묶음), 387 KB(내용 미확인), 229 KB(react-dom),
+  188 KB, 156 KB, 109 KB, 96 KB
