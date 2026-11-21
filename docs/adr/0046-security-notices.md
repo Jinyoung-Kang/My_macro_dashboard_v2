@@ -168,6 +168,8 @@
   - 수집: `test_security_task.py`(구간 경계·날 넘김·실패도 다음 구간·하루 최대 4번·메우기 중 두 쪽·추적기 단계), `test_distro_trackers.py`(세 출처 해석 — 합성 자료),
     `test_inventory_ingest.py`·`test_vultr_scripts.py`(os 줄), `test_migrations.py`(V42).
   - 화면: `security.test.ts`(사유·근거 글·추적기 링크·묶음), `securityScreen.test.tsx`(요약 칸), `securityNoticePage.test.tsx`(상세 페이지), `breadcrumbs.test.ts`.
+- 배포 뒤 고침(2026-11-22, QA-980·981): 제목·본문의 이름 맞춤 전에 참고 주소(URL)를 지웁니다(커널 공지의 `git.kernel.org` 주소가 Git에 맞던 것).
+  '약어(풀이) : 설명' 꼴의 낱말 풀이 `※` 문장은 조건 문장이 아닙니다(결정 9의 1의 관용 문장에 더함).
 - 남은 위험:
   - 추적기가 틀을 바꾸면 그 요청은 결과를 쓰지 않아 확인 필요로 남습니다(안전 쪽). 다만 끊김 알림은 따로 없고 실행 기록에만 남습니다.
   - Node·Chrome 안에 묶여 든 라이브러리(예: Brotli)는 구성 요소로 잡히지 않습니다.
