@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *   <li>배포판 패키지({@link Kind#DISTRO}): 호스트 패키지가 apt 보류 목록에 보안으로 있으면 해당, 없으면 {@code DISTRO_NO_PENDING}.
  *       컨테이너 안 패키지는 보류 목록이 없어 늘 {@code DISTRO_NO_PENDING}. 공지의 버전 표와 비교하지 않습니다.</li>
  *   <li>상류 번호({@link Kind#UPSTREAM}): 행마다 — 제조사가 다르면 {@code VENDOR_DIFFERS}, 영향 칸을 못 읽으면 {@code PARSE_FAILED},
- *       설치 버전이 영향 구간 안이면 해당. 그 밖에는 같은 계열의 행일 때만 — 해결 칸을 못 읽으면 {@code PARSE_FAILED}, 설치 버전이
+ *       설치 버전이 영향 구간 안이면 해당(아래 끝이 없는 구간은 위 끝의 계열로 좁힘 — {@link VersionRange#scopedToFamily}, QA-975). 그 밖에는 같은 계열의 행일 때만 — 해결 칸을 못 읽으면 {@code PARSE_FAILED}, 설치 버전이
  *       해결 버전 이상이면 패치됨, 아니면 {@code OUT_OF_TABLE}. 다른 계열의 행은 판정에 쓰지 않고, 같은 계열의 행이 하나도 없으면
  *       {@code OUT_OF_TABLE}(16.x 행만 있는데 17.x를 쓰면 확인 필요).</li>
  *   <li>제품 판정 = 근거들의 최댓값. 표 밖 {@code ※} 조건 문장(관용 문장 제외)이 있으면 — 해당은 그대로 두고 '조건 문장 있음'
@@ -252,15 +252,17 @@ public final class NoticeJudge {
         if (alias.vendorDiffers(name)) {
             return rowLevel(alias, c, row, Status.CHECK, Reason.VENDOR_DIFFERS, false);
         }
-        Optional<VersionRange> affected = VersionRange.parse(row.affected());
-        if (affected.isEmpty()) {
+        Optional<VersionRange> parsed = VersionRange.parse(row.affected());
+        if (parsed.isEmpty()) {
             return rowLevel(alias, c, row, Status.CHECK, Reason.PARSE_FAILED, false);
         }
-        if (affected.get().contains(installed)) {
+        // 아래 끝이 없는 구간은 위 끝의 계열만 다룹니다(QA-975 — '32.9.1 미만'이 30.x를 품지 않게).
+        VersionRange affected = parsed.get().scopedToFamily(alias.family().depth());
+        if (affected.contains(installed)) {
             return rowLevel(alias, c, row, Status.AFFECTED, null, false);
         }
         Optional<VersionRange.Fixed> fixed = VersionRange.parseFixed(row.fixed());
-        if (!sameFamily(alias.family(), installed, affected.get(), fixed)) {
+        if (!sameFamily(alias.family(), installed, affected, fixed)) {
             return rowLevel(alias, c, row, Status.UNRELATED, null, true);
         }
         if (fixed.isEmpty()) {

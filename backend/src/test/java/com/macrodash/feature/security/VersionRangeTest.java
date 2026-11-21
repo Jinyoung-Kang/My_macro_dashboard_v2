@@ -191,4 +191,31 @@ class VersionRangeTest {
         assertThat(range("8.2.36 미만").overlaps(v("8.2"), v("8.3"))).isTrue();
         assertThat(VersionRange.all().overlaps(v("1"), v("2"))).isTrue();
     }
+
+    @Test
+    @DisplayName("QA-975 아래 끝이 없는 구간을 위 끝의 계열로 좁힘 — 위 끝이 계열의 시작이거나 짧으면·아래 끝이 있으면·SINGLE이면 그대로")
+    void scopedToFamily() {
+        VersionRange major = range("32.9.1 미만").scopedToFamily(1);
+        assertThat(major.contains(v("32.5"))).isTrue();
+        assertThat(major.contains(v("32"))).isTrue();
+        assertThat(major.contains(v("31.99"))).isFalse();
+        assertThat(major.contains(v("32.9.1"))).isFalse();
+        assertThat(major.overlaps(v("30"), v("31"))).isFalse();
+        assertThat(range("45.0.3 이하").scopedToFamily(1).contains(v("45.0.3"))).isTrue();
+        assertThat(range("45.0.3 이하").scopedToFamily(1).contains(v("41.0.9"))).isFalse();
+        VersionRange minor = range("30.1.50 미만").scopedToFamily(2);
+        assertThat(minor.contains(v("30.1.2"))).isTrue();
+        assertThat(minor.contains(v("30.0.99"))).isFalse();
+        // 옛 계열 전부를 뜻하는 꼴은 그대로입니다.
+        assertThat(range("32 미만").scopedToFamily(1).contains(v("30.5"))).isTrue();
+        assertThat(range("32.0.0 미만").scopedToFamily(1).contains(v("30.5"))).isTrue();
+        assertThat(range("30.1 미만").scopedToFamily(2).contains(v("29.9"))).isTrue();
+        // 아래 끝이 있는 구간·SINGLE·나열은 조각마다 같은 규칙입니다.
+        assertThat(range("30 이상 32.9.1 미만").scopedToFamily(1).contains(v("31.2"))).isTrue();
+        assertThat(range("32.9.1 미만").scopedToFamily(0).contains(v("1.0"))).isTrue();
+        VersionRange list = range("30.4.1 미만, 32.9.1 미만").scopedToFamily(1);
+        assertThat(list.contains(v("30.2"))).isTrue();
+        assertThat(list.contains(v("31.5"))).isFalse();
+        assertThat(list.contains(v("32.1"))).isTrue();
+    }
 }

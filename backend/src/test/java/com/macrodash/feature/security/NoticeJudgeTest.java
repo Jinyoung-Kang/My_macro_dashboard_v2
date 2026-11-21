@@ -214,7 +214,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-975 — 고치기 전: 아래 끝이 없는 다른 계열 행('32.9.1 미만')이 30.x까지 품어 해당")
         @DisplayName("QA-975 아래 끝이 없는 행은 위 끝의 계열만 다룸 — 30 계열이 패치됐으면 32 계열의 '32.9.1 미만' 행으로 해당이 되지 않음")
         void openLowerBoundStaysInItsFamily() {
             List<Row> node = rows("Node.js|30.4.1 미만|30.4.1 이상", "Node.js|32.9.1 미만|32.9.1 이상");
@@ -231,7 +230,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-975 — 고치기 전: OpenJDK '45.0.3 이하'·'47.0.1 이하' 행이 41.x까지 품어 해당")
         @DisplayName("QA-975 JDK — 다른 계열의 'B 이하' 행은 41.x를 해당으로 만들지 않음(41 계열 행의 해결 칸을 못 읽으면 확인 필요)")
         void openLowerBoundJdk() {
             List<Row> jdk = rows("OpenJDK|41.0.9 이하|벤더 보안 업데이트 적용", "OpenJDK|45.0.3 이하|벤더 보안 업데이트 적용",

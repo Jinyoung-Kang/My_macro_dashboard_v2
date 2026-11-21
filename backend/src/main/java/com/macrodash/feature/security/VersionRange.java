@@ -136,6 +136,31 @@ public record VersionRange(List<Interval> intervals) {
         return false;
     }
 
+    /**
+     * 아래 끝이 없는 구간을 위 끝의 계열로 좁힌 것(QA-975) — 공지 표는 계열마다 행을 두므로 {@code 32.9.1 미만}은 32 계열의 행입니다.
+     * 그대로 두면 이미 패치된 옛 계열(30.x)까지 품어 해당이 됩니다. 위 끝의 마디가 {@code depth}보다 많고 계열의 시작보다 클 때만
+     * {@code [위 끝의 앞 depth마디, 위 끝)}으로 좁히고, 위 끝이 계열의 시작이거나 짧으면({@code 32 미만}·{@code 32.0.0 미만} — 옛 계열 전부를
+     * 뜻함) 그대로 둡니다. {@code depth}가 0(SINGLE — 한 줄기)이면 그대로입니다.
+     */
+    public VersionRange scopedToFamily(int depth) {
+        if (depth <= 0) {
+            return this;
+        }
+        List<Interval> out = new ArrayList<>(intervals.size());
+        for (Interval interval : intervals) {
+            Version upper = interval.upper();
+            if (interval.lower() == null && upper != null && upper.parts().size() > depth) {
+                Version start = upper.prefix(depth);
+                if (upper.compareTo(start) > 0) {
+                    out.add(new Interval(start, true, upper, interval.upperInclusive()));
+                    continue;
+                }
+            }
+            out.add(interval);
+        }
+        return new VersionRange(out);
+    }
+
     /** '영향받는 버전' 칸을 읽습니다. 알 수 없는 조각이 하나라도 있으면 빈 값. */
     public static Optional<VersionRange> parse(String cell) {
         List<String> pieces = pieces(cell);
