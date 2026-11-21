@@ -44,6 +44,7 @@ import {
   GRID_LINE,
   GUIDE,
   ISOLATED_DOT_R,
+  NO_VERTICAL_GRID,
   SERIES_COLORS,
   TAIL_DASH,
   TOOLTIP_BOX,
@@ -284,7 +285,7 @@ export function LineChart({
         aria-label={ariaLabel ?? lineChartLabel(rows, series)}
         margin={hero ? { top: 4, right: 0, bottom: 0, left: 0 } : { top: 8, right: 8, bottom: 0, left: 0 }}
       >
-        {grid && !hero ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
+        {grid && !hero ? <CartesianGrid vertical={false} verticalCoordinatesGenerator={NO_VERTICAL_GRID} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
         <XAxis
           dataKey="date"
           ticks={xTicks}

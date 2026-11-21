@@ -17,6 +17,12 @@ export const GUIDE = "var(--text-3)";
  * 스파크라인·히어로 차트에는 격자가 없습니다. 기준선(GUIDE)·축선(AXIS_LINE)보다 옅어 값 선과 0선을 가리지 않습니다.
  */
 export const GRID_LINE = "var(--border-subtle)";
+/**
+ * 세로 격자를 그리지 않는 `CartesianGrid`(`vertical={false}`)에 주는 세로 좌표 생성기 — 늘 빈 목록. Recharts 3.10.1의 CartesianGrid는 세로 격자를 끈
+ * 상태에서도 세로 좌표를 만들려고 X축 눈금 계산(getTicks)을 부르고, 그 계산이 날짜 눈금 글마다 DOM에 넣어 폭을 잽니다(measureTextWithDOM) — 매크로 화면을
+ * 처음 열 때 CPU 4배 감속에서 약 0.9초(2026-11-22 프로파일, ADR 0047 결정 8). 세로 선은 원래 그리지 않으므로 그림은 같습니다.
+ */
+export const NO_VERTICAL_GRID = (): number[] => [];
 /** 차트 SVG 글자 크기 — 최소 글자 단계(micro 12px, 명세 D9). 10·11px은 쓰지 않습니다. */
 export const CHART_FONT = 12;
 

@@ -51,6 +51,7 @@ import {
   GRID_LINE,
   GUIDE,
   ISOLATED_DOT_R,
+  NO_VERTICAL_GRID,
   REFERENCE_DASH,
   REFERENCE_LINE_CLASS,
   SERIES_COLORS,
@@ -467,7 +468,7 @@ export function MultiLineSeries({
           }
         >
           {grid ? (
-            <CartesianGrid yAxisId={leftAxis ? "left" : "right"} vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks />
+            <CartesianGrid yAxisId={leftAxis ? "left" : "right"} vertical={false} verticalCoordinatesGenerator={NO_VERTICAL_GRID} stroke={GRID_LINE} strokeWidth={1} syncWithTicks />
           ) : null}
           <XAxis
             dataKey="date"
@@ -722,7 +723,7 @@ export function SignedBars({
     <ChartSizeHold>
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel ?? `막대 차트: ${valueName}`}>
-        {grid ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
+        {grid ? <CartesianGrid vertical={false} verticalCoordinatesGenerator={NO_VERTICAL_GRID} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
         <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         {/* 축 폭은 눈금 글 폭에 맞춥니다(width="auto") — 고정 64px은 음수 부호·긴 단위('-16,000계약')의 앞자리를 잘랐습니다. */}
         <YAxis
