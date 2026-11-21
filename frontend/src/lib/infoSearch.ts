@@ -33,6 +33,10 @@ import type {
   SearchWatchLimits,
   SearchWatchPartialBody,
 } from "./types";
+import { CONTROL, codePoints, DEFAULT_RANGE, DEFAULT_TAB, isEntityKey, searchHref, type SearchTabKey, TOPIC_MAX } from "./searchKey";
+
+export { DEFAULT_RANGE, DEFAULT_TAB, isEntityKey, searchHref };
+export type { SearchTabKey };
 
 // ------------------------------------------------------------------ 탭·기간
 
@@ -40,7 +44,6 @@ import type {
  * 화면의 탭 — 타임라인·뉴스·공시·리서치·글·논평은 결과 경로(feed), 보유는 13F 경로, 연결은 대상 풀기의 links + 연결 보강 경로(단계 4).
  * 순서는 지시문 §4.2의 표 순서입니다.
  */
-export type SearchTabKey = "timeline" | "news" | "filings" | "research" | "posts" | "holdings" | "links";
 
 export const SEARCH_TABS: readonly { key: SearchTabKey; label: string }[] = [
   { key: "timeline", label: "타임라인" },
@@ -52,7 +55,6 @@ export const SEARCH_TABS: readonly { key: SearchTabKey; label: string }[] = [
   { key: "links", label: "연결" },
 ];
 
-export const DEFAULT_TAB: SearchTabKey = "timeline";
 
 export const SEARCH_RANGES: readonly { key: SearchRange; label: string }[] = [
   { key: "7d", label: "7일" },
@@ -61,7 +63,6 @@ export const SEARCH_RANGES: readonly { key: SearchRange; label: string }[] = [
   { key: "2y", label: "2년" },
 ];
 
-export const DEFAULT_RANGE: SearchRange = "30d";
 
 const TAB_KEYS = new Set<string>(SEARCH_TABS.map((tab) => tab.key));
 const RANGE_KEYS = new Set<string>(SEARCH_RANGES.map((range) => range.key));
@@ -103,26 +104,6 @@ export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
 
 // ------------------------------------------------------------------ 대상 키
 
-// 수집기(search.py의 _KEY_PATTERNS)·백엔드(SearchService)와 같은 문법 — 어긋나면 수집기의 400이 '응답 없음'으로 보입니다.
-const KEY_PATTERNS: readonly RegExp[] = [/^us:[A-Z0-9][A-Z0-9.-]{0,14}$/, /^kr:\d{6}$/, /^cik:\d{10}$/, /^wd:Q[1-9]\d{0,11}$/];
-const TOPIC_MAX = 60;
-// 제어 글자를 막는 것이 목적. 이 저장소 eslint 설정에서는 no-control-regex가 꺼져 있음(그 규칙은 \u 이스케이프도 잡음) — 켜면 이 줄에 끄기 주석을 다시 둘 것.
-const CONTROL = /[\u0000-\u001f\u007f]/;
-
-const codePoints = (text: string) => Array.from(text).length;
-
-/**
- * 대상 키 모양(계약 §2) — 화면이 주소로 넘어가기 전에 봅니다(틀린 키로 400을 부르지 않게).
- * 티커는 영문 대문자·숫자·'.'·'-', 국내 6자리, CIK 10자리, Wikidata Q+숫자, 주제는 앞뒤 공백 없는 1~60자.
- */
-export function isEntityKey(key: string | null | undefined): key is string {
-  if (!key) return false;
-  if (key.startsWith("topic:")) {
-    const text = key.slice("topic:".length);
-    return text.length > 0 && text === text.trim() && codePoints(text) <= TOPIC_MAX && !CONTROL.test(text);
-  }
-  return KEY_PATTERNS.some((pattern) => pattern.test(key));
-}
 
 /** 검색어 → 주제 키. 공백을 하나로 줄이고, 비거나 60자를 넘으면 null. */
 export function topicKey(text: string): string | null {
@@ -172,20 +153,6 @@ export function parseSearchUrl(input: URLSearchParams | string | null | undefine
   };
 }
 
-/** 쿼리 값 인코딩 — ':'는 쿼리에서 그대로 써도 되어 읽기 좋게 남깁니다(us:NVDA). */
-const encodeValue = (value: string) => encodeURIComponent(value).replace(/%3A/gi, ":");
-
-/**
- * 화면 상태 → 주소. 대상이 있으면 `/search?e=…&tab=…&range=…`(북마크·새로고침이 같은 화면), 없으면 `/search?q=…`, 둘 다 없으면 `/search`.
- * 모양이 틀린 키는 넣지 않습니다.
- */
-export function searchHref(state: { q?: string | null; e?: string | null; tab?: SearchTabKey; range?: SearchRange }): string {
-  if (isEntityKey(state.e)) {
-    return `/search?e=${encodeValue(state.e)}&tab=${state.tab ?? DEFAULT_TAB}&range=${state.range ?? DEFAULT_RANGE}`;
-  }
-  const q = state.q?.trim();
-  return q ? `/search?q=${encodeValue(q)}` : "/search";
-}
 
 /**
  * 주소에 모르는 탭·기간 값(tab=bogus·range=9y 등 — 화면은 기본값으로 보임)이 있으면 그 값을 기본값으로 바꾼 주소, 바꿀 것이 없으면 null(QA-421).
