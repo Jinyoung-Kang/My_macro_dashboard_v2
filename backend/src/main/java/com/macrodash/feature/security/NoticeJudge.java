@@ -294,33 +294,44 @@ public final class NoticeJudge {
             TrackerTarget t = target.get();
             Optional<TrackerEntry> entry = inventory.trackerOf(new TrackerKey(t.distro(), t.suite(), t.pkg(), cve));
             if (entry.isEmpty()) {
-                asked.add(new TrackerCve(cve, TrackerStatus.NONE, null, null));
+                asked.add(new TrackerCve(cve, TrackerStatus.NONE, null, null, Status.CHECK));
                 unknown++;
                 continue;
             }
             TrackerEntry e = entry.get();
             boolean fixed = e.status() == TrackerStatus.FIXED;
-            asked.add(new TrackerCve(cve, e.status(), fixed ? e.fixedVersion() : null, e.checkedAt()));
+            Status verdict;
             switch (e.status()) {
                 case FIXED -> {
                     Optional<Integer> cmp = t.installed() == null ? Optional.empty()
                             : DistroVersion.compare(t.scheme(), t.installed(), e.fixedVersion());
                     if (cmp.isEmpty()) {
                         unknown++;
+                        verdict = Status.CHECK;
                     } else if (cmp.get() >= 0) {
                         covered++;
                         byTracker++;
+                        verdict = Status.PATCHED;
                     } else {
                         behind++;
+                        verdict = Status.AFFECTED;
                     }
                 }
                 case NOT_AFFECTED -> {
                     notAffected++;
                     byTracker++;
+                    verdict = Status.UNRELATED;
                 }
-                case OPEN -> open++;
-                default -> unknown++;
+                case OPEN -> {
+                    open++;
+                    verdict = Status.CHECK;
+                }
+                default -> {
+                    unknown++;
+                    verdict = Status.CHECK;
+                }
             }
+            asked.add(new TrackerCve(cve, e.status(), fixed ? e.fixedVersion() : null, e.checkedAt(), verdict));
         }
         Tracker tracker = target.isPresent() && !asked.isEmpty()
                 ? new Tracker(target.get().distro(), target.get().suite(), target.get().pkg(), asked) : null;

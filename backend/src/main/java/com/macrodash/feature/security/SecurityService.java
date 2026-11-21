@@ -404,6 +404,65 @@ public class SecurityService {
     }
 
     /** 표 행 하나 — 그 행의 제품(별칭)·판정·사유·행 단위 근거. 행 단위 근거가 없으면 그 제품의 판정을 따릅니다(배포판·버전 목록 없음 등). */
+    private static final Pattern ROW_CVE = Pattern.compile("CVE-\\d{4}-\\d{4,7}(?!\\d)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 배포판 패키지 행의 판정 — 그 별칭의 행에 매이지 않은 근거(구성 요소마다 한 줄)에서 이 행의 CVE만 봅니다. 추적기 근거가 있으면 그 CVE의 판정
+     * ({@link Verdict.TrackerCve#verdict()} — 추적기 근거에 없는 CVE는 변경 기록으로 덮인 것이라 패치됨), 없으면 그 근거 줄의 판정 그대로(보안 보류·
+     * 버전 목록 없음 등). 배포판 별칭이 아니거나 행의 CVE를 읽지 못하면 {@code null}(제품 판정으로 대신함). 최댓값의 사유를 {@code reasons}에 담습니다.
+     */
+    private static Status distroRow(SecurityStore.NoticeRow row, List<Alias> rowAliases, Verdict verdict, Set<Reason> reasons) {
+        List<String> cves = new ArrayList<>();
+        Matcher m = ROW_CVE.matcher(row.cve() == null ? "" : row.cve());
+        while (m.find()) {
+            cves.add(m.group().toUpperCase(Locale.ROOT));
+        }
+        if (cves.isEmpty()) {
+            return null;
+        }
+        Map<Status, Set<Reason>> seen = new EnumMap<>(Status.class);
+        for (Alias alias : rowAliases) {
+            if (alias.kind() != ProductAliases.Kind.DISTRO) {
+                continue;
+            }
+            for (Match match : verdict.matches()) {
+                if (match.rowIndex() != null || match.otherFamily() || !alias.id().equals(match.aliasId())) {
+                    continue;
+                }
+                if (match.tracker() == null) {
+                    add(seen, match.status(), match.reason());
+                    continue;
+                }
+                for (String cve : cves) {
+                    Verdict.TrackerCve hit = match.tracker().cves().stream().filter(c -> c.cve().equalsIgnoreCase(cve)).findFirst().orElse(null);
+                    if (hit == null) {
+                        add(seen, Status.PATCHED, null);
+                    } else if (hit.verdict() == Status.CHECK) {
+                        add(seen, Status.CHECK, hit.status() == Verdict.TrackerStatus.OPEN ? Reason.DISTRO_OPEN : Reason.DISTRO_NO_PENDING);
+                    } else {
+                        add(seen, hit.verdict(), null);
+                    }
+                }
+            }
+        }
+        if (seen.isEmpty()) {
+            return null;
+        }
+        Status top = Status.UNRELATED;
+        for (Status s : seen.keySet()) {
+            top = Status.max(top, s);
+        }
+        reasons.addAll(seen.get(top));
+        return top;
+    }
+
+    private static void add(Map<Status, Set<Reason>> seen, Status status, Reason reason) {
+        Set<Reason> set = seen.computeIfAbsent(status, s -> new LinkedHashSet<>());
+        if (reason != null) {
+            set.add(reason);
+        }
+    }
+
     private Map<String, Object> rowJson(SecurityStore.NoticeRow row, Verdict verdict) {
         List<Alias> rowAliases = aliases.forProduct(row.product());
         List<Match> own = verdict.matches().stream().filter(m -> m.rowIndex() != null && m.rowIndex() == row.rowNo()).toList();
@@ -422,6 +481,8 @@ public class SecurityService {
             }
         } else if (!own.isEmpty() || rowAliases.isEmpty()) {
             status = Status.UNRELATED;          // 다른 계열의 행뿐이거나, 이 스택이 쓰지 않는 제품
+        } else if (distroRow(row, rowAliases, verdict, reasons) instanceof Status perCve) {
+            status = perCve;                    // 배포판 패키지 — 이 행의 CVE마다 구성 요소의 추적기·변경 기록 판정
         } else {
             status = Status.UNRELATED;
             for (ProductVerdict p : verdict.products()) {

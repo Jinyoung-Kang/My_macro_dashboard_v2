@@ -155,8 +155,10 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
      * @param status       상태({@link TrackerStatus#NONE}이면 아직 묻지 않음)
      * @param fixedVersion 고친 판(fixed일 때만, 그 밖은 {@code null})
      * @param checkedAt    추적기에 물은 시각(묻지 않았으면 {@code null})
+     * @param verdict      이 구성 요소에서 이 CVE의 판정 — 설치 판 ≥ 고친 판이면 패치됨, 낮으면 해당, 영향 없음이면 무관, 그 밖(열림·모름·묻지 않음·판 비교
+     *                     실패)은 확인 필요. 표 행마다의 판정(화면의 '이 행 판정')에 씁니다.
      */
-    public record TrackerCve(String cve, TrackerStatus status, String fixedVersion, Instant checkedAt) {
+    public record TrackerCve(String cve, TrackerStatus status, String fixedVersion, Instant checkedAt, Status verdict) {
     }
 
     /**

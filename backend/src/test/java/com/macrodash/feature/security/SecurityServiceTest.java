@@ -348,6 +348,26 @@ class SecurityServiceTest {
     }
 
     @Test
+    @DisplayName("배포판 패키지의 표 행 판정 — 행의 CVE마다(변경 기록 = 패치됨, 추적기 뒤처짐 = 해당, 묻지 않음 = 확인 필요, 열림 = DISTRO_OPEN), 제품 판정을 모든 행에 붙이지 않음")
+    @SuppressWarnings("unchecked")
+    void distroRowsPerCve() {
+        trackerInventory();
+        notices.add(notice(9105, "가짜 OpenSSL 보안 업데이트 권고 3", "2026-11-16", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9105, 0, "CVE-2099-5001", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+        rows.add(row(9105, 1, "CVE-2099-5002", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+        rows.add(row(9105, 2, "CVE-2099-5003", "OpenSSL", "9.9.0 이상 9.9.20 미만", "9.9.20"));
+
+        List<Map<String, Object>> out = (List<Map<String, Object>>) service.notice(9105).get("rows");
+
+        assertThat(out).extracting(r -> r.get("status")).containsExactly("patched", "affected", "check");
+        assertThat(out.get(2)).containsEntry("reasons", List.of("DISTRO_NO_PENDING"));
+        List<Map<String, Object>> merged = (List<Map<String, Object>>) service.notice(9101).get("rows");
+        assertThat(merged).singleElement().satisfies(r -> assertThat(r).as("한 칸에 CVE 여럿이면 가장 높은 판정").containsEntry("status", "affected"));
+        List<Map<String, Object>> open = (List<Map<String, Object>>) service.notice(9103).get("rows");
+        assertThat(open).singleElement().satisfies(r -> assertThat(r).containsEntry("status", "check").containsEntry("reasons", List.of("DISTRO_OPEN")));
+    }
+
+    @Test
     @DisplayName("사유 DISTRO_OPEN — 사유별 건수와 거르기 인자에 들어감")
     void distroOpenReason() {
         trackerInventory();
