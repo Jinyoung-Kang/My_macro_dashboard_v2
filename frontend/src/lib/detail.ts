@@ -1,5 +1,6 @@
 /**
- * 검색 상세 화면(종목 /s/<시장>/<코드>·지표 /markets/i/<id>·기관 /institutions/<CIK>)의 표시 규칙 — React를 모르는 순수 함수(ADR 0004).
+ * 검색 상세 화면(종목 /s/<시장>/<코드>·지표 /markets/i/<id>·기관 /institutions/<CIK>)의 표시 규칙 — React를 모르는 순수 함수(ADR 0004). 보안 공지 상세
+ * (/security/<번호>)의 주소 함수 둘도 셸이 쓰므로 여기 둡니다(판정 글은 lib/security).
  * 명세 docs/specs/2026-11-01-search-detail.md. 외부 정보는 GET /api/detail/*(수집기 실시간 조회), 차트는 GET /api/macro/ticker.
  *
  * 값이 없으면 "—"(0으로 채우지 않음). 외부 출처는 링크로 함께 적습니다(Yahoo Finance·Google Finance·Investing.com·네이버 증권·SEC EDGAR).
@@ -80,6 +81,26 @@ export function parseIndicatorKey(raw: string): string | null {
     return null;
   }
   return /^[A-Za-z0-9_-]{1,40}$/.test(decoded) ? decoded : null;
+}
+
+/**
+ * 보안 공지 글 번호(보호나라 nttId — 상세 주소 `/security/<번호>`·알림함 링크 `?ntt=<번호>`) → 정규 글(숫자 1~12자리, 앞 0은 뗌). 틀리면(빈 글·0·숫자 밖·
+ * 13자리 이상) null. 셸(빵부스러기)이 모든 화면에서 싣는 모듈이라 보안 공지 화면 모델(lib/security)이 아니라 여기 둡니다 — lib/security parseNttParam이 이것을 씁니다.
+ */
+export function parseSecurityNoticeNo(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw).trim();
+  } catch {
+    return null;
+  }
+  return /^\d{1,12}$/.test(decoded) && !/^0+$/.test(decoded) ? String(Number(decoded)) : null;
+}
+
+/** 보안 공지 상세 주소(운영자 전용 — ADR 0046) — 글 번호. */
+export function securityNoticeHref(nttId: string | number): string {
+  return `/security/${encodeURIComponent(String(nttId))}`;
 }
 
 /** 차트에 쓸 Yahoo 심볼 — 시세 응답의 값, 아직 없으면 미국은 코드 그대로·국내는 코스피 '.KS'로 어림(시세가 오면 바로잡힘). */
