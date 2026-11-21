@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -509,7 +508,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-981 재현 — 고치기 전에는 낱말 풀이 ※ 문장이 조건 문장으로 셈해져 패치됨이 확인 필요로 내려감")
         @DisplayName("QA-981 낱말 풀이 ※ 문장('약어(풀이) : 설명')은 조건 문장이 아님 — 조건 문장은 그대로 셈")
         void glossaryNotes() {
             List<String> notes = NoticeJudge.conditionNotes(List.of(

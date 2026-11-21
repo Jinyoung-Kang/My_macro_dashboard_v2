@@ -77,6 +77,11 @@ public final class NoticeJudge {
                     + "보안\\s*조치\\s*또는\\s*업데이트\\s*수행(?:\\s*\\([^()]{0,80}\\))?[\\s\\[\\]\\d~,.\\-]*$");
     /** 본문의 주소 — 이름 맞춤 전에 지웁니다(QA-980). 공백·꺾쇠·따옴표·닫는 괄호 앞까지. */
     private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?|ftp)://[^\\s<>\"')\\]]+");
+    /**
+     * 판정에 쓰지 않는 {@code ※} 문장 셋째 — 낱말 풀이 '약어(풀이) : 설명' 꼴(예: 패키지 관리 도구 이름의 풀이). 조건이 아니라 용어 설명이라
+     * 조건 문장({@code CONDITION_NOTE})에서 뺍니다(QA-981 — 이 문장 때문에 패치됨인 공지가 확인 필요로 내려가던 것).
+     */
+    private static final Pattern GLOSSARY = Pattern.compile("^[A-Za-z][A-Za-z0-9 .+/-]{0,39}\\s*\\([^()]{1,80}\\)\\s*[:：]\\s*\\S.*$");
     private static final Pattern CVE_ID = Pattern.compile("CVE-\\d{4}-\\d{4,7}(?!\\d)", Pattern.CASE_INSENSITIVE);
 
     private NoticeJudge() {
@@ -140,7 +145,7 @@ public final class NoticeJudge {
             for (String piece : note.split("※")) {
                 String text = ProductAliases.normalizeText(piece);
                 if (text.isEmpty() || REFERENCES_ONLY.matcher(text).matches() || BOILERPLATE.matcher(text).matches()
-                        || OS_UPDATE_GUIDE.matcher(text).matches()) {
+                        || OS_UPDATE_GUIDE.matcher(text).matches() || GLOSSARY.matcher(text).matches()) {
                     continue;
                 }
                 out.add(text);
