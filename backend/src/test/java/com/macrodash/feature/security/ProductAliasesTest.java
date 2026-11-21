@@ -130,6 +130,73 @@ class ProductAliasesTest {
     }
 
     @Test
+    @DisplayName("QA-978 Windows 전용 제품명(Linux·Ubuntu·Debian이 함께 적히지 않은 것)은 어느 별칭에도 맞지 않음 — 표 제품명·본문 구절 모두")
+    void windowsOnlyNames() {
+        assertThat(ids("OpenSSH for Windows")).isEmpty();
+        assertThat(ids("Microsoft OpenSSH")).isEmpty();
+        assertThat(ids("Win32-OpenSSH")).isEmpty();
+        assertThat(ids("Windows용 OpenSSH")).isEmpty();
+        assertThat(ids("Node.js (Windows)")).isEmpty();
+        assertThat(ids("Google Chrome for Windows")).isEmpty();
+        // Linux·Ubuntu·Debian이 함께 적힌 행은 그대로 맞음.
+        assertThat(ids("Tailscale Full Client (Windows, Linux, macOS)")).containsExactly("tailscale");
+        assertThat(ids("Node.js (Windows, Linux)")).containsExactly("node");
+        assertThat(ids("OpenSSH (Windows, Ubuntu)")).containsExactly("openssh");
+        assertThat(ids("OpenSSH (Windows, 리눅스)")).containsExactly("openssh");
+
+        Alias openssh = alias("openssh");
+        assertThat(openssh.mentionedIn("OpenSSH for Windows CVE-2099-0001 Microsoft OpenSSH for Windows 권한 상승 취약성")).isFalse();
+        assertThat(openssh.mentionedIn("Win32-OpenSSH 가짜 취약점")).isFalse();
+        assertThat(openssh.mentionedIn("Microsoft OpenSSH 가짜 취약점")).isFalse();
+        assertThat(openssh.mentionedIn("OpenSSH for Windows와 별개로 OpenSSH 서버의 가짜 취약점")).isTrue();
+        // 겹침 제외가 먼저 — 'Docker Desktop for Windows'가 지워진 뒤 'Docker'만 남지 않음.
+        assertThat(alias("docker").mentionedIn("Docker Desktop for Windows 가짜 취약점")).isFalse();
+    }
+
+    @Test
+    @DisplayName("QA-979 APT(표 행만)·Brotli·Git 별칭 — 이름 겹침(한국어 'APT 공격'·GitLab·brotlicffi 등)은 맞지 않음")
+    void aptBrotliGit() {
+        assertThat(ids("APT")).containsExactly("apt");
+        assertThat(ids("APT (Ubuntu)")).containsExactly("apt");
+        assertThat(ids("APT(Debian)")).containsExactly("apt");
+        assertThat(ids("Brotli")).containsExactly("brotli");
+        assertThat(ids("Google Brotli")).containsExactly("brotli");
+        assertThat(ids("Git")).containsExactly("git");
+        assertThat(ids("Git (Ubuntu)")).containsExactly("git");
+        for (String other : List.of("가짜 APT 그룹 도구", "brotlicffi", "brotlipy", "Python Brotli", "python-brotli", "GitLab Community Edition",
+                "GitHub Enterprise Server", "Gitea", "Gitee", "GitKraken", "Git LFS", "git-lfs", "libgit2", "Gitblit", "GitOps 도구",
+                "TortoiseGit", "Git Credential Manager", "go-git", "Git for Windows")) {
+            assertThat(ids(other)).as(other).isEmpty();
+        }
+
+        // APT는 본문에서 찾지 않음(한국어 공지의 'APT 공격·APT 그룹'과 겹침).
+        assertThat(alias("apt").mentionedIn("APT (Ubuntu) 가짜 취약점")).isFalse();
+        assertThat(alias("apt").mentionedIn("가짜 APT 공격 그룹 주의")).isFalse();
+        assertThat(alias("brotli").mentionedIn("Brotli 압축 라이브러리의 가짜 취약점")).isTrue();
+        assertThat(alias("brotli").mentionedIn("brotlicffi 가짜 취약점")).isFalse();
+        assertThat(alias("git").mentionedIn("Git 가짜 취약점")).isTrue();
+        assertThat(alias("git").mentionedIn("GitLab과 GitHub 가짜 취약점")).isFalse();
+        assertThat(alias("git").mentionedIn("Git LFS 가짜 취약점")).isFalse();
+
+        assertThat(alias("apt").kind()).isEqualTo(Kind.DISTRO);
+        assertThat(alias("brotli").kind()).isEqualTo(Kind.DISTRO);
+        assertThat(alias("git").kind()).isEqualTo(Kind.UPSTREAM);
+        assertThat(alias("git").family()).isEqualTo(Family.MINOR);
+        assertThat(alias("apt").sections()).containsExactly("host", "collector", "browser");
+        assertThat(alias("brotli").sections()).containsExactlyElementsOf(ProductAliases.ALL_SECTIONS);
+        assertThat(alias("git").sections()).containsExactly("host");
+
+        assertThat(alias("apt").matchesComponent(new Component("host", "dpkg", "apt", "9.8.4fake1", "apt"))).isTrue();
+        assertThat(alias("apt").matchesComponent(new Component("collector", "dpkg", "libapt-pkg9.9", "9.8.4fake1", "apt"))).isTrue();
+        assertThat(alias("apt").matchesComponent(new Component("caddy", "apk", "apt", "9.8.4-r0", null))).isFalse();
+        assertThat(alias("brotli").matchesComponent(new Component("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli"))).isTrue();
+        assertThat(alias("brotli").matchesComponent(new Component("caddy", "apk", "brotli-libs", "9.1.0-r0", "brotli"))).isTrue();
+        assertThat(alias("brotli").matchesComponent(new Component("collector", "pypi", "brotli", "9.1.0", null))).isFalse();
+        assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "git-man", "1:9.56.1-0ppa1~ubuntu99.04.1", "git"))).isTrue();
+        assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "libgit2-9.9", "9.9.0-1", "libgit2"))).isFalse();
+    }
+
+    @Test
     @DisplayName("Python 패키지 공지는 Python 런타임이 아니라 그 패키지 별칭")
     void pythonPackages() {
         assertThat(ids("Python urllib3")).containsExactly("urllib3");

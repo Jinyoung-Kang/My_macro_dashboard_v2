@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
  *
  * <p>제품명은 대소문자를 가리지 않는 정규식으로 맞춥니다. 표 행의 제품명은 제외 정규식이 어디에든 맞으면 그 별칭이 아니고(이름 겹침 —
  * PostgreSQL↔pgAdmin, Next.js↔Nextcloud, Java↔JavaScript 등), 제목·본문은 제외 정규식에 맞는 구절을 지운 뒤 찾습니다. 단어 경계 {@code \b}는
- * 영문·숫자만 글자로 보므로 {@code PostgreSQL에서}처럼 한국어가 바로 붙어도 맞습니다.
+ * 영문·숫자만 글자로 보므로 {@code PostgreSQL에서}처럼 한국어가 바로 붙어도 맞습니다. Windows 전용 제품명(Linux 계열 이름이 함께 적히지 않은
+ * {@code OpenSSH for Windows}·{@code Microsoft OpenSSH} 등 — QA-978)은 어느 별칭에도 맞지 않고, 제목·본문에서는 그 구절을 지운 뒤 찾습니다.
  *
  * <p>구성 요소는 종류({@code ecosystem})가 같고 이름 정규식이 {@code name}이나 원본 패키지({@code sourcePackage})에 통째로 맞으면 그 별칭입니다
  * (dpkg·apk는 원본 패키지 {@code openssl}로 {@code libssl…}까지 묶음, pypi는 PEP 503 정규화 뒤 비교).
@@ -125,10 +126,12 @@ public final class ProductAliases {
      *                          예: runc는 containerd.io 패키지에 들어 있어 그 패키지 버전이 runc 버전이 아님)
      * @param runningOnly       배포판(DISTRO) 별칭에서 실행 중인 것(런타임 구성 요소)이 있으면 변경 기록 판정은 그것만 — 같은 별칭의 패키지 줄은
      *                          apt 보안 보류(해당)에만 쓰고 확인 필요를 만들지 않음(커널: 옛 판·서명·메타 패키지 — ADR 0046 덧붙임 2026-11-21)
+     * @param distroUnlessPpa   상류 번호(UPSTREAM) 별칭의 dpkg 구성 요소 — 판이 PPA(데비안 개정에 {@code ppa})면 에포크·개정을 뗀 상류 판으로
+     *                          공지 표와 견주고, 그 밖(배포판 판)은 배포판 경로(보류·변경 기록·추적기)로 판정(Git — QA-979)
      */
     public record Alias(String id, String label, Kind kind, Family family, String vendor, List<String> sections,
                         List<ComponentKey> components, List<ProductName> names, Pattern exclude, boolean textMatch,
-                        boolean versionComparable, boolean runningOnly) {
+                        boolean versionComparable, boolean runningOnly, boolean distroUnlessPpa) {
 
         public Alias {
             sections = List.copyOf(sections);
@@ -136,12 +139,18 @@ public final class ProductAliases {
             names = List.copyOf(names);
         }
 
-        /** 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 제외 정규식이 어디에든 맞으면 아님. */
+        /**
+         * 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 제외 정규식이 어디에든 맞거나 Windows 전용 제품명이면
+         * ({@link #windowsOnlyProduct}) 아님.
+         */
         public Optional<ProductName> matchProduct(String product) {
             if (product == null || product.isBlank()) {
                 return Optional.empty();
             }
             String text = normalizeText(product);
+            if (windowsOnlyProduct(text)) {
+                return Optional.empty();
+            }
             if (exclude != null && exclude.matcher(text).find()) {
                 return Optional.empty();
             }
@@ -153,7 +162,10 @@ public final class ProductAliases {
             return Optional.empty();
         }
 
-        /** 제목·본문에 이 별칭이 나오는지 — 제외 구절을 지운 뒤 찾습니다. {@code textMatch}가 꺼져 있으면 늘 아님. */
+        /**
+         * 제목·본문에 이 별칭이 나오는지 — 제외 구절을 지우고, 이어서 Windows 전용 구절({@link #WINDOWS_PHRASE})을 지운 뒤 찾습니다
+         * (제외가 먼저 — 'Docker Desktop for Windows'에서 'Docker'만 남지 않게). {@code textMatch}가 꺼져 있으면 늘 아님.
+         */
         public boolean mentionedIn(String text) {
             if (!textMatch || text == null || text.isBlank()) {
                 return false;
@@ -162,6 +174,7 @@ public final class ProductAliases {
             if (exclude != null) {
                 haystack = exclude.matcher(haystack).replaceAll(" ");
             }
+            haystack = WINDOWS_PHRASE.matcher(haystack).replaceAll(" ");
             for (ProductName n : names) {
                 if (n.pattern().matcher(haystack).find()) {
                     return true;
@@ -220,6 +233,25 @@ public final class ProductAliases {
         return out;
     }
 
+    /**
+     * Windows 전용 제품(QA-978) — 이 스택은 Linux 서버라, 표 행의 제품명에 Windows(·{@code Windows용})나 Windows 전용 OpenSSH 이름이 있고
+     * Linux·리눅스·Ubuntu·Debian이 함께 적히지 않았으면 어느 별칭에도 맞지 않습니다({@code Full Client (Windows, Linux, macOS)}는 맞음).
+     */
+    private static final Pattern WINDOWS_PRODUCT = Pattern.compile(
+            "\\bWindows|\\bWin32-OpenSSH\\b|\\bMicrosoft\\s+OpenSSH\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LINUX_PRODUCT = Pattern.compile("\\bLinux\\b|리눅스|\\bUbuntu\\b|\\bDebian\\b", Pattern.CASE_INSENSITIVE);
+    /**
+     * 제목·본문에서 지우는 Windows 전용 구절(QA-978) — {@code <이름> for Windows}(앞에 Microsoft가 붙은 꼴 포함)·{@code Microsoft OpenSSH}·
+     * {@code Win32-OpenSSH}. 정기 업데이트 공지 본문의 'OpenSSH for Windows CVE-… Microsoft OpenSSH for Windows …' 줄이 서버의 OpenSSH에 맞지 않게.
+     */
+    static final Pattern WINDOWS_PHRASE = Pattern.compile(
+            "(?:\\bMicrosoft\\s+)?[\\w.+-]+\\s+for\\s+Windows\\b|\\bMicrosoft\\s+OpenSSH\\b|\\bWin32-OpenSSH\\b", Pattern.CASE_INSENSITIVE);
+
+    /** 표 행 제품명이 Windows 전용인지({@link #WINDOWS_PRODUCT}) — Linux 계열 이름이 함께 있으면 아님. */
+    static boolean windowsOnlyProduct(String product) {
+        return WINDOWS_PRODUCT.matcher(product).find() && !LINUX_PRODUCT.matcher(product).find();
+    }
+
     static String normalizeText(String text) {
         return text.replace(' ', ' ').replaceAll("\\s+", " ").strip();
     }
@@ -265,7 +297,7 @@ public final class ProductAliases {
             alias("python", "Python", Kind.UPSTREAM, Family.MINOR).sections(SECTION_COLLECTOR)
                     .component(ECO_RUNTIME, "python3?")
                     .name("\\bC?Python\\b")
-                    .exclude("Python\\s+(?:Requests|urllib3|lxml|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]+-python\\b")
+                    .exclude("Python\\s+(?:Requests|urllib3|lxml|Brotli|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]+-python\\b")
                     .build(),
             alias("chrome", "Chrome", Kind.UPSTREAM, Family.SINGLE).sections(SECTION_BROWSER)
                     .component(ECO_RUNTIME, "(?:google-)?chrome")
@@ -316,6 +348,22 @@ public final class ProductAliases {
             alias("sudo", "sudo", Kind.DISTRO, Family.SINGLE).sections(SECTION_HOST)
                     .component(ECO_DPKG, "sudo")
                     .name("\\bsudo\\b").noText().build(),
+            // APT — 표 행의 제품명만(한국어 공지의 'APT 공격·APT 그룹'과 겹쳐 본문에서 찾지 않음 — QA-979).
+            alias("apt", "APT", Kind.DISTRO, Family.SINGLE).sections(SECTION_HOST, SECTION_COLLECTOR, SECTION_BROWSER)
+                    .component(ECO_DPKG, "apt")
+                    .name("^APT\\b|\\bAPT\\s*\\((?:Debian|Ubuntu)\\)").noText().build(),
+            alias("brotli", "Brotli", Kind.DISTRO, Family.SINGLE).sections(ALL_SECTIONS)
+                    .component(ECO_DPKG, "brotli").component(ECO_APK, "brotli")
+                    .name("\\bBrotli\\b")
+                    .exclude("brotlicffi|brotlipy|python-brotli|Python\\s+Brotli|Brotli\\s*\\(\\s*Python|Brotli\\s+(?:for\\s+)?Python")
+                    .build(),
+            // Git — 서버는 PPA 판(상류 번호 그대로)일 수 있어 상류 번호 별칭이고, 배포판 판이면 배포판 경로(QA-979).
+            alias("git", "Git", Kind.UPSTREAM, Family.MINOR).sections(SECTION_HOST)
+                    .component(ECO_DPKG, "git")
+                    .name("\\bGit\\b")
+                    .exclude("Git\\s*LFS|git-lfs|GitLab|GitHub|Gitea|Gitee|GitKraken|libgit2|Gitblit|GitOps|TortoiseGit|SmartGit|JGit|"
+                            + "Git\\s+Credential\\s+Manager|Git\\s+Extensions|GitPython|[\\w.]+-git\\b")
+                    .distroUnlessPpa().build(),
 
             // 백엔드 의존성(jar)
             alias("spring-framework", "Spring Framework", Kind.UPSTREAM, Family.MINOR).sections(SECTION_BACKEND)
@@ -393,6 +441,7 @@ public final class ProductAliases {
         private boolean textMatch = true;
         private boolean versionComparable = true;
         private boolean runningOnly;
+        private boolean distroUnlessPpa;
 
         Builder(String id, String label, Kind kind, Family family) {
             this.id = id;
@@ -450,9 +499,14 @@ public final class ProductAliases {
             return this;
         }
 
+        Builder distroUnlessPpa() {
+            this.distroUnlessPpa = true;
+            return this;
+        }
+
         Alias build() {
             return new Alias(id, label, kind, family, vendor, sections, components, names, exclude, textMatch, versionComparable,
-                    runningOnly);
+                    runningOnly, distroUnlessPpa);
         }
     }
 }
