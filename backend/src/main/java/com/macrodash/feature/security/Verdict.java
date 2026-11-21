@@ -77,7 +77,10 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
         DISTRO_NO_PENDING,
         /** 버전 목록이 없거나 그 구역을 모으지 못함. */
         NO_INVENTORY,
-        /** 표 밖 {@code ※} 조건 문장이 있음(해당이면 '조건 문장 있음' 표시, 패치됨이면 확인 필요로 내림). */
+        /**
+         * 표 밖 {@code ※} 조건 문장이 있음(해당이면 '조건 문장 있음' 표시, 패치됨이면 확인 필요로 내림 — 패치됨 근거가 모두 배포판 근거(변경 기록·
+         * 추적기)면 내리지 않고 이 사유도 붙이지 않음, ADR 0046 덧붙임 2026-11-22).
+         */
         CONDITION_NOTE,
         /** 버전 표가 없는 공지의 제목·본문에 별칭이 나옴. */
         NO_VERSION_TABLE,

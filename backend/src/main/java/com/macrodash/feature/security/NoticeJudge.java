@@ -54,7 +54,8 @@ import java.util.regex.Pattern;
  *       해결 버전 이상이면 패치됨, 아니면 {@code OUT_OF_TABLE}. 다른 계열의 행은 판정에 쓰지 않고, 같은 계열의 행이 하나도 없으면
  *       {@code OUT_OF_TABLE}(16.x 행만 있는데 17.x를 쓰면 확인 필요).</li>
  *   <li>제품 판정 = 근거들의 최댓값. 표 밖 {@code ※} 조건 문장(관용 문장 제외)이 있으면 — 해당은 그대로 두고 '조건 문장 있음'
- *       ({@code CONDITION_NOTE})을 붙이고, 패치됨은 확인 필요로 내립니다(결정 9의 1).</li>
+ *       ({@code CONDITION_NOTE})을 붙이고, 패치됨은 확인 필요로 내립니다(결정 9의 1). 다만 패치됨 근거가 모두 배포판 근거(변경 기록·추적기)면
+ *       내리지 않습니다(덧붙임 2026-11-22).</li>
  * </ol>
  * 공지 판정은 제품 판정의 최댓값(해당 &gt; 확인 필요 &gt; 패치됨 &gt; 무관)이고, 맞는 제품이 없으면 무관입니다.
  * 모르는 것(해석 실패·버전 목록 없음·계열 밖)은 패치됨·무관으로 두지 않습니다.
@@ -177,13 +178,31 @@ public final class NoticeJudge {
                 reasons.add(m.reason());
             }
         }
-        if (!notes.isEmpty() && status != Status.UNRELATED) {
+        if (!notes.isEmpty() && status != Status.UNRELATED && !(status == Status.PATCHED && vendorPatched(found))) {
             if (status == Status.PATCHED) {
                 status = Status.CHECK;
             }
             reasons.add(Reason.CONDITION_NOTE);
         }
         return new ProductVerdict(alias.id(), alias.label(), status, reasons);
+    }
+
+    /**
+     * 패치됨인 근거가 모두 배포판 근거(변경 기록·추적기 — {@link Match#basis()}가 있음)인지. 그러면 표 밖 조건 문장으로 확인 필요로 내리지
+     * 않습니다(ADR 0046 덧붙임 2026-11-22, 결정 9의 1의 예외) — 조건 문장은 공지 표의 버전을 어떻게 읽을지의 단서인데, 배포판 근거는 표의 버전이
+     * 아니라 CVE마다 배포판이 직접 적은 수정 여부입니다. 상류 번호로 패치됨인 근거(PPA 판 Git 등)가 하나라도 섞이면 지금처럼 내립니다.
+     */
+    private static boolean vendorPatched(List<Match> found) {
+        boolean any = false;
+        for (Match m : found) {
+            if (!m.otherFamily() && m.status() == Status.PATCHED) {
+                if (m.basis() == null) {
+                    return false;
+                }
+                any = true;
+            }
+        }
+        return any;
     }
 
     private record Coverage(List<Component> components, List<String> missingSections) {

@@ -629,13 +629,23 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @DisplayName("변경 기록 — 패치됨이어도 표 밖 조건 문장이 있으면 확인 필요, 운영체제 업데이트 안내 문장은 조건이 아님")
+        @DisplayName("변경 기록 — 배포판 근거로 패치됨이면 표 밖 조건 문장이 있어도 패치됨(문장은 그대로 냄, 덧붙임 2026-11-22), "
+                + "운영체제 업데이트 안내 문장은 조건이 아님")
         void changelogWithNotes() {
             EnvInventory inv = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.1",
                     "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
             Verdict condition = NoticeJudge.judge(tableNotice("※ 가짜 설정을 켠 경우에만 영향"), sslTwoCves, inv);
-            assertThat(condition.status()).isEqualTo(Status.CHECK);
-            assertThat(condition.reasons()).containsExactly(Reason.CONDITION_NOTE);
+            assertThat(condition.status()).isEqualTo(Status.PATCHED);
+            assertThat(condition.reasons()).isEmpty();
+            assertThat(product(condition, "openssl").reasons()).isEmpty();
+            assertThat(condition.conditionNotes()).containsExactly("가짜 설정을 켠 경우에만 영향");
+            assertThat(condition.matches()).extracting(Match::basis).containsOnly(Basis.CHANGELOG);
+
+            // 배포판 근거로 모르는 것(변경 기록에 없는 CVE)은 지금처럼 확인 필요 + 조건 문장 있음.
+            EnvInventory partial = withChangelog(inventory(hostSsl), "openssl", "9.9.9-0fake1.1", "CVE-2099-0001");
+            Verdict unknown = NoticeJudge.judge(tableNotice("※ 가짜 설정을 켠 경우에만 영향"), sslTwoCves, partial);
+            assertThat(unknown.status()).isEqualTo(Status.CHECK);
+            assertThat(unknown.reasons()).containsExactly(Reason.DISTRO_NO_PENDING, Reason.CONDITION_NOTE);
 
             Verdict guide = NoticeJudge.judge(tableNotice("※ 보안 업데이트가 공개된 운영체제를 운영하고 있을 경우, 참고 사이트의 내용을 참조하여 "
                     + "보안 조치 또는 업데이트 수행(각 OS별 보안 업데이트 상세 버전은 아래 링크 참고) [2]"), sslTwoCves, inv);
@@ -721,6 +731,23 @@ class NoticeJudgeTest {
         }
 
         @Test
+        @DisplayName("조건 문장 예외(덧붙임 2026-11-22) — 같은 Git 별칭이라도 배포판 판(변경 기록)은 패치됨 그대로, PPA 판(상류 번호)은 확인 필요로 내림")
+        void conditionNoteNeedsDistroBasis() {
+            List<Row> gitRows = rows("Git|9.56.1 미만|9.56.1", "Git|9.55.0 이상 9.55.4 미만|9.55.4");
+            SecurityNotice noted = tableNotice("※ 가짜 설정을 켠 경우에만 영향");
+
+            Component distroGit = pkg("host", "dpkg", "git", "1:9.43.0-1fakeubuntu7.3", "git");
+            Verdict distro = NoticeJudge.judge(noted, gitRows, withChangelog(inventory(distroGit), "git", "1:9.43.0-1fakeubuntu7.3",
+                    "CVE-2099-1000", "CVE-2099-1001"));
+            assertThat(distro.status()).isEqualTo(Status.PATCHED);
+            assertThat(distro.reasons()).isEmpty();
+
+            Verdict ppa = NoticeJudge.judge(noted, gitRows, inventory(pkg("host", "dpkg", "git", "1:9.56.1-0ppa1~ubuntu99.04.1", "git")));
+            assertThat(ppa.status()).isEqualTo(Status.CHECK);
+            assertThat(ppa.reasons()).containsExactly(Reason.CONDITION_NOTE);
+        }
+
+        @Test
         @DisplayName("QA-979 Brotli — dpkg·apk 원본 brotli를 배포판 패키지로 판정, brotlicffi 행은 무관")
         void brotli() {
             Component deb = pkg("collector", "dpkg", "libbrotli1", "9.1.0-2fake1", "brotli");
@@ -786,6 +813,37 @@ class NoticeJudgeTest {
             assertThat(m.tracker().cves()).extracting(TrackerCve::status).containsOnly(TrackerStatus.FIXED);
             assertThat(m.tracker().cves().get(2).fixedVersion()).isEqualTo("9.9.9-0fake1.2");
             assertThat(m.tracker().cves().get(0).checkedAt()).isEqualTo(CHECKED);
+        }
+
+        @Test
+        @DisplayName("조건 문장(덧붙임 2026-11-22) — 추적기·변경 기록으로 패치됨이면 ※ 문장이 있어도 패치됨, 뒤처짐(해당)은 해당 + '조건 문장 있음'")
+        void conditionNotes() {
+            SecurityNotice noted = tableNotice("※ 일부 제품은 버전 변경 없이 가짜 수정 코드를 백포트하였으므로 제조사별 내역 확인 [4]",
+                    "※ 다른 가짜 운영체제용 가짜 제품에서 가짜 기능을 켠 경우 영향 [3]");
+            EnvInventory inv = ubuntuHost(hostSsl);
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                inv = track(inv, cve, TrackerStatus.FIXED, "9.9.9-0fake1.1");
+            }
+            Verdict patched = NoticeJudge.judge(noted, sslRows, inv);
+            assertThat(patched.status()).isEqualTo(Status.PATCHED);
+            assertThat(patched.reasons()).isEmpty();
+            assertThat(patched.conditionNotes()).hasSize(2);
+
+            // 컨테이너는 추적기, 호스트는 변경 기록 — 둘 다 배포판 근거라 패치됨.
+            Component alp = pkg("caddy", "apk", "libssl9", "9.9.9-r1", "openssl");
+            EnvInventory mixed = withChangelog(withOs(ubuntuHost(hostSsl, alp), "caddy", "alpine", "99.1.0", null), "openssl",
+                    "9.9.9-0fake1.2", "CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003");
+            for (String cve : List.of("CVE-2099-0001", "CVE-2099-0002", "CVE-2099-0003")) {
+                mixed = withTracker(mixed, "alpine", "v99.1", "openssl", cve, TrackerStatus.FIXED, "9.9.9-r0");
+            }
+            Verdict both = NoticeJudge.judge(noted, sslRows, mixed);
+            assertThat(both.status()).isEqualTo(Status.PATCHED);
+            assertThat(both.matches()).filteredOn(m -> m.aliasId().equals("openssl")).extracting(Match::basis)
+                    .containsExactly(Basis.CHANGELOG, Basis.TRACKER);
+
+            Verdict behind = NoticeJudge.judge(noted, sslRows, track(inv, "CVE-2099-0001", TrackerStatus.FIXED, "9.9.9-0fake1.3"));
+            assertThat(behind.status()).isEqualTo(Status.AFFECTED);
+            assertThat(behind.reasons()).containsExactly(Reason.CONDITION_NOTE);
         }
 
         @Test
