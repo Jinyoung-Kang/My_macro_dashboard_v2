@@ -195,6 +195,14 @@ describe("LineChart — 0 기준선 · 끊김", () => {
     const dots = [...container.querySelectorAll(".recharts-line-dots circle")];
     expect(dots.map((dot) => dot.getAttribute("fill"))).toEqual([SERIES_COLORS.blue, SERIES_COLORS.orange]);
   });
+
+  it("외딴 값이 없는 선은 점 층을 만들지 않는다 — 값마다 점 부품을 만들지 않게(ADR 0047 결정 8)", () => {
+    observeAs(600, 240);
+    const full = SPREADS.map((row) => ({ ...row, a: row.a ?? 1, b: row.b ?? 2 }));
+    const { container } = render(<LineChart data={full} series={TWO_SERIES} includeZero />);
+    expect(linePaths(container)).toHaveLength(2);
+    expect(container.querySelectorAll(".recharts-line-dots")).toHaveLength(0);
+  });
 });
 
 describe("LineChart — 호버 툴팁", () => {

@@ -367,10 +367,15 @@ export function LineChart({
               strokeWidth={2}
               strokeDasharray={entry.tailOf !== undefined ? TAIL_DASH : undefined}
               connectNulls={false}
-              dot={(dot) =>
-                isolated.has(dot.index) ? (
-                  <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={ISOLATED_DOT_R} fill={colors[index]} stroke="none" />
-                ) : null
+              // 외딴 점이 없는 선은 점을 아예 그리지 않습니다(false) — 함수를 주면 Recharts가 값마다 점 부품을 만들어(5년 일별이면 선마다 1천여 개, 다시 그릴
+              // 때마다) 매크로 첫 그리기가 무거웠습니다(ADR 0047 결정 8). 그림은 같습니다(함수는 외딴 점 밖에서 null).
+              dot={
+                isolated.size > 0
+                  ? (dot) =>
+                      isolated.has(dot.index) ? (
+                        <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={ISOLATED_DOT_R} fill={colors[index]} stroke="none" />
+                      ) : null
+                  : false
               }
               // 터치를 뗀 뒤에는 활성 점도 감춥니다 — 위 Tooltip active 주석(QA-592). 다음 touchStart·마우스 이동·키에서 released가 풀려 다시 보입니다.
               activeDot={onScrub && released ? false : { r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
