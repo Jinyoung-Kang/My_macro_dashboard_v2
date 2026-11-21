@@ -604,23 +604,25 @@ public class StoreRepository {
      * 고르면 실제로는 멈춰 있는 태스크가 상태 화면의 '현재 오류'에서 빠졌습니다(QA-139). 실행 기록에는 그대로 남습니다.
      */
     public List<Map<String, Object>> readTaskSummary() {
-        return jdbc.queryForList(
-                "WITH RECURSIVE names AS ("
-                        + " (SELECT task FROM collector_task_runs ORDER BY task LIMIT 1)"
-                        + " UNION ALL"
-                        + " SELECT (SELECT r.task FROM collector_task_runs r"
-                        + "         WHERE r.task > n.task ORDER BY r.task LIMIT 1)"
-                        + " FROM names n WHERE n.task IS NOT NULL"
-                        + ") "
-                        + "SELECT latest.* FROM names n "
-                        + "CROSS JOIN LATERAL ("
-                        + " SELECT task, speed, status, started_at, duration_ms, detail, run_id"
-                        + " FROM collector_task_runs r WHERE r.task = n.task"
-                        + " AND NOT (r.status = 'empty' AND r.detail IS NOT NULL AND r.detail LIKE ?)"
-                        + " ORDER BY r.id DESC LIMIT 1"
-                        + ") latest "
-                        + "ORDER BY latest.task", STILL_RUNNING_PREFIX + "%");
+        return jdbc.queryForList(TASK_SUMMARY_SQL, STILL_RUNNING_PREFIX + "%");
     }
+
+    /** {@link #readTaskSummary}의 질의(인자 하나 — {@link #STILL_RUNNING_PREFIX} + '%'). 계획을 시험이 그대로 EXPLAIN 합니다. */
+    static final String TASK_SUMMARY_SQL = "WITH RECURSIVE names AS ("
+            + " (SELECT task FROM collector_task_runs ORDER BY task LIMIT 1)"
+            + " UNION ALL"
+            + " SELECT (SELECT r.task FROM collector_task_runs r"
+            + "         WHERE r.task > n.task ORDER BY r.task LIMIT 1)"
+            + " FROM names n WHERE n.task IS NOT NULL"
+            + ") "
+            + "SELECT latest.* FROM names n "
+            + "CROSS JOIN LATERAL ("
+            + " SELECT task, speed, status, started_at, duration_ms, detail, run_id"
+            + " FROM collector_task_runs r WHERE r.task = n.task"
+            + " AND NOT (r.status = 'empty' AND r.detail IS NOT NULL AND r.detail LIKE ?)"
+            + " ORDER BY r.id DESC LIMIT 1"
+            + ") latest "
+            + "ORDER BY latest.task";
 
     public List<Map<String, Object>> readTaskHistory(String task, int limit) {
         if (task == null || task.isBlank()) {

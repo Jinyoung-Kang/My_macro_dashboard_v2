@@ -1267,6 +1267,14 @@ def read_task_summary(task_names: Sequence[str] | None = None) -> list[dict]:
     좀비가 도는 동안의 empty 안내 행(STILL_RUNNING_PREFIX)은 건너뛰고 그 앞 실행(✗ 시간 초과)을 씁니다 — 그 행을
     고르면 실제로는 멈춰 있는 태스크가 상태 화면의 '현재 오류'에서 빠졌습니다(QA-139). 실행 기록에는 그대로 남습니다.
     """
+    sql, params = _task_summary_sql(task_names)
+    with connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _task_summary_sql(task_names: Sequence[str] | None) -> tuple[str, list[Any]]:
+    """read_task_summary의 질의와 인자 — 계획을 시험이 그대로 EXPLAIN 합니다(tests/test_store.py)."""
     params: list[Any] = []
     if task_names is None:
         # 기록에 있는 태스크 이름을 인덱스에서 하나씩 건너뛰며 찾습니다.
@@ -1295,9 +1303,7 @@ def read_task_summary(task_names: Sequence[str] | None = None) -> list[dict]:
         ORDER BY latest.task
     """
     params.append(STILL_RUNNING_PREFIX + "%")
-    with connection() as conn:
-        rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    return sql, params
 
 
 def read_task_history(task: str | None = None, limit: int = 50) -> list[dict]:
