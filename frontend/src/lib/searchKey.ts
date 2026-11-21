@@ -1,6 +1,7 @@
 /**
  * 정보 검색의 대상 키 검사와 주소 만들기 — 명령 팔레트(셸, lib/search.ts)도 쓰는 작은 부분만 lib/infoSearch.ts에서 떼어 둔 모듈입니다.
- * 셸은 모든 화면이 함께 싣기 때문에, 166 KB짜리 infoSearch 전체를 끌고 오지 않게 여기만 가져옵니다(ADR 0047 결정 7, 성능 개선 작업 C4).
+ * 셸은 모든 화면이 함께 싣고 홈 알림 요약은 홈의 첫 로딩에 들기 때문에, 166 KB짜리 infoSearch 전체를 끌고 오지 않게 여기만 가져옵니다
+ * (ADR 0047 결정 7, 성능 개선 작업 C4).
  * infoSearch.ts가 같은 이름으로 다시 내보내므로 정보 검색 화면 쪽 가져오기는 그대로입니다.
  */
 import type { SearchRange } from "./types";
@@ -50,4 +51,25 @@ export function searchHref(state: { q?: string | null; e?: string | null; tab?: 
   }
   const q = state.q?.trim();
   return q ? `/search?q=${encodeValue(q)}` : "/search";
+}
+
+// ------------------------------------------------------------------ 알림함 링크
+
+/** 관심 대상 새 글 알림의 알림함 종류(계약 §9-5). */
+export const SEARCH_WATCH_ALERT_KIND = "SEARCH_WATCH";
+const INBOX_HREF_MAX = 2048;
+/** 정보 검색 화면 주소 — '/search' 다음은 끝·'?'·'#'만(다른 경로·'/search/..'·'/searchx'가 아님), 공백·역슬래시·제어 글자 없음. */
+const INBOX_HREF = /^\/search(?:[?#][^\s\\\u0000-\u001f\u007f]*)?$/;
+
+/**
+ * 알림함 줄이 가는 주소 — 관심 대상 새 글 알림(SEARCH_WATCH)의 payload.href가 이 앱의 정보 검색 화면이면 그 주소, 아니면 null(누를 수 없는 줄 그대로).
+ * 다른 종류의 알림은 늘 null입니다. 서버가 만든 값이지만 바깥 주소·다른 화면으로 보내지 않게 '/search'로 시작하는 안쪽 경로만 받습니다.
+ */
+export function searchWatchInboxHref(item: { kind?: string | null; payload?: unknown }): string | null {
+  if (item.kind !== SEARCH_WATCH_ALERT_KIND) return null;
+  const payload = item.payload;
+  if (typeof payload !== "object" || payload === null) return null;
+  const href: unknown = (payload as { href?: unknown }).href;
+  if (typeof href !== "string" || href.length > INBOX_HREF_MAX || !INBOX_HREF.test(href)) return null;
+  return href;
 }

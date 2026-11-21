@@ -33,9 +33,20 @@ import type {
   SearchWatchLimits,
   SearchWatchPartialBody,
 } from "./types";
-import { CONTROL, codePoints, DEFAULT_RANGE, DEFAULT_TAB, isEntityKey, searchHref, type SearchTabKey, TOPIC_MAX } from "./searchKey";
+import {
+  CONTROL,
+  codePoints,
+  DEFAULT_RANGE,
+  DEFAULT_TAB,
+  isEntityKey,
+  SEARCH_WATCH_ALERT_KIND,
+  searchHref,
+  type SearchTabKey,
+  searchWatchInboxHref,
+  TOPIC_MAX,
+} from "./searchKey";
 
-export { DEFAULT_RANGE, DEFAULT_TAB, isEntityKey, searchHref };
+export { DEFAULT_RANGE, DEFAULT_TAB, isEntityKey, SEARCH_WATCH_ALERT_KIND, searchHref, searchWatchInboxHref };
 export type { SearchTabKey };
 
 // ------------------------------------------------------------------ 탭·기간
@@ -2385,25 +2396,6 @@ export const NOTIFY_LABEL = "알림";
 /** 알림 단추에 보이는 상태 글(색·아이콘만이 아님) — 낭독은 aria-pressed가 하므로 이 글은 이름에 넣지 않습니다. */
 export function notifyStateText(on: boolean): string {
   return on ? "켬" : "끔";
-}
-
-/** 관심 대상 새 글 알림의 알림함 종류(계약 §9-5). */
-export const SEARCH_WATCH_ALERT_KIND = "SEARCH_WATCH";
-const INBOX_HREF_MAX = 2048;
-/** 정보 검색 화면 주소 — '/search' 다음은 끝·'?'·'#'만(다른 경로·'/search/..'·'/searchx'가 아님), 공백·역슬래시·제어 글자 없음. */
-const INBOX_HREF = /^\/search(?:[?#][^\s\\\u0000-\u001f\u007f]*)?$/;
-
-/**
- * 알림함 줄이 가는 주소 — 관심 대상 새 글 알림(SEARCH_WATCH)의 payload.href가 이 앱의 정보 검색 화면이면 그 주소, 아니면 null(누를 수 없는 줄 그대로).
- * 다른 종류의 알림은 늘 null입니다. 서버가 만든 값이지만 바깥 주소·다른 화면으로 보내지 않게 '/search'로 시작하는 안쪽 경로만 받습니다.
- */
-export function searchWatchInboxHref(item: { kind?: string | null; payload?: unknown }): string | null {
-  if (item.kind !== SEARCH_WATCH_ALERT_KIND) return null;
-  const payload = item.payload;
-  if (typeof payload !== "object" || payload === null) return null;
-  const href: unknown = (payload as { href?: unknown }).href;
-  if (typeof href !== "string" || href.length > INBOX_HREF_MAX || !INBOX_HREF.test(href)) return null;
-  return href;
 }
 
 /** 오류 응답의 상태 코드(lib/api의 ApiError — 모양으로 읽어 화면 시험의 가짜 api와도 맞음). */
