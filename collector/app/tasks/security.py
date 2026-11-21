@@ -2,19 +2,22 @@
 app/tasks/security.py
 flex 그룹 — KISA 보호나라 보안공지(ADR 0046). 운영자 화면 '보안 공지'의 원자료이고, 판정(해당·패치됨·확인 필요·무관)은 백엔드가 읽을 때 합니다.
 
-[한 실행] 목록 한 쪽 → 처음 본 글 넣기 → 상세 최대 ``DETAIL_LIMIT``건. 요청과 요청 사이는 3~6초(무작위)를 쉽니다.
-  - 평소에는 목록 1쪽. 처음 ``BACKFILL_DAYS``일을 메우는 동안은 아직 못 본 번호가 있는 다음 쪽(번호 칸으로 셈 — 그 사이 새 글이 올라오면
-    쪽이 밀려 겹쳐 읽을 뿐 건너뛰지 않음). 메우는 동안에도 1쪽은 평소 간격마다 한 번 읽습니다(새 글을 늦게 보지 않게).
+[한 실행] 목록 1쪽 → (메우는 중이면) 메우기 쪽 → 처음 본 글 넣기 → 상세 최대 ``DETAIL_LIMIT``건. 요청과 요청 사이는 3~6초(무작위)를 쉽니다.
+  실행 전체의 시간 예산은 ``TIME_LIMIT_SECONDS``(넘으면 새 요청을 시작하지 않음 — flex 상한 600초 안).
+  - 목록 1쪽은 늘 읽습니다. 처음 ``BACKFILL_DAYS``일을 메우는 동안은 같은 실행에서 아직 못 본 번호가 있는 다음 쪽도 읽습니다(목록 요청 최대 2 —
+    쪽은 1쪽을 넣은 뒤의 번호 칸으로 셈. 그 사이 새 글이 올라와도 1쪽이 함께 들어와 셈이 맞음).
   - 메우기는 번호 칸이 있는 글 가운데 가장 오래된 게시일이 ``BACKFILL_DAYS``일 전보다 오래되거나, 번호 1번까지 읽었거나, ``MAX_BACKFILL_PAGE``쪽에
-    닿으면 끝납니다. 그보다 오래된 글은 넣되 상세는 받지 않습니다(skipped).
+    닿으면 끝납니다. 그보다 오래된 글은 넣되 상세는 받지 않습니다(skipped). 메우기 쪽을 받지 못해도 1쪽과 상세는 그대로 이어 갑니다.
   - 한계: 메우기가 끝난 뒤 수집이 오래 멈춰 새 글이 1쪽을 넘게 쌓이면 그 사이 글은 다시 찾지 않습니다(실행 기록에 못 본 번호 수만 남김).
   - 상세는 아직 받지 않은 글·받지 못한 글(시도 ``MAX_ATTEMPTS``번까지)을 최근 글부터. 틀이 깨진 상세는 '형식 바뀜'.
-[언제] fetch_schedule ``kisa_security_notices/next``(flex 틱이 봄). 처음(일정 없음)에는 받지 않고 2~25분 뒤로 정합니다. 평소 3~6시간,
-  메우는 동안(목록이 덜 찼거나 받을 상세가 남음)만 20~40분. 1쪽 다시 읽기는 ``kisa_security_notices/page1``.
+[언제] fetch_schedule ``kisa_security_notices/next``(flex 틱이 봄). KST 하루를 [00,06)·[06,12)·[12,18)·[18,24) 넷으로 나누고, 다음 시각은 늘
+  지금 실행이 속한 구간의 **다음 구간** 안 [시작+30분, 시작+5시간30분]에서 무작위 한 번입니다. 받기·실패·거부와 무관하게 한 실행은 다음 구간으로만
+  미루므로(요청 전에 적어 둠) 구간마다 최대 한 번 = 하루 최대 네 번입니다. 처음(일정 없음)에는 받지 않고 다음 구간으로 정하고, 때가 아니면
+  외부 호출 없이 끝납니다(일정 그대로).
 [출처 상태] 실행마다 ``store.note_source_state``(ok·blocked·format·failed) — 백엔드 SourceAlertJob의 끊김·형식 바뀜 알림과 수집 현황이 그대로
-  붙습니다(ADR 0046 결정 4). '오래 못 받음'은 평소 간격 상한의 3배.
-[실패 규칙] 목록을 받지 못하면 EmptyResult(저장한 글 그대로). 출처가 거부하면(403·429 — 공용 세션의 거부 래치) 그 예외를 그대로 올려
-  실행 기록에 '거부됨'으로 남깁니다. 상세 하나의 실패는 나머지를 멈추지 않습니다(거부만 그 실행을 멈춤).
+  붙습니다(ADR 0046 결정 4). '오래 못 받음'은 ``STALE_AFTER_MINUTES``(30시간 — 구간 넷을 건너뛰어도 넘지 않게).
+[실패 규칙] 목록 1쪽을 받지 못하면 EmptyResult(저장한 글 그대로). 출처가 거부하면(403·429 — 공용 세션의 거부 래치) 그 예외를 그대로 올려
+  실행 기록에 '거부됨'으로 남깁니다. 상세 하나의 실패는 나머지를 멈추지 않습니다(거부만 그 실행의 보호나라 요청을 멈춤).
 """
 from __future__ import annotations
 
@@ -36,21 +39,20 @@ logger = logging.getLogger(__name__)
 
 TASK_NAME = "kisa_security_notices"
 SCHEDULE_ITEM = "next"
-PAGE1_ITEM = "page1"
 
-DETAIL_LIMIT = 8                      # 한 실행의 상세 요청 상한
+DETAIL_LIMIT = 12                     # 한 실행의 상세 요청 상한
 MAX_ATTEMPTS = 3                      # 상세 한 건의 시도 상한(받지 못함·틀 깨짐)
 BACKFILL_DAYS = 90
 MAX_BACKFILL_PAGE = 60                # 메우기가 이 쪽을 넘지 않음(쪽 크기가 바뀌어 셈이 어긋나도 끝없이 내려가지 않게)
 PAGE_SIZE = 10                        # 목록 한 쪽의 번호 줄 수(고정 공지는 세지 않음)
 GAP_SECONDS = (3.0, 6.0)              # 요청 사이 쉼
-NORMAL_MINUTES = (180.0, 360.0)
-BACKFILL_MINUTES = (20.0, 40.0)
-FIRST_MINUTES = (2.0, 25.0)
-STALE_FACTOR = 3
+WINDOW_HOURS = 6                      # KST 하루를 넷으로 — [00,06)·[06,12)·[12,18)·[18,24)
+WINDOW_MARGIN_MINUTES = 30            # 구간의 처음·끝 30분은 비움 → [시작+30분, 시작+5시간30분]
+STALE_AFTER_MINUTES = 30 * 60         # '오래 못 받음' — 구간 사이 간격은 길어야 11시간이라 연달아 몇 번 빠져야 넘음
 REQUEST_TIMEOUT = 20.0
-# 새 상세를 더 시작하지 않는 경과 시간(초) — flex 상한(runner.TASK_DEADLINE_SECONDS["flex"] = 600초)보다 넉넉히 짧게.
-TIME_LIMIT_SECONDS = 300.0
+# 새 요청을 더 시작하지 않는 경과 시간(초) — flex 상한(runner.TASK_DEADLINE_SECONDS["flex"] = 600초)에서 마지막 요청 하나(쉼 + 공용 세션의
+# 다시 보내기 포함)가 들어갈 자리를 남깁니다.
+TIME_LIMIT_SECONDS = 420.0
 
 # 시험이 난수·시계·쉼을 바꿔 끼우는 자리입니다.
 _rng = random.Random()
@@ -78,8 +80,17 @@ def _today_kst(now: datetime) -> date:
     return now.astimezone(kst.KST).date()
 
 
-def _later(now: datetime, minutes: tuple[float, float]) -> datetime:
-    return now + timedelta(minutes=_rng.uniform(*minutes))
+def next_slot(now: datetime) -> datetime:
+    """
+    다음 실행 시각(UTC) — ``now``가 속한 KST 구간의 다음 구간 안 [시작+30분, 시작+5시간30분]에서 무작위(모듈 설명 '언제').
+
+    KST에는 서머타임이 없어 벽시계 더하기가 그대로 맞습니다(18시 구간의 다음은 다음 날 00시 구간).
+    """
+    local = now.astimezone(kst.KST)
+    start = local.replace(hour=local.hour - local.hour % WINDOW_HOURS, minute=0, second=0, microsecond=0)
+    following = start + timedelta(hours=WINDOW_HOURS)
+    minutes = _rng.uniform(WINDOW_MARGIN_MINUTES, WINDOW_HOURS * 60 - WINDOW_MARGIN_MINUTES)
+    return (following + timedelta(minutes=minutes)).astimezone(timezone.utc)
 
 
 class _Failed(Exception):
@@ -117,63 +128,76 @@ def _backfill_page(bounds: dict, cutoff: date) -> int | None:
 
 def _note(status: str, reason: str | None) -> None:
     try:
-        store.note_source_state(TASK_NAME, status, reason, stale_after_minutes=int(NORMAL_MINUTES[1] * STALE_FACTOR))
+        store.note_source_state(TASK_NAME, status, reason, stale_after_minutes=STALE_AFTER_MINUTES)
     except Exception as exc:  # noqa: BLE001
         logger.warning("출처 상태를 남기지 못함(%s): %s", TASK_NAME, exc)
 
 
 def task_kisa_security_notices() -> str:
-    """보호나라 보안공지 목록 한 쪽과 상세 몇 건 → 표 security_notices·security_notice_rows(모듈 설명)."""
+    """보호나라 보안공지 목록(1쪽 + 메우기 쪽)과 상세 몇 건 → 표 security_notices·security_notice_rows(모듈 설명)."""
     now = _now()
     when = flex.due_map(TASK_NAME).get(SCHEDULE_ITEM)
     if when is None:
-        first = _later(now, FIRST_MINUTES)
+        first = next_slot(now)
         flex.set_due(TASK_NAME, SCHEDULE_ITEM, first)
         raise EmptyResult(f"일정 처음 정함 — 첫 요청 {kst.stamp(first)} · 외부 호출 0회")
     if when > now:
         raise EmptyResult(f"다음 요청 {kst.stamp(when)} — 아직 때가 아님 · 외부 호출 0회")
 
-    # 먼저 다음 시각을 적어 둡니다(이 실행 중에 끊겨도 다음 틱이 곧바로 다시 묻지 않게). 끝에서 메우기 여부로 다시 정합니다.
-    flex.set_due(TASK_NAME, SCHEDULE_ITEM, _later(now, NORMAL_MINUTES))
+    # 결과와 무관하게 다음 구간으로만 미룹니다 — 요청 전에 적어 두어 이 실행이 실패·거부되거나 중간에 끊겨도 같은 구간에 다시 묻지 않게.
+    next_at = next_slot(now)
+    flex.set_due(TASK_NAME, SCHEDULE_ITEM, next_at)
     cutoff = _today_kst(now) - timedelta(days=BACKFILL_DAYS)
-    bounds = store.security_list_bounds()
-    backfill = _backfill_page(bounds, cutoff)
-    page1_due = flex.due_map(TASK_NAME).get(PAGE1_ITEM)
-    page = 1 if backfill is None or page1_due is None or page1_due <= now else backfill
-    if page == 1:
-        flex.set_due(TASK_NAME, PAGE1_ITEM, _later(now, NORMAL_MINUTES))
+    before = store.security_list_bounds()
     started = _clock()
 
     try:
-        items = kisa_notices.parse_list(_get(kisa_notices.list_url(page)))
-        if page == 1 and not items:
+        items = kisa_notices.parse_list(_get(kisa_notices.list_url(1)))
+        if not items:
             raise ShapeError("목록 1쪽에 글이 없음")
     except http.SourceRejected as exc:
         _note("blocked", str(exc))
         raise
     except _Failed as exc:
-        _note("failed", f"목록 {page}쪽 받지 못함 — {exc}")
-        _reschedule(now, backfill is not None)
-        raise EmptyResult(f"목록 {page}쪽 받지 못함 — {exc} · 저장한 글 그대로") from None
+        _note("failed", f"목록 1쪽 받지 못함 — {exc}")
+        raise EmptyResult(f"목록 1쪽 받지 못함 — {exc} · 저장한 글 그대로 · 다음 {kst.stamp(next_at)}") from None
     except ShapeError as exc:
-        _note("format", f"목록 {page}쪽 모양이 다름 — {exc}")
-        _reschedule(now, backfill is not None)
-        raise EmptyResult(f"목록 {page}쪽 모양이 다름 — {exc} · 저장한 글 그대로") from None
+        _note("format", f"목록 1쪽 모양이 다름 — {exc}")
+        raise EmptyResult(f"목록 1쪽 모양이 다름 — {exc} · 저장한 글 그대로 · 다음 {kst.stamp(next_at)}") from None
 
-    new = store.upsert_security_notices(items, first_page=page == 1, detail_since=cutoff)
+    new = store.upsert_security_notices(items, first_page=True, detail_since=cutoff)
+    parts = [f"목록 1쪽 {len(items)}건(처음 본 글 {new})"]
     issues: list[tuple[str, str]] = []
-    # 메우기 쪽의 셈이 맞으면 그 쪽의 가장 큰 번호가 아직 못 본 가장 큰 번호(지금 가장 작은 번호 - 1) 이상입니다. 작으면 그 사이를 건너뛴 것 —
-    # 쪽 크기가 바뀐 것이라 '형식 바뀜'으로 남깁니다(받은 글은 넣음).
-    numbers = [item.list_no for item in items if item.list_no is not None]
-    if page > 1 and numbers and bounds["minNo"] is not None and max(numbers) < int(bounds["minNo"]) - 1:
-        issues.append(("format", f"목록 {page}쪽이 번호 {int(bounds['minNo']) - 1 - max(numbers)}개를 건너뜀 — 쪽 크기가 바뀐 듯"))
     # 1쪽의 가장 작은 번호가 앞서 본 가장 큰 번호보다 2 넘게 크면 그 사이 글을 못 봤습니다(수집기가 오래 멈춰 새 글이 한 쪽을 넘게 쌓임).
     # 메우기 범위 밖이라 실행 기록에만 남깁니다(출처의 탓이 아님 — 출처 상태는 그대로).
-    missed = (min(numbers) - int(bounds["maxNo"]) - 1) if page == 1 and numbers and bounds["maxNo"] is not None else 0
+    numbers = [item.list_no for item in items if item.list_no is not None]
+    missed = (min(numbers) - int(before["maxNo"]) - 1) if numbers and before["maxNo"] is not None else 0
+
+    rejected: http.SourceRejected | None = None
+    bounds = store.security_list_bounds()
+    page = _backfill_page(bounds, cutoff)
+    if page is not None and page > 1 and _clock() - started <= TIME_LIMIT_SECONDS:
+        _sleep(_rng.uniform(*GAP_SECONDS))
+        try:
+            more = kisa_notices.parse_list(_get(kisa_notices.list_url(page)))
+        except http.SourceRejected as exc:
+            rejected = exc
+        except _Failed as exc:
+            issues.append(("failed", f"목록 {page}쪽 받지 못함 — {exc}"))
+        except ShapeError as exc:
+            issues.append(("format", f"목록 {page}쪽 모양이 다름 — {exc}"))
+        else:
+            added = store.upsert_security_notices(more, first_page=False, detail_since=cutoff)
+            parts.append(f"목록 {page}쪽 {len(more)}건(처음 본 글 {added})")
+            # 메우기 쪽의 셈이 맞으면 그 쪽의 가장 큰 번호가 아직 못 본 가장 큰 번호(지금 가장 작은 번호 - 1) 이상입니다. 작으면 그 사이를
+            # 건너뛴 것 — 쪽 크기가 바뀐 것이라 '형식 바뀜'으로 남깁니다(받은 글은 넣음).
+            got = [item.list_no for item in more if item.list_no is not None]
+            if got and bounds["minNo"] is not None and max(got) < int(bounds["minNo"]) - 1:
+                issues.append(("format", f"목록 {page}쪽이 번호 {int(bounds['minNo']) - 1 - max(got)}개를 건너뜀 — 쪽 크기가 바뀐 듯"))
 
     ok = failed = shaped = 0
-    rejected: http.SourceRejected | None = None
-    for ntt_id in store.security_pending_details(DETAIL_LIMIT, max_attempts=MAX_ATTEMPTS, since=cutoff):
+    pending = [] if rejected is not None else store.security_pending_details(DETAIL_LIMIT, max_attempts=MAX_ATTEMPTS, since=cutoff)
+    for ntt_id in pending:
         if _clock() - started > TIME_LIMIT_SECONDS:
             break
         _sleep(_rng.uniform(*GAP_SECONDS))
@@ -197,18 +221,17 @@ def task_kisa_security_notices() -> str:
 
     remaining = store.security_pending_details(1, max_attempts=MAX_ATTEMPTS, since=cutoff)
     still_backfilling = _backfill_page(store.security_list_bounds(), cutoff) is not None
-    next_at = _reschedule(now, still_backfilling or bool(remaining))
 
     if rejected is not None:
         _note("blocked", str(rejected))
     elif any(kind == "format" for kind, _ in issues):
         _note("format", next(reason for kind, reason in issues if kind == "format"))
-    elif failed:
+    elif any(kind == "failed" for kind, _ in issues):
         _note("failed", next(reason for kind, reason in issues if kind == "failed"))
     else:
         _note("ok", None)
 
-    parts = [f"목록 {page}쪽 {len(items)}건(처음 본 글 {new})", f"상세 {ok}건"]
+    parts.append(f"상세 {ok}건")
     if failed or shaped:
         parts.append(f"상세 실패 {failed + shaped}건(받지 못함 {failed}·모양이 다름 {shaped})")
     parts.extend(reason for kind, reason in issues if reason.startswith("목록"))
@@ -222,10 +245,3 @@ def task_kisa_security_notices() -> str:
         parts.append("받을 상세 남음")
     parts.append(f"다음 {kst.stamp(next_at)}")
     return " · ".join(parts)
-
-
-def _reschedule(now: datetime, busy: bool) -> datetime:
-    """다음 실행 시각 — 메우는 중이면 20~40분, 아니면 3~6시간."""
-    next_at = _later(now, BACKFILL_MINUTES if busy else NORMAL_MINUTES)
-    flex.set_due(TASK_NAME, SCHEDULE_ITEM, next_at)
-    return next_at
