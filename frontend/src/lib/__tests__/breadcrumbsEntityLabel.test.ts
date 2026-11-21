@@ -25,6 +25,8 @@ describe("entityCrumbLabel — 상세 화면 대상 칸 글 (QA-594)", () => {
       ["/markets/i/sp500", null, "sp500"],
       ["/s/us/AAPL", null, "AAPL"],
       ["/s/kr/005930", { href: "/s/kr/005930", label: " 삼성전자 " }, "삼성전자"],
+      ["/security/900001", { href: "/security/900001", label: "[가짜] 합성 공지" }, "[가짜] 합성 공지"],
+      ["/security/900001", null, "공지 900001"],
     ];
     for (const [path, entity, want] of cases) {
       expect(entityCrumbLabel(path, entity), path).toBe(want);
@@ -34,7 +36,7 @@ describe("entityCrumbLabel — 상세 화면 대상 칸 글 (QA-594)", () => {
 
   // 수정 전(재현 커밋에서는 it.fails)에는 함수가 없었습니다.
   it("대상 칸이 없는 주소는 null — 모의매매 탭·목록 화면·형식이 틀린 주소·메뉴 밖", () => {
-    for (const path of ["/paper/us/holdings", "/paper/kr", "/macro", "/institutions", "/markets/i/", "/s/jp/7203", "/institutions/abc", "/login", "/"]) {
+    for (const path of ["/paper/us/holdings", "/paper/kr", "/macro", "/institutions", "/markets/i/", "/s/jp/7203", "/institutions/abc", "/security", "/security/abc", "/login", "/"]) {
       expect(entityCrumbLabel(path, { href: path, label: "이름" }), path).toBeNull();
     }
   });

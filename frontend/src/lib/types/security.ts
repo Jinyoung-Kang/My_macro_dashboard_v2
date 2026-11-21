@@ -6,11 +6,12 @@
 /** 판정 넷 — 해당·확인 필요·패치됨·무관(API 코드). */
 export type SecurityVerdict = "affected" | "check" | "patched" | "unrelated";
 
-/** 확인 필요 사유 코드 여덟(ADR 0046 결정 6). 모르는 코드가 와도 글자 그대로 보이게 string도 받습니다. */
+/** 확인 필요 사유 코드 아홉(ADR 0046 결정 6 + 2026-11-21 덧붙임의 DISTRO_OPEN). 모르는 코드가 와도 글자 그대로 보이게 string도 받습니다. */
 export type SecurityReason =
   | "PARSE_FAILED"
   | "OUT_OF_TABLE"
   | "DISTRO_NO_PENDING"
+  | "DISTRO_OPEN"
   | "NO_INVENTORY"
   | "CONDITION_NOTE"
   | "NO_VERSION_TABLE"
@@ -88,6 +89,29 @@ export interface SecurityNoticesResponse {
   pages: number;
 }
 
+/** 판정 근거의 종류 — CHANGELOG(서버 배포판 패키지 변경 기록)·TRACKER(배포판 보안 추적기 — 2026-11-21 덧붙임). 모르는 값은 글자 그대로. */
+export type SecurityBasis = "CHANGELOG" | "TRACKER";
+
+/** 배포판 보안 추적기의 한 CVE 상태 — fixed(고친 판 있음)·not_affected·open(아직 고치지 않음)·unknown(추적기가 모름)·none(아직 묻지 않음). */
+export type SecurityTrackerStatus = "fixed" | "not_affected" | "open" | "unknown" | "none";
+
+/** 추적기 근거의 CVE 한 줄. 모르는 상태 코드가 와도 글자 그대로 보이게 string도 받습니다. */
+export interface SecurityTrackerCve {
+  cve: string;
+  status: SecurityTrackerStatus | (string & {});
+  /** status가 fixed일 때 고친 판(배포판 판 글). */
+  fixedVersion: string | null;
+  checkedAt: string | null;
+}
+
+/** 추적기 근거 — 추적기를 쓸 수 있는 배포판 구성 요소 근거에만(그 밖·옛 서버 응답은 null이거나 칸 없음). */
+export interface SecurityTracker {
+  distro: "ubuntu" | "debian" | "alpine" | (string & {});
+  /** Ubuntu·Debian 코드명(noble·trixie), Alpine은 v3.24 꼴. */
+  suite: string;
+  cves: SecurityTrackerCve[];
+}
+
 /** 근거 한 줄 — 구성 요소 하나 × 공지 표 행 하나(또는 행에 매이지 않는 근거). */
 export interface SecurityMatch {
   aliasId: string;
@@ -102,8 +126,13 @@ export interface SecurityMatch {
   status: SecurityVerdict;
   reason: string | null;
   otherFamily: boolean;
-  /** 판정 근거의 종류 — CHANGELOG(서버 배포판 패키지 변경 기록에 그 행의 CVE가 모두 있음 — 패치됨 근거), 그 밖 null. 예전 응답에는 없음. */
-  basis?: string | null;
+  /**
+   * 판정 근거의 종류 — CHANGELOG(서버 배포판 패키지 변경 기록에 그 행의 CVE가 모두 있음 — 패치됨 근거)·TRACKER(배포판 보안 추적기 — 고침 확인이면 패치됨,
+   * 고친 판보다 설치 판이 낮으면 해당, 모두 영향 없음이면 무관), 그 밖 null. 예전 응답에는 없음.
+   */
+  basis?: SecurityBasis | (string & {}) | null;
+  /** 배포판 보안 추적기 근거(2026-11-21 덧붙임) — 추적기를 쓸 수 있는 배포판 구성 요소 근거에만. 옛 서버 응답에는 칸이 없음. */
+  tracker?: SecurityTracker | null;
 }
 
 export interface SecurityNoticeRow {

@@ -2,9 +2,10 @@
  * 보안 공지 화면(/security — ADR 0046, 운영자 전용·읽기만). 응답은 모두 가짜 값입니다(글 번호 9000xx, CVE-2099-*, 실제로 없는 큰 버전 — 실제 서버 버전·공지 원문 아님).
  * - 네 판정은 아이콘 + 글(색만이 아님), 사유는 한국어 글
  * - 거르기(판정·사유)와 검색이 API 인자(verdict·reason·q)로 가고 첫 쪽부터 다시 읽음
- * - 검사 칸: 행마다 영향·해결 버전·판정·설치 버전, ※ 조건 문장 안내 상자, 원문 링크(새 창)
+ * - 요약 칸(2026-11-21 사용자 결정): 판정·사유 한 줄, 이 환경에 걸린 것(해당·확인 필요만 — 패치됨 행은 그리지 않음), '패치됨 N개 · 무관 N개' 한 줄,
+ *   ※ 조건 문장 수, '자세히 보기'(/security/<번호>)·원문 링크(새 창) — 행 표 전체는 그리지 않음, 새 사유 DISTRO_OPEN·추적기 칸 있음/없음
  * - 버전 목록 없음 안내·오래됨 경고·한계 한 줄(늘)·수집 상태 한 줄
- * - 알림함 링크 ?ntt=<번호>가 그 공지의 검사 칸을 엶(좁은 화면 대화상자·넓은 화면 옆 칸)
+ * - 알림함 링크 ?ntt=<번호>가 그 공지의 요약 칸을 엶(좁은 화면 대화상자·넓은 화면 옆 칸)
  * - 회원·데모에게는 메뉴가 없음, 이 화면은 GET만(쓰기 0)
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -259,32 +260,83 @@ describe("보안 공지 — 버전 목록 안내", () => {
   });
 });
 
-describe("보안 공지 — 검사 칸", () => {
-  it("제목을 고르면 그 공지를 읽어 행마다 영향·해결 버전·판정·설치 버전, ※ 조건 문장 안내 상자, 원문 링크(새 창)", async () => {
+describe("보안 공지 — 요약 칸", () => {
+  it("제목을 고르면 그 공지를 읽어 판정·사유 한 줄과 이 환경에 걸린 것만 — 패치됨·무관은 줄 수 한 줄, 행 표 전체는 그리지 않음", async () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "[가짜] 합성 DB 보안 업데이트 권고" }));
     const dialog = await screen.findByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
-    await within(dialog).findByText("표 행 2개");
+    await within(dialog).findByText("이 환경에 걸린 것 2줄");
     expect(calledPaths()).toContain(endpoints.security.notice(900001));
-    expect(within(dialog).getByText("90.0 이상 90.5 미만")).toBeTruthy();
-    expect(within(dialog).getAllByText("postgresql 90.2(postgres)").length).toBeGreaterThan(0);
-    expect(within(dialog).getByText("postgresql 90.2(postgres) · 다른 계열")).toBeTruthy();
-    expect(within(dialog).getByText("표 밖 조건 문장(※)")).toBeTruthy();
-    expect(within(dialog).getByText("※ 가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)")).toBeTruthy();
-    expect(within(dialog).getByText("행에 매이지 않는 근거")).toBeTruthy();
-    expect(within(dialog).getByText("배포판 패키지 — 보류 목록에 없음")).toBeTruthy();
-    expect(within(dialog).getByText("변경 기록에 CVE 있음")).toBeTruthy();
-    const link = within(dialog).getByRole("link", { name: /보호나라 원문 열기\(새 창\)/ });
+    const items = within(dialog).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^주의: 해당PostgreSQLpostgres설치 판 postgresql 90\.2 · 해결 판 90\.5설치 판이 영향 구간 안$/),
+      expect.stringMatching(/^확인 필요OpenSSL서버 호스트설치 판 libfake3 9\.9\.9-0fake1 · 해결 판 —배포판 패키지 — 보류 목록에 없음$/),
+    ]);
+    // 패치됨(커널 — 변경 기록)·무관(다른 계열 행)은 줄로 그리지 않고 수만.
+    expect(within(dialog).getByText("패치됨 1개 · 무관 1개 — 목록은 ‘자세히 보기’에서 봅니다.")).toBeTruthy();
+    expect(within(dialog).queryByText(/Linux 커널/)).toBeNull();
+    expect(within(dialog).queryByText(/변경 기록에 CVE 있음/)).toBeNull();
+    expect(within(dialog).queryByText(/다른 계열/)).toBeNull();
+    expect(within(dialog).queryByText("90.0 이상 90.5 미만")).toBeNull();
+    expect(within(dialog).queryByText(/^표 행/)).toBeNull();
+    expect(within(dialog).queryByRole("table")).toBeNull();
+    // ※ 조건 문장은 수와 첫 문장 한 줄(주의 아이콘 + 글).
+    expect(within(dialog).getByText("※ 조건 문장 1개 — ※ 가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)")).toBeTruthy();
+
+    const more = within(dialog).getByRole("link", { name: "자세히 보기" });
+    expect(more.getAttribute("href")).toBe("/security/900001");
+    expect(more.getAttribute("target")).toBeNull();
+    const link = within(dialog).getByRole("link", { name: /원문 열기\(새 창\)/ });
     expect(link.getAttribute("href")).toBe("https://example.invalid/qa/900001");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("알림함 링크 ?ntt=<번호>는 그 공지의 검사 칸을 연다 — 좁은 화면은 대화상자", async () => {
+  it("새 사유 DISTRO_OPEN은 '배포판 미수정', 추적기 칸이 있으면 고친 판이 해결 판으로, 걸린 것이 없으면 그 사실 한 줄", async () => {
+    reads[endpoints.security.notice(900003)] = {
+      ...DETAIL_900001,
+      notice: { ...DETAIL_900001.notice, nttId: 900003, title: ITEMS[2].title, verdict: "check", reasons: ["DISTRO_OPEN"], conditionNotes: [] },
+      rows: [],
+      generalMatches: [{
+        aliasId: "openssl", label: "OpenSSL", rowIndex: null, cve: null, rowProduct: null, source: "host", component: "libfake3",
+        installedVersion: "9.9.9-0fake1", status: "check", reason: "DISTRO_OPEN", otherFamily: false, basis: null,
+        tracker: { distro: "debian", suite: "fakesuite", cves: [
+          { cve: "CVE-2099-90021", status: "open", fixedVersion: null, checkedAt: "2026-11-21T00:00:00Z" },
+          { cve: "CVE-2099-90022", status: "fixed", fixedVersion: "9.9.9-0fake3", checkedAt: "2026-11-21T00:00:00Z" },
+        ] },
+      }],
+    };
+    reads[endpoints.security.notice(900002)] = {
+      ...DETAIL_900001,
+      notice: { ...DETAIL_900001.notice, nttId: 900002, title: ITEMS[1].title, verdict: "patched", reasons: [], conditionNotes: [] },
+      rows: [],
+      generalMatches: [DETAIL_900001.generalMatches[1]],
+    };
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: ITEMS[2].title }));
+    const dialog = await screen.findByRole("dialog", { name: ITEMS[2].title });
+    await within(dialog).findByText("이 환경에 걸린 것 1줄");
+    expect(within(dialog).getAllByText("배포판 미수정").length).toBe(2);
+    expect(within(dialog).getByRole("listitem").textContent).toContain("해결 판 9.9.9-0fake3");
+    expect(within(dialog).queryByText("DISTRO_OPEN")).toBeNull();
+    expect(within(dialog).queryByText(/조건 문장/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: /닫기/ }));
+    await settled();
+
+    fireEvent.click(screen.getByRole("button", { name: ITEMS[1].title }));
+    const patched = await screen.findByRole("dialog", { name: ITEMS[1].title });
+    await within(patched).findByText("이 환경에 걸린 것 0줄");
+    expect(within(patched).getByText("해당·확인 필요인 근거가 없습니다.")).toBeTruthy();
+    expect(within(patched).getByText("패치됨 1개 · 무관 0개 — 목록은 ‘자세히 보기’에서 봅니다.")).toBeTruthy();
+    expect(within(patched).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900002");
+  });
+
+  it("알림함 링크 ?ntt=<번호>는 그 공지의 요약 칸을 연다 — 좁은 화면은 대화상자", async () => {
     nav.search = "?ntt=900001";
     await renderPage();
     const dialog = await screen.findByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
-    await within(dialog).findByText("표 행 2개");
+    await within(dialog).findByText("이 환경에 걸린 것 2줄");
+    expect(within(dialog).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900001");
   });
 
   it("?ntt=의 공지가 지금 쪽에 없어도 연다(제목 '보안 공지 <번호>'), 숫자가 아니면 열지 않는다", async () => {
@@ -292,7 +344,8 @@ describe("보안 공지 — 검사 칸", () => {
     nav.search = "?ntt=900099";
     await renderPage();
     const dialog = await screen.findByRole("dialog", { name: "보안 공지 900099" });
-    await within(dialog).findByText("표 행 2개");
+    await within(dialog).findByText("이 환경에 걸린 것 2줄");
+    expect(within(dialog).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900099");
     cleanup();
 
     nav.search = "?ntt=abc";
@@ -300,12 +353,15 @@ describe("보안 공지 — 검사 칸", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("넓은 화면은 ?ntt=의 공지를 옆 검사 칸에 고른다(표의 그 행이 고른 행)", async () => {
+  it("넓은 화면은 ?ntt=의 공지를 옆 요약 칸에 고른다(표의 그 행이 고른 행) — 같은 요약", async () => {
     stubWide();
     nav.search = "?ntt=900001";
     await renderPage();
     const inspector = await screen.findByRole("region", { name: "보안 공지 — [가짜] 합성 DB 보안 업데이트 권고" });
-    await within(inspector).findByText("표 행 2개");
+    await within(inspector).findByText("이 환경에 걸린 것 2줄");
+    expect(within(inspector).getByText("패치됨 1개 · 무관 1개 — 목록은 ‘자세히 보기’에서 봅니다.")).toBeTruthy();
+    expect(within(inspector).queryByRole("table")).toBeNull();
+    expect(within(inspector).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900001");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(rowOf("[가짜] 합성 DB 보안 업데이트 권고").getAttribute("aria-current")).toBeTruthy();
   });

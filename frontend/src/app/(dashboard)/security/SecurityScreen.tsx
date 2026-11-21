@@ -26,7 +26,7 @@ import {
 } from "@/lib/security";
 import type { SecurityInventoryResponse, SecurityNoticeItem, SecurityNoticesResponse } from "@/lib/types";
 import { InventoryPanel } from "./InventoryPanel";
-import { NoticeDetail } from "./NoticeDetail";
+import { NoticeSummary } from "./NoticeSummary";
 import { VerdictText } from "./VerdictText";
 
 type TabKey = "notices" | "inventory";
@@ -41,11 +41,12 @@ const TABS: readonly { key: TabKey; label: string }[] = [
  * 읽기만 합니다(쓰기 경로 없음 — '확인함' 표시는 범위 밖, 결정 9의 4). 판정은 백엔드가 읽을 때 계산하고, 화면 조회는 수집을 일으키지 않습니다.
  *
  * 작업대 화면 언어(ADR 0042): 머리 → 한계 한 줄(늘 보임) → 버전 목록·수집 상태 안내 → KPI 띠(해당·확인 필요·패치됨·버전 목록 기준 시각) → 탭(공지 | 버전 목록).
- * 공지 탭은 검색 + 거르기 둘(판정·사유 — API의 verdict·reason·q 인자, 고르면 첫 쪽부터 다시 읽음) + 조밀 표 + 검사 칸(넓은 틀은 옆 28rem, 그 밖은 대화상자 —
- * 표 행마다 판정·사유·설치 버전, ※ 조건 문장, 원문 링크). 버전 목록 탭은 그 탭을 열 때만 읽습니다.
+ * 공지 탭은 검색 + 거르기 둘(판정·사유 — API의 verdict·reason·q 인자, 고르면 첫 쪽부터 다시 읽음) + 조밀 표 + 요약 칸(넓은 틀은 옆 28rem, 그 밖은 대화상자 —
+ * 판정·사유 한 줄, 이 환경에 걸린 것(해당·확인 필요만), 패치됨·무관 줄 수, ※ 조건 문장 수, '자세히 보기'(상세 페이지 /security/<번호>)·원문 링크 — NoticeSummary).
+ * 표 행마다의 판정·추적기 근거 같은 긴 내용은 상세 페이지(NoticeScreen)에만 둡니다(2026-11-21 사용자 결정). 버전 목록 탭은 그 탭을 열 때만 읽습니다.
  * 판정은 늘 아이콘 + 글입니다(색만으로 가르지 않음 — 위험색과 상승색이 가까움, ADR 0042 결정 3).
  *
- * 알림함의 보안 공지 알림은 `/security?ntt=<번호>`로 옵니다 — 그 번호의 공지 검사 칸을 엽니다(넓은 틀은 옆 칸에 고름, 그 밖은 대화상자). 그 공지가 지금 쪽에
+ * 알림함의 보안 공지 알림은 `/security?ntt=<번호>`로 옵니다 — 그 번호의 공지 요약 칸을 엽니다(넓은 틀은 옆 칸에 고름, 그 밖은 대화상자). 그 공지가 지금 쪽에
  * 없어도 엽니다(제목은 '보안 공지 <번호>' — 검사 칸이 그 공지를 따로 읽음).
  */
 export function SecurityScreen() {
@@ -124,7 +125,7 @@ export function SecurityScreen() {
               <Panel
                 title="공지"
                 count={data ? `모두 ${data.total}건` : undefined}
-                subtitle="게시일 최근부터. 제목을 고르면 표 행마다의 판정·사유·설치 버전과 원문 링크가 열립니다."
+                subtitle="게시일 최근부터. 제목을 고르면 이 환경에 걸린 것만 요약하고, '자세히 보기'에서 공지 한 건의 판정 표·공지 표·추적기 근거를 봅니다."
               >
                 <div className="flex min-w-0 flex-col gap-3">
                   <form className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end" onSubmit={search}>
@@ -255,8 +256,8 @@ function NoticeList({
         selectedKey={selected}
         onSelectedKeyChange={onSelect}
         dialogFocus="title"
-        inspectorHint="제목을 고르면 이 칸에 표 행마다의 판정·사유·설치 버전과 원문 링크가 나옵니다."
-        renderDetail={(key) => <NoticeDetail key={key} nttId={key} />}
+        inspectorHint="제목을 고르면 이 칸에 이 환경에 걸린 것(해당·확인 필요)과 '자세히 보기'·원문 링크가 나옵니다."
+        renderDetail={(key) => <NoticeSummary key={key} nttId={key} />}
       >
         {(inspector) => (
           <>

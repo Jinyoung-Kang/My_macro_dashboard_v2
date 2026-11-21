@@ -3,13 +3,17 @@
  * 한국어 글·톤으로 바꾸고 KPI 띠·거르기·수집 상태 한 줄·버전 목록 안내를 만듭니다. 모르는 값은 null·'—'로 두고(0으로 채우지 않음), 모르는 판정을 안전한
  * 쪽(패치됨·무관)으로 읽지 않습니다 — 모르는 판정 코드는 '확인 필요'로 보입니다.
  */
+import { parseSecurityNoticeNo } from "./detail";
 import { EMPTY, formatAge, formatKst } from "./format";
 import type { KpiItem } from "./kpi";
 import type {
   SecurityCollection,
   SecurityInventorySummary,
   SecurityMatch,
+  SecurityNoticeResponse,
+  SecurityNoticeRow,
   SecurityNoticesResponse,
+  SecurityTracker,
   SecurityVerdict,
 } from "./types";
 
@@ -46,7 +50,7 @@ export function verdictView(code: string | null | undefined): VerdictView {
 
 type ReasonText = { label: string; description: string };
 
-/** 사유 코드 여덟(ADR 0046 결정 6)의 짧은 글과 설명. */
+/** 사유 코드 아홉(ADR 0046 결정 6 + 2026-11-21 덧붙임의 DISTRO_OPEN)의 짧은 글과 설명. */
 const REASONS: Record<string, ReasonText> = {
   PARSE_FAILED: { label: "버전 칸 해석 실패", description: "공지의 영향·해결 버전 칸이나 설치 버전을 읽지 못했습니다." },
   OUT_OF_TABLE: {
@@ -57,6 +61,10 @@ const REASONS: Record<string, ReasonText> = {
     label: "배포판 패키지 — 보류 목록에 없음",
     description:
       "배포판 패키지는 옛 번호에 패치를 넣어 공지 번호로 견줄 수 없습니다. 서버의 apt 보안 보류 목록에 없어 패치를 받았는지 모릅니다(컨테이너 안 패키지는 보류 목록이 없어 늘 이 사유).",
+  },
+  DISTRO_OPEN: {
+    label: "배포판 미수정",
+    description: "배포판 보안 추적기에 아직 고치지 않음으로 적혀 있습니다 — 배포판이 고친 판을 내기 전이라 지금 받을 업데이트가 없습니다.",
   },
   NO_INVENTORY: { label: "버전 목록 없음", description: "버전 목록이 없거나 그 구역을 모으지 못했습니다." },
   CONDITION_NOTE: { label: "조건 문장 있음", description: "표 밖에 ※ 조건 문장이 있습니다 — 조건에 따라 영향이 달라질 수 있습니다." },
@@ -90,10 +98,15 @@ export function reasonsText(codes: readonly string[] | null | undefined): string
   return codes.map(reasonLabel).join(" · ");
 }
 
-/** 판정 근거 종류 → 짧은 한국어 글(ADR 0046 덧붙임 2026-11-21). 없으면 null, 모르는 코드는 코드 그대로. */
+const BASES: Record<string, string> = {
+  CHANGELOG: "변경 기록에 CVE 있음",
+  TRACKER: "추적기에서 고침 확인",
+};
+
+/** 판정 근거 종류 → 짧은 한국어 글(ADR 0046 덧붙임 2026-11-21 — 변경 기록·배포판 보안 추적기). 없으면 null, 모르는 코드는 코드 그대로. */
 export function basisLabel(code: string | null | undefined): string | null {
   if (!code) return null;
-  return code === "CHANGELOG" ? "변경 기록에 CVE 있음" : code;
+  return Object.hasOwn(BASES, code) ? BASES[code] : code;
 }
 
 /** 판정 거르기의 키 — 전체는 'all'(인자 없음). */
@@ -127,12 +140,11 @@ export function filterParam(key: string): string | undefined {
 }
 
 /**
- * 알림함 링크(`/security?ntt=<번호>`)의 ntt 인자 → 공지 번호 글. 숫자(1~12자리)만 받고 그 밖은 null(그 공지를 열지 않음).
+ * 알림함 링크(`/security?ntt=<번호>`)의 ntt 인자·상세 주소(`/security/<번호>`)의 조각 → 공지 번호 글. 숫자(1~12자리)만 받고 그 밖은 null(그 공지를 열지 않음).
+ * 규칙은 셸과 같이 쓰는 lib/detail parseSecurityNoticeNo 하나입니다(빵부스러기의 대상 칸과 어긋나지 않게).
  */
 export function parseNttParam(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  return /^\d{1,12}$/.test(text) && !/^0+$/.test(text) ? String(Number(text)) : null;
+  return parseSecurityNoticeNo(value);
 }
 
 /** 보안 공지 알림(SECURITY_NOTICE)의 알림함 종류. */
@@ -340,4 +352,199 @@ export function safeExternalUrl(url: string | null | undefined): string | null {
   if (typeof url !== "string") return null;
   const text = url.trim();
   return /^https?:\/\/[^\s]+$/i.test(text) ? text : null;
+}
+
+// ------------------------------------------------------------------ 배포판 보안 추적기(2026-11-21 덧붙임 — Ubuntu·Debian·Alpine)
+
+const DISTROS: Record<string, { label: string; url: (cve: string) => string }> = {
+  ubuntu: { label: "Ubuntu", url: (cve) => `https://ubuntu.com/security/${cve}` },
+  debian: { label: "Debian", url: (cve) => `https://security-tracker.debian.org/tracker/${cve}` },
+  alpine: { label: "Alpine", url: (cve) => `https://security.alpinelinux.org/vuln/${cve}` },
+};
+
+/** CVE 번호 모양(대소문자 무시 — 링크에는 대문자로). */
+const CVE_PATTERN = /^CVE-\d{4}-\d{4,7}$/i;
+
+/** 추적기 배포판 이름 — 'Ubuntu'·'Debian'·'Alpine', 모르는 값은 글자 그대로. */
+export function distroLabel(distro: string | null | undefined): string {
+  if (!distro) return EMPTY;
+  return DISTROS[distro]?.label ?? distro;
+}
+
+/** 추적기 이름 한 줄 — 'Ubuntu noble'·'Alpine v3.24'. */
+export function trackerName(tracker: Pick<SecurityTracker, "distro" | "suite">): string {
+  return tracker.suite ? `${distroLabel(tracker.distro)} ${tracker.suite}` : distroLabel(tracker.distro);
+}
+
+/**
+ * 추적기의 그 CVE 쪽 주소 — Ubuntu `ubuntu.com/security/<CVE>`, Debian `security-tracker.debian.org/tracker/<CVE>`, Alpine `security.alpinelinux.org/vuln/<CVE>`.
+ * 셋 밖의 배포판이거나 CVE 모양이 아니면 null(링크 없음).
+ */
+export function trackerUrl(distro: string | null | undefined, cve: string | null | undefined): string | null {
+  if (!distro || typeof cve !== "string") return null;
+  const entry = Object.hasOwn(DISTROS, distro) ? DISTROS[distro] : undefined;
+  const id = cve.trim();
+  return entry && CVE_PATTERN.test(id) ? entry.url(id.toUpperCase()) : null;
+}
+
+const TRACKER_STATUS: Record<string, { label: string; tone: VerdictTone }> = {
+  fixed: { label: "고침", tone: "ok" },
+  not_affected: { label: "영향 없음", tone: "neutral" },
+  open: { label: "아직 고치지 않음", tone: "warn" },
+  unknown: { label: "추적기가 모름", tone: "neutral" },
+  none: { label: "아직 묻지 않음", tone: "neutral" },
+};
+
+/** 추적기 CVE 상태 → 글·톤. 모르는 코드는 글자 그대로(주의 — 안전한 쪽으로 읽지 않음). */
+export function trackerStatusView(status: string | null | undefined): { label: string; tone: VerdictTone } {
+  return (status && Object.hasOwn(TRACKER_STATUS, status) ? TRACKER_STATUS[status] : null) ?? { label: status || EMPTY, tone: "warn" };
+}
+
+// ------------------------------------------------------------------ 이 환경 판정(요약 칸·상세 페이지 ①)
+
+/**
+ * 이 환경 판정 한 줄 — 같은 제품(별칭)·같은 구역·같은 판정의 근거를 묶은 것. 근거는 공지 한 건 응답의 행 근거(`rows[].matches`)와 행에 매이지 않는 근거
+ * (`generalMatches`) 전부입니다.
+ */
+export type EvidenceLine = {
+  key: string;
+  /** 판정(모르는 코드는 '확인 필요'로 읽음 — verdictView). */
+  status: SecurityVerdict;
+  aliasId: string;
+  /** 제품 이름(별칭 이름, 없으면 별칭 id). */
+  product: string;
+  /** 구역 코드(host·postgres…) — 모르면 null. */
+  source: string | null;
+  /** 설치 판 '구성 요소 판'(겹침 없이, 나온 차례). 구성 요소가 없는 근거(버전 목록 없음 등)는 빈 목록. */
+  installed: string[];
+  /** 해결 판 — 행 근거는 그 행의 해결 버전 칸 원문, 추적기 근거는 고침(fixed) CVE의 고친 판(겹침 없이). 모르면 빈 목록. */
+  fixed: string[];
+  /** 확인 필요 사유 코드(겹침 없이). */
+  reasons: string[];
+  /** 판정 근거 종류(CHANGELOG·TRACKER — 겹침 없이). */
+  bases: string[];
+  /** 묶인 근거가 모두 다른 계열 행인가(같은 제품의 다른 판 계열 — 판정에 들지 않음). */
+  otherFamily: boolean;
+  /** 행에 매이지 않은 해당 근거가 근거 종류 없이 있음 — 배포판 패키지가 apt 보안 업데이트 대기 목록에 있음(ADR 0046 결정 6). */
+  pendingUpdate: boolean;
+  /** 묶인 근거 수. */
+  count: number;
+};
+
+export type EnvironmentView = {
+  /** 해당 → 확인 필요 차례(같은 판정 안은 응답 차례). 요약 칸이 그리는 것. */
+  exposed: EvidenceLine[];
+  patched: EvidenceLine[];
+  unrelated: EvidenceLine[];
+};
+
+const RANK: Record<SecurityVerdict, number> = { affected: 0, check: 1, patched: 2, unrelated: 3 };
+
+function pushUnique(list: string[], value: string | null | undefined) {
+  const text = value?.trim();
+  if (text && !list.includes(text)) list.push(text);
+}
+
+/**
+ * 공지 한 건 응답 → 이 환경 판정 줄(같은 제품·구역·판정끼리 묶음). 요약 칸은 '이 환경에 걸린 것'(해당·확인 필요 — `exposed`)만 그리고 패치됨·무관은 줄 수만,
+ * 상세 페이지 ①은 넷 모두(패치됨·무관은 접힘). 다른 계열 행 근거는 무관 줄로 남습니다(판정에 들지 않음 — 행 판정과 같음).
+ */
+export function environmentLines(data: Pick<SecurityNoticeResponse, "rows" | "generalMatches">): EnvironmentView {
+  const lines = new Map<string, EvidenceLine>();
+  const add = (match: SecurityMatch, row: SecurityNoticeRow | null) => {
+    const status = verdictView(match.status).code;
+    const key = `${match.aliasId}|${match.source ?? ""}|${status}`;
+    let line = lines.get(key);
+    if (!line) {
+      line = {
+        key,
+        status,
+        aliasId: match.aliasId,
+        product: match.label?.trim() || match.aliasId,
+        source: match.source ?? null,
+        installed: [],
+        fixed: [],
+        reasons: [],
+        bases: [],
+        otherFamily: true,
+        pendingUpdate: false,
+        count: 0,
+      };
+      lines.set(key, line);
+    }
+    line.count += 1;
+    line.otherFamily &&= match.otherFamily === true;
+    if (match.component) pushUnique(line.installed, match.installedVersion ? `${match.component} ${match.installedVersion}` : match.component);
+    if (row) pushUnique(line.fixed, row.fixed);
+    for (const cve of match.tracker?.cves ?? []) if (cve.status === "fixed") pushUnique(line.fixed, cve.fixedVersion);
+    pushUnique(line.reasons, match.reason);
+    pushUnique(line.bases, match.basis);
+    if (status === "affected" && match.rowIndex === null && !match.basis) line.pendingUpdate = true;
+  };
+  for (const row of data.rows ?? []) for (const match of row.matches ?? []) add(match, row);
+  for (const match of data.generalMatches ?? []) add(match, null);
+  const all = [...lines.values()];
+  const byStatus = (code: SecurityVerdict) => all.filter((line) => line.status === code);
+  return {
+    exposed: all.filter((line) => RANK[line.status] <= RANK.check).sort((a, b) => RANK[a.status] - RANK[b.status]),
+    patched: byStatus("patched"),
+    unrelated: byStatus("unrelated"),
+  };
+}
+
+/**
+ * 판정 줄의 사유·근거 한 줄 — 확인 필요 사유 글, 근거 종류(추적기는 판정에 맞춰: 해당이면 '고친 판이 나왔는데 설치 판이 낮음', 무관이면 '영향 없음'),
+ * apt 보안 업데이트 대기, 다른 계열 행. 아무것도 없으면 판정에 따른 기본 글(해당 '설치 판이 영향 구간 안', 패치됨 '설치 판이 해결 판 이상').
+ */
+export function evidenceReasonText(line: EvidenceLine): string {
+  const parts = line.reasons.map(reasonLabel);
+  for (const basis of line.bases) {
+    if (basis === "TRACKER" && line.status === "affected") parts.push("추적기: 고친 판이 나왔는데 설치 판이 낮음");
+    else if (basis === "TRACKER" && line.status === "unrelated") parts.push("추적기: 영향 없음");
+    else parts.push(basisLabel(basis) ?? basis);
+  }
+  if (line.pendingUpdate) parts.push("apt 보안 업데이트 대기");
+  if (line.otherFamily) parts.push("다른 계열 행");
+  if (parts.length > 0) return parts.join(" · ");
+  if (line.status === "affected") return "설치 판이 영향 구간 안";
+  if (line.status === "patched") return "설치 판이 해결 판 이상";
+  return EMPTY;
+}
+
+/** 패치됨·무관 줄 수 한 줄('패치됨 3개 · 무관 1개'). 둘 다 없으면 null. */
+export function settledCountText(view: EnvironmentView): string | null {
+  if (view.patched.length === 0 && view.unrelated.length === 0) return null;
+  return `패치됨 ${view.patched.length}개 · 무관 ${view.unrelated.length}개`;
+}
+
+/** 줄의 글 목록을 앞 `max`개만 — 넘치면 '외 N개'. 비면 null. */
+export function listText(values: readonly string[], max = 2): string | null {
+  if (values.length === 0) return null;
+  const shown = values.slice(0, max).join(" / ");
+  return values.length > max ? `${shown} 외 ${values.length - max}개` : shown;
+}
+
+/** ※ 조건 문장 요약 — 수와 첫 문장(120자를 넘으면 말줄임표 — 전체는 상세 페이지). 문장이 없으면 null. */
+export function conditionSummary(notes: readonly string[] | null | undefined, max = 120): { count: number; first: string } | null {
+  const shown = (notes ?? []).map((note) => note.trim()).filter(Boolean);
+  if (shown.length === 0) return null;
+  const first = shown[0];
+  return { count: shown.length, first: first.length > max ? `${first.slice(0, max).trimEnd()}…` : first };
+}
+
+// ------------------------------------------------------------------ 공지 표(상세 페이지 ③)
+
+export type NoticeRowScope = "stack" | "all";
+
+/** 이 스택 행 — 이 스택이 쓰는 제품(별칭)이 붙은 공지 표 행. 다른 계열 행도 들어갑니다(그 행의 판정은 무관). */
+export function stackRows<T extends Pick<SecurityNoticeRow, "aliases">>(rows: readonly T[]): T[] {
+  return rows.filter((row) => (row.aliases ?? []).length > 0);
+}
+
+/** 공지 표 범위 줄 — '이 스택 행만'·'전체', 보조 글은 행 수. */
+export function rowScopeItems(rows: readonly Pick<SecurityNoticeRow, "aliases">[]): FilterItem[] {
+  return [
+    { key: "stack", label: "이 스택 행만", note: `${stackRows(rows).length}행` },
+    { key: "all", label: "전체", note: `${rows.length}행` },
+  ];
 }

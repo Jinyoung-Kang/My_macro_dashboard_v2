@@ -264,6 +264,18 @@ export function ScaleIcon(props: IconProps) {
   );
 }
 
+/**
+ * 보안 공지(방패 안의 체크) — 보안 공지 상세(/security/<번호>) 대상 머리(EntityHeader)의 대상 종류. 셸 메뉴의 보안 공지 아이콘(shell/icons)과 같은 모양입니다.
+ */
+export function ShieldIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />
+      <path d="M8.75 12l2.25 2.25 4.25-4.5" />
+    </IconBase>
+  );
+}
+
 /** 왼쪽 메뉴 접기·펼치기 — 사각 틀과 왼쪽 세로줄(왼쪽 칸). 넓은 화면 셸의 접기 단추(16·20px). */
 export function PanelLeftIcon(props: IconProps) {
   return (

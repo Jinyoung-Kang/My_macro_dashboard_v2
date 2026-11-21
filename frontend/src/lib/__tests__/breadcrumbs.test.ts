@@ -210,6 +210,29 @@ describe("모의매매(운영자)", () => {
     ]);
   });
 
+  it("보안 공지 상세 — /security/<번호>는 더보기 › 보안 공지(목록 링크) › 공지 <번호>, 넘겨받은 제목이 있으면 그 제목, 형식이 틀리면 목록 칸에서 끝", () => {
+    expect(breadcrumbs("/security/900001", OWNER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "보안 공지", href: "/security" },
+      { label: "공지 900001", href: "/security/900001" },
+    ]);
+    expect(breadcrumbs("/security/0900001", OWNER, { href: "/security/900001", label: "[가짜] 합성 공지" }).at(-1)).toEqual({
+      label: "[가짜] 합성 공지",
+      href: "/security/900001",
+    });
+    expect(breadcrumbs("/security/900001", MEMBER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "보안 공지", href: null },
+      { label: "공지 900001", href: null },
+    ]);
+    for (const path of ["/security/abc", "/security/0", "/security/900001/x"]) {
+      expect(breadcrumbs(path, OWNER), path).toEqual([
+        { label: "더보기", href: "/more" },
+        { label: "보안 공지", href: "/security" },
+      ]);
+    }
+  });
+
   it("보이지 않는 화면(데모의 내 계정)도 링크 없이", () => {
     expect(breadcrumbs("/account", DEMO)).toEqual([
       { label: "더보기", href: "/more" },

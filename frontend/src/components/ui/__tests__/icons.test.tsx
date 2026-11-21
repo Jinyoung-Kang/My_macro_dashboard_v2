@@ -41,6 +41,7 @@ const ICONS = [
   "RefreshIcon",
   "ScaleIcon",
   "SearchIcon",
+  "ShieldIcon",
   "SkipIcon",
   "SpinnerIcon",
   "StarIcon",
