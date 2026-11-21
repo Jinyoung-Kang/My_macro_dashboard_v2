@@ -2,11 +2,12 @@
 #
 # scripts/bench-api.sh — 화면 API 응답 시간을 잰다 (성능 변경 전후 비교용).
 #
-# 사용: bash scripts/bench-api.sh [반복 횟수=5] [> 결과파일]
+# 사용: bash scripts/bench-api.sh [반복 횟수=7] [> 결과파일]
 #       ENV_FILE=.env.qa bash scripts/bench-api.sh   # QA 스택(18082)에서 — 성능 시험은 운영 스택이 아니라 여기서(CLAUDE.md)
 #
 # ENV_FILE(기본 .env)의 OWNER_EMAIL·APP_PASSWORD(운영자 계정)로 로그인해 쿠키를 받은 뒤, 아래 목록의 엔드포인트를 반복 호출하고
-# 중앙값(ms)과 응답 크기를 표로 찍는다. 첫 호출은 JIT·커넥션 준비 때문에 느리므로 버린다.
+# 첫 호출·중앙값·최대(ms)와 응답 크기를 표로 찍는다. 첫 호출은 JIT·커넥션 준비 때문에 느리므로 중앙값·최대에서 뺀다.
+# 백엔드가 로그인 없는 모드(GET /api/auth/session의 noLogin — ADR 0016, QA_NO_LOGIN=1)면 로그인을 건너뛰고 쿠키 없이 부른다.
 # 비밀번호는 출력하지 않는다. 쿠키 파일은 임시 폴더에 만들고 끝나면 지운다.
 #
 # 숫자는 같은 맥·같은 저장본·수집기가 쉬는 시간에 재야 비교할 수 있다. 수집 직후에는
@@ -22,19 +23,25 @@ get_env() { grep -s "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-; }
 BACKEND_PORT=$(get_env BACKEND_PORT); BACKEND_PORT=${BACKEND_PORT:-8080}
 FRONTEND_PORT=$(get_env FRONTEND_PORT); FRONTEND_PORT=${FRONTEND_PORT:-3000}
 BASE="http://localhost:${BACKEND_PORT}"
-N=${1:-5}
-
-PASSWORD=$(get_env APP_PASSWORD)
-EMAIL=$(get_env OWNER_EMAIL)
-if [ -z "$PASSWORD" ] || [ -z "$EMAIL" ]; then echo "OWNER_EMAIL·APP_PASSWORD가 $ENV_FILE에 없습니다(운영자 계정)" >&2; exit 1; fi
+N=${1:-7}
 
 JAR=$(mktemp "${TMPDIR:-/tmp}/bench-cookie.XXXXXX"); trap 'rm -f "$JAR"' EXIT
-code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -H 'Content-Type: application/json' \
-  -H "Origin: http://localhost:${FRONTEND_PORT}" \
-  --data-binary "$(EMAIL="$EMAIL" PASSWORD="$PASSWORD" python3 -c 'import json,os; print(json.dumps({"email": os.environ["EMAIL"], "password": os.environ["PASSWORD"]}))')" \
-  "$BASE/api/auth/login")
-unset PASSWORD
-if [ "$code" != "200" ]; then echo "로그인 실패: HTTP $code" >&2; exit 1; fi
+NO_LOGIN=$(curl -s "$BASE/api/auth/session" | python3 -c 'import json,sys
+try: print("1" if json.load(sys.stdin).get("noLogin") is True else "")
+except Exception: print("")')
+if [ -n "$NO_LOGIN" ]; then
+  echo "# 로그인 없는 모드 — 쿠키 없이 부릅니다" >&2
+else
+  PASSWORD=$(get_env APP_PASSWORD)
+  EMAIL=$(get_env OWNER_EMAIL)
+  if [ -z "$PASSWORD" ] || [ -z "$EMAIL" ]; then echo "OWNER_EMAIL·APP_PASSWORD가 $ENV_FILE에 없습니다(운영자 계정)" >&2; exit 1; fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -H 'Content-Type: application/json' \
+    -H "Origin: http://localhost:${FRONTEND_PORT}" \
+    --data-binary "$(EMAIL="$EMAIL" PASSWORD="$PASSWORD" python3 -c 'import json,os; print(json.dumps({"email": os.environ["EMAIL"], "password": os.environ["PASSWORD"]}))')" \
+    "$BASE/api/auth/login")
+  unset PASSWORD
+  if [ "$code" != "200" ]; then echo "로그인 실패: HTTP $code" >&2; exit 1; fi
+fi
 
 # 화면이 실제로 부르는 조합 (docs/API.md). 계산이 많거나 응답이 큰 것 위주.
 ENDPOINTS=(
@@ -63,17 +70,25 @@ ENDPOINTS=(
   "/api/status"
   "/api/status/issues"
   "/api/snapshot/text"
+  "/api/alerts/unread-count"
+  "/api/paper/overview?market=US"
+  "/api/paper/overview?market=KR"
+  "/api/paper/status?market=US"
+  "/api/paper/status?market=KR"
+  "/api/detail/quote?market=us&code=AAPL"
 )
 
-printf '%-78s %6s %7s %5s\n' "endpoint" "ms(중앙)" "bytes" "code"
+printf '# %s KST N=%s\n' "$(TZ=Asia/Seoul date '+%F %T')" "$N"
+printf '%-78s %6s %6s %6s %8s %5s\n' "endpoint" "첫(ms)" "중앙" "최대" "bytes" "code"
 for ep in "${ENDPOINTS[@]}"; do
-  times=(); size=0; code=0
+  times=(); size=0; code=0; first=0
   for i in $(seq 0 "$N"); do
     out=$(curl -s -o /dev/null -b "$JAR" -H 'Accept-Encoding: gzip' \
       -w '%{time_total} %{size_download} %{http_code}' "$BASE$ep")
     t=$(echo "$out" | awk '{printf "%d", $1*1000}'); size=$(echo "$out" | awk '{print $2}'); code=$(echo "$out" | awk '{print $3}')
-    [ "$i" -gt 0 ] && times+=("$t")   # 첫 호출은 버림
+    if [ "$i" -eq 0 ]; then first=$t; else times+=("$t"); fi   # 첫 호출은 중앙값·최대에서 뺌
   done
   median=$(printf '%s\n' "${times[@]}" | sort -n | awk '{a[NR]=$1} END {print a[int((NR+1)/2)]}')
-  printf '%-78s %6s %7s %5s\n' "$ep" "$median" "$size" "$code"
+  max=$(printf '%s\n' "${times[@]}" | sort -n | tail -1)
+  printf '%-78s %6s %6s %6s %8s %5s\n' "$ep" "$first" "$median" "$max" "$size" "$code"
 done

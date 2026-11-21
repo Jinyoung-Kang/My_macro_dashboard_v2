@@ -2,6 +2,7 @@
 // 사용: k6 run -e BASE=http://127.0.0.1:18082 -e EMAIL="$(grep ^OWNER_EMAIL= .env.qa | cut -d= -f2-)" -e PASSWORD="$(grep ^APP_PASSWORD= .env.qa | cut -d= -f2-)" \
 //        -e ORIGIN=http://localhost:13002 -e VUS=10 -e DURATION=60s scripts/qa/k6/api-load.js
 // 결과: p95·처리량·오류율. 임계값(thresholds)을 넘으면 종료 코드가 0이 아닙니다.
+// 백엔드가 로그인 없는 모드(GET /api/auth/session의 noLogin — QA_NO_LOGIN=1)면 로그인을 건너뛰고 쿠키 없이 부릅니다(EMAIL·PASSWORD 불필요).
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend } from 'k6/metrics';
@@ -28,6 +29,8 @@ export const options = {
 };
 
 export function setup() {
+  const session = http.get(`${BASE}/api/auth/session`);
+  if (session.status === 200 && session.json('noLogin') === true) return { cookie: null };
   const res = http.post(`${BASE}/api/auth/login`, JSON.stringify({ email: __ENV.EMAIL || '', password: __ENV.PASSWORD || '' }),
     { headers: { 'Content-Type': 'application/json', Origin: ORIGIN } });
   if (res.status !== 200) throw new Error(`login failed: ${res.status}`);
@@ -38,7 +41,9 @@ export function setup() {
 
 export default function (data) {
   const e = ENDPOINTS[Math.floor(Math.random() * ENDPOINTS.length)];
-  const res = http.get(`${BASE}${e}`, { cookies: { my_macro_v2_session: data.cookie }, tags: { endpoint: e } });
+  const params = { tags: { endpoint: e } };
+  if (data.cookie) params.cookies = { my_macro_v2_session: data.cookie };
+  const res = http.get(`${BASE}${e}`, params);
   perEndpoint[e].add(res.timings.duration);
   check(res, { 'status 200': (r) => r.status === 200 });
   sleep(0.1);

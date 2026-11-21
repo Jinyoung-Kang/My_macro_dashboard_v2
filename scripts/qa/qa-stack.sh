@@ -105,6 +105,10 @@ case "$cmd" in
     # 운영 백업에는 실제 매매 기록(real_trade_*, ADR 0028 — 실제 계좌의 주문)이 들어 있습니다. QA DB에는 남기지 않고 설정도 꺼짐으로
     # 둡니다 — 복원과 같은 트랜잭션 안에서(scripts/db-restore.sh의 RESTORE_REAL_TRADE).
     RESTORE_REAL_TRADE=clear bash scripts/db-restore.sh "$file" --yes
+    # 복원한 DB는 통계가 비어 있어(pg_stat_user_tables의 last_analyze·last_autoanalyze가 빈 값) 질의 계획이 운영과 달라질 수 있습니다 —
+    # 성능을 재기 전에 통계를 한 번 모읍니다(QA DB만. 운영 복원 절차 scripts/db-restore.sh는 그대로).
+    docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c ANALYZE' \
+      && echo "✓ 복원한 QA DB의 통계를 모았습니다(ANALYZE)"
     ;;
   backup)
     bash scripts/db-backup.sh

@@ -35,7 +35,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름·버킷 이름은 `.env`·메모리에만. 백업은 매일 08:00·일 23:00 KST에 S3 `db/vultr/`(cron — 2026-11-07 배포 때 서버 crontab `0 23 * * *`로 옮김, 그 전 06:45). 재부팅 필요·Livepatch 점검은 매일 16:10 KST(`reboot-check.sh`, cron — 알리기만, 재부팅은 사람이 16:00~22:00 KST).
   AWS 계정에는 포트폴리오 데모(portfolio-*)가 그대로 있다 — 건드리지 않는다.
 - QA·실험용 별도 스택: `bash scripts/qa/qa-stack.sh up|restore F=…|down` (compose 프로젝트 `my_macrodash_v2_qa`,
-  포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정: `ENV_FILE=.env.qa bash scripts/bench-api.sh`(QA 스택), `scripts/qa/k6/`. 화면 감사(12px·누름 자리·넘침·대비·알약, 의존성 없는 머리 없는 크롬): `node scripts/qa/ui-audit.js --base http://127.0.0.1:13002 --widths 390,1024,1440 --out <작업 폴더>`(작업대 개편 전후 비교 — [docs/qa/2026-11-16-workbench-ui-audit.md](docs/qa/2026-11-16-workbench-ui-audit.md), 캡처는 커밋하지 않음).
+  포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정(QA 스택 — 로그인 없는 모드도 됨): `ENV_FILE=.env.qa bash scripts/bench-api.sh`(단발 API 7회 중앙값), `bash scripts/qa/k6/core-get.sh`(11경로 혼합 1·5·20·50명 + 컨테이너 자원), `bash scripts/qa/lighthouse.sh <출력 폴더> [N=3]`(일곱 화면 N회 중앙값, 임시 폴더에서 실행). 화면 감사(12px·누름 자리·넘침·대비·알약, 의존성 없는 머리 없는 크롬): `node scripts/qa/ui-audit.js --base http://127.0.0.1:13002 --widths 390,1024,1440 --out <작업 폴더>`(작업대 개편 전후 비교 — [docs/qa/2026-11-16-workbench-ui-audit.md](docs/qa/2026-11-16-workbench-ui-audit.md), 캡처는 커밋하지 않음).
 
 ## 절대 규칙
 - **운영 DB(`macrodash`)로 테스트하지 않는다.** 테스트는 `macrodash_test`만 쓴다
