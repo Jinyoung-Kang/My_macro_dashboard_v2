@@ -1,7 +1,6 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.VersionOrder.Version;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -61,7 +60,6 @@ class VersionRangeTest {
     }
 
     @Test
-    @Disabled("QA-976 — 고치기 전: 아래 끝의 출시 전 표기(-M5·.M1·-RC1)를 못 읽어 칸 전체가 해석 실패")
     @DisplayName("QA-976 아래 끝의 출시 전 표기('A-M5 이상'·'A.M1 이상'·'A-RC1 초과') — 출시 버전끼리 견주면 'A 이상'과 같음")
     void preReleaseLowerBound() {
         VersionRange r = range("31.0.0-M5 이상 31.0.9 미만");
@@ -158,7 +156,7 @@ class VersionRangeTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {"2.0 이상 1.0 미만", "1.0 이상 1.0 미만", "1.0, 8u1", "1.0, 모든 버전", "모든 버전 1.0", "PostgreSQL 16 이상",
-            "1.2 (Linux)", "1.2.3-rc1 이하", "1.2 이상 미만", "1.x.x", "x", "버전", ",", "1.0 ~", "1.2/1.3", "1.2 또는 1.3",
+            "1.2 (Linux)", "1.2.3-rc1 이하", "1.2.3-M5", "1.0 이상 1.2.3-M5 미만", "1.2.0-M5 이상 1.2.0 미만", "1.2.0-M 5 이상", "1.2 이상 미만", "1.x.x", "x", "버전", ",", "1.0 ~", "1.2/1.3", "1.2 또는 1.3",
             "1.2 이상 2.0 미만 (일부)", "1.2.3.4.5.6.7"})
     @DisplayName("알 수 없는 조각이 하나라도 있으면 칸 전체 실패(빈 구간·제품명 섞임·괄호 설명 포함)")
     void failures(String cell) {

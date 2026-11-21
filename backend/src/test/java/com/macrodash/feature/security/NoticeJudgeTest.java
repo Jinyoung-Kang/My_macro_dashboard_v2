@@ -242,7 +242,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-976 — 고치기 전: 아래 끝의 마일스톤 표기(-M5·.M1)를 못 읽어 해석 실패")
         @DisplayName("QA-976 Tomcat 꼴 'A-M5 이상 B 미만' — 해결 버전 이상이면 패치됨, 구간 안이면 해당")
         void milestoneLowerBound() {
             List<Row> tomcat = rows("Apache Tomcat|31.0.0-M5 이상 31.0.9 미만|31.0.9 이상",

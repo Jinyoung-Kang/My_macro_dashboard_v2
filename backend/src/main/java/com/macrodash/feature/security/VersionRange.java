@@ -20,6 +20,9 @@ import java.util.regex.Pattern;
  *   <li>단일 버전 {@code 12.2.1} — 그 버전 하나</li>
  *   <li>{@code 모든 버전}·{@code 전체 버전}·{@code 전 버전}·{@code all versions} — 전부(이 조각은 칸에 혼자일 때만)</li>
  * </ul>
+ * 아래 끝({@code 이상}·{@code 초과}·{@code 이후}·{@code ~} 앞)에는 출시 전 꼬리({@code -M5}·{@code .M1}·{@code -RC1}·{@code -alpha}·{@code -beta2})가
+ * 붙어도 됩니다(QA-976 — Tomcat 공지의 {@code 11.0.0-M1 이상} 꼴). 설치 버전은 출시 버전만 해석되므로 출시 버전끼리 견주면 {@code A-M5 이상}·
+ * {@code A-M5 초과}는 모두 {@code A 이상}과 같아, 꼬리를 떼고 아래 끝을 포함으로 읽습니다. 위 끝·단일 버전의 꼬리는 그대로 해석 실패입니다.
  * 알 수 없는 조각({@code 8u511b33}·{@code R34 이상 R36 이하}·제품명이 섞인 글·괄호 설명)이 하나라도 있으면 칸 전체가 해석 실패입니다
  * (빈 {@link Optional} — 판정은 확인 필요 {@code PARSE_FAILED}).
  *
@@ -97,10 +100,12 @@ public record VersionRange(List<Interval> intervals) {
     }
 
     private static final String V = "(v?\\d{1,18}(?:\\.\\d{1,18}){0,5})";
-    private static final Pattern BETWEEN = Pattern.compile(V + "\\s*(이상|초과)\\s*" + V + "\\s*(미만|이하)");
-    private static final Pattern TILDE = Pattern.compile(V + "\\s*[~∼～]\\s*" + V);
+    /** 아래 끝 — 버전 뒤에 출시 전 꼬리(둘째 묶음, 없으면 null)가 붙어도 됨(QA-976). */
+    private static final String V_LOWER = V + "([-.](?:M|(?i:rc|alpha|beta))\\d{0,9})?";
+    private static final Pattern BETWEEN = Pattern.compile(V_LOWER + "\\s*(이상|초과)\\s*" + V + "\\s*(미만|이하)");
+    private static final Pattern TILDE = Pattern.compile(V_LOWER + "\\s*[~∼～]\\s*" + V);
     private static final Pattern UPPER = Pattern.compile(V + "\\s*(미만|이하|이전|및\\s*이전|및\\s*이하)");
-    private static final Pattern LOWER = Pattern.compile(V + "\\s*(이상|초과|이후|및\\s*이후|및\\s*이상)");
+    private static final Pattern LOWER = Pattern.compile(V_LOWER + "\\s*(이상|초과|이후|및\\s*이후|및\\s*이상)");
     private static final Pattern WILDCARD = Pattern.compile("v?(\\d{1,18}(?:\\.\\d{1,18}){0,4})\\.[xX*]");
     private static final Pattern SINGLE = Pattern.compile(V);
     /** 조각 끝의 '버전'을 뗀 뒤에 맞춥니다('모든 버전' → '모든'). */
@@ -233,11 +238,12 @@ public record VersionRange(List<Interval> intervals) {
     private static Optional<Interval> interval(String piece) {
         Matcher m = BETWEEN.matcher(piece);
         if (m.matches()) {
-            return bounded(version(m.group(1)), "이상".equals(m.group(2)), version(m.group(3)), "이하".equals(m.group(4)));
+            boolean lowerInclusive = m.group(2) != null || "이상".equals(m.group(3));
+            return bounded(version(m.group(1)), lowerInclusive, version(m.group(4)), "이하".equals(m.group(5)));
         }
         m = TILDE.matcher(piece);
         if (m.matches()) {
-            return bounded(version(m.group(1)), true, version(m.group(2)), true);
+            return bounded(version(m.group(1)), true, version(m.group(3)), true);
         }
         m = UPPER.matcher(piece);
         if (m.matches()) {
@@ -246,7 +252,7 @@ public record VersionRange(List<Interval> intervals) {
         }
         m = LOWER.matcher(piece);
         if (m.matches()) {
-            boolean inclusive = !("초과".equals(m.group(2)) || "이후".equals(m.group(2)));
+            boolean inclusive = m.group(2) != null || !("초과".equals(m.group(3)) || "이후".equals(m.group(3)));
             return Optional.of(new Interval(version(m.group(1)), inclusive, null, false));
         }
         m = WILDCARD.matcher(piece);
