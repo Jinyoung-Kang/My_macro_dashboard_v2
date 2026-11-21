@@ -37,12 +37,12 @@ class DistroVersionTest {
             "1.0|1.0.1",
             // 숫자 마디는 수로
             "1.9|1.10",
-            "2.8.4|2.8.4ubuntu0.1",
+            "9.8.4|9.8.4ubuntu0.1",
             "9.9.9-1|9.9.9-1ubuntu1",
-            "1.1.0-2|1.1.0-2+deb13u1",
-            "1.1.0-2+deb13u1|1.1.0-2+deb13u2",
-            "6.8.0-149.149|6.8.0-151.151",
-            "9.9.9-0ubuntu0.24.04.9|9.9.9-0ubuntu0.24.04.10",
+            "9.1.0-2|9.1.0-2+deb99u1",
+            "9.1.0-2+deb99u1|9.1.0-2+deb99u2",
+            "9.9.0-149.149|9.9.0-151.151",
+            "9.9.9-0ubuntu0.99.04.9|9.9.9-0ubuntu0.99.04.10",
             // 에포크가 먼저
             "9.9-1|1:0.1-1",
             "1:9.9-1|2:0.1-1",
@@ -50,7 +50,7 @@ class DistroVersionTest {
             "1.0|1.0-1",
             // 상류에 '-'가 있으면 마지막 '-' 뒤만 개정
             "1.0-beta-1|1.0-beta-2",
-            "1:9.6p1-3ubuntu13.4|1:9.6p1-3ubuntu13.5"})
+            "1:9.9p1-3ubuntu99.4|1:9.9p1-3ubuntu99.5"})
     @DisplayName("dpkg — 앞이 작다")
     void dpkgLess(String smaller, String larger) {
         assertThat(dpkg(smaller, larger)).isEqualTo(-1);
@@ -111,9 +111,9 @@ class DistroVersionTest {
             "1.2.1|1.2.1_p1",
             "1.2.1_cvs|1.2.1_svn",
             "1.2.1_git20990101|1.2.1_p0",
-            "10.3_p1-r2|10.3_p1-r3",
-            "10.3-r5|10.3_p1-r2",
-            "10.2_p1-r9|10.3_p1-r0",
+            "99.3_p1-r2|99.3_p1-r3",
+            "99.3-r5|99.3_p1-r2",
+            "99.2_p1-r9|99.3_p1-r0",
             "1.2|1.2a",
             "1.2a|1.2b",
             "1.2z|1.3",
@@ -122,7 +122,7 @@ class DistroVersionTest {
             "1.0|1.0.0",
             "1.01|1.1",
             "1.001|1.01",
-            "3.24.3-r0|3.24.10-r0",
+            "3.99.3-r0|3.99.10-r0",
             "1.2.1~abc1-r0|1.2.1~abc2-r0",
             "1.2.1-r0|1.2.1~abcdef-r9"})
     @DisplayName("apk — 앞이 작다(접미사 순서·-r 개정·글자·0으로 시작하는 마디·해시는 글자 순이고 해시가 있는 쪽이 큼)")
@@ -132,7 +132,7 @@ class DistroVersionTest {
     }
 
     @ParameterizedTest(name = "{0} = {1}")
-    @CsvSource(delimiter = '|', value = {"1.2.1-r0|1.2.1-r0", "10.3_p1-r2|10.3_p1-r2", "' 1.2'|'1.2 '"})
+    @CsvSource(delimiter = '|', value = {"1.2.1-r0|1.2.1-r0", "99.3_p1-r2|99.3_p1-r2", "' 1.2'|'1.2 '"})
     @DisplayName("apk — 같음")
     void apkEqual(String a, String b) {
         assertThat(apk(a, b)).isZero();
