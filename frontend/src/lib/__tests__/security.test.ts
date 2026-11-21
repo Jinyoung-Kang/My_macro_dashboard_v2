@@ -20,6 +20,7 @@ import {
   parseNttParam,
   reasonDescription,
   reasonFilterItems,
+  basisLabel,
   reasonLabel,
   reasonsText,
   safeExternalUrl,
@@ -103,6 +104,13 @@ describe("사유", () => {
     expect(reasonLabel("VENDOR_DIFFERS")).toBe("제조사 다름");
     expect(reasonLabel("NEW_CODE")).toBe("NEW_CODE");
     expect(reasonDescription("NEW_CODE")).toBeNull();
+  });
+
+  it("판정 근거 종류 — 변경 기록은 한국어 글, 없으면 null, 모르는 코드는 코드 그대로", () => {
+    expect(basisLabel("CHANGELOG")).toBe("변경 기록에 CVE 있음");
+    expect(basisLabel(null)).toBeNull();
+    expect(basisLabel(undefined)).toBeNull();
+    expect(basisLabel("NEW_BASIS")).toBe("NEW_BASIS");
   });
 
   it("사유 목록 한 줄 — 없으면 null", () => {

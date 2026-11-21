@@ -102,6 +102,8 @@ export interface SecurityMatch {
   status: SecurityVerdict;
   reason: string | null;
   otherFamily: boolean;
+  /** 판정 근거의 종류 — CHANGELOG(서버 배포판 패키지 변경 기록에 그 행의 CVE가 모두 있음 — 패치됨 근거), 그 밖 null. 예전 응답에는 없음. */
+  basis?: string | null;
 }
 
 export interface SecurityNoticeRow {

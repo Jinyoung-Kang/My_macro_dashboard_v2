@@ -92,7 +92,9 @@ const DETAIL_900001 = {
     },
   ],
   generalMatches: [{ aliasId: "openssl", label: "OpenSSL", rowIndex: null, cve: null, rowProduct: null, source: "host", component: "libfake3",
-    installedVersion: "9.9.9-0fake1", status: "check", reason: "DISTRO_NO_PENDING", otherFamily: false }],
+    installedVersion: "9.9.9-0fake1", status: "check", reason: "DISTRO_NO_PENDING", otherFamily: false, basis: null },
+    { aliasId: "linux-kernel", label: "Linux 커널", rowIndex: null, cve: null, rowProduct: null, source: "host", component: "kernel",
+      installedVersion: "0.0.1-fake-generic", status: "patched", reason: null, otherFamily: false, basis: "CHANGELOG" }],
 };
 
 const LIST = endpoints.security.notices({ page: 1, size: 20 });
@@ -271,6 +273,7 @@ describe("보안 공지 — 검사 칸", () => {
     expect(within(dialog).getByText("※ 가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)")).toBeTruthy();
     expect(within(dialog).getByText("행에 매이지 않는 근거")).toBeTruthy();
     expect(within(dialog).getByText("배포판 패키지 — 보류 목록에 없음")).toBeTruthy();
+    expect(within(dialog).getByText("변경 기록에 CVE 있음")).toBeTruthy();
     const link = within(dialog).getByRole("link", { name: /보호나라 원문 열기\(새 창\)/ });
     expect(link.getAttribute("href")).toBe("https://example.invalid/qa/900001");
     expect(link.getAttribute("target")).toBe("_blank");

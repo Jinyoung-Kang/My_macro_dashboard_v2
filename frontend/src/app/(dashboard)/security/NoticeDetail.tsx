@@ -8,6 +8,7 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst } from "@/lib/format";
 import {
   NO_INVENTORY_NOTE,
+  basisLabel,
   detailStatusLabel,
   layoutLabel,
   matchInstalledText,
@@ -165,14 +166,16 @@ function NoticeRowItem({ row }: { row: SecurityNoticeRow }) {
   );
 }
 
-/** 행에 매이지 않는 근거 한 줄 — '제품 · 판정 · 사유 · 설치 버전'. */
+/** 행에 매이지 않는 근거 한 줄 — '제품 · 판정 · 사유 또는 근거 종류(변경 기록) · 설치 버전'. */
 function MatchLine({ match }: { match: SecurityMatch }) {
   const installed = matchInstalledText(match);
+  const basis = basisLabel(match.basis);
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 break-keep wrap-anywhere">
       <span className="text-text">{match.label ?? match.aliasId}</span>
       <VerdictText code={match.status} />
       {match.reason ? <span className="text-text-2">{reasonLabel(match.reason)}</span> : null}
+      {basis ? <span className="text-text-2">{basis}</span> : null}
       {installed ? <span className="text-text-2">설치 {installed}</span> : null}
     </span>
   );

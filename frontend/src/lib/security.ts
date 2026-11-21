@@ -90,6 +90,12 @@ export function reasonsText(codes: readonly string[] | null | undefined): string
   return codes.map(reasonLabel).join(" · ");
 }
 
+/** 판정 근거 종류 → 짧은 한국어 글(ADR 0046 덧붙임 2026-11-21). 없으면 null, 모르는 코드는 코드 그대로. */
+export function basisLabel(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return code === "CHANGELOG" ? "변경 기록에 CVE 있음" : code;
+}
+
 /** 판정 거르기의 키 — 전체는 'all'(인자 없음). */
 export const ALL = "all";
 
