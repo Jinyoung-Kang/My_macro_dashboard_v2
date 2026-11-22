@@ -106,7 +106,6 @@ export function NoticeScreen({ raw }: { raw: string }) {
   const data = read.data;
   const detail = data.notice;
   const url = safeExternalUrl(detail.url);
-  const verdict = verdictView(detail.verdict);
   const fetched = detail.detailFetchedAt ? ` ${formatKst(detail.detailFetchedAt)}` : "";
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -135,36 +134,50 @@ export function NoticeScreen({ raw }: { raw: string }) {
         }
       />
 
-      <EnvironmentPanel data={data} verdictNote={verdict.description} />
-
-      {detail.conditionNotes.length > 0 ? (
-        <Callout tone="warn" title={`표 밖 조건 문장(※) ${detail.conditionNotes.length}개`}>
-          <ul className="mt-1 flex flex-col gap-1">
-            {detail.conditionNotes.map((note, index) => (
-              <li key={index} className="wrap-anywhere">
-                {note}
-              </li>
-            ))}
-          </ul>
-        </Callout>
-      ) : null}
-
-      <NoticeTablePanel rows={data.rows} layout={detail.layout} />
-
-      <TrackerPanel data={data} />
-
-      <Panel title="공지 본문">
-        {detail.bodyText?.trim() ? (
-          <Fold summary={`본문 펼치기(${detail.bodyText.trim().length.toLocaleString("ko-KR")}자)`}>
-            <div className="max-w-[72ch] whitespace-pre-line break-keep wrap-anywhere text-running text-text-2">{detail.bodyText.trim()}</div>
-          </Fold>
-        ) : (
-          <p className="text-sm text-text-2">받아 둔 본문이 없습니다(상세를 받기 전이거나 본문이 비었음).</p>
-        )}
-      </Panel>
-
-      <p className="break-keep text-caption text-text-2">{SECURITY_LIMIT_NOTE}</p>
+      <NoticeDetailSections data={data} />
     </div>
+  );
+}
+
+/**
+ * 공지 한 건의 상세 구역 ①~⑤(이 환경 판정·표 밖 ※ 조건 문장·공지 표·추적기 근거·공지 본문)와 한계 글 — 상세 페이지(/security/<번호>)와 목록 요약 칸의
+ * '자세히 보기' 팝업(NoticeDetailDialog)이 함께 씁니다. 받은 응답만 그리고 따로 읽지 않습니다.
+ */
+export function NoticeDetailSections({ data }: { data: SecurityNoticeResponse }) {
+  const detail = data.notice;
+  const verdict = verdictView(detail.verdict);
+  return (
+    <>
+        <EnvironmentPanel data={data} verdictNote={verdict.description} />
+
+        {detail.conditionNotes.length > 0 ? (
+          <Callout tone="warn" title={`표 밖 조건 문장(※) ${detail.conditionNotes.length}개`}>
+            <ul className="mt-1 flex flex-col gap-1">
+              {detail.conditionNotes.map((note, index) => (
+                <li key={index} className="wrap-anywhere">
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        ) : null}
+
+        <NoticeTablePanel rows={data.rows} layout={detail.layout} />
+
+        <TrackerPanel data={data} />
+
+        <Panel title="공지 본문">
+          {detail.bodyText?.trim() ? (
+            <Fold summary={`본문 펼치기(${detail.bodyText.trim().length.toLocaleString("ko-KR")}자)`}>
+              <div className="max-w-[72ch] whitespace-pre-line break-keep wrap-anywhere text-running text-text-2">{detail.bodyText.trim()}</div>
+            </Fold>
+          ) : (
+            <p className="text-sm text-text-2">받아 둔 본문이 없습니다(상세를 받기 전이거나 본문이 비었음).</p>
+          )}
+        </Panel>
+
+        <p className="break-keep text-caption text-text-2">{SECURITY_LIMIT_NOTE}</p>
+    </>
   );
 }
 
