@@ -141,7 +141,6 @@ def test_filer_info는_이름과_최근_13F(session):
 
 # QA-983: SEC 등록 이름은 영문뿐인데 한글 검색어를 그대로 보내면 SEC가 47초쯤 뒤 503을 돌려줘(2026-11-23 서버 재현), 백엔드가 25초에 끊고
 # '수집기에 닿지 못해'로 적었습니다. 영문(ASCII)이 아닌 검색어는 SEC를 부르지 않고 바로 까닭을 돌려줘야 합니다.
-@pytest.mark.xfail(strict=True, reason="QA-983 재현 — 고치기 전")
 def test_QA983_영문이_아닌_검색어는_SEC를_부르지_않는다(session):
     fake = session(SimpleNamespace(status_code=200, content=ATOM))
     out = lookup.search_filers("아팔루사")

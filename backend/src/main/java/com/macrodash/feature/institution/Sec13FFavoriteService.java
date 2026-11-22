@@ -39,6 +39,8 @@ public class Sec13FFavoriteService {
     static final int MAX_DESCRIPTION = 200;
     private static final Pattern CIK = Pattern.compile("\\d{1,10}");
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
+    /** 이름 검색어 — 영문(ASCII 인쇄 글자)만. SEC 등록 이름은 영문뿐이고 한글은 SEC가 47초쯤 뒤 503(QA-983). */
+    private static final Pattern ENGLISH = Pattern.compile("[\\x20-\\x7E]+");
 
     private final InstitutionCatalog catalog;
     private final Sec13FFavoriteStore favorites;
@@ -128,9 +130,13 @@ public class Sec13FFavoriteService {
                 || CONTROL.matcher(text).find()) {
             throw new InvalidRequestException("검색어는 2~" + MAX_DISPLAY_NAME + "자입니다.");
         }
+        if (!ENGLISH.matcher(text).matches()) {
+            throw new InvalidRequestException("SEC 등록 이름은 영문입니다 — 영문 이름 앞부분이나 CIK로 찾으세요.");
+        }
         Optional<JsonNode> answer = collector.sec13fSearch(text);
         if (answer.isEmpty()) {
-            return failure(502, "수집기에 닿지 못해 SEC를 찾지 못했습니다 — 잠시 뒤 다시 찾거나 CIK를 직접 입력하세요.");
+            // 수집기에 닿지 못했거나 SEC가 제때(25초) 답하지 않음 — 둘을 가를 수 없어 함께 적습니다(QA-983).
+            return failure(502, "SEC 이름 검색이 제때 답하지 않았습니다(수집기나 SEC) — 잠시 뒤 다시 찾거나 CIK를 직접 입력하세요.");
         }
         String error = Json.asText(answer.get(), "error");
         if (error != null && !error.isBlank()) {

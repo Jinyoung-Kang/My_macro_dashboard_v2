@@ -35,10 +35,18 @@ def normalize_cik(raw: Any) -> str | None:
     return text.zfill(10) if CIK_PATTERN.match(text) and int(text) > 0 else None
 
 
+NOT_ENGLISH = "SEC 등록 이름은 영문입니다 — 영문 이름 앞부분이나 CIK로 찾으세요"
+
+
 def clean_query(raw: Any) -> str | None:
-    """이름 검색어 — 앞뒤 공백을 떼고 연속 공백을 하나로, 2~60자만(그 밖은 None)."""
+    """
+    이름 검색어 — 앞뒤 공백을 떼고 연속 공백을 하나로, 2~60자의 영문(ASCII 인쇄 글자)만(그 밖은 None). SEC 등록 이름은 영문뿐이고, 한글을 보내면 SEC가
+    47초쯤 뒤 503을 돌려줬습니다(QA-983 — 2026-11-23 서버 재현).
+    """
     text = " ".join(str(raw or "").split())
-    return text if 2 <= len(text) <= QUERY_MAX else None
+    if not (2 <= len(text) <= QUERY_MAX) or not all(" " <= ch <= "~" for ch in text):
+        return None
+    return text
 
 
 def _get(url: str, params: dict | None):
@@ -96,6 +104,9 @@ def search_filers(query: str) -> dict:
     """이름 → {query, candidates: [{cik, name}], error}. 검색어가 맞지 않으면 SEC를 부르지 않고 error."""
     text = clean_query(query)
     if text is None:
+        cleaned = " ".join(str(query or "").split())
+        if 2 <= len(cleaned) <= QUERY_MAX:
+            return {"query": query, "candidates": [], "error": NOT_ENGLISH}
         return {"query": query, "candidates": [], "error": f"검색어는 2~{QUERY_MAX}자입니다"}
     res, error = _get(EDGAR_BROWSE, {"action": "getcompany", "company": text, "type": "13F-HR", "dateb": "",
                                       "owner": "include", "count": SEARCH_COUNT, "output": "atom"})

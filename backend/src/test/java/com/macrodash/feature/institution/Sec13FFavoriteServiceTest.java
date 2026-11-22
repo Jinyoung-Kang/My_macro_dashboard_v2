@@ -234,7 +234,6 @@ class Sec13FFavoriteServiceTest {
 
     // QA-983: 한글 검색어를 수집기·SEC로 보내면 SEC가 47초쯤 뒤 503(2026-11-23 서버 재현) — 백엔드가 25초에 끊고 '수집기에 닿지 못해'로 적음.
     @Test
-    @org.junit.jupiter.api.Disabled("QA-983 재현 — 고치기 전")
     @DisplayName("QA-983 영문(ASCII)이 아닌 검색어는 수집기를 부르지 않고 400 — SEC 등록 이름은 영문")
     void nonAsciiQueryRejectedBeforeCollector() {
         assertThatThrownBy(() -> service.search(OWNER, "아팔루사"))

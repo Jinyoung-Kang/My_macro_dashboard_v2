@@ -24,6 +24,10 @@ export function favoriteQueryKind(raw: string):
   if (length < 2 || length > FAVORITE_QUERY_MAX) {
     return { kind: "invalid", reason: `기관 이름은 2~${FAVORITE_QUERY_MAX}자, CIK는 숫자 1~10자리로 넣으세요.` };
   }
+  // SEC 등록 이름은 영문뿐 — 한글을 보내면 SEC가 47초쯤 뒤 503이라 부르지 않습니다(QA-983).
+  if (!/^[\x20-\x7E]+$/.test(text)) {
+    return { kind: "invalid", reason: "SEC 등록 이름은 영문입니다 — 영문 이름 앞부분이나 CIK로 찾으세요." };
+  }
   return { kind: "name", text };
 }
 

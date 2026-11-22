@@ -22,7 +22,7 @@ describe("favoriteQueryKind", () => {
 
 // QA-983: SEC 등록 이름은 영문뿐 — 한글 검색어는 SEC가 47초쯤 뒤 503(2026-11-23 서버 재현). 찾기 칸에서 바로 까닭을 보여야 합니다.
 describe("QA-983 영문이 아닌 이름", () => {
-  it.fails("한글이 든 이름은 SEC를 부르지 않고 까닭(영문 이름 앞부분이나 CIK)", () => {
+  it("한글이 든 이름은 SEC를 부르지 않고 까닭(영문 이름 앞부분이나 CIK)", () => {
     const kind = favoriteQueryKind("아팔루사");
     expect(kind.kind).toBe("invalid");
     expect(kind.kind === "invalid" ? kind.reason : "").toContain("영문");
