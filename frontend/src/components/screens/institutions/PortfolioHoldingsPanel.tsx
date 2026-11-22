@@ -52,6 +52,16 @@ const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
  */
 const FIT_MIN_WIDTH = 560;
 
+/**
+ * 쌓은 배치가 들어가는 패널 안 폭(px) — '직전 분기 대비' 태그를 종목 칸(이름·CUSIP 아래)으로, '비중 변화'를 비중 칸 아래로 쌓아 칸 넷(자세히 약 40 ·
+ * 비중 약 83 · 평가액 약 92px + 종목)으로 줄입니다. 종목 칸에 가장 긴 동작 태그('비중 축소 (Reduced)' 약 141px)가 들어가는 하한입니다(QA-987 —
+ * 1024·1280·1366의 기관 상세 가운데 칸 472·424·510px). 이보다 좁으면(폰) 지금처럼 최소 640px와 넘김 안내.
+ */
+const STACK_MIN_WIDTH = 400;
+
+/** 보유 표 배치 — wide(칸 여섯·최소 640px·넘김 안내), compact(칸 여섯·여백 8px·최소 폭 없음), stacked(칸 넷·여백 8px·최소 폭 없음). */
+type HoldingsLayout = "wide" | "compact" | "stacked";
+
 /** 상자 안 폭(px) — ResizeObserver가 없거나 재기 전이면 null(그때는 지금 배치 그대로). */
 function useBoxWidth(ref: RefObject<HTMLElement | null>): number | null {
   const [width, setWidth] = useState<number | null>(null);
@@ -98,7 +108,9 @@ export function PortfolioHoldingsPanel({
   const user = useSessionUser();
   const boxRef = useRef<HTMLDivElement>(null);
   const boxWidth = useBoxWidth(boxRef);
-  const fitted = fit && boxWidth !== null && boxWidth >= FIT_MIN_WIDTH;
+  // fit 패널(기관 상세)의 배치 — 넓으면 좁은 배치, 그보다 좁아도 400px 이상이면 쌓은 배치(QA-987), 잴 수 없거나 더 좁으면 지금 그대로.
+  const fitLayout: HoldingsLayout | null =
+    !fit || boxWidth === null ? null : boxWidth >= FIT_MIN_WIDTH ? "compact" : boxWidth >= STACK_MIN_WIDTH ? "stacked" : null;
   // 보유 표 줄 — 키는 'CUSIP:클래스'(겹치면 '#n' 꼬리), 이름표는 공시 이름(겹치는 줄에만 클래스·CUSIP — QA-587 규칙).
   const holdings = data.holdings ?? [];
   const holdingKeys = holdingRowKeys(holdings);
@@ -142,16 +154,17 @@ export function PortfolioHoldingsPanel({
         {(inspector) => {
           // 옆 칸 배치(또는 fit 패널이 넓을 때)에서는 칸 좌우 여백을 12 → 8px로 줄이고 최소 폭 없이 칸 폭에 맞춥니다(SIDE_COMPACT) — 표가 검사 칸 옆 약
           // 532~598px(메뉴 220에서 창 1374~1440)·기관 상세 가운데 칸(1440에서 584px — QA-984)에 들어가게.
-          const side = sideBySide(inspector) || fitted;
+          const layout: HoldingsLayout = sideBySide(inspector) ? "compact" : (fitLayout ?? "wide");
+          const narrow = layout !== "wide";
           return (
-            <div ref={boxRef} className={side ? SIDE_COMPACT : undefined}>
+            <div ref={boxRef} className={narrow ? SIDE_COMPACT : undefined}>
               <DataTable
-                columns={holdingColumns(inspector, labels, krw.toKrw, side)}
+                columns={holdingColumns(inspector, labels, krw.toKrw, layout)}
                 rows={holdingRows}
                 rowKey={(row) => row.key}
                 caption="보유 종목 상세"
                 count={countText}
-                scrollHint={side ? false : "overflow"}
+                scrollHint={narrow ? false : "overflow"}
                 selectedKey={inspector.shownKey}
               />
             </div>
@@ -193,9 +206,11 @@ function holdingColumns(
   inspector: InspectorContext,
   labels: ReadonlyMap<string, string>,
   toKrw: (usd: number | null | undefined) => string | null,
-  side: boolean,
+  layout: HoldingsLayout,
 ): Column<HoldingRow>[] {
-  return [
+  const side = layout !== "wide";
+  const stacked = layout === "stacked";
+  const columns: Column<HoldingRow>[] = [
     {
       key: "inspect",
       // 머리 글은 낭독기에만 — 눈에는 빈 좁은 칸.
@@ -220,10 +235,31 @@ function holdingColumns(
           <span className="text-xs text-text-3">
             CUSIP {holding.cusip} · {holding.class}
           </span>
+          {/* 쌓은 배치(QA-987)에서는 '직전 분기 대비' 칸 대신 이름 아래 — 태그가 두 줄로 접히지 않게(QA-697). */}
+          {stacked ? (
+            <span className="mt-1 whitespace-nowrap">
+              <HoldingActionTag label={holding.action} />
+            </span>
+          ) : null}
         </span>
       ),
     },
-    { key: "weight", header: "비중", align: "right", cell: ({ holding }) => formatWeightPercent(holding.weight) },
+    stacked
+      ? {
+          key: "weight",
+          // 쌓은 배치(QA-987) — 비중 아래 비중 변화(공용 변화 칸 — 방향 기호·부호·낭독 '상승/하락' 그대로).
+          header: "비중(변화)",
+          align: "right",
+          cell: ({ holding }) => (
+            <span className="flex flex-col items-end">
+              <span>{formatWeightPercent(holding.weight)}</span>
+              <span className="text-xs">
+                <ChangeCell change={holding.weightDiff} digits={2} unit="%p" />
+              </span>
+            </span>
+          ),
+        }
+      : { key: "weight", header: "비중", align: "right", cell: ({ holding }) => formatWeightPercent(holding.weight) },
     {
       key: "weightDiff",
       header: "비중 변화",
@@ -258,4 +294,6 @@ function holdingColumns(
       cell: ({ holding }) => <HoldingActionTag label={holding.action} />,
     },
   ];
+  // 쌓은 배치는 비중 변화·직전 분기 대비를 다른 칸 안에 두어 칸 넷(QA-987).
+  return stacked ? columns.filter((column) => column.key !== "weightDiff" && column.key !== "action") : columns;
 }
