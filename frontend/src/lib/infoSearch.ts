@@ -2393,6 +2393,16 @@ export function watchNotifyOf(item: Pick<SearchWatchItem, "notify"> | null | und
  */
 export const NOTIFY_LABEL = "알림";
 
+/** 관심 대상 이름의 차례 — 한국어 정렬(한글 다음 영문, 대소문자 무시, 숫자는 수의 크기대로). */
+const WATCH_NAME_ORDER = new Intl.Collator("ko", { sensitivity: "base", numeric: true });
+
+/**
+ * 관심 대상 목록의 보이는 차례 — 이름 글자순(사용자 요청 2026-11-22), 이름이 같으면 대상 키 순. 서버가 준 차례(등록 순)는 그대로 두고 사본을 돌려줍니다.
+ */
+export function watchItemsByName<T extends { name: string; key: string }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => WATCH_NAME_ORDER.compare(a.name, b.name) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
 /** 알림 단추에 보이는 상태 글(색·아이콘만이 아님) — 낭독은 aria-pressed가 하므로 이 글은 이름에 넣지 않습니다. */
 export function notifyStateText(on: boolean): string {
   return on ? "켬" : "끔";

@@ -15,6 +15,7 @@ import {
   watchKeyOf,
   watchLimitsText,
   watchNewTotal,
+  watchItemsByName,
   watchNotifyOf,
 } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind, SearchWatchItem } from "@/lib/types";
@@ -60,7 +61,8 @@ export function WatchPane({
   const headingId = useId();
   const bodyId = useId();
   const data = watch.data;
-  const items = data?.available ? (data.items ?? []) : [];
+  // 이름 글자순(사용자 요청 2026-11-22 — 서버는 등록 순으로 줌).
+  const items = data?.available ? watchItemsByName(data.items ?? []) : [];
 
   let body;
   if (demo) {
