@@ -680,6 +680,14 @@ describe("개요 — 신호 기관·게이트 지표(참고)", () => {
       ["CIK 0009999999", "A", NONE, NONE],
       ["버크셔 해서웨이", "B", "B 2위", "20.0%"],
     ]);
+    // 기관 이름은 13F 정보·포트폴리오 팝업 단추(사용자 요청 2026-11-22) — 누르면 그 기관 이름의 대화상자가 열림.
+    expect(within(groupA).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "듀케인 13F 포트폴리오 보기",
+      "CIK 0009999999 13F 포트폴리오 보기",
+    ]);
+    fireEvent.click(within(pool).getByRole("button", { name: "버크셔 해서웨이 13F 포트폴리오 보기" }));
+    expect(await screen.findByRole("dialog", { name: "버크셔 해서웨이" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "버크셔 해서웨이" }), { key: "Escape" });
 
     expect(screen.getByText("L0 · 동결")).toBeTruthy();
     expect(screen.getAllByText(/참고 — 구속하지 않음/).length).toBeGreaterThan(0);

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTickerName } from "@/hooks/useTickerNames";
+import { InstitutionQuickView } from "@/components/screens/detail/InstitutionQuickView";
 import { MultiLineSeries } from "@/components/charts";
 import { ChangeChip, type Column, DataTable, Empty, EstimateBadge, InspectorFrame, type InspectorContext, KpiStrip, RangeTabs, StaleBadge } from "@/components/patterns";
 import { Button, Callout, Freshness, Panel, ROW_TRIGGER } from "@/components/ui";
@@ -634,7 +635,7 @@ export function OverviewSection({
                     rows={selection.pool}
                     rowKey={(row) => row.key}
                     columns={[
-                      { key: "name", header: "기관", className: "break-keep", cell: (row) => <span className="font-semibold text-text">{row.name}</span> },
+                      { key: "name", header: "기관", className: "break-keep", cell: (row) => <InstitutionName cik={row.cik} name={row.name} strong /> },
                       { key: "group", header: "그룹", cell: (row) => (row.group ? <GroupBadge badge={row.group} /> : null) },
                       { key: "ranks", header: "순위", cell: (row) => (row.ranks === EMPTY ? null : <span className="whitespace-nowrap">{row.ranks}</span>) },
                       { key: "weight", header: "기관 가중", align: "right", cell: (row) => row.weight },
@@ -801,12 +802,30 @@ function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerR
         <ol className="space-y-0.5 text-xs text-text-2">
           {rows.map((row) => (
             <li key={row.key} title={`CIK ${row.cik}`}>
-              <span className="tabular-nums text-text-3">{row.rank}</span> <span>{row.name}</span>
+              <span className="tabular-nums text-text-3">{row.rank}</span> <InstitutionName cik={row.cik} name={row.name} />
             </li>
           ))}
         </ol>
       )}
     </section>
+  );
+}
+
+/**
+ * 신호 기관 이름 — 누르면 그 기관의 13F 정보·포트폴리오 팝업(InstitutionQuickView — 사용자 요청 2026-11-22). 단추는 표·목록 줄의 이름 단추와 같은 공용 조각
+ * (ROW_TRIGGER — 좁은 화면 누름 자리 44px, 넓은 화면 24px, 중립 잉크·밑줄·포커스 링).
+ */
+function InstitutionName({ cik, name, strong = false }: { cik: string; name: string; strong?: boolean }) {
+  return (
+    <InstitutionQuickView
+      cik={cik}
+      name={name}
+      trigger={
+        <button type="button" className={`${ROW_TRIGGER} ${strong ? "font-semibold" : ""}`.trim()} aria-label={`${name} 13F 포트폴리오 보기`}>
+          {name}
+        </button>
+      }
+    />
   );
 }
 
