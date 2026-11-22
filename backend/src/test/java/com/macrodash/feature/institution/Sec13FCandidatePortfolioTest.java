@@ -41,12 +41,17 @@ class Sec13FCandidatePortfolioTest {
             """;
 
     private static StoreReader store(boolean candidateStored) {
+        return store(candidateStored, "");
+    }
+
+    /** {@code extra}: 저장본 머리에 덧붙일 JSON 칸(예 {@code "name":"…",}) — 수집기 q30 저장본의 이름·스타일. */
+    private static StoreReader store(boolean candidateStored, String extra) {
         StoreReader store = mock(StoreReader.class);
         when(store.read(anyString(), anyLong(), anyString())).thenReturn(Optional.empty());
         when(store.quietly(any())).thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(0)).get());
         if (candidateStored) {
             Snapshot snapshot = new Snapshot(Datasets.sec13f(CANDIDATE, Datasets.TRACK_RECORD_QUARTERS),
-                    MAPPER.readTree("{\"cik\":\"" + CANDIDATE + "\",\"quarters\":" + QUARTERS + "}"), "json", "ok", null, Instant.now());
+                    MAPPER.readTree("{" + extra + "\"cik\":\"" + CANDIDATE + "\",\"quarters\":" + QUARTERS + "}"), "json", "ok", null, Instant.now());
             when(store.read(eq(Datasets.sec13f(CANDIDATE, Datasets.TRACK_RECORD_QUARTERS)), anyLong(), anyString()))
                     .thenReturn(Optional.of(snapshot));
         }
@@ -66,6 +71,37 @@ class Sec13FCandidatePortfolioTest {
                 .contains("FAKE ALPHA", "FAKE BETA");
         verify(store).quietly(any());
         verify(store, never()).read(eq(Datasets.sec13f(CANDIDATE, Datasets.MAX_TRACKED_QUARTERS)), anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("13F 메뉴 밖 기관의 기관 칸은 q30 저장본의 이름·스타일 — 이름이 없으면 지금처럼 CIK(기관 상세 제목·뉴스 검색어가 CIK 숫자가 되지 않게)")
+    @SuppressWarnings("unchecked")
+    void candidateInstitutionUsesStoredName() {
+        Map<String, Object> named = new Sec13FService(store(true, "\"name\":\"가짜 후보 (Fake Capital)\",\"style\":\"가치·집중\","))
+                .portfolio(CANDIDATE, 8, 30);
+        assertThat((Map<String, Object>) named.get("institution"))
+                .containsEntry("cik", CANDIDATE)
+                .containsEntry("name", "가짜 후보 (Fake Capital)")
+                .containsEntry("style", "가치·집중")
+                .containsEntry("desc", "");
+
+        Map<String, Object> unnamed = new Sec13FService(store(true)).portfolio(CANDIDATE, 8, 30);
+        assertThat((Map<String, Object>) unnamed.get("institution"))
+                .containsEntry("name", CANDIDATE)
+                .doesNotContainKey("style");
+    }
+
+    @Test
+    @DisplayName("13F 메뉴 기관의 기관 칸은 지금 그대로(상수 목록의 key·name·cik·desc)")
+    @SuppressWarnings("unchecked")
+    void menuInstitutionUnchanged() {
+        String berkshire = "0001067983";
+        StoreReader store = mock(StoreReader.class);
+        Snapshot snapshot = new Snapshot(Datasets.sec13f(berkshire, Datasets.MAX_TRACKED_QUARTERS),
+                MAPPER.readTree("{\"name\":\"다른 이름\",\"cik\":\"" + berkshire + "\",\"quarters\":" + QUARTERS + "}"), "json", "ok", null, Instant.now());
+        when(store.read(eq(Datasets.sec13f(berkshire, Datasets.MAX_TRACKED_QUARTERS)), anyLong(), anyString())).thenReturn(Optional.of(snapshot));
+        Map<String, Object> out = new Sec13FService(store).portfolio(berkshire, 8, 30);
+        assertThat(out.get("institution")).isEqualTo(Institutions.byCik(berkshire));
     }
 
     @Test

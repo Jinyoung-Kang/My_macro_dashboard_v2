@@ -100,7 +100,7 @@ public class Sec13FService {
         out.put("available", true);
         snapshot.get().putFreshness(out);
         out.put("error", Json.asText(payload, "error"));
-        out.put("institution", Institutions.byCik(cik));
+        out.put("institution", tracked ? Institutions.byCik(cik) : candidateInstitution(cik, payload));
 
         List<Map<String, Object>> quarterSummaries = new ArrayList<>();
         for (JsonNode quarter : selected) {
@@ -126,6 +126,24 @@ public class Sec13FService {
         out.put("latest", latestBlock);
         out.put("holdings", compareQuarters(latest, previous, topN));
         out.put("weightHistory", weightHistory(selected, topN));
+        return out;
+    }
+
+    /**
+     * 13F 메뉴 밖 기관(트랙레코드 후보 저장본 q30)의 기관 칸 — 저장본의 이름·스타일(수집기가 후보 목록 indicators.TRACK_RECORD_FILERS에서 적음)을
+     * 씁니다. 이름이 없으면 지금처럼 CIK(Institutions.byCik의 대체값)라, 기관 상세의 제목·뉴스·AI 요약 검색어가 CIK 숫자가 되던 것을 막습니다
+     * (2026-11-23 요청). 설명(desc)은 후보 목록에 없어 빈 글, 스타일은 있을 때만 {@code style}로.
+     */
+    static Map<String, Object> candidateInstitution(String cik, JsonNode payload) {
+        Map<String, Object> out = new LinkedHashMap<>(Institutions.byCik(cik));
+        String name = Json.asText(payload, "name");
+        if (name != null && !name.isBlank()) {
+            out.put("name", name.strip());
+        }
+        String style = Json.asText(payload, "style");
+        if (style != null && !style.isBlank()) {
+            out.put("style", style.strip());
+        }
         return out;
     }
 
