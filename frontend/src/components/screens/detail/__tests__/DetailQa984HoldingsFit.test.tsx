@@ -70,11 +70,14 @@ async function holdingsTable() {
 
 describe("기관 상세 보유 표 — 칸 폭에 맞춤 (QA-984)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 상자 폭과 상관없이 표가 최소 640px(넘김 안내 꼴)였습니다.
-  it.fails("패널 폭 584px(1440의 가운데 칸)이면 최소 폭 없이 좁은 배치(칸 여백 8px)", async () => {
+  it("패널 폭 584px(1440의 가운데 칸)이면 최소 폭 없이 좁은 배치(칸 여백 8px)", async () => {
     stubBoxWidth(584);
     const table = await holdingsTable();
     await waitFor(() => expect(table.className).not.toContain("min-w-[640px]"));
-    expect(table.parentElement?.closest("[class*='[&_td]:px-2']")).not.toBeNull();
+    // 칸 여백 8px(SIDE_COMPACT — 표를 감싼 조상의 클래스)
+    const ancestors: string[] = [];
+    for (let node = table.parentElement; node; node = node.parentElement) ancestors.push(node.getAttribute("class") ?? "");
+    expect(ancestors.some((name) => name.includes("[&_td]:px-2"))).toBe(true);
   });
 
   it("패널 폭이 좁으면(390 화면 약 340px) 지금처럼 최소 640px와 넘김 안내", async () => {

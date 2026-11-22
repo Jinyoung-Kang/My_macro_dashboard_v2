@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "@/components/ui/IntentLink";
-import type { ReactNode } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import {
   ChangeCell,
   type Column,
@@ -47,6 +47,28 @@ function sideBySide(inspector: InspectorContext): boolean {
 const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
 
 /**
+ * 좁은 배치(칸 여백 8px·최소 폭 없음·긴 이름 꺾기)가 넘치지 않고 들어가는 패널 안 폭(px) — 검사 칸 옆 표처럼 약 574px까지 줄어듭니다(위 SIDE_COMPACT).
+ * `fit`을 준 패널(기관 상세)은 상자 폭이 이 이상이면 그 배치를 씁니다(QA-984 — 1440의 가운데 칸 584px에서 최소 640px 표가 56px 넘침).
+ */
+const FIT_MIN_WIDTH = 560;
+
+/** 상자 안 폭(px) — ResizeObserver가 없거나 재기 전이면 null(그때는 지금 배치 그대로). */
+function useBoxWidth(ref: RefObject<HTMLElement | null>): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[entries.length - 1]?.contentRect.width;
+      if (typeof next === "number" && next > 0) setWidth((previous) => (previous !== null && Math.abs(previous - next) < 0.5 ? previous : next));
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+/**
  * 13F 포트폴리오 화면·기관 상세 '보유 종목' 탭의 '보유 종목 상세' 패널 — 최신 분기 보유 줄(응답 holdings — 백엔드가 비중 상위 topN줄로 자름)의 표와 고른 줄의 검사 칸
  * (작업대 실행 명세 §7 4행 '보유 표, 검사 칸'). 원화 병기는 화면이 받은 공용 환율(useUsdKrw)의 환산·문구를 그대로 씁니다.
  *
@@ -61,13 +83,22 @@ export function PortfolioHoldingsPanel({
   data,
   krw,
   actions,
+  fit = false,
 }: {
   data: PortfolioResponse;
   krw: KrwConversion;
   /** 패널 머리 동작(기관 상세의 '13F 포트폴리오에서 자세히' 링크 — 13F 화면은 없음). */
   actions?: ReactNode;
+  /**
+   * 패널 폭이 좁은 배치가 들어가는 폭({@link FIT_MIN_WIDTH} 이상)이면 검사 칸이 대화상자여도 검사 칸 옆 표와 같은 좁은 배치(최소 폭 없음)를 씁니다 —
+   * 기관 상세(가운데 칸이 13F 화면 본문보다 좁음, QA-984). 13F 화면은 주지 않아 지금 그대로입니다.
+   */
+  fit?: boolean;
 }) {
   const user = useSessionUser();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const boxWidth = useBoxWidth(boxRef);
+  const fitted = fit && boxWidth !== null && boxWidth >= FIT_MIN_WIDTH;
   // 보유 표 줄 — 키는 'CUSIP:클래스'(겹치면 '#n' 꼬리), 이름표는 공시 이름(겹치는 줄에만 클래스·CUSIP — QA-587 규칙).
   const holdings = data.holdings ?? [];
   const holdingKeys = holdingRowKeys(holdings);
@@ -109,10 +140,11 @@ export function PortfolioHoldingsPanel({
         defaultKey={holdingRows[0]?.key ?? null}
       >
         {(inspector) => {
-          const side = sideBySide(inspector);
+          // 옆 칸 배치(또는 fit 패널이 넓을 때)에서는 칸 좌우 여백을 12 → 8px로 줄이고 최소 폭 없이 칸 폭에 맞춥니다(SIDE_COMPACT) — 표가 검사 칸 옆 약
+          // 532~598px(메뉴 220에서 창 1374~1440)·기관 상세 가운데 칸(1440에서 584px — QA-984)에 들어가게.
+          const side = sideBySide(inspector) || fitted;
           return (
-            // 옆 칸 배치에서는 칸 좌우 여백을 12 → 8px로 줄입니다(SIDE_COMPACT) — 표가 검사 칸 옆 약 532~598px(메뉴 220에서 창 1374~1440)에 들어가게.
-            <div className={side ? SIDE_COMPACT : undefined}>
+            <div ref={boxRef} className={side ? SIDE_COMPACT : undefined}>
               <DataTable
                 columns={holdingColumns(inspector, labels, krw.toKrw, side)}
                 rows={holdingRows}

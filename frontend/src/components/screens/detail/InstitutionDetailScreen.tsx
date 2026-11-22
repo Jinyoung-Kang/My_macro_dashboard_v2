@@ -306,7 +306,7 @@ function HoldingsTab({
   untrackedCik: string | null;
 }) {
   if (data?.available && (data.holdings ?? []).length > 0) {
-    return <PortfolioHoldingsPanel data={data} krw={krw} actions={PORTFOLIO_LINK} />;
+    return <PortfolioHoldingsPanel data={data} krw={krw} actions={PORTFOLIO_LINK} fit />;
   }
   let body;
   if (data) {
