@@ -192,7 +192,8 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     await screen.findByRole("link", { name: "13F 포트폴리오에서 자세히" });
     found.push(...smallTargets(container));
-    fireEvent.click(within(screen.getByRole("list", { name: "상위 보유 종목" })).getByRole("button"));
+    // 보유 종목 탭은 13F 화면과 같은 '보유 종목 상세' 표(2026-11-23) — 줄 맨 앞 검사 단추가 대화상자를 엶.
+    fireEvent.click(screen.getByRole("button", { name: "SYNTHETIC CO 13F 줄 자세히" }));
     found.push(...smallTargets(await screen.findByRole("dialog", { name: "SYNTHETIC CO" })));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));

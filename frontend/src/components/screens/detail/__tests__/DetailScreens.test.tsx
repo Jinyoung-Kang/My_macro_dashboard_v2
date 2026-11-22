@@ -29,6 +29,9 @@ vi.mock("@/components/charts", () => ({
     charts.last = { data, onScrub };
     return <div role="img" aria-label={ariaLabel} />;
   },
+  // 기관 상세 개요 탭의 13F 비중 히트맵·비중 추이(선) — 이름만(그림은 jsdom에서 재지 못함).
+  WeightHeatmap: ({ dates }: { dates: string[] }) => <div role="img" aria-label={`비중 히트맵 ${dates.length}분기`} />,
+  MultiLineSeries: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
 }));
 const navigation = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -685,6 +688,7 @@ describe("기관 상세", () => {
           { name: "APPLE INC", cusip: "037833100", class: "COM", value: 60_000_000_000, shares: 300_000_000, weight: 21.5, weightDiff: -1.25, sharesDiff: null, action: "감소" },
           { name: "NEW CO", cusip: "000000000", class: "COM", value: null, shares: null, weight: null, weightDiff: null, sharesDiff: null, action: "신규" },
         ],
+        weightHistory: { dates: ["2026-03-31", "2026-06-30"], series: { "APPLE INC": [22.75, 21.5], "NEW CO": [0, null] } },
       },
     };
     renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
@@ -698,12 +702,26 @@ describe("기관 상세", () => {
     expect(within(header).getByText("CIK 0001067983").className).toContain("font-mono");
     const hero = screen.getByRole("region", { name: "분기별 13F 보고 평가액" });
     expect(within(hero).getByRole("img", { name: "버크셔 해서웨이 (Berkshire Hathaway) 분기별 13F 보고 평가액" })).toBeTruthy();
-    // 보유 종목(가운데 '보유 종목' 탭) — 줄의 보조 글·비중, 모르는 값은 "—"
+    // 개요 탭 차례 — 분기별 평가액 추이 → 비중 히트맵 → 비중 추이(선) → AI 요약(2026-11-23 요청 — 13F 화면과 같은 두 패널, 같은 응답)
+    const overview = screen.getByRole("tabpanel", { name: "개요" });
+    expect(within(overview).getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      "분기별 13F 보고 평가액",
+      "상위 종목 분기별 비중 히트맵",
+      "상위 종목 분기별 비중 추이 (선)",
+      expect.stringContaining("AI 요약"),
+    ]);
+    expect(within(overview).getByRole("img", { name: "비중 히트맵 2분기" })).toBeTruthy();
+    expect(within(overview).getByRole("img", { name: "버크셔 해서웨이 (Berkshire Hathaway) 상위 종목 분기별 비중 추이" })).toBeTruthy();
+    // 보유 종목(가운데 '보유 종목' 탭) — 13F 화면과 같은 '보유 종목 상세' 표: 이름 단추(종목 팝업)·비중, 모르는 값은 "—", 원화 환산용 원/달러를 읽음
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
-    const list = screen.getByRole("list", { name: "상위 보유 종목" });
-    expect(within(list).getByText(subline("COM · 감소 · 비중 −1.25%p"))).toBeTruthy();
-    expect(within(list).getByText("21.50%")).toBeTruthy();
-    expect(within(list).getAllByText("—").length).toBeGreaterThan(0);
+    const holdingsTab = screen.getByRole("tabpanel", { name: "보유 종목" });
+    expect(within(holdingsTab).getByRole("heading", { level: 2, name: "보유 종목 상세 (기준일 2026-06-30)" })).toBeTruthy();
+    const table = within(holdingsTab).getByRole("table");
+    // 티커가 없는 줄은 공시 이름으로 찾은 후보를 고르는 창(13F 화면과 같은 HoldingQuickLink)
+    expect(within(table).getByRole("button", { name: "APPLE INC 종목 후보 창 열기" })).toBeTruthy();
+    expect(within(table).getByText("21.50%")).toBeTruthy();
+    expect(within(table).getAllByText("—").length).toBeGreaterThan(0);
+    expect(requested()).toContain(endpoints.macro.usdkrw);
     // 기관 소개는 왼쪽 속성의 긴 글 줄
     const props = screen.getByRole("heading", { level: 2, name: "속성" }).closest("section") as HTMLElement;
     expect(within(props).getByText("가치투자 포트폴리오")).toBeTruthy();
@@ -721,8 +739,9 @@ describe("기관 상세", () => {
     expect(within(header).getByRole("link", { name: "정보 검색에서 보기" }).getAttribute("href")).toBe("/search?e=cik:0001067983&tab=timeline&range=30d");
   });
 
-  it("보유 종목 목록-검사 — 좁은 화면은 줄을 누르면 대화상자(속성·정보 검색에서 찾기), 보조 줄은 말줄임 없음, 30줄과 개수 줄", async () => {
-    const holdings = Array.from({ length: 32 }, (_, at) => ({
+  it("보유 종목 표 — 좁은 화면은 줄 맨 앞 단추가 대화상자(속성·정보 검색에서 찾기), 응답 30줄 모두와 개수 줄", async () => {
+    // 백엔드가 비중 상위 30줄(topN)로 잘라 보내고, 전체 종목 수는 최신 분기 holdingCount(QA-585)
+    const holdings = Array.from({ length: 30 }, (_, at) => ({
       name: `SYNTHETIC HOLDING ${at + 1}`, cusip: `00000${String(at).padStart(4, "0")}`, class: "COM", value: 1e9, shares: 1000 + at,
       weight: 3, weightDiff: at === 0 ? -12.345 : null, sharesDiff: at === 0 ? -500 : null, action: at === 0 ? "감소" : "유지",
     }));
@@ -735,18 +754,11 @@ describe("기관 상세", () => {
     };
     renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    const list = await screen.findByRole("list", { name: "상위 보유 종목" });
-    expect(within(list).getAllByRole("button")).toHaveLength(30);
+    const inspect = await screen.findAllByRole("button", { name: /13F 줄 자세히$/ });
+    expect(inspect).toHaveLength(30);
     expect(screen.getByText("32종목 가운데 비중 상위 30종목")).toBeTruthy();
-    // 보조 줄(클래스·동작·비중 변화)은 말줄임 없이 줄바꿈 — 좁은 화면에서 비중 변화 값이 잘렸던 자리(D1 넘김)
-    const sub = within(list).getByText(subline("COM · 감소 · 비중 −12.35%p"));
-    const row = sub.closest("li") as HTMLElement;
-    for (let node: Element | null = sub; node && row.contains(node); node = node.parentElement) {
-      expect((node.getAttribute("class") ?? "").split(/\s+/)).not.toContain("truncate");
-    }
-    expect(sub.className).toContain("wrap-anywhere");
 
-    fireEvent.click(within(list).getAllByRole("button")[0]);
+    fireEvent.click(inspect[0]);
     const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC HOLDING 1" });
     expect(within(dialog).getByText("\u2212500주")).toBeTruthy();
     expect(within(dialog).getByText("1,000주")).toBeTruthy();
@@ -767,14 +779,12 @@ describe("기관 상세", () => {
     };
     renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    const inspector = await screen.findByRole("region", { name: "상위 보유 종목 — APPLE INC" });
+    const inspector = await screen.findByRole("region", { name: "보유 종목 자세히 — APPLE INC" });
     expect(within(inspector).getByText("037833100").className).toContain("font-mono");
     expect(within(inspector).getByText("\u22121.25%p")).toBeTruthy();
-    const second = within(screen.getByRole("list", { name: "상위 보유 종목" })).getByRole("button", { name: /BANK AMER CORP/ });
-    fireEvent.click(second);
+    fireEvent.click(screen.getByRole("button", { name: "BANK AMER CORP 13F 줄 자세히" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("region", { name: "상위 보유 종목 — BANK AMER CORP" })).toBeTruthy();
-    expect(second.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("region", { name: "보유 종목 자세히 — BANK AMER CORP" })).toBeTruthy();
   });
 
   it("가운데 탭 — 개요·보유 종목·뉴스, 화살표는 포커스만 옮기고 누르면 연다", async () => {
@@ -813,7 +823,7 @@ describe("기관 상세", () => {
     // 상위 보유 종목은 가운데 '보유 종목' 탭(대상 문법 — P4)
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     expect(screen.queryByRole("status", { name: "보유 종목을 불러오는 중" })).toBeNull();
-    const card = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
+    const card = screen.getByRole("heading", { level: 2, name: "보유 종목 상세" }).closest("section") as HTMLElement;
     expect(within(card).getByText("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.")).toBeTruthy();
     expect(within(card).queryByRole("button", { name: "다시 시도" })).toBeNull();
     const header = screen.getByRole("heading", { level: 1, name: "CIK 1234567" }).closest("header") as HTMLElement;

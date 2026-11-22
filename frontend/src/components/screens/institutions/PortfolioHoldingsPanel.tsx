@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "@/components/ui/IntentLink";
+import type { ReactNode } from "react";
 import {
   ChangeCell,
   type Column,
@@ -46,7 +47,7 @@ function sideBySide(inspector: InspectorContext): boolean {
 const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
 
 /**
- * 13F 포트폴리오 화면의 '보유 종목 상세' 패널 — 최신 분기 보유 줄(응답 holdings — 백엔드가 비중 상위 topN줄로 자름)의 표와 고른 줄의 검사 칸
+ * 13F 포트폴리오 화면·기관 상세 '보유 종목' 탭의 '보유 종목 상세' 패널 — 최신 분기 보유 줄(응답 holdings — 백엔드가 비중 상위 topN줄로 자름)의 표와 고른 줄의 검사 칸
  * (작업대 실행 명세 §7 4행 '보유 표, 검사 칸'). 원화 병기는 화면이 받은 공용 환율(useUsdKrw)의 환산·문구를 그대로 씁니다.
  *
  * - 검사 칸 틀은 `lg` 배치(틀 52rem부터 옆 18rem — 메뉴 220에서 창 약 1374px 이상, 그 아래·좁은 화면은 위쪽 대화상자). 넓은 화면 처음은 첫 줄을 보입니다.
@@ -56,7 +57,16 @@ const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
  *   것이 없습니다(요청 +0).
  * - 표는 옆 칸 배치가 아니면 최소 640px + 넘칠 때 넘김 안내(`scrollHint="overflow"`), 옆 칸 배치면 최소 폭 없이 칸 폭에 맞춥니다(매크로 지표 표와 같은 꼴).
  */
-export function PortfolioHoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: KrwConversion }) {
+export function PortfolioHoldingsPanel({
+  data,
+  krw,
+  actions,
+}: {
+  data: PortfolioResponse;
+  krw: KrwConversion;
+  /** 패널 머리 동작(기관 상세의 '13F 포트폴리오에서 자세히' 링크 — 13F 화면은 없음). */
+  actions?: ReactNode;
+}) {
   const user = useSessionUser();
   // 보유 표 줄 — 키는 'CUSIP:클래스'(겹치면 '#n' 꼬리), 이름표는 공시 이름(겹치는 줄에만 클래스·CUSIP — QA-587 규칙).
   const holdings = data.holdings ?? [];
@@ -74,6 +84,7 @@ export function PortfolioHoldingsPanel({ data, krw }: { data: PortfolioResponse;
     <Panel
       title={`보유 종목 상세 (기준일 ${data.latest?.reportDate ?? EMPTY})`} source={`${SOURCES.sec13f} · 원화 환산은 원/달러 최신값(Yahoo Finance)`}
       subtitle={`직전 분기 대비 액션은 비중 변화 ±0.05%p를 기준으로 분류합니다. ${krw.note}`}
+      actions={actions}
     >
       <InspectorFrame
         label="보유 종목 자세히"

@@ -80,7 +80,7 @@ describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)
     expect(within(header).getByText(`이 대시보드가 추적하는 13F 기관이 아닙니다(CIK ${UNTRACKED}).`)).toBeTruthy();
     expect(within(header).getByRole("link", { name: "추적하는 13F 기관 목록" }).getAttribute("href")).toBe("/institutions");
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
-    const holdings = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
+    const holdings = screen.getByRole("heading", { level: 2, name: "보유 종목 상세" }).closest("section") as HTMLElement;
     expect(within(holdings).getByText(/추적하는 13F 기관이 아닙니다/)).toBeTruthy();
     expect(screen.queryByText(/\/api\/sec13f/)).toBeNull();
     expect(screen.queryAllByRole("button", { name: "다시 시도" })).toHaveLength(0);
@@ -114,7 +114,7 @@ describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)
     const header = (await screen.findByRole("heading", { level: 1, name: `CIK ${UNTRACKED}` })).closest("header") as HTMLElement;
     await waitFor(() => expect(within(header).getByText("13F 저장본을 읽지 못했습니다.")).toBeTruthy());
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
-    const holdings = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
+    const holdings = screen.getByRole("heading", { level: 2, name: "보유 종목 상세" }).closest("section") as HTMLElement;
     expect(within(holdings).getByText("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.")).toBeTruthy();
     expect(within(holdings).queryByRole("button", { name: "다시 시도" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "다시 시도" })).toHaveLength(1);

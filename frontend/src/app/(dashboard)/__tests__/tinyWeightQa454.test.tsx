@@ -3,7 +3,7 @@
  *
  * 큰 기관 포트폴리오에서 3억 달러 남짓한 보유는 비중이 0.003% 안팎이라 소수 둘째 자리로 반올림하면 '0.00%'가 되어 없는 값처럼 읽혔습니다
  * (정보 검색 보유 탭, 운영 화면 확인). 같은 13F 비중을 보이는 곳 — 정보 검색 보유 탭(회사 보유 기관·기관 상위 보유 종목), 종목 상세 13F 보유 기관 카드,
- * 기관 상세 상위 보유 종목, 13F 포트폴리오 표, 공통 보유(교집합·공통 신규 매수)의 평균·최대 비중, 스타일 화면 보유 기관 검색 — 모두 같은 표기여야 합니다.
+ * 기관 상세 보유 종목 상세 표, 13F 포트폴리오 표, 공통 보유(교집합·공통 신규 매수)의 평균·최대 비중, 스타일 화면 보유 기관 검색 — 모두 같은 표기여야 합니다.
  *
  * 13F 포트폴리오 표 사례는 institutionsScreenStates.test.tsx로, 공통 보유·스타일 화면 사례는 analysisScreenStates.test.tsx로 옮겼습니다(P5b 패턴 단계,
  * 내용 그대로 — P5b 두 화면 갈래가 한 파일을 함께 고치지 않게).
@@ -128,16 +128,16 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(card);
   });
 
-  it("기관 상세 — 상위 보유 종목", async () => {
+  it("기관 상세 — 보유 종목 상세", async () => {
     reads = { [endpoints.institution.portfolio(CIK, 8, 30)]: portfolio() };
     render(
       <SessionUserProvider user={MEMBER}>
         <InstitutionDetailScreen cik={CIK} />
       </SessionUserProvider>,
     );
-    // 상위 보유 종목은 가운데 '보유 종목' 탭(대상 문법 — P4).
+    // 보유 종목은 가운데 '보유 종목' 탭(대상 문법 — P4) — 2026-11-23부터 13F 화면과 같은 '보유 종목 상세' 표.
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    const card = (await screen.findByRole("heading", { level: 2, name: "상위 보유 종목" })).closest("section") as HTMLElement;
+    const card = (await screen.findByRole("heading", { level: 2, name: /^보유 종목 상세/ })).closest("section") as HTMLElement;
     await within(card).findByText("SYNTHETIC SMALL CO");
     expectTiny(card);
   });

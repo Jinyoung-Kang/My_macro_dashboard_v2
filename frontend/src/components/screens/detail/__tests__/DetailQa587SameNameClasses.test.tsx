@@ -1,9 +1,9 @@
 /**
  * 기관 상세 보유 종목 — 같은 공시 이름의 다른 증권(ALPHABET INC CL A / CL C) 줄의 검사 칸·대화상자 제목(QA-587). 응답은 모두 합성 값입니다.
  *
- * 목록-검사의 이름표(itemLabel)는 검사 칸 영역 이름('상위 보유 종목 — …')·검사 칸 제목·대화상자 제목에 쓰이는데 공시 이름뿐이라, 이름이 같은 줄을
- * 고르면 세 자리가 똑같았습니다(줄 단추에는 클래스 보조 글이 있어 갈림). 이름이 겹치는 줄에만 ' · 클래스'를 붙입니다(lib/detailEntity
- * holdingItemLabels — 백엔드 lineLabels와 같은 규칙). 겹치지 않는 줄의 이름표·줄 내용·정보 검색 검색어는 그대로입니다.
+ * 줄 이름표는 검사 칸 영역 이름('보유 종목 자세히 — …' — 2026-11-23부터 13F 화면과 같은 '보유 종목 상세' 표)·검사 칸 제목·대화상자 제목에 쓰이는데
+ * 공시 이름뿐이면 이름이 같은 줄을 고를 때 세 자리가 똑같았습니다. 이름이 겹치는 줄에만 ' · 클래스'를 붙입니다(lib/institutionsScreen holdingRowLabels
+ * ← lib/detailEntity holdingItemLabels — 백엔드 lineLabels와 같은 규칙). 겹치지 않는 줄의 이름표·줄 내용·정보 검색 검색어는 그대로입니다.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,7 +59,8 @@ async function openHoldings() {
     </SessionUserProvider>,
   );
   fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-  return within(await screen.findByRole("list", { name: "상위 보유 종목" })).getAllByRole("button");
+  // 보유 종목 탭은 13F 화면과 같은 '보유 종목 상세' 표(2026-11-23 요청) — 검사 칸은 줄 맨 앞 아이콘 단추가 엽니다(이름 단추는 종목 팝업).
+  return screen.findAllByRole("button", { name: /13F 줄 자세히$/ });
 }
 
 describe("같은 이름의 다른 클래스 줄 — 검사 칸·대화상자 제목에 클래스 (QA-587)", () => {
@@ -71,14 +72,14 @@ describe("같은 이름의 다른 클래스 줄 — 검사 칸·대화상자 제
         ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
     );
     const rows = await openHoldings();
-    expect(screen.getByRole("region", { name: "상위 보유 종목 — NVIDIA CORPORATION" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "보유 종목 자세히 — NVIDIA CORPORATION" })).toBeTruthy();
     fireEvent.click(rows[2]);
-    const inspector = screen.getByRole("region", { name: "상위 보유 종목 — ALPHABET INC · CAP STK CL C" });
+    const inspector = screen.getByRole("region", { name: "보유 종목 자세히 — ALPHABET INC · CAP STK CL C" });
     expect(within(inspector).getByRole("heading", { name: "ALPHABET INC · CAP STK CL C" })).toBeTruthy();
     // 정보 검색 검색어는 공시 이름 그대로
     expect(within(inspector).getByRole("link", { name: "정보 검색에서 찾기" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("ALPHABET INC")}`);
     fireEvent.click(rows[1]);
-    expect(screen.getByRole("region", { name: "상위 보유 종목 — ALPHABET INC · CAP STK CL A" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "보유 종목 자세히 — ALPHABET INC · CAP STK CL A" })).toBeTruthy();
   });
 
   it("좁은 화면 — 대화상자 이름이 'ALPHABET INC · CAP STK CL C'", async () => {

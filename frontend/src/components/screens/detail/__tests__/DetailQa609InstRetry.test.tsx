@@ -68,7 +68,7 @@ describe("기관 상세 — 포트폴리오 서버 실패의 다시 시도는 �
     const toggle = screen.getByRole("button", { name: "속성 펼치기" });
     const column = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement;
     expect(column.contains(retries[0])).toBe(false);
-    const holdings = screen.getByRole("heading", { level: 2, name: "상위 보유 종목", hidden: true }).closest("section") as HTMLElement;
+    const holdings = screen.getByRole("heading", { level: 2, name: "보유 종목 상세", hidden: true }).closest("section") as HTMLElement;
     expect(within(holdings).queryAllByRole("button", { name: "다시 시도", hidden: true })).toHaveLength(0);
     expect(holdings.textContent).toContain("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.");
     const calls = () => api.apiGetShared.mock.calls.filter(([requested]) => requested === PATH).length;

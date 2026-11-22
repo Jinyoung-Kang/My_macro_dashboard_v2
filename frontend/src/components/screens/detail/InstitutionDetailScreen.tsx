@@ -1,36 +1,28 @@
 "use client";
 
 import Link from "@/components/ui/IntentLink";
-import { Fragment, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
-import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
+import { EntityHeader, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, SKELETON_BAR, TEXT_TARGET } from "@/components/ui";
 import { LandmarkIcon } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
+import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { CHART_KEY, detailQuery, institutionHref, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
-import {
-  holdingDetailItems,
-  holdingItemLabels,
-  infoSearchEntityLink,
-  institutionEntityKey,
-  institutionProperties,
-  latestHoldingCount,
-} from "@/lib/detailEntity";
+import { infoSearchEntityLink, institutionEntityKey, institutionProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
-import { formatNumber, formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
-import { infoSearchEntry } from "@/lib/search";
-import type { Holding, PortfolioResponse } from "@/lib/types";
+import { formatUsd } from "@/lib/format";
+import type { PortfolioResponse } from "@/lib/types";
+import { PortfolioHoldingsPanel } from "../institutions/PortfolioHoldingsPanel";
+import { WeightHistoryPanels } from "../institutions/WeightHistoryPanels";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, propertyItems } from "./DetailParts";
 import { DetailTabs } from "./DetailTabs";
 import { useDetailVisit } from "./useDetailVisit";
 
-/** 13F 포트폴리오 화면과 같은 요청 값(같은 응답 캐시) — 8분기, 비중 추이 상위 30. */
+/** 13F 포트폴리오 화면과 같은 요청 값(같은 응답 캐시) — 8분기, 비중 추이·보유 표 상위 30. */
 const QUARTERS = 8;
 const TOP_N = 30;
-/** 보유 종목 목록에 보이는 줄 수 — 보유 종목 탭 하나를 다 쓰므로 응답의 상위 30을 모두(탭 전에는 옆 칸이라 15). */
-const HOLDINGS_SHOWN = 30;
 
 /** 13F 공시의 한계 — 분기마다 45일 안에 공시되어 지금 보유와 다를 수 있습니다. */
 const FILING_NOTE = "분기마다 45일 안에 공시 — 지금 보유와 다를 수 있음";
@@ -76,12 +68,13 @@ function HeaderPending() {
 /**
  * 기관 상세(/institutions/<CIK>) — 13F 기관 한 곳을 작업대 대상 문법(P4 — 정보 검색 대상 화면과 같은 틀)으로: 대상 머리(이름·CIK·13F 보고 평가액·
  * 보고 기준일·공시일·신선도·정보 검색 바로가기) → 왼쪽 속성(CIK·보고일·평가액·보유 종목 수·분기 수·수집 시각·기관 소개) · 가운데 탭(개요: 분기별
- * 평가액 추이·AI 요약 / 보유 종목: 목록-검사 / 뉴스) · 오른쪽 연결(13F 포트폴리오·정보 검색)·다른 곳에서 보기(SEC EDGAR)·출처.
+ * 평가액 추이·상위 종목 분기별 비중 히트맵·비중 추이(선)·AI 요약 / 보유 종목: 13F 화면의 '보유 종목 상세' 표 / 뉴스) · 오른쪽 연결(13F 포트폴리오·
+ * 정보 검색)·다른 곳에서 보기(SEC EDGAR)·출처.
  *
  * - 값은 이 대시보드의 13F 저장본(SEC EDGAR, 분기마다 45일 안에 공시 — 지금 보유와 다를 수 있음).
- * - 보유 종목은 응답의 비중 상위 30줄(지난 분기 대비 동작·비중 변화)이고, 줄을 고르면 그 줄의 속성(CUSIP·주식 수·변화)을 검사 칸(좁은 화면 대화상자)에
- *   보입니다. 13F 보유 줄에는 티커가 없고 CUSIP을 티커로 바꾸는 API가 없어 종목 상세로는 잇지 않고 정보 검색(이름)으로 잇습니다.
- *   분기 수를 바꿔 보는 표·비중 추이는 13F 포트폴리오 화면에 있습니다.
+ * - 히트맵·비중 추이(선)·보유 종목 상세는 13F 포트폴리오 화면과 같은 부품이고 같은 응답(8분기·상위 30)을 그립니다(2026-11-23 사용자 요청). 보유 표의
+ *   종목 이름은 종목 팝업(티커가 없거나 대용 티커인 줄은 후보 고르기), 원화 환산은 13F 화면과 같은 공용 원/달러(useUsdKrw — 요청 하나 더).
+ *   분기 수를 바꿔 보는 것은 13F 포트폴리오 화면에 있습니다.
  * - 기관 이름은 포트폴리오 응답에만 있습니다 — 받기 전에는 제목만 자리표시('CIK …')로 두고, 뉴스·AI 요약은 이름을 받은 뒤에 부릅니다(QA-453).
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs). 결정·사건 기록 API가 없어 타임라인 탭은 없습니다.
  * - 좁은 화면(lg 미만)은 왼쪽 '속성' 칸을 처음에 접고 펼치기 단추 하나를 둡니다(SplitPane collapseLeft, 2026-11-16 결정 2). 넓은 화면은 늘 펼침.
@@ -99,7 +92,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const query = names ? (detailQuery(names.query) ?? undefined) : undefined;
   const nameMissing = !query && Boolean(data || portfolio.error);
   const rows = institutionValueRows(data?.quarters);
-  const holdings = data?.holdings ?? [];
+  // 보유 표의 원화 병기 — 13F 포트폴리오 화면과 같은 공용 환율(메뉴마다 다른 원화 금액이 되지 않게).
+  const usdKrw = useUsdKrw();
   const total = data?.latest?.totalValue ?? null;
   const entityLink = infoSearchEntityLink(institutionEntityKey(cik), "정보 검색에서 보기", user);
   // 넓은 화면 빵부스러기의 마지막 칸을 'CIK …' 대신 기관 이름으로(이름을 받은 뒤에만 — 셸이 같은 주소일 때만 씀).
@@ -235,6 +229,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
                   <Panel region className="min-w-0" title="분기별 13F 보고 평가액">
                     {chart}
                   </Panel>
+                  {/* 상위 종목 분기별 비중 — 13F 화면과 같은 두 패널(값이 온 뒤에만 — 읽기 전·실패·저장본 없음은 위 평가액 패널과 대상 머리가 까닭을 적음). */}
+                  {data?.available ? <WeightHistoryPanels history={data.weightHistory} title={title} /> : null}
                   <AiSummaryCard
                     request={query ? { q: query, label: detailQuery(title) ?? undefined } : null}
                     idleText={idleText("요약하지 않습니다.")}
@@ -246,7 +242,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
               key: "holdings",
               label: "보유 종목",
               content: (
-                <HoldingsPanel data={data} error={portfolio.error} untrackedCik={untracked ? cik : null} />
+                <HoldingsTab data={data} krw={usdKrw} error={portfolio.error} untrackedCik={untracked ? cik : null} />
               ),
             },
             {
@@ -285,122 +281,46 @@ function UntrackedNotice({ cik, link = false }: { cik: string; link?: boolean })
   );
 }
 
-/**
- * 보유 줄의 보조 글 — 클래스 · 동작 · 비중 변화(%p, −는 U+2212). 말줄임하지 않습니다(좁은 화면에서 비중 변화 값이 잘렸음 — D1 넘김 P5b).
- * 동작 라벨(백엔드 고정 어휘 — 가장 긴 것이 '비중 축소 (Reduced)')과 끝 조각 '· 비중 <값>%p'는 끊기지 않는 한 덩어리입니다 — 문자열 하나로 두면
- * 낱말 단위 줄바꿈에서 '비중'과 값이 다른 줄로 갈라졌습니다(QA-586, 종목 상세 보유 기관 QA-445와 같은 처리). 클래스 조각(SEC 원문 — 길이를
- * 모름)은 칸 안에서 끊길 수 있게 둡니다.
- */
-function HoldingSubline({ holding }: { holding: Holding }) {
-  const action = withoutLeadingIcon(holding.action);
-  const lead: ReactNode[] = [];
-  if (holding.class) lead.push(holding.class);
-  if (action) {
-    lead.push(
-      <span key="action" className="whitespace-nowrap">
-        {action}
-      </span>,
-    );
-  }
-  const weight = holding.weightDiff !== null ? `비중 ${formatSignedMinus(holding.weightDiff, 2).text}%p` : null;
-  return (
-    <>
-      {lead.map((part, index) => (
-        <Fragment key={index}>
-          {index > 0 ? " · " : null}
-          {part}
-        </Fragment>
-      ))}
-      {weight ? (
-        <>
-          {lead.length > 0 ? " " : null}
-          <span className="whitespace-nowrap">{lead.length > 0 ? `· ${weight}` : weight}</span>
-        </>
-      ) : null}
-    </>
-  );
-}
+/** 보유 종목 탭 머리 동작 — 분기 수를 바꿔 보는 13F 포트폴리오 화면. 따로 선 링크라 좁은 화면 누르는 자리 44px(TEXT_TARGET)와 포커스 링(QA-531). */
+const PORTFOLIO_LINK = (
+  <Link href="/institutions" className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
+    13F 포트폴리오에서 자세히
+  </Link>
+);
 
 /**
- * 상위 보유 종목(가운데 '보유 종목' 탭) — 목록-검사(MasterDetail): 줄 = 이름·보조 줄(클래스·동작·비중 변화)·비중·평가액, 줄을 고르면 넓은 화면은
- * 오른쪽 검사 칸(처음에 첫 줄), 좁은 화면은 대화상자에 그 줄의 속성과 '정보 검색에서 찾기'. 읽기가 실패하면 '불러오는 중'이 아니라 그 까닭 글
- * (QA-190) — 오류 글과 다시 시도는 늘 보이는 대상 머리에 하나입니다(이 탭은 기본이 아니라 처음에 숨어 있음 — QA-609). 추적하지 않는 CIK(백엔드
- * 400)는 다시 해도 같아 다시 시도 없이 그 안내(QA-584).
+ * 가운데 '보유 종목' 탭 — 값이 오면 13F 포트폴리오 화면과 같은 '보유 종목 상세' 패널(표 + 검사 칸, 이름 단추 = 종목 팝업 — 2026-11-23 사용자 요청).
+ * 값이 오기 전·읽기 실패·저장본 없음·보유 줄 없음은 같은 제목의 패널에 그 까닭 글만 둡니다 — 읽기 실패의 오류 글과 다시 시도는 늘 보이는 대상 머리에
+ * 하나(이 탭은 기본이 아니라 처음에 숨어 있음 — QA-190·QA-609), 추적하지 않는 CIK(백엔드 400)는 다시 해도 같아 다시 시도 없이 그 안내(QA-584).
  */
-function HoldingsPanel({
+function HoldingsTab({
   data,
+  krw,
   error,
   untrackedCik,
 }: {
   data: PortfolioResponse | null;
+  krw: ReturnType<typeof useUsdKrw>;
   error: string | null;
   /** 추적하지 않는 CIK(포트폴리오 400)면 그 CIK — 읽기 실패 글 대신 안내. */
   untrackedCik: string | null;
 }) {
-  const user = useSessionUser();
-  const shown = (data?.holdings ?? []).slice(0, HOLDINGS_SHOWN);
-  // 개수 줄의 전체 수는 최신 분기 보유 종목 수 — 응답은 백엔드가 이미 상위 TOP_N줄로 잘라 보내 응답 길이로는 넘칠 수 없습니다(QA-585). 모르면 줄 없음.
-  const heldTotal = latestHoldingCount(data?.quarters);
-  // 검사 칸·대화상자 제목 — 이름이 겹치는 줄(A·C주 등)에만 클래스(가를 수 없으면 CUSIP)를 붙여 서로 다르게(QA-587). 보이는 줄 안에서 셉니다.
-  const labels = holdingItemLabels(shown);
+  if (data?.available && (data.holdings ?? []).length > 0) {
+    return <PortfolioHoldingsPanel data={data} krw={krw} actions={PORTFOLIO_LINK} />;
+  }
+  let body;
+  if (data) {
+    body = <p className="text-sm text-text-2">{data.available ? "보유 종목이 없습니다." : (data.message ?? "13F 저장본이 없습니다.")}</p>;
+  } else if (untrackedCik) {
+    body = <UntrackedNotice cik={untrackedCik} />;
+  } else if (error) {
+    body = <p className="break-keep text-sm text-text-2">13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.</p>;
+  } else {
+    body = <Skeleton lines={5} label="보유 종목을 불러오는 중" />;
+  }
   return (
-    <Panel
-      title="상위 보유 종목"
-      subtitle={data?.latest ? `${data.latest.reportDate} 보고 기준 · 비중 순 · 지난 분기 대비` : undefined}
-      source="SEC EDGAR 13F"
-      actions={
-        // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 키보드 포커스 링 — 글 높이(16px)뿐이고 링이 없었습니다(QA-531).
-        <Link href="/institutions" className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
-          13F 포트폴리오에서 자세히
-        </Link>
-      }
-    >
-      <MasterDetail<Holding>
-        label="상위 보유 종목"
-        items={shown}
-        itemKey={(holding) => `${holding.cusip}:${holding.class}`}
-        itemLabel={(holding) => labels.get(`${holding.cusip}:${holding.class}`) ?? holding.name}
-        autoSelectFirst
-        count={heldTotal !== null && heldTotal > shown.length ? () => `${formatNumber(heldTotal, 0)}종목 가운데 비중 상위 ${shown.length}종목` : undefined}
-        placeholder={
-          data ? undefined : untrackedCik ? (
-            <UntrackedNotice cik={untrackedCik} />
-          ) : error ? (
-            <p className="break-keep text-sm text-text-2">13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.</p>
-          ) : (
-            <Skeleton lines={5} label="보유 종목을 불러오는 중" />
-          )
-        }
-        emptyText={<p className="text-sm text-text-2">{data?.message ?? "보유 종목이 없습니다."}</p>}
-        renderItem={(holding) => (
-          <span className="flex items-baseline justify-between gap-3">
-            <span className="min-w-0">
-              <span className="block break-keep font-medium text-text wrap-anywhere">{holding.name}</span>
-              <span className="block break-keep text-xs text-text-3 wrap-anywhere">
-                <HoldingSubline holding={holding} />
-              </span>
-            </span>
-            <span className="shrink-0 text-right tabular-nums">
-              <span className="block font-medium text-text">{formatWeightPercent(holding.weight)}</span>
-              <span className="block text-xs text-text-3">{formatUsd(holding.value)}</span>
-            </span>
-          </span>
-        )}
-        renderDetail={(holding) => {
-          const search = infoSearchEntry(holding.name, user);
-          return (
-            <div className="flex min-w-0 flex-col gap-2">
-              <PropertyList items={propertyItems(holdingDetailItems(holding))} />
-              {/* 링크는 자기 줄에서 글 폭만(self-start) — flex-col 상자의 늘림을 받으면 검사 칸·대화상자 폭 전체가 누르는 자리였습니다(QA-582). */}
-              {search ? (
-                <Link href={search.href} className={`${LINK_CLASSES} self-start text-sm`}>
-                  정보 검색에서 찾기
-                </Link>
-              ) : null}
-            </div>
-          );
-        }}
-      />
+    <Panel title="보유 종목 상세" source="SEC EDGAR 13F" actions={PORTFOLIO_LINK}>
+      {body}
     </Panel>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * 목록-검사의 따로 선 링크가 누르는 자리(QA-582). 응답은 모두 합성 값입니다.
  *
- * 종목 상세 보유 기관의 '기관 상세 열기'와 기관 상세 보유 종목의 '정보 검색에서 찾기'는 검사 칸(넓은 화면)·대화상자(좁은 화면) 안의
+ * 종목 상세 보유 기관의 '기관 상세 열기'와 기관 상세 보유 종목(2026-11-23부터 13F 화면과 같은 '보유 종목 상세' 표의 검사 칸)의 '정보 검색에서 찾기'는 검사 칸(넓은 화면)·대화상자(좁은 화면) 안의
  * `flex flex-col` 상자의 바로 아래 자식입니다. 링크 클래스(TEXT_TARGET — inline-flex)여도 flex 항목은 부모의 align-items 기본값(늘림)을 받아
  * 가로 폭 전체(214·324·638px)가 누르는 자리와 포커스 링이 됐습니다 — 글 오른쪽 빈 곳을 눌러도 이동했습니다. 링크가 자기 줄에서 글 폭만 쓰게
  * `self-start`를 둡니다(같은 화면 '연결' 패널 링크처럼). jsdom은 배치를 재지 않으므로 클래스로 대조하고, 실제 폭은 QA 스택 브라우저로 봅니다.
@@ -89,7 +89,8 @@ describe("목록-검사의 따로 선 링크는 글 폭만 누르는 자리 (QA-
 
     renderAs(<InstitutionDetailScreen cik={CIK} />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    fireEvent.click(within(await screen.findByRole("list", { name: "상위 보유 종목" })).getByRole("button"));
+    // 보유 종목 탭은 13F 화면과 같은 '보유 종목 상세' 표(2026-11-23 요청) — 줄의 검사 칸은 맨 앞 아이콘 단추가 엽니다.
+    fireEvent.click(await screen.findByRole("button", { name: "SYNTHETIC LINK INC 13F 줄 자세히" }));
     expectTextWidth(within(await screen.findByRole("dialog", { name: "SYNTHETIC LINK INC" })).getByRole("link", { name: "정보 검색에서 찾기" }));
   });
 
@@ -103,7 +104,7 @@ describe("목록-검사의 따로 선 링크는 글 폭만 누르는 자리 (QA-
 
     renderAs(<InstitutionDetailScreen cik={CIK} />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    const inspector = await screen.findByRole("region", { name: "상위 보유 종목 — SYNTHETIC LINK INC" });
+    const inspector = await screen.findByRole("region", { name: "보유 종목 자세히 — SYNTHETIC LINK INC" });
     expectTextWidth(within(inspector).getByRole("link", { name: "정보 검색에서 찾기" }));
   });
 });

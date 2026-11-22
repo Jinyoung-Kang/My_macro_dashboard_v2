@@ -58,7 +58,8 @@ async function openHoldings(response: PortfolioResponse) {
     </SessionUserProvider>,
   );
   fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-  await screen.findByRole("list", { name: "상위 보유 종목" });
+  // 보유 종목 탭은 13F 화면과 같은 '보유 종목 상세' 표(2026-11-23 요청) — 줄마다 맨 앞 검사 단추.
+  await screen.findAllByRole("button", { name: /13F 줄 자세히$/ });
 }
 
 const THIRTY = Array.from({ length: 30 }, (_, at) => holding(at));
