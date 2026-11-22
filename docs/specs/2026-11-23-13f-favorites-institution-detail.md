@@ -1,0 +1,123 @@
+# 신호 기관 팝업·기관 상세 보강과 13F 즐겨찾기 기관 — 실행 명세
+
+2026-11-23 계획 세션에서 세운 설계입니다. 구현은 다른 세션이 이 문서를 읽고 합니다.
+경로·줄 번호는 조사 때(main `9570a5c4`) 본 자리라 달라졌을 수 있습니다 — 고치기 전에 다시 읽습니다.
+
+## 1. 요청(사용자, 2026-11-23)
+
+1. 모의매매 > 신호 기관에서 기관 이름을 누르면 뜨는 팝업 안의 보유 종목 이름을 누르면 그 종목 정보가 있는 곳으로 이동.
+2. 기관 상세 화면(`/institutions/<CIK>`)의 '보유 종목'에서 종목을 누르면 그 종목 정보 팝업.
+3. 기관 상세 화면에 13F 포트폴리오 화면처럼 그 기관의 '상위 종목 분기별 비중 히트맵'·'상위 종목 분기별 비중 추이 (선)'·'보유 종목 상세'.
+4. '기관 13F 포트폴리오 분석' 화면의 기관을 추가/삭제하는 편집 기능.
+
+## 2. 결정
+
+### 사용자가 고른 것(2026-11-23)
+
+- **기관 상세 배치**: 개요 탭의 평가액 추이 아래에 히트맵·비중 추이(선)를 두고, '보유 종목' 탭을 13F 화면의 '보유 종목 상세' 표로 바꾼다. 탭은 지금처럼 개요·보유 종목·뉴스.
+- **기본 12곳**: 그대로 둔다(숨기기·삭제 없음). 편집은 새 목록 **'즐겨찾기'**에서만 한다.
+- **즐겨찾기 기관이 쓰이는 범위**: 13F 포트폴리오 화면·기관 상세에 더해 교집합·스타일·알림까지. AI 리포트 원문과 모의매매에는 넣지 않는다.
+- **추가 방법**: 이름 검색 + CIK 10자리 직접 입력. SEC 이름 검색이 안정적으로 안 되면 CIK 입력만으로 줄이고 보고한다.
+
+### 계획 세션이 정한 기본값(사용자가 따로 고르지 않음 — 바꾸라는 말이 있으면 그대로 따름)
+
+- 팝업의 종목 이름: 티커가 확인된 줄은 종목 상세 화면(`/s/us/<티커>`), 티커가 없거나 다른 클래스일 수 있는 줄(`tickerIsProxy`)은 정보 검색(`/search?q=<공시 이름>`), 정보 검색을 볼 수 없는 사용자면 글자 그대로.
+- 개요 탭 차례: 분기별 평가액 추이 → 히트맵 → 비중 추이(선) → AI 요약.
+- 즐겨찾기 편집(추가·삭제·이름 검색)은 운영자만, 목록 읽기는 지금 기관 목록과 같은 등급(회원). 목록은 사용자별이 아니라 하나.
+- 즐겨찾기 상한 20곳(백엔드 상수). 최악 경우를 재 보고 넘치면 낮춘다(§5 단계 3).
+- 표시 이름·설명은 추가할 때 선택 입력(비우면 SEC 등록 이름). 국기 그림 글자는 넣지 않는다.
+- 교집합 화면의 처음 선택은 지금처럼 기본 12곳. 즐겨찾기는 따로 선 목록에서 눌러 넣는다(처음엔 모두 꺼짐).
+- 즐겨찾기를 지울 때 그 기관의 13F 신규 편입 알림 규칙도 함께 지운다(확인 창에 건수를 보임).
+- 지운 즐겨찾기의 13F 저장본은 지우지 않는다(목록에서 빼고 수집만 멈춤 — 다시 추가하면 바로 보임).
+
+## 3. 조사에서 확인한 사실
+
+### 화면
+
+- 신호 기관 카드는 `components/screens/paper/OverviewSection.tsx`(미국 `/paper/us` 개요에만)의 `InstitutionName` → `detail/InstitutionQuickView.tsx`. 팝업의 표는 종목·비중·평가액 세 열이고 이름은 글자뿐.
+- 기관 상세 `detail/InstitutionDetailScreen.tsx`는 `portfolio(cik, 8, 30)`을 읽는다. 13F 화면의 기본 요청과 같고 응답에 `weightHistory`가 있어 히트맵·선은 새 요청 없이 그릴 수 있다. 보유 종목 탭은 `MasterDetail`(줄 전체가 단추라 그 안에 단추·링크를 넣지 못함 — 줄 안 조작이 필요하면 `DataTable` + `InspectorFrame`).
+- 13F 화면 `app/(dashboard)/institutions/page.tsx`의 히트맵(`WeightHeatmap`)·선(`MultiLineSeries`)과 `institutions/HoldingsPanel.tsx`(표 + 검사 칸, 이름 단추 `HoldingQuickLink` = 시세 팝업 또는 후보 고르기). `HoldingsPanel`은 `krw`(`useUsdKrw`)를 받는다.
+- `DetailTabs`는 모든 탭을 그려 두고 고르지 않은 탭을 숨긴다. 차트는 처음 보이는 개요 탭에 둔다(숨긴 채 처음 그리면 폭 0).
+- 옮길 때 걸리는 것: `components/screens/search/HoldingsPanel.tsx`가 이미 있어 이름이 겹친다. `lib/__tests__/paletteRecord.test.ts`가 선 색 `SERIES_COLORS`를 `institutions/page.tsx` 경로로 고정한다.
+- 13F 메뉴 밖 신호 후보 기관은 포트폴리오 응답의 `institution.name`이 CIK 숫자라(`Institutions.byCik`의 대체값) 기관 상세 제목·뉴스·AI 요약 검색어가 CIK 숫자가 된다. 트랙레코드 저장본(q30) 내용에는 `name`·`style`이 있다.
+- 기관 목록 응답(`GET /api/sec13f/institutions`)을 쓰는 곳: 13F 화면, 교집합(`consensus/page.tsx` — 빈 선택 = 전체), 알림(`alerts/page.tsx` '관심 기관'), 명령 팔레트(`shell/SearchCommand.tsx`).
+- `FilterList`는 줄마다 부가 단추를 둘 수 없다(하나 고름은 radiogroup). 편집은 목록 밖 단추 + 대화상자로.
+- 편집 선례: `search/ExcludesPanel.tsx`(값 칸 + 더하기, 줄마다 지우기, 지운 뒤 포커스), `hooks/useInfoSearchWatch.ts`(쓰기 뒤 다시 읽기), `ui/ConfirmDialog.tsx`.
+
+### 백엔드·수집기
+
+- 기본 12곳은 상수 두 곳: `collector/app/indicators.py` `INSTITUTIONS`, 백엔드 `feature/institution/Institutions.java` `ALL`. 둘을 대조하는 시험은 없다.
+- `Institutions.ALL`을 쓰는 곳: `Sec13FService`(포트폴리오·교집합·공통 신규 매수의 CIK 검사와 이름), `GuruService`(성격·유사도·보유 기관 색인·위험), `AlertService`·`AlertEvaluator`(INSTITUTION_NEW), `InstitutionController`(목록·교집합 기본값), **`SnapshotTextService.appendSec13F`(AI 리포트 원문의 교집합)**, **`PaperSelectionService.groupBCandidates`(모의매매 그룹 B 후보 — 선정·후보 표·`PacketBuilder`의 이름·설명)**. `blend.groupB.topN` 상한 1~12도 '메뉴 12곳'이 근거.
+- 모의매매는 풀 기관의 13F를 'q30이 있으면 그것, 없으면 q8'로 읽는다(`PaperSelectionService.storedGroupB`, `RuleBookService.holdings`, `PacketBuilder`).
+- 사용자가 편집한 목록을 수집기가 읽는 선례: `search_watches`(V37 — 백엔드가 쓰고 수집기는 `store.search_watch_targets()`로 읽기만), `paper_settings`. 소유권 시험 `collector/tests/test_table_ownership.py`의 `BACKEND_TABLES`.
+- 수집기 태스크 실행(`POST /collect/task/{task}`)은 인자를 받지 않는다. `task_sec_13f`(`tasks/filings.py`)는 늘 `INSTITUTIONS` 전체를 돈다. `services/sec13f.collect_13f(cik, …)`는 임의 CIK로 부를 수 있지만 기관 이름은 주지 않는다.
+- CIK → 이름: `services/search_filings.sec_submissions`(SEC submissions JSON). 이름으로 13F 신고 기관을 찾는 기능은 없다. 정보 검색 resolve(Wikidata의 CIK)가 가장 가깝다.
+- 메뉴 기관 저장본이 없으면 `Sec13FService.readHistory`가 `sec_13f` 태스크 전체를 동기로 기다린다(`StoreReader.read`).
+- 접근 표 `feature/auth/AccessPolicy.java`: 13F 읽기는 회원, 운영자 쓰기 예 `owner("POST /api/search/excludes", …)`. 쓰기 요청은 Origin 검사(`web/WebConfig.java` `SessionFilter`), CORS 허용 메서드 확인(PATCH가 빠졌던 선례 — ADR 0041).
+- 응답 캐시 `read.ComputedCache`는 저장본 최신 수집 시각과 60초로 무효화된다. 목록이 바뀌면 최대 60초 낡은 값 — `cache.clear()`가 있다.
+- 최신 번호(2026-11-23): 마이그레이션 V42, ADR 0047, 결함 번호 다음은 QA-983. **시작할 때 다시 확인한다**(다른 세션이 먼저 썼을 수 있음).
+
+## 4. 지켜야 하는 것(이 작업의 불변식)
+
+1. **모의매매 입력은 바이트까지 그대로.** `Institutions.ALL`(기본 12곳 상수)과 `indicators.INSTITUTIONS`는 고치지 않는다. `feature/paper`·`feature/snapshot`·`feature/ai`는 즐겨찾기를 읽지 않는다 — 시험으로 고정한다(즐겨찾기가 있어도 `groupBCandidates`·패킷 고정본·AI 리포트 원문의 교집합이 같음).
+2. **트랙레코드 후보(27곳)인 즐겨찾기는 q8을 새로 만들지 않는다.** 그 기관은 있는 q30을 수집 없이 읽는다(2026-11-22 신호 기관 팝업과 같은 규칙). 모의매매의 'q30 없으면 q8' 길에 새 저장본이 끼지 않게 — 수집기는 `TRACK_RECORD_FILERS`의 CIK(선행 CIK 포함)를 즐겨찾기 수집 대상에서 뺀다.
+3. **표마다 쓰는 프로세스는 하나(ADR 0008).** 즐겨찾기 표는 백엔드 표(백엔드만 쓰고 수집기는 읽기만), 13F 저장본은 수집기만 쓴다. 새 표를 `test_table_ownership.py`에 등록한다.
+4. **없는 숫자를 만들지 않는다.** 수집 전·실패는 안내 글과 '—'. 수집 실패가 직전 저장본을 덮지 않는 지금 규칙(QA-031·QA-140) 그대로.
+5. **새 API 경로는 `AccessPolicy`·`docs/API.md`에 함께**(`RouteInventoryTest`·`endpoints.test.ts`·`AccessPolicyTest`).
+6. **SEC 예절.** 기존 토큰 버킷(`http.sec_rate_limit`)과 User-Agent 설정만 쓴다. 이름 검색은 사용자가 '찾기'를 눌렀을 때만 부른다(입력마다 부르지 않음).
+7. 이모지 금지, 날짜는 KST, 비밀값은 `.env`에만, 운영 DB로 시험하지 않음, 옮기는 커밋과 고치는 커밋 분리, 모든 커밋이 `make test` 통과 — CLAUDE.md 그대로.
+
+## 5. 설계와 단계
+
+단계마다 따로 배포할 수 있게 나눕니다. 단계 1은 화면 위주라 먼저 끝내고 배포합니다.
+
+### 단계 1 — 요청 1·2·3(화면 + 백엔드 이름 한 곳)
+
+1. **백엔드**: 13F 메뉴 밖 CIK를 q30에서 읽을 때 응답의 `institution`을 그 저장본의 `name`(없으면 지금처럼 CIK)·`style`로 채운다. 시험: `Sec13FCandidatePortfolioTest`에 이름 줄을 더한다. 기본 12곳의 응답은 그대로.
+2. **옮기기(동작 그대로, 따로 커밋)**: `app/(dashboard)/institutions/HoldingsPanel.tsx`를 `components/screens/` 아래로(이름이 겹치지 않게 — 예 `institutions/PortfolioHoldingsPanel.tsx`), 선 색 `SERIES_COLORS`를 두 화면이 함께 쓰는 자리로. `paletteRecord.test.ts`의 경로 기록을 같이 고친다.
+3. **떼어 내기(동작 그대로)**: 13F 화면의 히트맵 패널·비중 추이(선) 패널을 한 부품으로 떼어 두 화면이 같은 것을 쓴다(패널 제목·부제·빈 상태 글·차트 이름 그대로).
+4. **기관 상세**:
+   - 개요 탭: 평가액 추이 → 히트맵 → 비중 추이(선) → AI 요약. 저장본 없음·분기 부족은 13F 화면과 같은 빈 상태 글.
+   - 보유 종목 탭: 옮긴 '보유 종목 상세' 패널(표 + 검사 칸, 이름 단추 = 종목 팝업 — 티커 없는 줄·대용 티커 줄은 후보 고르기). 원화 환산은 13F 화면과 같은 `useUsdKrw`.
+   - 지금 있는 상태는 그대로: 추적하지 않는 CIK 안내(QA-584), 오류의 다시 시도는 대상 머리에 하나(QA-609), 읽는 중 자리(QA-967), 개수 줄(QA-585), 겹치는 이름의 줄 이름표(QA-587).
+   - 가운데 칸은 13F 화면의 본문보다 좁다(왼쪽 속성·오른쪽 연결 칸). 히트맵·보유 표가 넘치는지 390·1024·1440에서 `scripts/qa/ui-audit.js`로 확인하고, 넘치면 표의 넘김 안내(지금 `HoldingsPanel`의 좁은 배치)로 받는다.
+5. **신호 기관 팝업**: 종목 이름을 링크로(§2 기본값). 링크 이름은 보이는 이름이 앞에 그대로 오게(WCAG 2.5.3). 팝업의 요청 수는 그대로(포트폴리오 한 번).
+6. **시험**: 탭 이름·보유 탭 구조를 고정한 시험(`DetailScreens.test.tsx`의 기관 상세 묶음, `DetailQa585`·`586`·`587SameNameClasses`·`584`·`609`·`967`·`DetailQaInstitutionLink531`)은 요청에 따른 의도된 변경이다 — 같은 커밋에서 고치고 까닭을 커밋 본문에 적는다. 기관 상세의 요청 수 시험에 원/달러 한 번이 더해진다. `InstitutionQuickView.test.tsx`에 링크 주소 두 갈래를 더한다. 13F 화면 시험(`institutionsRequests`·`institutionsScreenStates`·`institutionsQuotePopup`)은 무수정 통과가 기준.
+7. **문서**: ADR 0042 덧붙임(2026-11-23 요청 — 기관 상세 탭 내용 바뀜, 팝업 링크), 작업대 실행 명세 §7 1행의 기관 상세 설명.
+
+### 단계 2 — 즐겨찾기: 저장·수집·13F 화면
+
+1. **ADR**: 새 ADR(다음 번호 — 0048 예상) '13F 즐겨찾기 기관'. §2 결정, §4 불변식, 표 소유, q30 규칙, 상한을 적는다.
+2. **DB**: 새 마이그레이션(다음 번호 — V43 예상) 백엔드 표 `sec13f_favorites`(CIK 유일, SEC 등록 이름, 표시 이름, 설명, 만든 시각·사용자). 머리 주석에 쓰는 쪽을 적는다.
+3. **백엔드**:
+   - `store`에 즐겨찾기 저장소, `feature/institution`에 '기본 12곳 + 즐겨찾기'를 내는 빈(예 `InstitutionCatalog`). `Institutions`(상수)는 그대로 두고, 단계 2에서는 `Sec13FService.portfolio`와 목록 응답만 이 빈을 본다.
+   - 읽기 규칙: 기본 12곳은 지금 그대로(q8, 없으면 수집을 부름). 그 밖의 CIK는 q30이 있으면 조용히 그것, 없고 즐겨찾기면 q8(없으면 수집을 부름), 둘 다 아니면 지금처럼 400.
+   - API(이름은 구현 때 확정, `docs/API.md`에 적음):
+     - `GET /api/sec13f/institutions` — `institutions`(기본 12곳)는 **지금 모양 그대로**, `favorites` 배열을 더한다(CIK·표시 이름·설명·저장본 유무·최신 보고 기준일). 기존 화면이 `institutions`만 읽는 동안 동작이 바뀌지 않게.
+     - `GET /api/sec13f/favorites/search?q=` (운영자) — 후보(이름·CIK·최근 13F 공시일·이미 있는지).
+     - `POST /api/sec13f/favorites` (운영자) — CIK 검증(10자리, 기본 12곳·중복·상한, SEC에 13F-HR 공시가 있는지) → 저장본이 없으면 그 기관만 수집을 기다림 → 성공하면 표에 넣는다. 실패는 사유와 함께 돌려주고 넣지 않는다.
+     - `DELETE /api/sec13f/favorites/{cik}` (운영자).
+   - 쓰기 뒤 응답 캐시를 비운다(`ComputedCache.clear()` 선례).
+4. **수집기**:
+   - `store`에 즐겨찾기 읽기 함수(읽기만), `task_sec_13f`의 대상 = 기본 12곳 + 즐겨찾기(기본 12곳·트랙레코드 후보 CIK 제외). 기관 하나 수집·저장 부분을 함수로 떼어(옮기는 커밋) 태스크와 아래 단건 수집이 함께 쓴다. 상태 화면의 '빠진 저장본' 목록에도 즐겨찾기를 더한다.
+   - 단건 수집 경로(기관 하나만 받아 q8·q1 저장 — 기다리는 호출). 태스크 전체를 다시 돌리면 추가할 때마다 SEC 요청이 열 배 넘게 든다.
+   - 조회 경로 둘: CIK로 이름·13F 공시 여부(SEC submissions), 이름으로 후보. **이름 검색의 SEC 경로와 응답 모양은 기억으로 정하지 않고 실제 응답으로 확인한다**(후보: EDGAR 회사 검색을 13F-HR로 거르기, EDGAR 전문 검색, 기존 정보 검색 resolve의 Wikidata CIK). 안 되면 CIK 입력만으로 줄이고 보고한다.
+   - 브라우저 요청 강제 상한(QA-416, 100초)과 백엔드 → 수집기 호출 시간 상한 안에 들어오는지 확인한다. 넘을 수 있으면 '저장 먼저, 수집은 뒤에서 + 화면이 다시 읽기'로 바꾸고 그 까닭을 ADR에 적는다.
+5. **화면(13F 포트폴리오)**: 왼쪽 칸 '기관' 패널(지금 그대로) 아래에 '즐겨찾기' 패널 — 같은 거르기 목록(하나 고름, 두 목록이 고른 기관 하나를 함께 씀), 비었으면 안내 글. 운영자에게만 머리 동작 '편집' → 대화상자(이름·CIK 찾기 → 후보 고르기 → 표시 이름·설명 → 추가, 목록의 줄마다 삭제 + 확인 창). 추가 중에는 진행 글, 실패는 사유. 처음 여는 요청 수는 그대로(목록 응답 하나에 함께 옴). 명령 팔레트에도 즐겨찾기를 넣는다.
+6. **시험**: 백엔드(카탈로그, 읽기 규칙 세 갈래, API 검증·권한, 캐시 비움, 불변식 1·2), 수집기(대상 합치기·후보 CIK 제외·단건 수집·실패 시 저장본 유지·소유권 시험), 화면(목록 둘·편집 대화상자·권한·요청 수). SEC 응답은 고정 자료로 시험한다(QA 스택은 외부 호출 차단).
+7. **문서**: `docs/API.md`, `docs/DATA_SOURCES.md`(sec_13f 대상·새 SEC 조회), `docs/ARCHITECTURE.md`(백엔드 표를 수집기가 읽는 목록), README의 해당 부분, ADR 목록.
+
+### 단계 3 — 즐겨찾기를 교집합·스타일·알림으로
+
+1. **교집합**: 서버가 즐겨찾기 CIK를 받는다(그 밖은 지금처럼 400, `ciks` 없음 = 기본 12곳 그대로). 화면은 '분석 대상'(기본 12곳 — 지금 그대로) 아래 '즐겨찾기' 목록(여럿 고름, 처음엔 모두 꺼짐). `SnapshotTextService`는 기본 12곳을 명시해 부르는 지금 코드 그대로.
+2. **스타일**: 성격 표·유사도·보유 기관 검색·위험 분석에 즐겨찾기를 넣는다(표에서 즐겨찾기임을 글로 구분). 종목 상세의 '보유 기관'에도 함께 나온다.
+3. **알림**: '관심 기관' 선택지와 서버 검증에 즐겨찾기를 넣고, 안내 글의 '12곳'을 고친다. 즐겨찾기를 지우면 그 CIK의 INSTITUTION_NEW 규칙을 함께 지운다(확인 창에 건수). `AlertEvaluator`도 단계 2의 읽기 규칙을 쓴다.
+4. **부하**: QA 스택에서 최악 경우(상한까지 채움 — q30 기관 여럿 + 보유 수천 줄 기관)로 백엔드 메모리(컨테이너 상한 1g)와 스타일·교집합 응답 시간을 잰다. q30은 30분기라 통째로 파싱 캐시에 올리면 크다 — 넘치면 최근 분기만 읽는 길을 두거나 상한을 낮추고, 잰 값을 ADR에 적는다. 유사도 행렬이 넓어진 화면을 390·1024·1440에서 확인한다.
+5. **시험·문서**: 교집합 기본값·AI 리포트 원문이 즐겨찾기와 무관함을 고정하는 시험, 알림 규칙 함께 지우기, 화면 시험. ADR 덧붙임·API 문서.
+
+## 6. 검증과 전달
+
+- 커밋마다 `make test`. 화면은 QA 스택(`bash scripts/qa/qa-stack.sh up`)에서 브라우저로 확인하고 `ui-audit.js`를 390·1024·1440으로 돌린다. JDK 21 차이가 걱정되는 백엔드 변경은 CLAUDE.md의 컨테이너 명령으로 한 번 더.
+- SEC 실제 응답 확인은 읽기 전용 한두 번으로(운영 DB에 쓰지 않음). 즐겨찾기 추가의 실제 동작은 배포 뒤 서버에서 사용자가 한 곳을 추가해 보는 것으로 확인한다 — 에이전트가 운영 서버에 시험용 즐겨찾기를 넣어 두지 않는다.
+- 브랜치 `claude/13f-favorites-2026-11`, 단계가 끝날 때마다 main에 fast-forward 병합 → push → CI 여섯 job 확인 → Vultr `deploy.sh`(실제 매매 창 평일 08:45~15:35 KST 밖) → 새 표가 생겼는지 확인 → 커밋 번호와 함께 보고.
+- 막히거나 이 문서의 기본값을 바꿔야 하면 멈추고 사용자에게 묻는다. 특히 불변식 1·2를 지킬 수 없는 경우.
