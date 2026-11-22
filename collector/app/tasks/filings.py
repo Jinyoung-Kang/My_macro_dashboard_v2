@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from .. import catalog, equities, equities_cusip, http, indicators, settings, store
 from ..services import (
     sec13f as sec_service,
+    sec13f_lookup,
 )
 
 from .base import EmptyResult, _reason_suffix
@@ -42,6 +43,8 @@ def task_sec_13f() -> str:
 
     quarters = catalog.MAX_TRACKED_QUARTERS
     targets = [(inst["name"], inst["cik"], tuple(inst.get("merge_ciks") or ())) for inst in indicators.INSTITUTIONS]
+    # 13F 즐겨찾기(ADR 0048) — 기본 12곳 뒤에(기본 12곳·트랙레코드 후보 CIK는 빼고).
+    targets += favorite_targets()
 
     ok = 0
     saved = 0
@@ -66,6 +69,56 @@ def task_sec_13f() -> str:
     if errors:
         detail += f", 실패 {len(errors)}곳"
     return detail
+
+
+def _not_favorite_targets() -> dict[str, str]:
+    """
+    즐겨찾기로 모으지 않는 CIK → 까닭('default' — 기본 12곳과 그 합산 자회사, 'track_record' — 트랙레코드 후보와 선행 CIK).
+    트랙레코드 후보는 q30만 있어야 합니다 — 모의 매매가 'q30이 없으면 q8'로 읽으므로 즐겨찾기가 q8을 만들면 그 길에 새 저장본이 낍니다(ADR 0048 불변식 2).
+    """
+    reasons: dict[str, str] = {}
+    for filer in indicators.TRACK_RECORD_FILERS:
+        for cik in (filer["cik"], *(filer.get("predecessors") or ())):
+            reasons[cik] = "track_record"
+    for inst in indicators.INSTITUTIONS:
+        for cik in (inst["cik"], *(inst.get("merge_ciks") or ())):
+            reasons[cik] = "default"
+    return reasons
+
+
+def favorite_targets() -> list[tuple[str, str, tuple[str, ...]]]:
+    """13F 즐겨찾기(백엔드 표 — 읽기만) → sec_13f 대상 줄 [(이름, CIK, ())] — 기본 12곳·트랙레코드 후보(선행 CIK 포함)는 뺍니다."""
+    skip = _not_favorite_targets()
+    return [(row["name"], row["cik"], ()) for row in store.sec13f_favorites() if row["cik"] not in skip]
+
+
+def collect_favorite_13f(raw_cik: str) -> dict:
+    """
+    즐겨찾기 기관 하나의 q8 수집·저장(백엔드가 더하기 때 부름, 끝날 때까지 기다림) → {cik, ok, refused, error, quarters, latestReportDate}.
+    즐겨찾기 표에 없는 CIK는 ``refused='not_favorite'``, 기본 12곳·트랙레코드 후보는 ``refused`` 까닭(모으지 않음 — ADR 0048 불변식 2).
+    실패하면 저장본을 덮지 않습니다(태스크와 같은 수집·저장 길 — QA-031).
+    """
+    cik = sec13f_lookup.normalize_cik(raw_cik)
+    if cik is None:
+        return {"cik": raw_cik, "ok": False, "refused": None, "error": "CIK는 숫자 1~10자리입니다"}
+    refused = _not_favorite_targets().get(cik)
+    if refused is None and cik not in {row["cik"] for row in store.sec13f_favorites()}:
+        refused = "not_favorite"
+    if refused is not None:
+        return {"cik": cik, "ok": False, "refused": refused, "error": None}
+    try:
+        http.sec_user_agent()
+    except http.SecUserAgentInvalid as exc:
+        return {"cik": cik, "ok": False, "refused": None, "error": str(exc)}
+    name = next((row["name"] for row in store.sec13f_favorites() if row["cik"] == cik), cik)
+    _name, _cik, payload = _collect_institution_13f((name, cik, ()))
+    quarters = payload.get("quarters") or []
+    if not quarters:
+        logger.info("13F 즐겨찾기 단건 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
+        return {"cik": cik, "ok": False, "refused": None, "error": payload.get("error") or "빈 결과"}
+    _store_institution_13f(cik, payload)
+    return {"cik": cik, "ok": True, "refused": None, "error": None, "quarters": len(quarters),
+            "latestReportDate": quarters[0].get("reportDate")}
 
 
 def _collect_institution_13f(item: tuple[str, str, tuple[str, ...]]) -> tuple[str, str, dict]:

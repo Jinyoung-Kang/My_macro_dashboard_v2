@@ -39,6 +39,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import catalog, krcalendar, logredact, settings, store, tasks, verification, webguard
+from .tasks import filings as filings_tasks
 from .services import (
     detail as detail_service,
     kis as kis_service,
@@ -48,6 +49,7 @@ from .services import (
     radar as radar_service,
     search as search_service,
     search_article as search_article_service,
+    sec13f_lookup,
     toss as toss_service,
     toss_account as toss_account_service,
     toss_trade as toss_trade_service,
@@ -538,6 +540,34 @@ def collect_task(
         return {"task": task_name, "accepted": True}
 
     return tasks.run_group(task_name=task_name)
+
+
+# ==============================================================================
+# 13F 즐겨찾기 기관(ADR 0048) — 백엔드가 운영자의 '찾기'·'더하기' 때만 부릅니다
+# ==============================================================================
+@app.get("/sec13f/search")
+def sec13f_search(q: str | None = Query(None), x_service_token: str | None = Header(default=None)) -> dict:
+    """이름 → 13F-HR 제출 기관 후보(EDGAR 회사 검색 한 번). 검색어가 맞지 않으면 SEC를 부르지 않고 error."""
+    _check_token(x_service_token)
+    return sec13f_lookup.search_filers(q or "")
+
+
+@app.get("/sec13f/filer")
+def sec13f_filer(cik: str | None = Query(None), x_service_token: str | None = Header(default=None)) -> dict:
+    """CIK → SEC 등록 이름과 가장 최근 원본 13F-HR 공시(SEC submissions 한 번)."""
+    _check_token(x_service_token)
+    return sec13f_lookup.filer_info(cik or "")
+
+
+@app.post("/sec13f/favorite/collect")
+def sec13f_favorite_collect(cik: str | None = Query(None), x_service_token: str | None = Header(default=None)) -> dict:
+    """
+    즐겨찾기 기관 하나의 13F(q8·q1)를 모아 저장하고 끝날 때까지 기다립니다 — 태스크 전체를 다시 돌리면 더할 때마다 SEC 요청이 열 배 넘게 듭니다.
+    기본 12곳·트랙레코드 후보(선행 CIK 포함)는 모으지 않고 ``refused``로 답합니다(ADR 0048 불변식 2 — q30 기관에 q8을 새로 만들지 않음).
+    부른 쪽이 시간 상한으로 끊어도 이 호출은 끝까지 돌아 저장합니다.
+    """
+    _check_token(x_service_token)
+    return filings_tasks.collect_favorite_13f(cik or "")
 
 
 @app.post("/refresh")

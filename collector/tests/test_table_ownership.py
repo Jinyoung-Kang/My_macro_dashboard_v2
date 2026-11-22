@@ -5,7 +5,8 @@ tests/test_table_ownership.py
 백엔드 쪽은 ArchitectureRulesTest가 "백엔드는 수집기 테이블에 쓰지 않는다"를 검사합니다. 여기는 그 반대입니다.
 수집기가 읽기만 하는 백엔드 테이블은 alert_rules(관심 종목 코드)·paper_positions·paper_books(장중 평가 범위 — ADR 0020)·
 paper_orders(Claude 계좌2 1분봉 범위 — ADR 0022)·paper_checkpoints(계좌2 장중 확인 감시 범위 — 단계 2, ADR 0022)·
-paper_intraday_plans(자유 시점 판의 장중 판단 감시 범위 — ADR 0027)·search_watches·search_media_excludes(정보 검색 — ADR 0041)입니다.
+paper_intraday_plans(자유 시점 판의 장중 판단 감시 범위 — ADR 0027)·search_watches·search_media_excludes(정보 검색 — ADR 0041)·
+sec13f_favorites(13F 즐겨찾기 — ADR 0048)입니다.
 """
 from __future__ import annotations
 
@@ -57,6 +58,8 @@ BACKEND_TABLES = (
     # 배포판 보안 추적기에 물어볼 것(V42, ADR 0046 덧붙임 2026-11-21) — 백엔드 SecurityTrackerStore만 씁니다. 수집기는 읽기만 합니다
     # (store.distro_tracker_due — 태스크 kisa_security_notices가 물을 것을 고름).
     "security_tracker_wants",
+    # 13F 즐겨찾기 기관(V43, ADR 0048) — 백엔드 Sec13FFavoriteStore만 씁니다. 수집기는 읽기만 합니다(store.sec13f_favorites — sec_13f 대상).
+    "sec13f_favorites",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"
@@ -239,3 +242,16 @@ def test_추적기에_물을_것은_백엔드_표를_store_함수로만_읽는�
     readers = sorted(path.relative_to(APP).as_posix() for path in APP.rglob("*.py")
                      if re.search(r"(?i)\b(FROM|JOIN)\s+security_tracker_wants\b", path.read_text(encoding="utf-8")))
     assert readers == ["store.py"]
+
+
+def test_13F_즐겨찾기는_store_함수로만_읽는다():
+    """sec13f_favorites(ADR 0048)를 읽는 곳은 store.sec13f_favorites 하나이고, 그 함수에는 쓰기 문장이 없습니다."""
+    import inspect
+
+    from app import store
+
+    users = sorted(path.relative_to(APP).as_posix() for path in APP.rglob("*.py")
+                   if re.search(r"\bsec13f_favorites\b", path.read_text(encoding="utf-8").replace("store.sec13f_favorites", "")))
+    assert users == ["store.py"]
+    source = inspect.getsource(store.sec13f_favorites)
+    assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source)

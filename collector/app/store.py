@@ -1542,6 +1542,15 @@ def missing_datasets() -> list[dict]:
                 catalog.snap_sec_13f(inst["cik"], quarters),
                 f"13F {short} q{quarters}",
             ))
+    # 13F 즐겨찾기(ADR 0048) — 수집 대상인 기관만(기본 12곳·트랙레코드 후보는 sec_13f가 모으지 않음).
+    from .tasks.filings import favorite_targets  # 순환 import 방지
+
+    for name, cik, _merge in favorite_targets():
+        for quarters in (1, catalog.MAX_TRACKED_QUARTERS):
+            expected.append((
+                catalog.snap_sec_13f(cik, quarters),
+                f"13F 즐겨찾기 {name.split('(')[0].strip()} q{quarters}",
+            ))
 
     return [
         {"name": name, "label": label}
@@ -2063,6 +2072,24 @@ def env_inventory() -> dict | None:
 # ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)
 # search_watches·search_media_excludes는 백엔드 표라 읽기만 합니다(ADR 0008 — paper_settings 선례). search_watch_items·fetch_budgets는
 # 수집기 표라 여기서만 씁니다(tests/test_table_ownership.py가 봄).
+def sec13f_favorites() -> list[dict]:
+    """
+    13F 즐겨찾기 기관(V43 ``sec13f_favorites`` — 백엔드가 쓰고 수집기는 읽기만, ADR 0048) → [{cik, name}](더한 차례). 이름은 표시 이름, 없으면 SEC 등록
+    이름. 표가 아직 없으면(마이그레이션 전) 빈 목록.
+    """
+    with connection() as conn:
+        exists = conn.execute("SELECT to_regclass('sec13f_favorites') IS NOT NULL AS ok").fetchone()
+        if not exists or not exists["ok"]:
+            return []
+        rows = conn.execute(
+            "SELECT cik, sec_name, display_name FROM sec13f_favorites ORDER BY created_at, cik"
+        ).fetchall()
+    return [
+        {"cik": row["cik"], "name": (row["display_name"] or "").strip() or row["sec_name"]}
+        for row in rows
+    ]
+
+
 def search_watch_targets() -> list[dict]:
     """
     관심 대상을 대표 키마다 하나로 → [{key, kind, name, nameKo, nameEn, aliases, ids, watchers}](키 순서). 여러 사용자가 같은 대상을 등록해도 한 번만

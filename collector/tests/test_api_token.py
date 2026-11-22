@@ -36,6 +36,10 @@ PROTECTED = [
     ("get", "/live/search/article?ref=" + "0" * 32),
     ("get", "/live/search/article?ref=" + "0" * 32 + "&start=true"),
     ("get", "/verify/readings"),
+    # 13F 즐겨찾기(ADR 0048) — SEC 조회·단건 수집
+    ("get", "/sec13f/search?q=fake"),
+    ("get", "/sec13f/filer?cik=9900001"),
+    ("post", "/sec13f/favorite/collect?cik=9900001"),
     ("get", "/diagnostics/connections"),
     ("get", "/diagnostics/toss"),
     ("get", "/diagnostics/public-apis"),
