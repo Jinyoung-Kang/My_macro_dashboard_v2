@@ -59,6 +59,13 @@ class Sec13FFavoriteStoreDbTest {
         assertThat(store.find(A)).get().extracting(Sec13FFavoriteStore.Favorite::description).isEqualTo("설명");
         assertThat(store.count()).isGreaterThanOrEqualTo(2);
 
+        // 표시 이름·설명 고치기 — 받은 값으로 바꿈(null이면 비움), 없는 CIK는 빈 값
+        assertThat(store.updateLabels(A, null, "새 설명")).get().satisfies(row -> {
+            assertThat(row.name()).isEqualTo("FIRST FAKE LLC");
+            assertThat(row.description()).isEqualTo("새 설명");
+        });
+        assertThat(store.updateLabels("0009900009", "x", null)).isEmpty();
+
         assertThat(store.delete(A)).isEqualTo(1);
         assertThat(store.delete(A)).isZero();
         assertThat(store.find(A)).isEmpty();

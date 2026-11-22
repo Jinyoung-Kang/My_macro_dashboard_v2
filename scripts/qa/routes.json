@@ -178,6 +178,19 @@
       "fuzz": false
     },
     {
+      "m": "PATCH",
+      "p": "/api/sec13f/favorites/{cik}",
+      "path": {
+        "cik": "str"
+      },
+      "body": {
+        "displayName": "str",
+        "description": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
       "m": "DELETE",
       "p": "/api/sec13f/favorites/{cik}",
       "path": {

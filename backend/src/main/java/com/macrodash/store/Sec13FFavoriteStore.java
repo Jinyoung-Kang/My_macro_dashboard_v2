@@ -65,6 +65,12 @@ public class Sec13FFavoriteStore {
                 mapper(), cik, secName, displayName, description, userId).stream().findFirst();
     }
 
+    /** 표시 이름·설명 고치기(둘 다 그대로 바꿈 — null이면 비움) — 고친 줄(없으면 빈 값). CIK·SEC 이름·더한 시각은 그대로. */
+    public Optional<Favorite> updateLabels(String cik, String displayName, String description) {
+        return jdbc.query("UPDATE sec13f_favorites SET display_name = ?, description = ? WHERE cik = ? RETURNING " + COLUMNS,
+                mapper(), displayName, description, cik).stream().findFirst();
+    }
+
     /** 지우기 — 지운 줄 수. */
     public int delete(String cik) {
         return jdbc.update("DELETE FROM sec13f_favorites WHERE cik = ?", cik);

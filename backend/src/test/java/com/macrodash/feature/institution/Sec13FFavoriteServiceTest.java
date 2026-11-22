@@ -66,6 +66,19 @@ class Sec13FFavoriteServiceTest {
             rows.add(row);
             return Optional.of(row);
         });
+        when(store.updateLabels(anyString(), any(), any())).thenAnswer(invocation -> {
+            String cik = invocation.getArgument(0);
+            for (int i = 0; i < rows.size(); i++) {
+                if (rows.get(i).cik().equals(cik)) {
+                    Sec13FFavoriteStore.Favorite old = rows.get(i);
+                    Sec13FFavoriteStore.Favorite next = new Sec13FFavoriteStore.Favorite(cik, old.secName(), invocation.getArgument(1),
+                            invocation.getArgument(2), old.createdAt());
+                    rows.set(i, next);
+                    return Optional.of(next);
+                }
+            }
+            return Optional.empty();
+        });
         when(store.delete(anyString())).thenAnswer(invocation -> rows.removeIf(row -> row.cik().equals(invocation.getArgument(0))) ? 1 : 0);
         when(reader.readStoredHeads(any())).thenAnswer(invocation -> {
             Collection<String> names = invocation.getArgument(0);
@@ -255,5 +268,29 @@ class Sec13FFavoriteServiceTest {
         assertThat(rows.get(0)).containsEntry("latest13F", Map.of("filingDate", "2026-08-14", "reportDate", "2026-06-30")).containsEntry("checked", true);
         assertThat(rows.get(1)).containsEntry("latest13F", null).containsEntry("checked", true);
         assertThat(rows.get(2)).containsEntry("checked", false);
+    }
+
+    @Test
+    @DisplayName("표시 이름·설명 고치기(운영자) — 받은 값으로 바꾸고(비우면 SEC 이름·설명 없음) 캐시 비움, 없는 CIK 404, 회원 403, 글자 검사")
+    void editLabels() {
+        rows.add(new Sec13FFavoriteStore.Favorite(CIK, "FAKE CAPITAL LLC", "가짜 운용", "옛 설명", Instant.now()));
+
+        var result = service.editLabels(OWNER, "9900001", " 새 이름 ", " 새 설명 ");
+        assertThat(result.status()).isEqualTo(200);
+        assertThat(rows.get(0).displayName()).isEqualTo("새 이름");
+        assertThat(rows.get(0).description()).isEqualTo("새 설명");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> favorite = (Map<String, Object>) result.body().get("favorite");
+        assertThat(favorite).containsEntry("name", "새 이름").containsEntry("desc", "새 설명");
+        verify(cache).clear();
+
+        assertThat(service.editLabels(OWNER, CIK, " ", null).status()).isEqualTo(200);
+        assertThat(rows.get(0).name()).isEqualTo("FAKE CAPITAL LLC");
+        assertThat(rows.get(0).description()).isNull();
+
+        assertThat(service.editLabels(OWNER, "0009900009", "x", null).status()).isEqualTo(404);
+        assertThat(service.editLabels(MEMBER, CIK, "x", null).status()).isEqualTo(403);
+        assertThatThrownBy(() -> service.editLabels(OWNER, CIK, "가".repeat(61), null)).isInstanceOf(InvalidRequestException.class);
+        verify(collector, never()).sec13fFiler(anyString());
     }
 }

@@ -247,6 +247,37 @@ public class Sec13FFavoriteService {
         return new Result(200, body);
     }
 
+    /**
+     * 표시 이름·설명 고치기(운영자, 2026-11-23 사용자 요청) — 두 칸을 받은 값으로 바꿉니다(비우면 표시 이름은 SEC 등록 이름으로, 설명은 없음으로).
+     * 없는 CIK는 404. SEC를 부르지 않고 저장본도 건드리지 않습니다. 쓰기 뒤 응답 캐시를 비웁니다(기관 목록·포트폴리오의 이름).
+     */
+    public Result editLabels(CurrentUser user, String rawCik, String rawDisplayName, String rawDescription) {
+        if (user == null || !user.isOwner()) {
+            return failure(403, "즐겨찾기는 운영자만 바꿀 수 있습니다.");
+        }
+        String cik = normalizeCik(rawCik);
+        String displayName = optionalText(rawDisplayName, MAX_DISPLAY_NAME, "표시 이름");
+        String description = optionalText(rawDescription, MAX_DESCRIPTION, "설명");
+        if (!favorites.ready()) {
+            return failure(503, "즐겨찾기 표가 아직 없습니다.");
+        }
+        Optional<Sec13FFavoriteStore.Favorite> updated = favorites.updateLabels(cik, displayName, description);
+        if (updated.isEmpty()) {
+            return failure(404, "즐겨찾기에 없는 기관입니다.");
+        }
+        cache.clear();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("ok", true);
+        body.put("message", "표시 이름·설명을 고쳤습니다.");
+        Map<String, Object> favorite = new LinkedHashMap<>();
+        favorite.put("cik", cik);
+        favorite.put("name", updated.get().name());
+        favorite.put("secName", updated.get().secName());
+        favorite.put("desc", updated.get().description() == null ? "" : updated.get().description());
+        body.put("favorite", favorite);
+        return new Result(200, body);
+    }
+
     /** 지우기(운영자) — 없는 CIK는 404. 13F 저장본은 지우지 않습니다(다시 더하면 바로 보임). */
     public Result remove(CurrentUser user, String rawCik) {
         if (user == null || !user.isOwner()) {

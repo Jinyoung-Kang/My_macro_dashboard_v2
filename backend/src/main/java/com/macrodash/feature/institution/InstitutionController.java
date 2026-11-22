@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,7 +24,7 @@ import java.util.Map;
  *
  * <pre>
  *  GET /api/sec13f/*   기관 목록(기본 12곳 + 즐겨찾기)·포트폴리오·교집합·공통 신규 매수
- *  GET·POST·DELETE /api/sec13f/favorites*   (운영자) 13F 즐겨찾기 이름 검색·더하기·지우기(ADR 0048)
+ *  GET·POST·PATCH·DELETE /api/sec13f/favorites*   (운영자) 13F 즐겨찾기 이름 검색·더하기·표시 이름·설명 고치기·지우기(ADR 0048)
  *  GET /api/guru/*     기관 성격·유사도·보유 기관 검색·위험 (경로는 호환을 위해 guru 유지)
  * </pre>
  */
@@ -71,6 +72,19 @@ public class InstitutionController {
     public ResponseEntity<Map<String, Object>> addFavorite(@RequestBody(required = false) FavoriteRequest body, HttpServletRequest request) {
         FavoriteRequest given = body == null ? new FavoriteRequest(null, null, null) : body;
         return respond(favorites.add(CurrentUser.of(request), given.cik(), given.displayName(), given.description()));
+    }
+
+    /** 즐겨찾기 표시 이름·설명 고치기 본문 — 두 칸을 받은 값으로 바꿈(비우면 SEC 이름·설명 없음). */
+    public record FavoriteLabelsRequest(String displayName, String description) {
+    }
+
+    /** (운영자) 즐겨찾기 표시 이름·설명 고치기 — SEC를 부르지 않음. */
+    @PatchMapping("/sec13f/favorites/{cik}")
+    public ResponseEntity<Map<String, Object>> editFavorite(@PathVariable String cik,
+                                                            @RequestBody(required = false) FavoriteLabelsRequest body,
+                                                            HttpServletRequest request) {
+        FavoriteLabelsRequest given = body == null ? new FavoriteLabelsRequest(null, null) : body;
+        return respond(favorites.editLabels(CurrentUser.of(request), cik, given.displayName(), given.description()));
     }
 
     /** (운영자) 즐겨찾기 지우기 — 13F 저장본은 남김. */

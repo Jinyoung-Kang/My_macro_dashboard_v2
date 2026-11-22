@@ -67,7 +67,7 @@ class RouteInventoryTest {
             "GET /api/sector/rotation", "GET /api/sector/momentum",
             // 13F · 기관 스타일
             "GET /api/sec13f/institutions", "GET /api/sec13f/favorites/search", "POST /api/sec13f/favorites",
-            "DELETE /api/sec13f/favorites/{cik}", "GET /api/sec13f/portfolio",
+            "PATCH /api/sec13f/favorites/{cik}", "DELETE /api/sec13f/favorites/{cik}", "GET /api/sec13f/portfolio",
             "GET /api/sec13f/consensus", "GET /api/sec13f/new-buys",
             "GET /api/guru/profiles", "GET /api/guru/similarity",
             "GET /api/guru/holders", "GET /api/guru/risk",
