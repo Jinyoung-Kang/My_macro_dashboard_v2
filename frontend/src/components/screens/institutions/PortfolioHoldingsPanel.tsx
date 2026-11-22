@@ -59,8 +59,17 @@ const FIT_MIN_WIDTH = 560;
  */
 const STACK_MIN_WIDTH = 400;
 
-/** 보유 표 배치 — wide(칸 여섯·최소 640px·넘김 안내), compact(칸 여섯·여백 8px·최소 폭 없음), stacked(칸 넷·여백 8px·최소 폭 없음). */
-type HoldingsLayout = "wide" | "compact" | "stacked";
+/**
+ * 폰 배치가 들어가는 패널 안 폭(px) — 칸 셋(자세히 약 60 · 비중·평가액 약 92px + 종목)으로, 동작 태그는 한국어만(가장 긴 '비중 축소' 약 75px)
+ * 종목 칸에 둡니다(QA-988 — 360·390·430 폰의 가운데 칸 292·322·362px). 이보다 좁으면 지금처럼 최소 640px와 넘김 안내.
+ */
+const PHONE_MIN_WIDTH = 240;
+
+/**
+ * 보유 표 배치 — wide(칸 여섯·최소 640px·넘김 안내), compact(칸 여섯·여백 8px·최소 폭 없음), stacked(칸 넷 — 동작 태그는 종목 칸, 비중 변화는 비중 칸),
+ * phone(칸 셋 — 짧은 동작 태그는 종목 칸, 비중·변화·평가액·원화는 오른쪽 한 칸).
+ */
+type HoldingsLayout = "wide" | "compact" | "stacked" | "phone";
 
 /** 상자 안 폭(px) — ResizeObserver가 없거나 재기 전이면 null(그때는 지금 배치 그대로). */
 function useBoxWidth(ref: RefObject<HTMLElement | null>): number | null {
@@ -108,9 +117,17 @@ export function PortfolioHoldingsPanel({
   const user = useSessionUser();
   const boxRef = useRef<HTMLDivElement>(null);
   const boxWidth = useBoxWidth(boxRef);
-  // fit 패널(기관 상세)의 배치 — 넓으면 좁은 배치, 그보다 좁아도 400px 이상이면 쌓은 배치(QA-987), 잴 수 없거나 더 좁으면 지금 그대로.
+  // fit 패널(기관 상세)의 배치 — 넓으면 좁은 배치, 400px 이상이면 쌓은 배치(QA-987), 240px 이상이면 폰 배치(QA-988), 잴 수 없거나 더 좁으면 지금 그대로.
   const fitLayout: HoldingsLayout | null =
-    !fit || boxWidth === null ? null : boxWidth >= FIT_MIN_WIDTH ? "compact" : boxWidth >= STACK_MIN_WIDTH ? "stacked" : null;
+    !fit || boxWidth === null
+      ? null
+      : boxWidth >= FIT_MIN_WIDTH
+        ? "compact"
+        : boxWidth >= STACK_MIN_WIDTH
+          ? "stacked"
+          : boxWidth >= PHONE_MIN_WIDTH
+            ? "phone"
+            : null;
   // 보유 표 줄 — 키는 'CUSIP:클래스'(겹치면 '#n' 꼬리), 이름표는 공시 이름(겹치는 줄에만 클래스·CUSIP — QA-587 규칙).
   const holdings = data.holdings ?? [];
   const holdingKeys = holdingRowKeys(holdings);
@@ -189,10 +206,12 @@ const HOLDING_ACTION_ICON: Record<HoldingActionKind, typeof PlusIcon> = {
  * 상승·하락 색(up·down)은 값이 오르내린 방향 전용이라 매수·매도 판정에 쓰지 않습니다(명세 §7-3).
  * 테두리 있는 공용 Tag(중립)입니다 — 테두리 없는 배지(SourceBadge)는 바탕이 표의 고른 행·hover 바탕(surface-2)과 같아 그 행에서 상자가 사라졌습니다(QA-697).
  */
-function HoldingActionTag({ label }: { label: string | null | undefined }) {
+function HoldingActionTag({ label, short = false }: { label: string | null | undefined; short?: boolean }) {
   const view = holdingActionView(label);
   const Icon = HOLDING_ACTION_ICON[view.kind];
-  return <Tag icon={<Icon size={12} className="text-text-3" />}>{view.text}</Tag>;
+  // 폰 배치(QA-988)는 끝의 영문 괄호('(Reduced)')를 떼어 종목 칸에 들어가게 — 뜻은 한국어가 나릅니다.
+  const text = short ? view.text.replace(/\s*\([A-Za-z][^)]*\)\s*$/, "") || view.text : view.text;
+  return <Tag icon={<Icon size={12} className="text-text-3" />}>{text}</Tag>;
 }
 
 /** 보유 표 줄 — 줄 키('CUSIP:클래스', 겹치면 '#n' — lib/institutionsScreen holdingRowKeys)와 보유 줄. */
@@ -209,7 +228,8 @@ function holdingColumns(
   layout: HoldingsLayout,
 ): Column<HoldingRow>[] {
   const side = layout !== "wide";
-  const stacked = layout === "stacked";
+  const phone = layout === "phone";
+  const stacked = layout === "stacked" || phone;
   const columns: Column<HoldingRow>[] = [
     {
       key: "inspect",
@@ -238,7 +258,7 @@ function holdingColumns(
           {/* 쌓은 배치(QA-987)에서는 '직전 분기 대비' 칸 대신 이름 아래 — 태그가 두 줄로 접히지 않게(QA-697). */}
           {stacked ? (
             <span className="mt-1 whitespace-nowrap">
-              <HoldingActionTag label={holding.action} />
+              <HoldingActionTag label={holding.action} short={phone} />
             </span>
           ) : null}
         </span>
@@ -294,6 +314,32 @@ function holdingColumns(
       cell: ({ holding }) => <HoldingActionTag label={holding.action} />,
     },
   ];
+  if (phone) {
+    // 폰 배치(QA-988) — 칸 셋: 오른쪽 한 칸에 비중·변화(공용 변화 칸)·평가액·원화를 쌓습니다(모르는 값은 '—').
+    return [
+      columns[0],
+      columns[1],
+      {
+        key: "weightValue",
+        header: "비중·평가액",
+        align: "right",
+        cell: ({ holding }) => {
+          const usd = formatCurrency(holding.value);
+          const krw = usd === EMPTY ? null : toKrw(holding.value);
+          return (
+            <span className="flex flex-col items-end">
+              <span>{formatWeightPercent(holding.weight)}</span>
+              <span className="text-xs">
+                <ChangeCell change={holding.weightDiff} digits={2} unit="%p" />
+              </span>
+              <span className="mt-1">{usd}</span>
+              {krw && <span className="text-xs text-text-3">{krw}</span>}
+            </span>
+          );
+        },
+      },
+    ];
+  }
   // 쌓은 배치는 비중 변화·직전 분기 대비를 다른 칸 안에 두어 칸 넷(QA-987).
   return stacked ? columns.filter((column) => column.key !== "weightDiff" && column.key !== "action") : columns;
 }

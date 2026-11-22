@@ -97,7 +97,7 @@ describe("기관 상세 보유 표 — 칸 폭에 맞춤 (QA-984)", () => {
 
   // QA-988: 폰(360·390·430 — 가운데 칸 292·322·362px)에서는 쌓은 배치(칸 넷)도 종목 칸이 동작 태그보다 좁아져 최소 640px와 넘김 안내가 남았습니다.
   // 그 폭에서는 칸 셋 — 종목 칸에 짧은 동작 태그(한국어만), 오른쪽 한 칸에 비중·변화·평가액·원화를 쌓습니다.
-  it.fails("QA-988 패널 폭 322px(390 폰)이면 칸 셋 — 최소 폭 없음, 짧은 동작 태그, 오른쪽 칸에 비중·변화·평가액", async () => {
+  it("QA-988 패널 폭 322px(390 폰)이면 칸 셋 — 최소 폭 없음, 짧은 동작 태그, 오른쪽 칸에 비중·변화·평가액", async () => {
     stubBoxWidth(322);
     const table = await holdingsTable();
     await waitFor(() => expect(table.className).not.toContain("min-w-[640px]"));
@@ -109,11 +109,11 @@ describe("기관 상세 보유 표 — 칸 폭에 맞춤 (QA-984)", () => {
     const right = cells[cells.length - 1];
     expect(right.textContent).toContain("100.00%");
     expect(right.textContent).toContain("+1.00");
-    expect(right.textContent).toContain("20억 달러");
+    expect(right.textContent).toContain("20.0억 달러");
   });
 
-  it("패널 폭이 좁으면(390 화면 약 340px) 지금처럼 최소 640px와 넘김 안내(칸 여섯)", async () => {
-    stubBoxWidth(340);
+  it("패널 폭이 240px보다 좁으면 지금처럼 최소 640px와 넘김 안내(칸 여섯)", async () => {
+    stubBoxWidth(230);
     const table = await holdingsTable();
     expect(table.className).toContain("min-w-[640px]");
   });
