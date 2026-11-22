@@ -376,3 +376,17 @@
 - 지키는 방법(시험): `securityScreen.test.tsx`(팝업 — 다시 읽지 않음·상세 구역·원문 링크), `infoSearchWatchOrder.test.ts`, `navMoreOrder.test.ts`(묶음마다 글자순·묶음 차례), 메뉴 차례를 적은
   시험들(`nav`·`navTree`·`MoreMenu`·`Shell`·`SideNavTree`·`SubNavScrollQa510` — 같은 자리의 새 메뉴), `InstitutionQuickView.test.tsx`·`paperDecisions.test.tsx`(신호 기관 이름 단추),
   백엔드 `Sec13FCandidatePortfolioTest`(q30을 조용히 읽음·저장본 없으면 400·CIK 모양 검사).
+
+## 덧붙임 — 2026-11-23 사용자 요청(기관 상세 보강·신호 기관 팝업 링크)
+
+- **기관 상세 개요 탭**: 분기별 13F 보고 평가액 추이 → 상위 종목 분기별 비중 히트맵 → 상위 종목 분기별 비중 추이(선) → AI 요약. 히트맵·선은 13F 포트폴리오 화면과 같은 부품
+  (`institutions/WeightHistoryPanels` — 패널 제목·부제·빈 상태 글·차트 이름 그대로)이고 같은 응답(8분기·상위 30)을 그려 요청이 늘지 않습니다. 차트는 처음 보이는 개요 탭에 둡니다(숨긴 탭에서 처음 그리면 폭 0).
+- **기관 상세 보유 종목 탭**: 목록-검사(`MasterDetail`) 대신 13F 화면의 '보유 종목 상세' 패널(`institutions/PortfolioHoldingsPanel` — 표 + 검사 칸, 이름 단추 = 종목 팝업, 티커 없음·대용 티커 줄은
+  후보 고르기). 원화 환산은 13F 화면과 같은 공용 원/달러(`useUsdKrw` — 기관 상세의 첫 요청이 하나 늘어남). 읽기 전·실패·추적하지 않는 CIK·저장본 없음은 같은 제목의 패널에 까닭 글만(다시 시도는 대상 머리 —
+  QA-190·584·609 그대로), '13F 포트폴리오에서 자세히' 링크(QA-531)도 그대로입니다. 탭은 지금처럼 개요·보유 종목·뉴스.
+- **신호 기관 팝업의 보유 종목 이름은 링크**: 티커가 그 줄의 것으로 확인되면 종목 상세(`/s/us/<티커>`), 티커가 없거나 대용 티커(`tickerIsProxy`)면 공시 이름으로 정보 검색(`/search?q=`),
+  정보 검색을 볼 수 없는 사용자면 글자 그대로(계획 세션의 기본값). 링크 이름은 보이는 공시 이름이 앞에(WCAG 2.5.3). 요청 수는 그대로(포트폴리오 한 번).
+- **13F 메뉴 밖 기관의 이름**: 트랙레코드 후보 저장본(q30)만 있는 기관은 포트폴리오 응답의 기관 칸이 CIK 숫자였습니다 — 저장본의 이름·스타일을 씁니다(없으면 그대로 CIK, 13F 메뉴 12곳은 그대로).
+- 지키는 방법(시험): `DetailScreens.test.tsx`(개요 탭 패널 차례·차트 이름·원/달러 요청·보유 표), `DetailQa582`·`584`·`585`·`587`·`609`·`tinyWeightQa454`·`touchTargetsQa458`(표·검사 단추로 고침 —
+  확인하는 성질은 그대로, 보조 줄을 고정하던 `DetailQa586`은 그 줄이 없어져 지움), `InstitutionQuickView.test.tsx`(링크 두 갈래·요청 한 번), 13F 화면 시험은 고치지 않고 통과,
+  `paletteRecord.test.ts`(선 색 자리 `institutions/weightLineColors.ts`), 백엔드 `Sec13FCandidatePortfolioTest`(q30 이름·스타일, 메뉴 기관 그대로). 명세: [13F 즐겨찾기·기관 상세 실행 명세](../specs/2026-11-23-13f-favorites-institution-detail.md) 단계 1.
