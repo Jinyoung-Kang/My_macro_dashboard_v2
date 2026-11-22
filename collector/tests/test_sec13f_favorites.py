@@ -109,3 +109,42 @@ def test_빠진_저장본_목록에_즐겨찾기가_있다(store):
     names = {row["name"]: row["label"] for row in store.missing_datasets()}
     assert names[catalog.snap_sec_13f(FAV, 8)] == "13F 즐겨찾기 FAKE ONE q8"
     assert catalog.snap_sec_13f(CANDIDATE, 8) not in names or "즐겨찾기" not in names[catalog.snap_sec_13f(CANDIDATE, 8)]
+
+
+# QA-989: 즐겨찾기를 기본 12곳과 같은 4개 병렬에 붙여, 큰 제출자(모건스탠리 보유 7,896줄 — 8분기 수집 한 번에 +약 280 MB, 큰 넷을 함께 받으면
+# +약 450 MB, 2026-11-23 실측)가 한꺼번에 돌면 수집기 메모리 상한(1 GiB — 운영 꼭대기 832 MB)을 넘길 수 있었습니다. 기본 12곳은 지금처럼 병렬,
+# 즐겨찾기는 그 뒤에 하나씩(받은 기관을 저장한 뒤 다음) 받아야 합니다.
+@pytest.mark.xfail(strict=True, reason="QA-989 재현 — 고치기 전")
+def test_QA989_즐겨찾기는_기본_12곳_뒤에_하나씩_받는다(store, monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setenv("SEC_USER_AGENT", "test@example.com")
+    defaults = indicators.INSTITUTIONS[:4]
+    monkeypatch.setattr(tasks.indicators, "INSTITUTIONS", defaults, raising=False)
+    favorites = [f"00099000{n:02d}" for n in range(1, 5)]
+    for cik in favorites:
+        _favorite(store, cik, f"FAKE {cik}")
+    lock = threading.Lock()
+    running: set[str] = set()
+    seen: list[tuple[str, frozenset]] = []
+    default_ciks = {inst["cik"] for inst in defaults} | {c for inst in defaults for c in inst.get("merge_ciks") or ()}
+
+    def fake_collect(cik, quarters, previous_quarters=None):
+        with lock:
+            running.add(cik)
+            seen.append((cik, frozenset(running)))
+        time.sleep(0.05)
+        with lock:
+            running.discard(cik)
+        return {"cik": cik, "error": None, "quarters": [_quarter("2026-06-30", "2026-08-10")]}
+
+    monkeypatch.setattr(tasks.sec_service, "collect_13f", fake_collect)
+    tasks.task_sec_13f()
+
+    for cik, together in seen:
+        if cik in favorites:
+            assert together == {cik}, f"즐겨찾기 {cik}가 {sorted(together - {cik})}와 함께 돌았음"
+    first_favorite = next(i for i, (cik, _) in enumerate(seen) if cik in favorites)
+    assert all(cik in default_ciks for cik, _ in seen[:first_favorite])
+    assert [cik for cik, _ in seen if cik in favorites] == favorites
