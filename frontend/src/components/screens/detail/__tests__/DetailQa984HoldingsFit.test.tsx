@@ -6,7 +6,7 @@
  * 기관 상세는 검사 칸이 대화상자라 그 배치를 쓰지 않았습니다. 패널 폭을 재서 그 좁은 배치가 들어가는 폭(560px 이상)이면 같은 배치를 씁니다.
  * jsdom은 배치를 재지 않으므로 ResizeObserver로 상자 폭을 흉내 내고 클래스로 대조합니다. 실제 폭은 QA 스택 브라우저로 봅니다.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
@@ -80,7 +80,22 @@ describe("기관 상세 보유 표 — 칸 폭에 맞춤 (QA-984)", () => {
     expect(ancestors.some((name) => name.includes("[&_td]:px-2"))).toBe(true);
   });
 
-  it("패널 폭이 좁으면(390 화면 약 340px) 지금처럼 최소 640px와 넘김 안내", async () => {
+  // QA-987: 1024·1280·1366 폭에서는 오른쪽 연결 칸 때문에 가운데 칸이 424~510px라 좁은 배치(약 574px)도 들어가지 않아 최소 640px와 넘김 안내가 남았습니다.
+  // 그 폭에서는 '직전 분기 대비'를 종목 칸(이름·CUSIP 아래)으로, '비중 변화'를 비중 칸 아래로 쌓아 네 칸으로 줄입니다.
+  it.fails("QA-987 패널 폭 424px(1280의 가운데 칸)이면 쌓은 배치 — 최소 폭 없음, 칸 넷, 동작 태그는 종목 칸·비중 변화는 비중 칸 안", async () => {
+    stubBoxWidth(424);
+    const table = await holdingsTable();
+    await waitFor(() => expect(table.className).not.toContain("min-w-[640px]"));
+    const headers = within(table).getAllByRole("columnheader").map((cell) => cell.textContent);
+    expect(headers).toEqual(["자세히", "종목", "비중(변화)", "평가액"]);
+    const row = within(table).getByRole("rowheader");
+    expect(within(row).getByText("비중 확대 (Added)")).toBeTruthy();
+    const cells = within(row.closest("tr") as HTMLElement).getAllByRole("cell");
+    const weight = cells.find((cell) => cell.textContent?.includes("100.00%")) as HTMLElement;
+    expect(weight.textContent).toContain("+1.00");
+  });
+
+  it("패널 폭이 좁으면(390 화면 약 340px) 지금처럼 최소 640px와 넘김 안내(칸 여섯)", async () => {
     stubBoxWidth(340);
     const table = await holdingsTable();
     expect(table.className).toContain("min-w-[640px]");
