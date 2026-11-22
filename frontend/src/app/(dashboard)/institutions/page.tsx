@@ -19,8 +19,8 @@ import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { institutionHref } from "@/lib/detail";
 import {
-  type InstitutionEntry,
   institutionItems,
+  type InstitutionsResponse,
   institutionSubtitle,
   institutionTitle,
   portfolioKpis,
@@ -32,6 +32,7 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 import { PortfolioHoldingsPanel } from "@/components/screens/institutions/PortfolioHoldingsPanel";
 import { WeightHistoryPanels } from "@/components/screens/institutions/WeightHistoryPanels";
+import { FavoritesPanel } from "@/components/screens/institutions/FavoritesPanel";
 
 /**
  * 기관 13F 포트폴리오 분석.
@@ -40,9 +41,7 @@ import { WeightHistoryPanels } from "@/components/screens/institutions/WeightHis
  * 분기말 스냅샷이라는 점을 화면이 계속 상기시켜야 합니다.
  */
 export default function InstitutionsPage() {
-  const institutions = useApi<{ institutions: InstitutionEntry[] }>(
-    endpoints.institution.institutions,
-  );
+  const institutions = useApi<InstitutionsResponse>(endpoints.institution.institutions);
   const [cik, setCik] = useState("0001067983");   // 버크셔 해서웨이
   const [quarters, setQuarters] = useState("8");
   const [topN, setTopN] = useState("30");
@@ -55,6 +54,9 @@ export default function InstitutionsPage() {
   const usdKrw = useUsdKrw();
 
   const items = institutionItems(institutions.data?.institutions);
+  // 13F 즐겨찾기(ADR 0048) — 같은 목록 응답의 favorites. 제목·부제는 두 목록에서 찾습니다(고른 기관 하나를 함께 씀).
+  const favorites = institutions.data?.favorites ?? [];
+  const namedItems = [...items, ...institutionItems(favorites)];
   // 기관 목록을 아직 못 받았거나 읽지 못했으면 목록 대신 — 실패면 오류(다시 시도는 누를 때만 읽음), 실패 뒤 다시 읽는 중이면 짧은 자리표시.
   // 처음 읽는 동안은 거르기 목록의 목록 꼴 자리(pending — 아래 PENDING_INSTITUTIONS)입니다.
   const institutionsPlaceholder =
@@ -66,9 +68,9 @@ export default function InstitutionsPage() {
       ) : undefined
     ) : undefined;
   // 고른 기관 패널 — 제목(목록 이름, 없으면 포트폴리오 응답의 이름·'CIK …')과 요약 KPI(예전 지표 칸 셋과 같은 값·글).
-  const title = institutionTitle(items, cik, data);
+  const title = institutionTitle(namedItems, cik, data);
   // 부제 — 목록의 설명(없으면 포트폴리오 응답의 같은 글). 둘 다 읽는 중이면 한 줄을 비워 두어, 늦게 온 설명이 끼어들며 아래 KPI 띠를 밀지 않게 합니다.
-  const subtitleText = institutionSubtitle(items, cik, data);
+  const subtitleText = institutionSubtitle(namedItems, cik, data);
   const subtitle =
     subtitleText ?? (institutions.loading || loading ? <span aria-hidden="true">{"\u00a0"}</span> : undefined);
   const kpis = portfolioKpis(data?.available ? data : null, usdKrw, PORTFOLIO_SOURCE);
@@ -129,6 +131,16 @@ export default function InstitutionsPage() {
                 pending={firstLoadPending(institutions) ? { label: "기관 목록을 불러오는 중", rows: PENDING_INSTITUTIONS } : null}
               />
             </Panel>
+            {institutions.data ? (
+              <FavoritesPanel
+                favorites={favorites}
+                defaultCiks={items.map((item) => item.key)}
+                limit={institutions.data.favoriteLimit ?? null}
+                selected={cik}
+                onSelect={setCik}
+                reload={institutions.reload}
+              />
+            ) : null}
           </>
         }
       >

@@ -13,6 +13,20 @@ import type { Holding, PortfolioResponse } from "./types/institution";
 /** 기관 목록 API(/api/sec13f/institutions)의 줄 하나 — 이 화면이 쓰는 칸만. */
 export type InstitutionEntry = { key: string; name: string; cik: string; desc: string };
 
+/**
+ * 13F 즐겨찾기 줄(GET /api/sec13f/institutions의 favorites — ADR 0048). name은 표시 이름(없으면 SEC 등록 이름), stored는 저장본(q30·q8)이 있는지,
+ * latestReportDate는 그 저장본의 최신 보고 기준일(모르면 null).
+ */
+export type InstitutionFavoriteEntry = InstitutionEntry & {
+  secName: string;
+  stored: boolean;
+  source: "q30" | "q8" | null;
+  latestReportDate: string | null;
+};
+
+/** 기관 목록 응답 — 기본 12곳과 즐겨찾기(예전 응답에는 favorites가 없음). */
+export type InstitutionsResponse = { institutions: InstitutionEntry[]; favorites?: InstitutionFavoriteEntry[]; favoriteLimit?: number };
+
 /** 기관 목록 줄(고르기) — 키는 CIK, 이름은 국기를 뗀 이름(이름이 비면 'CIK …' — 지어내지 않음), 설명은 받은 글 그대로. */
 export type InstitutionItem = { key: string; label: string; desc: string };
 

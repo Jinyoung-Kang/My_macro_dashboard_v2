@@ -69,6 +69,8 @@ const CASES: Case[] = [
   { name: "search.watchItem", before: `/api/search/watch/${7}`, after: endpoints.search.watchItem(7) },
   { name: "search.watchSeen", before: `/api/search/watch/${7}/seen`, after: endpoints.search.watchSeen(7) },
   { name: "search.exclude", before: `/api/search/excludes/${3}`, after: endpoints.search.exclude(3) },
+  { name: "institution.favoriteSearch", before: "/api/sec13f/favorites/search?q=fake%20capital", after: endpoints.institution.favoriteSearch("fake capital") },
+  { name: "institution.favorite", before: "/api/sec13f/favorites/0009900001", after: endpoints.institution.favorite("0009900001") },
   // 정보 검색 단계 4(계약 §7-5) — 연결 보강(내부자·법인 관계)은 연결 탭을 열 때 따로.
   { name: "search.links", before: `/api/search/links?e=${encodeURIComponent("wd:Q182477")}`, after: endpoints.search.links("wd:Q182477") },
   { name: "live.prices", before: `/api/live/prices?items=${encodeURIComponent("US:AAPL,KR:005930")}`,
@@ -371,7 +373,8 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/security\/notices\/[^/]+$/, "/api/security/notices/{nttId}")
   .replace(/^\/api\/search\/watch\/[^/]+\/seen$/, "/api/search/watch/{id}/seen")
   .replace(/^\/api\/search\/watch\/[^/]+$/, "/api/search/watch/{id}")
-  .replace(/^\/api\/search\/excludes\/[^/]+$/, "/api/search/excludes/{id}");
+  .replace(/^\/api\/search\/excludes\/[^/]+$/, "/api/search/excludes/{id}")
+  .replace(/^\/api\/sec13f\/favorites\/(?!search$)[^/]+$/, "/api/sec13f/favorites/{cik}");
 
 describe("docs/API.md 백엔드 표와 대조", () => {
   it("화면이 부르는 경로는 모두 문서(= 백엔드 경로 목록 테스트가 대조하는 표)에 있다", () => {
@@ -384,6 +387,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(81);
+    expect(functions).toBe(83);
   });
 });

@@ -186,6 +186,10 @@ export const endpoints = {
   // 13F · 기관 스타일
   institution: {
     institutions: "/api/sec13f/institutions",
+    // 13F 즐겨찾기(ADR 0048 — 운영자): 이름 검색(누를 때만)·더하기·지우기. 목록은 institutions 응답의 favorites.
+    favoriteSearch: (q: string) => withQuery("/api/sec13f/favorites/search", { q }),
+    favorites: "/api/sec13f/favorites",
+    favorite: (cik: string) => `/api/sec13f/favorites/${segment(cik)}`,
     portfolio: (cik: string, quarters: string | number, topN: string | number) =>
       withQuery("/api/sec13f/portfolio", { cik, quarters, topN }),
     consensus: (p: { minHolders: string | number; topN: number; ciks?: string; reportDate?: string }) =>

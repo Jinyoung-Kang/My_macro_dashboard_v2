@@ -156,11 +156,16 @@ export function indicatorEntries(overview: MacroOverview | null | undefined): Se
 }
 
 /** /api/sec13f/institutions 응답 — 기관 화면의 선택 상자와 같은 목록. */
-export type InstitutionList = { institutions: { key: string; name: string; cik: string; desc?: string | null }[] };
+export type InstitutionList = {
+  institutions: { key: string; name: string; cik: string; desc?: string | null }[];
+  /** 13F 즐겨찾기(ADR 0048) — 예전 응답에는 없습니다. */
+  favorites?: { key: string; name: string; cik: string; desc?: string | null; secName?: string | null }[];
+};
 
-/** 13F 기관(이름·CIK·운용자 소개 — "달리오"로 브리지워터를 찾게). */
+/** 13F 기관(이름·CIK·운용자 소개 — "달리오"로 브리지워터를 찾게) — 기본 12곳 다음 즐겨찾기(SEC 등록 이름도 찾는 말로). */
 export function institutionEntries(list: InstitutionList | null | undefined): SearchEntry[] {
-  return (list?.institutions ?? []).map((entry) => ({
+  const favorites = (list?.favorites ?? []).map((entry) => ({ ...entry, desc: [entry.desc, entry.secName].filter(Boolean).join(" ") || null }));
+  return [...(list?.institutions ?? []), ...favorites].map((entry) => ({
     kind: "institution",
     id: `institution:${entry.cik}`,
     // 이름 앞 국기는 떼고 씁니다 — 결과 목록에서 이름이 같은 자리에서 시작하게(lib/format.withoutLeadingIcon)
