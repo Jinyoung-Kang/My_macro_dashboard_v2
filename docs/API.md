@@ -133,7 +133,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/sector/rotation?period=1M` | 섹터·자산군 수익률·순위 |
 | `GET /api/sector/momentum` | 1주/1개월/3개월 모멘텀 순위 |
 | `GET /api/sec13f/institutions` | 기관 목록 |
-| `GET /api/sec13f/portfolio?cik=&quarters=8&topN=30` | 기관 포트폴리오 + 분기 대비 액션. `holdings` 줄마다 `ticker`·`tickerNote`·`tickerIsProxy` — 수집기가 이름 매핑표로 붙인 회사 단위(클래스를 합친) Yahoo 심볼과 일부러 뺀 까닭(`debt`·`non_common`), 모르면 null(전량 매도 줄은 직전 분기 저장본의 값). `tickerIsProxy`는 티커가 특정 클래스(BRK-B·GOOGL)를 가리키는데 줄의 클래스 표기로 같은 클래스임이 확인되지 않으면 true(화면은 그 시세를 바로 열지 않음) |
+| `GET /api/sec13f/portfolio?cik=&quarters=8&topN=30` | 기관 포트폴리오 + 분기 대비 액션. `cik`는 13F 메뉴 기관(`/api/sec13f/institutions`), 또는 그 밖이면 모의 매매 트랙레코드 후보 기관의 저장본(`sec.13f.{cik}.q30`)이 있는 10자리 CIK — 후보 기관은 저장본만 읽고 수집을 일으키지 않으며 `institution.name`은 CIK 그대로(모의매매 신호 기관 팝업이 이름을 따로 앎, 2026-11-22). 둘 다 아니면 400. `holdings` 줄마다 `ticker`·`tickerNote`·`tickerIsProxy` — 수집기가 이름 매핑표로 붙인 회사 단위(클래스를 합친) Yahoo 심볼과 일부러 뺀 까닭(`debt`·`non_common`), 모르면 null(전량 매도 줄은 직전 분기 저장본의 값). `tickerIsProxy`는 티커가 특정 클래스(BRK-B·GOOGL)를 가리키는데 줄의 클래스 표기로 같은 클래스임이 확인되지 않으면 true(화면은 그 시세를 바로 열지 않음) |
 | `GET /api/sec13f/consensus?ciks=&reportDate=&minHolders=2` | 교집합 |
 | `GET /api/sec13f/new-buys?ciks=&reportDate=&minHolders=3` | 이번 분기 공통 신규 매수 |
 | `GET /api/guru/profiles` | 기관별 성격 (집중도·유효 종목 수·회전율) |

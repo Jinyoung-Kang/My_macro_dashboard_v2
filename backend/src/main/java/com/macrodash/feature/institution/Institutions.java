@@ -37,6 +37,11 @@ public final class Institutions {
                 .orElse(Map.of("cik", cik, "name", cik, "desc", ""));
     }
 
+    /** 13F 메뉴(이 목록)의 기관 CIK인가. */
+    public static boolean isKnownCik(String cik) {
+        return cik != null && ALL.stream().anyMatch(entry -> entry.get("cik").equals(cik));
+    }
+
     /**
      * 추적하는 기관의 CIK인지 확인합니다.
      *
@@ -46,8 +51,7 @@ public final class Institutions {
      * @throws InvalidRequestException 목록에 없는 CIK
      */
     public static void requireKnownCik(String cik) {
-        boolean known = ALL.stream().anyMatch(entry -> entry.get("cik").equals(cik));
-        if (!known) {
+        if (!isKnownCik(cik)) {
             throw new InvalidRequestException("추적하지 않는 기관 CIK입니다: " + Params.echo(cik)
                     + " (/api/sec13f/institutions 목록의 cik를 쓰세요)");
         }

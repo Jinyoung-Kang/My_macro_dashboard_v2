@@ -45,9 +45,21 @@ public class Sec13FService {
         this.store = store;
     }
 
-    /** 기관 1곳의 분기 이력 + 최신 분기 QoQ 분석. */
+    /** 13F 메뉴 밖 기관의 CIK 모양(SEC CIK 10자리). */
+    private static final java.util.regex.Pattern CIK_FORMAT = java.util.regex.Pattern.compile("\\d{10}");
+
+    /**
+     * 기관 1곳의 분기 이력 + 최신 분기 QoQ 분석.
+     *
+     * <p>13F 메뉴 기관은 그 저장본(q8)을 읽습니다(없거나 오래면 수집을 부름 — 지금까지와 같음). 13F 메뉴 밖 기관은 모의 매매 트랙레코드 후보 기관의
+     * 저장본(q30 — 신호 기관 팝업, 2026-11-22 사용자 결정)이 있을 때만 그것을 <b>수집을 부르지 않고</b> 읽습니다(StoreReader.quietly). 그 저장본도 없거나
+     * CIK 모양이 아니면 지금처럼 400입니다 — 모르는 CIK로 13F 수집을 기다리지 않게(Institutions.requireKnownCik).
+     */
     public Map<String, Object> portfolio(String cik, int quarters, int topN) {
-        Institutions.requireKnownCik(cik);
+        boolean tracked = Institutions.isKnownCik(cik);
+        if (!tracked && (cik == null || !CIK_FORMAT.matcher(cik).matches())) {
+            Institutions.requireKnownCik(cik);
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("cik", cik);
         out.put("quartersRequested", quarters);
@@ -59,7 +71,12 @@ public class Sec13FService {
         int wanted = Math.min(Math.max(1, quarters), Datasets.MAX_TRACKED_QUARTERS);
         out.put("quartersUsed", wanted);
 
-        Optional<Snapshot> snapshot = readHistory(cik, wanted);
+        Optional<Snapshot> snapshot = tracked
+                ? readHistory(cik, wanted)
+                : store.quietly(() -> store.read(Datasets.sec13f(cik, Datasets.TRACK_RECORD_QUARTERS), Datasets.MAX_AGE_SLOW, "sec_13f"));
+        if (!tracked && (snapshot.isEmpty() || snapshot.get().payload() == null)) {
+            Institutions.requireKnownCik(cik);
+        }
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
             out.put("quarters", List.of());
