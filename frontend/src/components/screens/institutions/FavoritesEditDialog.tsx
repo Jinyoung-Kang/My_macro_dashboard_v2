@@ -55,6 +55,31 @@ function EditorBody({
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [removing, setRemoving] = useState<InstitutionFavoriteEntry | null>(null);
+  // 표시 이름·설명 고치기(2026-11-23 사용자 요청) — 한 번에 한 줄, 그 줄 안에 칸 둘과 저장·취소.
+  const [editing, setEditing] = useState<{ cik: string; displayName: string; description: string } | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  /** 고치기를 끝내면(저장·취소) 그 줄의 '고치기' 단추로 포커스를 돌립니다(칸이 사라지며 포커스가 몸통으로 떨어지지 않게). */
+  const closeEditing = (cik: string) => {
+    setEditing(null);
+    requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>(`[data-edit-cik="${cik}"] button`)?.focus());
+  };
+  const editFieldRef = useRef<HTMLInputElement>(null);
+  const openEditing = (favorite: InstitutionFavoriteEntry) => {
+    setEditing({
+      cik: favorite.cik,
+      // 표시 이름이 없으면 name이 SEC 등록 이름이라 칸은 비워 둡니다(그대로 저장하면 SEC 이름을 따름).
+      displayName: favorite.name !== favorite.secName ? favorite.name : "",
+      description: favorite.desc ?? "",
+    });
+    // 방금 누른 '고치기'의 바로 다음 칸(표시 이름)으로 포커스.
+    requestAnimationFrame(() => editFieldRef.current?.focus());
+  };
+  const saveEditing = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editing || editor.busy) return;
+    const ok = await editor.editLabels(editing.cik, { displayName: editing.displayName.trim(), description: editing.description.trim() });
+    if (ok) closeEditing(editing.cik);
+  };
   const queryRef = useRef<HTMLInputElement>(null);
 
   const search = async (event: FormEvent) => {
@@ -170,18 +195,59 @@ function EditorBody({
         {favorites.length === 0 ? (
           <p className="text-sm text-text-2">아직 없습니다.</p>
         ) : (
-          <ul className="flex min-w-0 flex-col divide-y divide-border rounded-control border border-border">
+          <ul ref={listRef} className="flex min-w-0 flex-col divide-y divide-border rounded-control border border-border">
             {favorites.map((favorite) => (
-              <li key={favorite.cik} className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
-                <span className="flex min-w-0 flex-col">
-                  <span className="break-keep text-text wrap-anywhere">{favorite.name}</span>
-                  <span className="text-xs text-text-3">
-                    <span className="font-mono">CIK {favorite.cik}</span> · {favorite.stored ? `저장본 ${favorite.latestReportDate ?? ""} 보고 기준`.trim() : "저장본 없음(수집 전)"}
+              <li key={favorite.cik} className="flex min-w-0 flex-col gap-2 px-3 py-2">
+                <span className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="break-keep text-text wrap-anywhere">{favorite.name}</span>
+                    {favorite.desc ? <span className="break-keep text-xs text-text-2 wrap-anywhere">{favorite.desc}</span> : null}
+                    <span className="text-xs text-text-3">
+                      <span className="font-mono">CIK {favorite.cik}</span>
+                      {favorite.secName && favorite.secName !== favorite.name ? ` · SEC ${favorite.secName}` : ""} ·{" "}
+                      {favorite.stored ? `저장본 ${favorite.latestReportDate ?? ""} 보고 기준`.trim() : "저장본 없음(수집 전)"}
+                    </span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2" data-edit-cik={favorite.cik}>
+                    <Button size="sm" onClick={() => openEditing(favorite)} expanded={editing?.cik === favorite.cik} busy={editor.busy}>
+                      고치기 <span className="sr-only">{favorite.name}</span>
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => setRemoving(favorite)} busy={editor.busy}>
+                      지우기 <span className="sr-only">{favorite.name}</span>
+                    </Button>
                   </span>
                 </span>
-                <Button size="sm" variant="danger" onClick={() => setRemoving(favorite)} busy={editor.busy}>
-                  지우기 <span className="sr-only">{favorite.name}</span>
-                </Button>
+                {editing?.cik === favorite.cik ? (
+                  <form onSubmit={saveEditing} aria-label={`${favorite.name} 표시 이름·설명 고치기`} className="flex min-w-0 flex-col gap-2">
+                    <label className={FIELD_LABEL}>
+                      표시 이름(비우면 SEC 등록 이름)
+                      <input
+                        className={FIELD_INPUT}
+                        value={editing.displayName}
+                        onChange={(event) => setEditing({ ...editing, displayName: event.target.value })}
+                        maxLength={60}
+                        ref={editFieldRef}
+                      />
+                    </label>
+                    <label className={FIELD_LABEL}>
+                      설명(선택)
+                      <input
+                        className={FIELD_INPUT}
+                        value={editing.description}
+                        onChange={(event) => setEditing({ ...editing, description: event.target.value })}
+                        maxLength={200}
+                      />
+                    </label>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Button type="submit" variant="primary" size="sm" busy={editor.busy}>
+                        저장
+                      </Button>
+                      <Button size="sm" onClick={() => closeEditing(favorite.cik)}>
+                        취소
+                      </Button>
+                    </span>
+                  </form>
+                ) : null}
               </li>
             ))}
           </ul>

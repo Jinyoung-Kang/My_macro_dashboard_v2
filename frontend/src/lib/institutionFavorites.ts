@@ -2,6 +2,7 @@
  * 13F 즐겨찾기 기관(ADR 0048)의 화면 규칙 — 검색어 종류(이름·CIK), 쓰기 실패 문구, 거르기 목록 줄.
  */
 import { ApiError } from "./api";
+import { filerLabel } from "./holdings";
 
 /** 이름 검색어 상한(백엔드 Sec13FFavoriteService.MAX_DISPLAY_NAME과 같음). */
 export const FAVORITE_QUERY_MAX = 60;
@@ -40,3 +41,20 @@ export function favoriteWriteError(error: unknown): string {
   if (status === 409) return "이미 있거나 상한에 닿았습니다.";
   return error.message || "알 수 없는 오류";
 }
+
+/**
+ * 즐겨찾기 이름의 차례 — 한국어 정렬(한글 다음 영문, 대소문자 무시, 숫자는 수의 크기대로 — 정보 검색 관심 대상의 글자순과 같은 규칙, lib/infoSearch
+ * watchItemsByName. 그 모듈은 크고 가벼운 화면이 싣지 않으므로 같은 설정의 정렬기를 따로 둡니다).
+ */
+const FAVORITE_NAME_ORDER = new Intl.Collator("ko", { sensitivity: "base", numeric: true });
+
+/**
+ * 즐겨찾기 목록의 보이는 차례 — 보이는 이름(국기를 뗀 표시 이름, 비면 'CIK …') 글자순, 같으면 CIK 순(사용자 요청 2026-11-23). 서버가 준 차례(더한 순)는
+ * 그대로 두고 사본을 돌려줍니다 — 새로 더한 기관도 다시 읽으면 제자리에 놓입니다.
+ */
+export function favoritesByName<T extends { name: string; cik: string }>(items: readonly T[]): T[] {
+  return [...items].sort(
+    (a, b) => FAVORITE_NAME_ORDER.compare(filerLabel(a), filerLabel(b)) || (a.cik < b.cik ? -1 : a.cik > b.cik ? 1 : 0),
+  );
+}
+

@@ -5,6 +5,7 @@ import { Button, Panel } from "@/components/ui";
 import { useSec13fFavorites } from "@/hooks/useSec13fFavorites";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
+import { favoritesByName } from "@/lib/institutionFavorites";
 import { institutionItems, type InstitutionFavoriteEntry } from "@/lib/institutionsScreen";
 import { FavoritesEditDialog } from "./FavoritesEditDialog";
 
@@ -31,7 +32,9 @@ export function FavoritesPanel({
   const user = useSessionUser();
   const owner = isOwner(user);
   const editor = useSec13fFavorites(reload);
-  const items = institutionItems(favorites);
+  // 보이는 이름 글자순(새로 더한 기관도 다시 읽으면 제자리 — 2026-11-23 사용자 요청). 편집 대화상자의 목록도 같은 차례.
+  const sorted = favoritesByName(favorites);
+  const items = institutionItems(sorted);
   const count = items.length > 0 ? `${items.length.toLocaleString("ko-KR")}곳${limit ? ` / ${limit}` : ""}` : undefined;
   return (
     <Panel
@@ -40,7 +43,7 @@ export function FavoritesPanel({
       actions={
         owner ? (
           <FavoritesEditDialog
-            favorites={favorites}
+            favorites={sorted}
             defaultCiks={defaultCiks}
             editor={editor}
             trigger={

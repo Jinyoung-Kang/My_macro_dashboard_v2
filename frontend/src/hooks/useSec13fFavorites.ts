@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useMountedRef } from "@/hooks/useAsyncAction";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
-import { apiDelete, apiGet, apiPost, UnauthorizedError } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { favoriteWriteError } from "@/lib/institutionFavorites";
 
@@ -28,6 +28,8 @@ export type Sec13fFavoritesEditor = {
   search: (q: string) => Promise<FavoriteCandidate[] | null>;
   add: (body: { cik: string; displayName?: string; description?: string }) => Promise<boolean>;
   remove: (cik: string) => Promise<boolean>;
+  /** 표시 이름·설명 고치기(두 칸을 받은 값으로 — 빈 글이면 SEC 이름·설명 없음). */
+  editLabels: (cik: string, body: { displayName: string; description: string }) => Promise<boolean>;
 };
 
 /**
@@ -97,5 +99,18 @@ export function useSec13fFavorites(reload: () => Promise<void> | void): Sec13fFa
     [run, reload],
   );
 
-  return { busy, message, setMessage, search, add, remove };
+  const editLabels = useCallback(
+    async (cik: string, body: { displayName: string; description: string }) => {
+      const done = await run(
+        () => apiPatch<{ message?: string }>(endpoints.institution.favorite(cik), body),
+        (value) => ({ tone: "ok", text: value?.message ?? "표시 이름·설명을 고쳤습니다." }),
+      );
+      if (done === null) return false;
+      await reload();
+      return true;
+    },
+    [run, reload],
+  );
+
+  return { busy, message, setMessage, search, add, remove, editLabels };
 }

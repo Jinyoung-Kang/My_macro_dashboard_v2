@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FAVORITE_LIMIT, FAVORITE_QUERY_MAX, favoriteQueryKind } from "../institutionFavorites";
+import { FAVORITE_LIMIT, FAVORITE_QUERY_MAX, favoriteQueryKind, favoritesByName } from "../institutionFavorites";
 import { institutionEntries } from "../search";
 
 const BACKEND = resolve(__dirname, "../../../../backend/src/main/java/com/macrodash/feature/institution");
@@ -26,6 +26,24 @@ describe("QA-983 영문이 아닌 이름", () => {
     const kind = favoriteQueryKind("아팔루사");
     expect(kind.kind).toBe("invalid");
     expect(kind.kind === "invalid" ? kind.reason : "").toContain("영문");
+  });
+});
+
+describe("favoritesByName — 즐겨찾기 글자순(2026-11-23 요청)", () => {
+  it("한글 다음 영문, 대소문자 무시, 숫자는 수 크기대로, 국기를 뗀 이름, 같은 이름은 CIK 순 — 서버 차례(더한 순)는 그대로", () => {
+    const rows = [
+      { cik: "0000000009", name: "morgan stanley" },
+      { cik: "0000000002", name: "시타델" },
+      { cik: "0000000003", name: "ARK Invest" },
+      { cik: "0000000004", name: "🇺🇸 바이킹 글로벌" },
+      { cik: "0000000005", name: "펀드 10" },
+      { cik: "0000000006", name: "펀드 9" },
+      { cik: "0000000001", name: "시타델" },
+    ];
+    expect(favoritesByName(rows).map((row) => row.cik)).toEqual([
+      "0000000004", "0000000001", "0000000002", "0000000006", "0000000005", "0000000003", "0000000009",
+    ]);
+    expect(rows[0].cik).toBe("0000000009");
   });
 });
 

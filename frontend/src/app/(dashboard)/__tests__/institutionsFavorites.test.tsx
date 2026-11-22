@@ -12,7 +12,7 @@ const api = vi.hoisted(() => {
       super(message);
     }
   }
-  return { apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn(), apiGetShared: vi.fn(), UnauthorizedError, ApiError };
+  return { apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn(), apiPatch: vi.fn(), apiGetShared: vi.fn(), UnauthorizedError, ApiError };
 });
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
@@ -55,7 +55,7 @@ beforeEach(() => {
     [endpoints.institution.portfolio(BERKSHIRE, "8", "30")]: portfolio(BERKSHIRE, "가상 버크셔 (Fictional Berkshire)"),
     [endpoints.institution.portfolio(FAV, "8", "30")]: portfolio(FAV, "가짜 운용 (Fake Capital)"),
   };
-  for (const fn of [api.apiGetShared, api.apiGet, api.apiPost, api.apiDelete]) fn.mockReset();
+  for (const fn of [api.apiGetShared, api.apiGet, api.apiPost, api.apiDelete, api.apiPatch]) fn.mockReset();
   api.apiGetShared.mockImplementation((path: string) => (path in reads ? Promise.resolve(reads[path]) : new Promise(() => {})));
 });
 afterEach(cleanup);
@@ -179,5 +179,52 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
     expect(api.apiDelete).not.toHaveBeenCalled();
     fireEvent.click(within(confirm).getByRole("button", { name: "지우기" }));
     await waitFor(() => expect(api.apiDelete).toHaveBeenCalledWith(endpoints.institution.favorite(FAV)));
+  });
+
+  it("즐겨찾기 목록은 보이는 이름 글자순 — 패널과 편집 목록 모두, 더한 순(서버 차례)이 아니라", async () => {
+    reads[endpoints.institution.institutions] = {
+      ...LIST,
+      favorites: [
+        { ...LIST.favorites[0], cik: "0009900003", key: "fav-0009900003", name: "시타델", secName: "CITADEL ADVISORS LLC" },
+        { ...LIST.favorites[0], cik: "0009900004", key: "fav-0009900004", name: "ARK Invest", secName: "ARK Investment Management LLC" },
+        { ...LIST.favorites[0], cik: "0009900005", key: "fav-0009900005", name: "르네상스", secName: "RENAISSANCE TECHNOLOGIES LLC" },
+      ],
+    };
+    renderAs(OWNER);
+    // 대화상자가 열리면 뒤 화면은 낭독기에서 숨으므로 패널 차례를 먼저 봅니다.
+    const panel = await screen.findByRole("radiogroup", { name: "즐겨찾기 기관" });
+    expect(within(panel).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["르네상스", "시타델", "ARK Invest"]);
+    fireEvent.click(screen.getByRole("button", { name: "편집 13F 즐겨찾기" }));
+    const dialog = await screen.findByRole("dialog", { name: "13F 즐겨찾기 편집" });
+    const current = within(dialog).getByRole("region", { name: "지금 즐겨찾기" });
+    expect(within(current).getAllByRole("button", { name: /^고치기/ }).map((button) => button.textContent)).toEqual([
+      "고치기 르네상스", "고치기 시타델", "고치기 ARK Invest",
+    ]);
+  });
+
+  it("표시 이름·설명 고치기 — 칸에 지금 값(표시 이름이 SEC 이름이면 빈 칸), 저장하면 PATCH 뒤 목록 다시 읽기, 취소는 보내지 않음", async () => {
+    api.apiPatch.mockResolvedValue({ ok: true, message: "표시 이름·설명을 고쳤습니다." });
+    const dialog = await openEditor();
+    const current = within(dialog).getByRole("region", { name: "지금 즐겨찾기" });
+    fireEvent.click(within(current).getByRole("button", { name: "고치기 가짜 운용 (Fake Capital)" }));
+    const form = within(current).getByRole("form", { name: "가짜 운용 (Fake Capital) 표시 이름·설명 고치기" });
+    const nameField = within(form).getByLabelText(/표시 이름/) as HTMLInputElement;
+    const descField = within(form).getByLabelText(/설명/) as HTMLInputElement;
+    expect(nameField.value).toBe("가짜 운용 (Fake Capital)");
+    expect(descField.value).toBe("더한 기관");
+
+    fireEvent.click(within(form).getByRole("button", { name: "취소" }));
+    expect(api.apiPatch).not.toHaveBeenCalled();
+    expect(within(current).queryByRole("form")).toBeNull();
+
+    fireEvent.click(within(current).getByRole("button", { name: "고치기 가짜 운용 (Fake Capital)" }));
+    const again = within(current).getByRole("form");
+    fireEvent.change(within(again).getByLabelText(/표시 이름/), { target: { value: " 새 이름 " } });
+    fireEvent.change(within(again).getByLabelText(/설명/), { target: { value: "" } });
+    const before = paths().filter((path) => path === endpoints.institution.institutions).length;
+    fireEvent.click(within(again).getByRole("button", { name: "저장" }));
+    await within(dialog).findByText("표시 이름·설명을 고쳤습니다.");
+    expect(api.apiPatch).toHaveBeenCalledWith(endpoints.institution.favorite(FAV), { displayName: "새 이름", description: "" });
+    await waitFor(() => expect(paths().filter((path) => path === endpoints.institution.institutions).length).toBe(before + 1));
   });
 });
