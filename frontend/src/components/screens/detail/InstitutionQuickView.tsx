@@ -3,14 +3,16 @@
 import Link from "@/components/ui/IntentLink";
 import { type ReactElement, useState } from "react";
 import { DataTable, PropertyList, ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { ErrorState, Freshness, LINK_CLASSES } from "@/components/ui";
+import { ErrorState, Freshness, LINK_CLASSES, ROW_TRIGGER } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { useApi } from "@/hooks/useApi";
-import { institutionHref, institutionNames } from "@/lib/detail";
+import { useSessionUser } from "@/hooks/useSessionUser";
+import { institutionHref, institutionNames, parseStockRoute, stockHref } from "@/lib/detail";
 import { institutionProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
-import type { Holding, PortfolioResponse } from "@/lib/types";
+import { infoSearchEntry } from "@/lib/search";
+import type { Holding, PortfolioResponse, SessionUser } from "@/lib/types";
 import { propertyItems } from "./DetailParts";
 
 /** 기관 상세·13F 포트폴리오 화면과 같은 요청 값(같은 응답 캐시). */
@@ -22,7 +24,7 @@ const HOLDINGS_SHOWN = 10;
 /**
  * 기관 팝업 창(사용자 요청 2026-11-22 — 모의매매 '신호 기관'의 기관 이름을 누르면 화면을 떠나지 않고). 그 기관의 13F 저장본(SEC EDGAR, 분기마다 45일 안에
  * 공시 — 지금 보유와 다를 수 있음)으로 기관 속성(CIK·보고 기준일·공시일·평가액·보유 종목 수·분기 수)과 비중 상위 보유 종목(지난 분기 대비 동작)을 보이고,
- * '기관 상세 화면 열기'가 있습니다. 13F 메뉴 밖의 신호 후보 기관은 트랙레코드 저장본을 읽습니다(백엔드 — 이름은 이 팝업이 받은 이름).
+ * '기관 상세 화면 열기'가 있습니다. 보유 종목 이름은 그 종목 정보로 가는 링크입니다(2026-11-23 — 아래 HoldingNameLink). 13F 메뉴 밖의 신호 후보 기관은 트랙레코드 저장본을 읽습니다(백엔드 — 이름은 이 팝업이 받은 이름).
  * 열려 있을 때만 읽습니다. 종목 팝업(StockQuickView)과 같은 틀입니다.
  */
 export function InstitutionQuickView({ cik, name, trigger }: { cik: string; name: string; trigger: ReactElement }) {
@@ -42,6 +44,7 @@ function InstitutionQuickBody({ cik, title }: { cik: string; title: string }) {
   const responseName = data?.institution?.name;
   const display = responseName && responseName !== cik ? institutionNames(responseName).display : title;
   const holdings = (data?.holdings ?? []).slice(0, HOLDINGS_SHOWN);
+  const user = useSessionUser();
 
   let body;
   if (!data) {
@@ -71,8 +74,8 @@ function InstitutionQuickBody({ cik, title }: { cik: string; title: string }) {
               header: "종목",
               className: "break-keep",
               cell: (holding) => (
-                <span className="flex min-w-0 flex-col">
-                  <span className="font-medium text-text wrap-anywhere">{holding.name}</span>
+                <span className="flex min-w-0 flex-col items-start">
+                  <HoldingNameLink holding={holding} user={user} />
                   {withoutLeadingIcon(holding.action) ? (
                     <span className="text-xs text-text-3">{withoutLeadingIcon(holding.action)}</span>
                   ) : null}
@@ -105,5 +108,23 @@ function InstitutionQuickBody({ cik, title }: { cik: string; title: string }) {
         기관 상세 화면 열기
       </Link>
     </div>
+  );
+}
+
+/**
+ * 팝업 보유 표의 종목 이름(사용자 요청 2026-11-23) — 누르면 그 종목 정보가 있는 곳으로 갑니다. 수집기가 붙인 티커가 그 줄의 것으로 확인되면 종목 상세
+ * 화면(/s/us/<티커>), 티커가 없거나 같은 회사의 다른 클래스일 수 있는 줄(tickerIsProxy — 그 티커의 시세가 그 줄의 것처럼 보이면 안 됨, 13F 보유 표의
+ * HoldingQuickLink와 같은 갈래)은 공시 이름으로 정보 검색(/search?q=), 정보 검색을 볼 수 없는 사용자면 글자 그대로. 링크 이름은 보이는 공시 이름이
+ * 앞에 그대로 오고 갈 곳을 덧붙입니다(WCAG 2.5.3). 표의 데이터 칸이라 강조 파랑이 아니라 중립 잉크 + 마우스를 올리면 밑줄(ROW_TRIGGER — 줄 이름 단추와 같은 꼴).
+ */
+function HoldingNameLink({ holding, user }: { holding: Holding; user: SessionUser | null | undefined }) {
+  const ticker = holding.ticker?.trim();
+  const target = ticker && !holding.tickerIsProxy ? parseStockRoute("us", ticker) : null;
+  const href = target ? stockHref(target.market, target.code) : (infoSearchEntry(holding.name ?? "", user)?.href ?? null);
+  if (!href) return <span className="font-medium text-text wrap-anywhere">{holding.name}</span>;
+  return (
+    <Link href={href} className={`${ROW_TRIGGER} font-medium wrap-anywhere`}>
+      {holding.name} <span className="sr-only">{target ? "종목 상세 화면" : "정보 검색"}</span>
+    </Link>
   );
 }

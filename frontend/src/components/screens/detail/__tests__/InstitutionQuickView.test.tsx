@@ -3,10 +3,14 @@
  *  - 누르기 전에는 읽지 않고, 열면 13F 포트폴리오 한 번(기관 상세와 같은 요청)
  *  - 속성(CIK·보고 기준일·평가액 등)과 비중 상위 보유 종목 표, '기관 상세 화면 열기'(/institutions/<CIK>)
  *  - 13F 메뉴 밖 기관(응답 이름 = CIK)은 받은 이름을 제목으로, 저장본이 없으면(400) 그 사실 글(다시 시도 없음)
+ *  - 보유 종목 이름(2026-11-23 요청): 확인된 티커는 종목 상세(/s/us/<티커>), 티커 없음·대용 티커는 정보 검색(/search?q=<공시 이름>)(정보 검색을 볼 수
+ *    없는 사용자면 글자 그대로 — 지금은 모든 사용자가 봄). 링크 이름은 보이는 공시 이름이 앞에(WCAG 2.5.3). 요청 수는 그대로(포트폴리오 한 번).
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
+import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
@@ -82,5 +86,29 @@ describe("기관 팝업", () => {
     const dialog = await screen.findByRole("dialog", { name: "가짜 신호 기관" });
     await waitFor(() => expect(within(dialog).getByText(`이 기관의 13F 저장본이 없습니다(CIK ${CIK}).`)).toBeTruthy());
     expect(within(dialog).queryByRole("button", { name: /다시/ })).toBeNull();
+  });
+
+  it("보유 종목 이름 — 확인된 티커는 종목 상세, 티커 없음·대용 티커는 정보 검색(공시 이름), 요청은 포트폴리오 한 번", async () => {
+    reads[PATH] = {
+      ...PORTFOLIO,
+      holdings: [
+        { ...PORTFOLIO.holdings[0], name: "FAKE ALPHA", ticker: "FKA", tickerIsProxy: false },
+        { ...PORTFOLIO.holdings[1], name: "FAKE BETA CL A", ticker: "FKB-B", tickerIsProxy: true },
+        { name: "FAKE GAMMA", cusip: "999999993", class: "COM", value: 1, shares: 1, weight: 0.1, weightDiff: null, sharesDiff: null, action: "유지" },
+      ],
+    };
+    const member: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "FREE" };
+    render(
+      <SessionUserProvider user={member}>
+        <InstitutionQuickView cik={CIK} name="가짜 신호 기관" trigger={<button type="button">가짜 신호 기관</button>} />
+      </SessionUserProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "가짜 신호 기관" }));
+    const dialog = await screen.findByRole("dialog", { name: "가짜 신호 기관" });
+    const alpha = await within(dialog).findByRole("link", { name: "FAKE ALPHA 종목 상세 화면" });
+    expect(alpha.getAttribute("href")).toBe("/s/us/FKA");
+    expect(within(dialog).getByRole("link", { name: "FAKE BETA CL A 정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("FAKE BETA CL A")}`);
+    expect(within(dialog).getByRole("link", { name: "FAKE GAMMA 정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("FAKE GAMMA")}`);
+    expect(api.apiGetShared.mock.calls.map(([path]) => path)).toEqual([PATH]);
   });
 });
