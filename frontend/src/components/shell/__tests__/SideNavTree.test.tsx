@@ -51,7 +51,7 @@ describe("펼친 하위 화면", () => {
   it("더보기(/radar): 묶음 없는 화면 다음 '한국 시장' 글 머리와 그 목록 — 무료 회원에게 유료 화면은 잠금 아이콘(이름 있음)·title", () => {
     render(<SideNav pathname="/radar" user={MEMBER_FREE} />);
     const screens = within(mainNav()).getByRole("list", { name: "더보기 화면" });
-    expect(labels(screens)).toEqual(["알림", "AI 종합 분석", "내 계정", "수급 레이더", "파생·투기세력(KRX)"]);
+    expect(labels(screens)).toEqual(["내 계정", "알림", "AI 종합 분석", "수급 레이더", "파생·투기세력(KRX)"]);
     const kr = within(screens).getByRole("list", { name: "한국 시장" });
     expect(labels(kr)).toEqual(["수급 레이더", "파생·투기세력(KRX)"]);
     expect(within(kr).getByRole("link", { name: "수급 레이더" }).getAttribute("aria-current")).toBe("page");
@@ -101,7 +101,7 @@ describe("펼친 하위 화면", () => {
     const headings = [...screens.querySelectorAll("li > span[id]")].map((heading) => heading.textContent);
     expect(headings).toEqual(["한국 시장", "정보 수집"]);
     const info = within(screens).getByRole("list", { name: "정보 수집" });
-    expect(labels(info)).toEqual(["개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)"]);
+    expect(labels(info)).toEqual(["개요", "국내 시장·수급", "기관·공시", "뉴스·글", "모의매매 입력", "정보(메커니즘)", "출처 상태", "해외 시장·거시"]);
     expect(within(info).getByRole("link", { name: "국내 시장·수급" }).getAttribute("aria-current")).toBe("page");
     expect(within(info).getByRole("link", { name: "개요" }).getAttribute("href")).toBe("/info/overview");
   });
@@ -138,7 +138,7 @@ describe("모양", () => {
     const more = within(mainNav()).getByRole("link", { name: "더보기" });
     expect(more.className.split(/\s+/)).toEqual(expect.arrayContaining(["before:bg-accent", "bg-surface-2", "font-semibold"]));
     expect(more.getAttribute("aria-current")).toBe("page");
-    expect(labels(within(mainNav()).getByRole("list", { name: "더보기 화면" }))).toEqual(["알림", "AI 종합 분석", "내 계정", "수급 레이더", "파생·투기세력(KRX)"]);
+    expect(labels(within(mainNav()).getByRole("list", { name: "더보기 화면" }))).toEqual(["내 계정", "알림", "AI 종합 분석", "수급 레이더", "파생·투기세력(KRX)"]);
   });
 });
 

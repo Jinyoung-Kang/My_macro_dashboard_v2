@@ -368,10 +368,10 @@ describe("보안 공지 — 요약 칸", () => {
 });
 
 describe("보안 공지 — 메뉴와 쓰기", () => {
-  it("운영자에게만 메뉴(더보기 '묶음 없음'의 외부 API 연결 테스트 다음) — 회원·데모·모르는 사용자에게는 없음", () => {
+  it("운영자에게만 메뉴(더보기 '묶음 없음'의 글자순 — 데이터 저장소 상태 다음) — 회원·데모·모르는 사용자에게는 없음", () => {
     const more = TABS.find((tab) => tab.key === "more")!;
     const owner = visibleItems(more, OWNER).map((entry) => entry.href);
-    expect(owner.indexOf("/security")).toBe(owner.indexOf("/connections") + 1);
+    expect(owner.indexOf("/security")).toBe(owner.indexOf("/status") + 1);
     expect(more.items.find((entry) => entry.href === "/security")).toMatchObject({ label: "보안 공지" });
     for (const user of [MEMBER, DEMO, undefined]) {
       expect(visibleItems(more, user).map((entry) => entry.href)).not.toContain("/security");

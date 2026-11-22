@@ -150,7 +150,7 @@ export type GurusResponse = {
 // ------------------------------------------------------------------ 화면 탭(하위 메뉴 줄 — lib/nav 더보기 탭의 '정보 수집' 묶음과 같은 순서)
 export type InfoTab = "overview" | "news" | "kr" | "global" | "filings" | "paper" | "status" | "mechanism";
 
-export const INFO_TAB_SLUGS: readonly InfoTab[] = ["overview", "news", "kr", "global", "filings", "paper", "status", "mechanism"];
+export const INFO_TAB_SLUGS: readonly InfoTab[] = ["overview", "kr", "filings", "news", "paper", "mechanism", "status", "global"];
 
 /** 주소 조각을 탭으로 — 모르는 값이면 null(404). */
 export function parseInfoTab(value: string | null | undefined): InfoTab | null {

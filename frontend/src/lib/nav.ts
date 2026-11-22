@@ -118,28 +118,30 @@ export const TABS: readonly NavTab[] = [
     // 묶음 차례: 묶음 없는 화면 → 한국 시장 → 정보 수집(2026-11-18). 나무 메뉴·더보기 화면·통합 검색이 이 차례를 그대로 씁니다. 운영자 전용 묶음(정보 수집,
     // 여덟 칸)을 맨 뒤에 두어 회원·데모가 보는 차례는 바뀌지 않고, 두 칸짜리 한국 시장이 긴 묶음에 밀려 나무 메뉴 아래로 내려가지 않습니다
     // ('메뉴' 다음 '한국 시장' — ADR 0041 결정 1 그대로).
+    // 묶음 안 차례는 글자순(한국어 정렬 — 한글 다음 영문, 사용자 요청 2026-11-22). 묶음 차례(묶음 없는 화면 → 한국 시장 → 정보 수집)는 그대로입니다.
+    // navMoreOrder.test.ts가 지킵니다.
     items: [
-      { href: "/alerts", label: "알림" },
-      { href: "/ai/report", label: "AI 종합 분석", keywords: ["AI 종합 데이터 분석"] },
+      { href: "/account", label: "내 계정" },
       { href: "/status", label: "데이터 저장소 상태" },
-      { href: "/connections", label: "외부 API 연결 테스트" },
       // 보안 공지(ADR 0046 결정 9의 5) — 보호나라 보안공지를 운영 환경의 실제 버전과 대조. 운영자 전용(lib/access OWNER_ONLY_MENUS의 /security).
       { href: "/security", label: "보안 공지", keywords: ["보호나라", "KISA", "취약점", "CVE", "보안 업데이트"] },
       { href: "/admin/users", label: "사용자 관리" },
-      { href: "/account", label: "내 계정" },
+      { href: "/alerts", label: "알림" },
+      { href: "/connections", label: "외부 API 연결 테스트" },
+      { href: "/ai/report", label: "AI 종합 분석", keywords: ["AI 종합 데이터 분석"] },
       // 옛 한국 탭(ADR 0041 결정 1) — 주소는 그대로. 탭 이름이 검색어였으므로 '한국'을 검색어로 직접 둡니다.
       { href: "/radar", label: "수급 레이더", group: KR_MARKET_GROUP, keywords: ["한국", "외국인/기관 수급 레이더 (KRX)"] },
       { href: "/krx", label: "파생·투기세력(KRX)", group: KR_MARKET_GROUP, keywords: ["한국", "국내 파생 & 투기세력 (KRX)"] },
       // 정보 수집(ADR 0035·0036) — 수집기가 받는 모든 출처의 자료·상태와 작동 방식. 운영자 전용(lib/access OWNER_ONLY_MENUS의 /info — 앞부분 일치).
       // 2026-11-14~11-18에는 정보 검색과 더보기 사이의 탭(ADR 0041 결정 1), 그 전에는 모의매매와 더보기 사이(ADR 0036 결정 1). 주소는 그대로입니다.
       { href: "/info/overview", label: "개요", title: "정보 수집 개요", group: INFO_GROUP, keywords: ["수집 출처", "데이터 출처"] },
-      { href: "/info/news", label: "뉴스·글", title: "정보 수집 · 뉴스·글", group: INFO_GROUP, keywords: ["해외 블로그", "waedge", "거장", "사건 뉴스 RSS"] },
       { href: "/info/kr", label: "국내 시장·수급", title: "정보 수집 · 국내 시장·수급", group: INFO_GROUP, keywords: ["네이버 매매상위", "KRX 정보데이터시스템", "공매도", "외국인 보유"] },
-      { href: "/info/global", label: "해외 시장·거시", title: "정보 수집 · 해외 시장·거시", group: INFO_GROUP, keywords: ["FRED", "경제 캘린더", "COT"] },
       { href: "/info/filings", label: "기관·공시", title: "정보 수집 · 기관·공시·재무", group: INFO_GROUP, keywords: ["SEC 13F", "DART", "어닝 서프라이즈"] },
+      { href: "/info/news", label: "뉴스·글", title: "정보 수집 · 뉴스·글", group: INFO_GROUP, keywords: ["해외 블로그", "waedge", "거장", "사건 뉴스 RSS"] },
       { href: "/info/paper", label: "모의매매 입력", title: "정보 수집 · 모의매매 입력", group: INFO_GROUP },
-      { href: "/info/status", label: "출처 상태", title: "정보 수집 · 출처 상태", group: INFO_GROUP, keywords: ["수집 끊김", "차단", "형식 바뀜"] },
       { href: "/info/mechanism", label: "정보(메커니즘)", title: "정보 수집 · 작동 방식", group: INFO_GROUP, keywords: ["작동 원리", "수집 설정", "하루 예산"] },
+      { href: "/info/status", label: "출처 상태", title: "정보 수집 · 출처 상태", group: INFO_GROUP, keywords: ["수집 끊김", "차단", "형식 바뀜"] },
+      { href: "/info/global", label: "해외 시장·거시", title: "정보 수집 · 해외 시장·거시", group: INFO_GROUP, keywords: ["FRED", "경제 캘린더", "COT"] },
     ],
   },
 ];

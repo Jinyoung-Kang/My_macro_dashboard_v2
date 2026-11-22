@@ -45,7 +45,7 @@ describe("탭과 펼침", () => {
   it("더보기는 묶음 없는 화면이 먼저, '한국 시장' 묶음이 그다음 — 하위 메뉴 줄과 달리 두 묶음을 함께 펼친다", () => {
     const more = navTree("/radar", MEMBER_FREE).find((node) => node.tab.key === "more");
     expect(more?.groups?.map((group) => group.label)).toEqual([null, "한국 시장"]);
-    expect(more?.groups?.[0].leaves.map((leaf) => leaf.item.label)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
+    expect(more?.groups?.[0].leaves.map((leaf) => leaf.item.label)).toEqual(["내 계정", "알림", "AI 종합 분석"]);
     expect(more?.groups?.[1].leaves.map((leaf) => leaf.item.label)).toEqual(["수급 레이더", "파생·투기세력(KRX)"]);
     // 무료 회원에게 유료 화면은 잠금
     expect(more?.groups?.[0].leaves.find((leaf) => leaf.item.href === "/ai/report")?.locked).toBe(true);
@@ -60,9 +60,9 @@ describe("탭과 펼침", () => {
     expect(more?.groups?.map((group) => group.label)).toEqual([null, "한국 시장", "정보 수집"]);
     const info = more?.groups?.[2];
     expect(info?.leaves.map((leaf) => leaf.item.label)).toEqual([
-      "개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)",
+      "개요", "국내 시장·수급", "기관·공시", "뉴스·글", "모의매매 입력", "정보(메커니즘)", "출처 상태", "해외 시장·거시",
     ]);
-    expect(info?.leaves.map((leaf) => leaf.current)).toEqual([undefined, undefined, "page", undefined, undefined, undefined, undefined, undefined]);
+    expect(info?.leaves.map((leaf) => leaf.current)).toEqual([undefined, "page", undefined, undefined, undefined, undefined, undefined, undefined]);
     expect(markedLabels(navTree("/info/kr", OWNER))).toEqual(["국내 시장·수급"]);
     // 다른 더보기 화면에 있어도 세 묶음을 함께 펼친다(하위 메뉴 줄과 다름).
     expect(navTree("/alerts", OWNER).find((node) => node.tab.key === "more")?.groups?.map((group) => group.label)).toEqual([null, "한국 시장", "정보 수집"]);
@@ -80,8 +80,8 @@ describe("탭과 펼침", () => {
   it("운영자의 더보기에는 운영 화면도 — 회원의 나무에는 없다", () => {
     const labelsOf = (user: SessionUser) =>
       navTree("/more", user).find((node) => node.tab.key === "more")?.groups?.[0].leaves.map((leaf) => leaf.item.label);
-    expect(labelsOf(OWNER)).toEqual(["알림", "AI 종합 분석", "데이터 저장소 상태", "외부 API 연결 테스트", "보안 공지", "사용자 관리", "내 계정"]);
-    expect(labelsOf(MEMBER)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
+    expect(labelsOf(OWNER)).toEqual(["내 계정", "데이터 저장소 상태", "보안 공지", "사용자 관리", "알림", "외부 API 연결 테스트", "AI 종합 분석"]);
+    expect(labelsOf(MEMBER)).toEqual(["내 계정", "알림", "AI 종합 분석"]);
   });
 });
 

@@ -262,7 +262,7 @@ describe("하위 메뉴 줄(좁은 화면)", () => {
   it("정보 수집(운영자)의 하위 메뉴 줄은 '정보 수집' 묶음 여덟 분류 탭, 지금 탭이 aria-current=page — 두 내비의 '더보기'가 aria-current=true", () => {
     renderShell(LOCAL_OWNER, { path: "/info/kr" });
     const sub = screen.getByRole("navigation", { name: "정보 수집 하위 메뉴" });
-    expect(linkLabels(sub)).toEqual(["개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)"]);
+    expect(linkLabels(sub)).toEqual(["개요", "국내 시장·수급", "기관·공시", "뉴스·글", "모의매매 입력", "정보(메커니즘)", "출처 상태", "해외 시장·거시"]);
     expect(within(sub).getByRole("link", { name: "국내 시장·수급" }).getAttribute("aria-current")).toBe("page");
     expect(within(mainNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
     expect(within(bottomNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
@@ -291,7 +291,7 @@ describe("하위 메뉴 줄(좁은 화면)", () => {
     const ai = within(sub).getByRole("link", { name: /AI 종합 분석/ });
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
     // 잠금 아이콘에는 <title>이 없어 링크 글자는 메뉴 이름 그대로(명세 D8 c)
-    expect(linkLabels(sub)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
+    expect(linkLabels(sub)).toEqual(["내 계정", "알림", "AI 종합 분석"]);
   });
 });
 

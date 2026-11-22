@@ -38,8 +38,8 @@ const rows = (name = "메뉴") => {
 
 const KR_ROWS = [["수급 레이더", "/radar"], ["파생·투기세력(KRX)", "/krx"]];
 const INFO_ROWS = [
-  ["개요", "/info/overview"], ["뉴스·글", "/info/news"], ["국내 시장·수급", "/info/kr"], ["해외 시장·거시", "/info/global"],
-  ["기관·공시", "/info/filings"], ["모의매매 입력", "/info/paper"], ["출처 상태", "/info/status"], ["정보(메커니즘)", "/info/mechanism"],
+  ["개요", "/info/overview"], ["국내 시장·수급", "/info/kr"], ["기관·공시", "/info/filings"], ["뉴스·글", "/info/news"],
+  ["모의매매 입력", "/info/paper"], ["정보(메커니즘)", "/info/mechanism"], ["출처 상태", "/info/status"], ["해외 시장·거시", "/info/global"],
 ];
 
 beforeEach(() => router.push.mockReset());
@@ -55,7 +55,7 @@ describe("더보기 화면", () => {
     renderMore({ email: "member@test.local", role: "MEMBER", tier: "PRO" });
 
     expect(screen.getByRole("heading", { level: 1, name: "더보기" })).toBeTruthy();
-    expect(rows()).toEqual([["알림", "/alerts"], ["AI 종합 분석", "/ai/report"], ["내 계정", "/account"]]);
+    expect(rows()).toEqual([["내 계정", "/account"], ["알림", "/alerts"], ["AI 종합 분석", "/ai/report"]]);
     expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("member@test.local");
     expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
@@ -138,7 +138,7 @@ describe("더보기 화면", () => {
   it("로컬 운영자: '메뉴'는 운영자 화면까지 일곱 행(정보 수집 행 없음), 로그아웃 대신 '로컬 · 로그인 없음', 수동 새로고침", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
 
-    expect(rows().map(([, href]) => href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/security", "/admin/users", "/account"]);
+    expect(rows().map(([, href]) => href)).toEqual(["/account", "/status", "/security", "/admin/users", "/alerts", "/connections", "/ai/report"]);
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("로컬 · 로그인 없음");
     expect(screen.getByRole("button", { name: "데이터 수동 새로고침" })).toBeTruthy();
