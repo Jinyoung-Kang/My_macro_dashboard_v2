@@ -5,6 +5,7 @@ weekly 그룹 — SEC 13F 기관 포트폴리오(기존 13F 화면 q8)와 모의
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -17,6 +18,9 @@ from ..services import (
 from .base import EmptyResult, _reason_suffix
 
 logger = logging.getLogger(__name__)
+
+# 13F 즐겨찾기 수집은 한 번에 한 기관 — sec_13f의 즐겨찾기 차례와 화면 '더하기'의 단건 수집이 함께 잡습니다(QA-989 — 큰 제출자가 겹쳐 수집기 메모리를 넘기지 않게).
+_FAVORITE_COLLECT_LOCK = threading.Lock()
 
 
 # ==============================================================================
@@ -42,22 +46,33 @@ def task_sec_13f() -> str:
         raise EmptyResult(f"0/{len(indicators.INSTITUTIONS)} 기관 — {exc}") from exc
 
     quarters = catalog.MAX_TRACKED_QUARTERS
-    targets = [(inst["name"], inst["cik"], tuple(inst.get("merge_ciks") or ())) for inst in indicators.INSTITUTIONS]
+    defaults = [(inst["name"], inst["cik"], tuple(inst.get("merge_ciks") or ())) for inst in indicators.INSTITUTIONS]
     # 13F 즐겨찾기(ADR 0048) — 기본 12곳 뒤에(기본 12곳·트랙레코드 후보 CIK는 빼고).
-    targets += favorite_targets()
+    favorites = favorite_targets()
+    targets = defaults + favorites
 
     ok = 0
     saved = 0
     errors: list[str] = []
 
+    def keep(name: str, cik: str, payload: dict) -> None:
+        nonlocal ok, saved
+        if not payload.get("quarters"):
+            logger.info("13F 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
+            errors.append(f"{name}: {payload.get('error') or '빈 결과'}")
+            return
+        saved += _store_institution_13f(cik, payload)
+        ok += 1
+
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for name, cik, payload in pool.map(http.bind_guard(_collect_institution_13f), targets):
-            if not payload.get("quarters"):
-                logger.info("13F 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
-                errors.append(f"{name}: {payload.get('error') or '빈 결과'}")
-                continue
-            saved += _store_institution_13f(cik, payload)
-            ok += 1
+        for name, cik, payload in pool.map(http.bind_guard(_collect_institution_13f), defaults):
+            keep(name, cik, payload)
+    # 즐겨찾기는 기본 12곳이 끝난 뒤 하나씩 — 받은 기관을 저장하고 다음으로(QA-989). 큰 제출자(모건스탠리 보유 7,896줄)는 8분기 수집 한 번에
+    # 수집기 메모리를 약 280 MB, 큰 넷을 함께 받으면 약 450 MB 올려(2026-11-23 실측) 상한 1 GiB를 넘길 수 있었습니다. 시간은 늘지만(20곳이면
+    # 최악 수 분) weekly 상한 30분 안입니다.
+    for item in favorites:
+        with _FAVORITE_COLLECT_LOCK:
+            keep(*_collect_institution_13f(item))
 
     if not ok:
         raise EmptyResult(
@@ -111,12 +126,15 @@ def collect_favorite_13f(raw_cik: str) -> dict:
     except http.SecUserAgentInvalid as exc:
         return {"cik": cik, "ok": False, "refused": None, "error": str(exc)}
     name = next((row["name"] for row in store.sec13f_favorites() if row["cik"] == cik), cik)
-    _name, _cik, payload = _collect_institution_13f((name, cik, ()))
-    quarters = payload.get("quarters") or []
+    # 정기 sec_13f의 즐겨찾기 차례와 겹치면 그 기관이 끝날 때까지 기다립니다(QA-989) — 부른 쪽(백엔드 65초)이 먼저 끊어도 끝까지 돌아 저장합니다.
+    with _FAVORITE_COLLECT_LOCK:
+        _name, _cik, payload = _collect_institution_13f((name, cik, ()))
+        quarters = payload.get("quarters") or []
+        if quarters:
+            _store_institution_13f(cik, payload)
     if not quarters:
         logger.info("13F 즐겨찾기 단건 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
         return {"cik": cik, "ok": False, "refused": None, "error": payload.get("error") or "빈 결과"}
-    _store_institution_13f(cik, payload)
     return {"cik": cik, "ok": True, "refused": None, "error": None, "quarters": len(quarters),
             "latestReportDate": quarters[0].get("reportDate")}
 
