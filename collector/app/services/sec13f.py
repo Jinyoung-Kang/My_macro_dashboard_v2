@@ -13,6 +13,7 @@ SEC EDGAR 13F-HR 공시 수집.
 """
 from __future__ import annotations
 
+import io
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -471,64 +472,78 @@ def _parse_information_table(content: bytes, filing_date: str) -> list[dict]:
     """
     네임스페이스를 무시하고 infoTable 노드를 훑습니다.
     (제출자마다 네임스페이스 접두사가 달라 고정할 수 없습니다.)
+
+    스트리밍으로 읽습니다(2026-11-23 — ``ET.iterparse``): infoTable 하나가 닫힐 때 그 줄을 읽고 바로 비워, 문서 전체의 요소 나무를
+    메모리에 두지 않습니다. 큰 제출자(모건스탠리 보유 7,896줄)는 통째로 읽으면 공시 하나에 요소가 십수만 개라 수집기 메모리를 크게
+    올렸습니다(QA-989). 결과와 차례는 통째 파싱과 같습니다(tests/test_sec13f_stream_parse.py). 깨진 XML은 지금처럼 빈 목록입니다.
     """
+    merged: dict[tuple[str, str, str], dict] = {}
+    root = None
     try:
-        root = ET.fromstring(content)
+        for event, node in ET.iterparse(io.BytesIO(content), events=("start", "end")):
+            if event == "start":
+                if root is None:
+                    root = node
+                continue
+            if not node.tag.lower().endswith("infotable"):
+                continue
+            _merge_info_table_row(merged, node)
+            # 읽은 줄은 비우고 뿌리에서도 떼어 냅니다(뿌리가 빈 요소를 계속 들고 있지 않게).
+            node.clear()
+            if root is not None and root is not node:
+                root.clear()
     except ET.ParseError as exc:
         logger.warning("13F XML 파싱 에러 (%s): %s", filing_date, exc)
         return []
 
-    merged: dict[tuple[str, str, str], dict] = {}
-
-    for node in root.iter():
-        if not node.tag.lower().endswith("infotable"):
-            continue
-
-        name = cusip = title_class = put_call = amount_type = ""
-        value = shares = 0.0
-
-        for child in node.iter():
-            tag = child.tag.lower()
-            text = (child.text or "").strip()
-            if tag.endswith("nameofissuer"):
-                name = text
-            elif tag.endswith("titleofclass"):
-                title_class = text
-            elif tag.endswith("cusip"):
-                cusip = text
-            elif tag.endswith("value"):
-                value = _to_float(text)
-            elif tag.endswith("sshprnamt"):
-                shares = _to_float(text)
-            elif tag.endswith("sshprnamttype"):
-                amount_type = text.upper()
-            elif tag.endswith("putcall"):
-                put_call = text
-
-        if not name or value <= 0:
-            continue
-        # 옵션(풋·콜) 행의 평가액은 기초자산 기준이라 롱 보유가 아닙니다. 합치면 풋이 보유로 보이고 비중 분모가
-        # 부풉니다(QA-033). 보유·비중에서 뺍니다.
-        if put_call:
-            continue
-
-        key = (name.strip().upper(), cusip.strip(), title_class.strip())
-        entry = merged.setdefault(key, {
-            "name": key[0],
-            "cusip": key[1],     # 문자열 유지 — 숫자로 바꾸면 앞자리 0이 사라집니다
-            "class": key[2],
-            "value": 0.0,
-            "shares": 0.0,
-            "weight": 0.0,
-        })
-        entry["value"] += value
-        # PRN(채권 원금) 행의 수량은 주식 수가 아닙니다 — 모름(None)으로 둡니다(백엔드는 '비교 불가'로 처리).
-        if amount_type == "PRN" or entry["shares"] is None:
-            entry["shares"] = None
-        else:
-            entry["shares"] += shares
-
     return list(merged.values())
+
+
+def _merge_info_table_row(merged: dict[tuple[str, str, str], dict], node: ET.Element) -> None:
+    """infoTable 한 줄 → ``merged``(이름·CUSIP·클래스마다 평가액·주식 수를 더함). 쓸 수 없는 줄은 건너뜁니다."""
+    name = cusip = title_class = put_call = amount_type = ""
+    value = shares = 0.0
+
+    for child in node.iter():
+        tag = child.tag.lower()
+        text = (child.text or "").strip()
+        if tag.endswith("nameofissuer"):
+            name = text
+        elif tag.endswith("titleofclass"):
+            title_class = text
+        elif tag.endswith("cusip"):
+            cusip = text
+        elif tag.endswith("value"):
+            value = _to_float(text)
+        elif tag.endswith("sshprnamt"):
+            shares = _to_float(text)
+        elif tag.endswith("sshprnamttype"):
+            amount_type = text.upper()
+        elif tag.endswith("putcall"):
+            put_call = text
+
+    if not name or value <= 0:
+        return
+    # 옵션(풋·콜) 행의 평가액은 기초자산 기준이라 롱 보유가 아닙니다. 합치면 풋이 보유로 보이고 비중 분모가
+    # 부풉니다(QA-033). 보유·비중에서 뺍니다.
+    if put_call:
+        return
+
+    key = (name.strip().upper(), cusip.strip(), title_class.strip())
+    entry = merged.setdefault(key, {
+        "name": key[0],
+        "cusip": key[1],     # 문자열 유지 — 숫자로 바꾸면 앞자리 0이 사라집니다
+        "class": key[2],
+        "value": 0.0,
+        "shares": 0.0,
+        "weight": 0.0,
+    })
+    entry["value"] += value
+    # PRN(채권 원금) 행의 수량은 주식 수가 아닙니다 — 모름(None)으로 둡니다(백엔드는 '비교 불가'로 처리).
+    if amount_type == "PRN" or entry["shares"] is None:
+        entry["shares"] = None
+    else:
+        entry["shares"] += shares
 
 
 _PERIOD_OF_REPORT = re.compile(
