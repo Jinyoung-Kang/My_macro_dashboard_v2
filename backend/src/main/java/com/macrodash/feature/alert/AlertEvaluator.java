@@ -4,7 +4,8 @@ import com.macrodash.Kst;
 import com.macrodash.analytics.AlertRules;
 import com.macrodash.analytics.FlowRecord;
 import com.macrodash.analytics.Holding;
-import com.macrodash.feature.institution.Institutions;
+import com.macrodash.feature.institution.InstitutionCatalog;
+import com.macrodash.feature.institution.InstitutionHistory;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.AlertStore;
 import com.macrodash.store.Datasets;
@@ -67,15 +68,29 @@ public class AlertEvaluator {
     private final StoreRepository repository;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 13F 신규 편입의 대상 기관(기본 12곳 + 즐겨찾기)과 그 이력 읽기. */
+    private final InstitutionHistory institutions;
 
     @Autowired
     public AlertEvaluator(AlertStore alerts, RegimeLogStore regimeLog, StoreReader store, StoreRepository repository,
+                          ObjectMapper mapper, InstitutionCatalog catalog) {
+        this(alerts, regimeLog, store, repository, mapper, Clock.systemUTC(), catalog);
+    }
+
+    /** 즐겨찾기를 보지 않는 평가기(13F 신규 편입은 기본 12곳만) — 시험용. */
+    public AlertEvaluator(AlertStore alerts, RegimeLogStore regimeLog, StoreReader store, StoreRepository repository,
                           ObjectMapper mapper) {
-        this(alerts, regimeLog, store, repository, mapper, Clock.systemUTC());
+        this(alerts, regimeLog, store, repository, mapper, Clock.systemUTC(), InstitutionCatalog.defaultsOnly());
     }
 
     AlertEvaluator(AlertStore alerts, RegimeLogStore regimeLog, StoreReader store, StoreRepository repository,
                    ObjectMapper mapper, Clock clock) {
+        this(alerts, regimeLog, store, repository, mapper, clock, InstitutionCatalog.defaultsOnly());
+    }
+
+    AlertEvaluator(AlertStore alerts, RegimeLogStore regimeLog, StoreReader store, StoreRepository repository,
+                   ObjectMapper mapper, Clock clock, InstitutionCatalog catalog) {
+        this.institutions = new InstitutionHistory(store, catalog);
         this.alerts = alerts;
         this.regimeLog = regimeLog;
         this.store = store;
@@ -316,8 +331,8 @@ public class AlertEvaluator {
         Set<String> ciks = new LinkedHashSet<>();
         alerts.enabledRules("INSTITUTION_NEW").forEach(rule -> ciks.add(rule.params().path("cik").asText()));
         for (String cik : ciks) {
-            Optional<Snapshot> snapshot = store.read(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS),
-                    Datasets.MAX_AGE_SLOW, "sec_13f");
+            // 기본 12곳은 지금 그대로(q8 — 없거나 오래면 수집), 즐겨찾기는 q30 앞 8분기 또는 q8을 수집 없이(ADR 0048 단계 3), 그 밖은 읽지 않음.
+            Optional<Snapshot> snapshot = institutions.read(cik);
             if (snapshot.isEmpty() || snapshot.get().payload() == null) {
                 continue;
             }
@@ -339,7 +354,7 @@ public class AlertEvaluator {
             if (added.isEmpty()) {
                 continue;   // 비교할 직전 분기가 없거나 신규 편입이 없으면 알릴 것이 없습니다
             }
-            String name = Institutions.byCik(cik).get("name");
+            String name = institutions.name(cik);
             AlertText.Text text = AlertText.institutionNew(name, Json.asText(latest, "reportDate"), filingDate, added);
             ObjectNode payload = mapper.createObjectNode().put("cik", cik).put("newCount", added.size());
             alerts.insertEvent("INSTITUTION_NEW", "13f:%s:%s".formatted(cik, filingDate), filed,

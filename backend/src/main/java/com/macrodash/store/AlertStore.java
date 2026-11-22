@@ -90,6 +90,18 @@ public class AlertStore {
         return count != null && count > 0;
     }
 
+    /** 13F 신규 편입 알림 규칙 가운데 그 기관(CIK)의 것 수 — 모든 사용자(13F 즐겨찾기를 지울 때 확인 창에 보임, ADR 0048 단계 3). */
+    public int countInstitutionRules(String cik) {
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM alert_rules WHERE kind = 'INSTITUTION_NEW' AND params->>'cik' = ?",
+                Integer.class, cik);
+        return count == null ? 0 : count;
+    }
+
+    /** 13F 신규 편입 알림 규칙 가운데 그 기관(CIK)의 것을 모든 사용자에게서 지움 — 지운 수(13F 즐겨찾기를 지울 때). 받은 알림함 기록은 그대로. */
+    public int deleteInstitutionRules(String cik) {
+        return jdbc.update("DELETE FROM alert_rules WHERE kind = 'INSTITUTION_NEW' AND params->>'cik' = ?", cik);
+    }
+
     public long insertRule(long userId, String kind, JsonNode params) {
         Long id = jdbc.queryForObject("INSERT INTO alert_rules (user_id, kind, params) VALUES (?, ?, ?::jsonb) RETURNING id",
                 Long.class, userId, kind, mapper.writeValueAsString(params));

@@ -213,4 +213,22 @@ class Sec13FFavoriteServiceTest {
                 .containsEntry("source", "q8").containsEntry("latestReportDate", "2026-06-30").containsEntry("key", "fav-" + CIK);
         assertThat(entries.get(1)).containsEntry("stored", false).containsEntry("source", null).containsEntry("desc", "");
     }
+
+    @Test
+    @DisplayName("지우면 그 기관의 13F 신규 편입 알림 규칙도 함께 지우고 수를 알림, 운영자 목록에는 규칙 수")
+    void removeDeletesAlertRules() {
+        com.macrodash.store.AlertStore alerts = org.mockito.Mockito.mock(com.macrodash.store.AlertStore.class);
+        when(alerts.ready()).thenReturn(true);
+        when(alerts.countInstitutionRules(CIK)).thenReturn(3);
+        when(alerts.deleteInstitutionRules(CIK)).thenReturn(3);
+        Sec13FFavoriteService withAlerts = new Sec13FFavoriteService(new InstitutionCatalog(store), store, reader, collector, cache, alerts);
+        rows.add(new Sec13FFavoriteStore.Favorite(CIK, "FAKE", null, null, Instant.now()));
+
+        assertThat(withAlerts.listEntries(true).get(0)).containsEntry("alertRules", 3);
+        assertThat(withAlerts.listEntries(false).get(0)).doesNotContainKey("alertRules");
+        var result = withAlerts.remove(OWNER, CIK);
+        assertThat(result.body()).containsEntry("removedAlertRules", 3);
+        assertThat(result.body().get("message").toString()).contains("알림 규칙 3개도 함께");
+        verify(alerts).deleteInstitutionRules(CIK);
+    }
 }

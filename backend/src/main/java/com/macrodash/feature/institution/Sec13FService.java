@@ -41,6 +41,8 @@ public class Sec13FService {
 
     private final StoreReader store;
     private final InstitutionCatalog catalog;
+    /** 교집합·공통 신규 매수가 기관 이력을 읽는 길(기본 12곳은 그대로, 즐겨찾기는 수집 없이 — ADR 0048 단계 3). */
+    private final InstitutionHistory history;
 
     /** 즐겨찾기를 보지 않는 서비스(기본 12곳만) — 시험·즐겨찾기를 모르는 호출용. */
     public Sec13FService(StoreReader store) {
@@ -51,6 +53,7 @@ public class Sec13FService {
     public Sec13FService(StoreReader store, InstitutionCatalog catalog) {
         this.store = store;
         this.catalog = catalog;
+        this.history = new InstitutionHistory(store, catalog);
     }
 
     /** 13F 메뉴 밖 기관의 CIK 모양(SEC CIK 10자리). */
@@ -470,14 +473,14 @@ public class Sec13FService {
      */
     public Map<String, Object> consensus(List<String> ciks, String reportDate,
                                          int minHolders, int topN) {
-        ciks.forEach(Institutions::requireKnownCik);   // 저장본을 찾기 전에 전부 확인합니다
+        ciks.forEach(this::requireAggregateCik);   // 저장본을 찾기 전에 전부 확인합니다
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Tally> aggregate = new LinkedHashMap<>();
         List<String> participants = new ArrayList<>();
         Set<String> availableDates = new LinkedHashSet<>();
 
         for (String cik : ciks) {
-            Optional<Snapshot> snapshot = readHistory(cik, Datasets.MAX_TRACKED_QUARTERS);
+            Optional<Snapshot> snapshot = history.read(cik);
             if (snapshot.isEmpty() || snapshot.get().payload() == null) {
                 continue;
             }
@@ -506,7 +509,7 @@ public class Sec13FService {
             JsonNode current = quarters.get(index);
             // 바로 앞 분기가 빠진 기관은 6개월 변화를 이번 분기 매매로 세지 않습니다 — 액션은 '비교 데이터 없음'(QA-085).
             JsonNode previous = HoldingsJson.previousQuarter(quarters, current);
-            String institution = Institutions.byCik(cik).getOrDefault("name", cik);
+            String institution = history.name(cik);
             participants.add(institution);
 
             for (Map<String, Object> holding : consensusRows(current, previous, 100)) {
@@ -565,14 +568,14 @@ public class Sec13FService {
      * @param minHolders 최소 몇 곳이 새로 담았을 때 목록에 올릴지
      */
     public Map<String, Object> newBuys(List<String> ciks, String reportDate, int minHolders) {
-        ciks.forEach(Institutions::requireKnownCik);   // 저장본을 찾기 전에 전부 확인합니다
+        ciks.forEach(this::requireAggregateCik);   // 저장본을 찾기 전에 전부 확인합니다
         Map<String, Object> out = new LinkedHashMap<>();
         Map<String, Tally> aggregate = new LinkedHashMap<>();
         List<String> participants = new ArrayList<>();
         Set<String> availableDates = new LinkedHashSet<>();
 
         for (String cik : ciks) {
-            Optional<Snapshot> snapshot = readHistory(cik, Datasets.MAX_TRACKED_QUARTERS);
+            Optional<Snapshot> snapshot = history.read(cik);
             if (snapshot.isEmpty() || snapshot.get().payload() == null) {
                 continue;
             }
@@ -604,7 +607,7 @@ public class Sec13FService {
                 // 바로 앞 분기가 저장돼 있지 않으면(분기가 빠진 기관) 신규 매수를 판정할 수 없습니다(QA-085).
                 continue;
             }
-            String institution = Institutions.byCik(cik).getOrDefault("name", cik);
+            String institution = history.name(cik);
             participants.add(institution);
 
             for (Map<String, Object> holding : compareQuarters(current, previous, 200)) {
@@ -650,6 +653,16 @@ public class Sec13FService {
         out.put("note", "직전 분기와 비교할 수 없는 항목(주식 수 누락 등)은 세지 않습니다. "
                 + "13F는 분기 공시이며 45일 지연입니다.");
         return out;
+    }
+
+    /**
+     * 교집합·공통 신규 매수가 받는 CIK — 기본 12곳 또는 13F 즐겨찾기(ADR 0048 단계 3). 그 밖은 지금처럼 400(저장본을 찾기 전에).
+     * AI 리포트 원문(SnapshotTextService)은 기본 12곳을 명시해 부르므로 즐겨찾기와 무관합니다.
+     */
+    private void requireAggregateCik(String cik) {
+        if (!Institutions.isKnownCik(cik) && !catalog.isFavorite(cik)) {
+            Institutions.requireKnownCik(cik);
+        }
     }
 
     /**

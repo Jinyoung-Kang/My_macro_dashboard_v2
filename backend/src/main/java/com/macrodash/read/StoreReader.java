@@ -252,6 +252,11 @@ public class StoreReader {
         return repository.readSnapshotMeta(name, droppedKey);
     }
 
+    /** 13F 형식 저장본의 앞 {@code quarters}개 분기만 — 수집을 요청하지 않고 캐시하지 않습니다({@link StoreRepository#readSnapshotFirstQuarters}). */
+    public Optional<Snapshot> readStoredFirstQuarters(String name, int quarters) {
+        return repository.readSnapshotFirstQuarters(name, quarters);
+    }
+
     /** 저장본 여러 개의 머리(수집 시각·첫 분기 보고 기준일)만 — 수집을 요청하지 않고 캐시하지 않습니다({@link StoreRepository#readSnapshotHeads}). */
     public java.util.Map<String, StoreRepository.SnapshotHead> readStoredHeads(java.util.Collection<String> names) {
         return repository.readSnapshotHeads(names);

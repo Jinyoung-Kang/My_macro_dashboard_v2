@@ -1,5 +1,7 @@
 package com.macrodash.feature.alert;
 
+import com.macrodash.feature.institution.InstitutionCatalog;
+import com.macrodash.feature.institution.InstitutionHistory;
 import com.macrodash.feature.institution.Institutions;
 import com.macrodash.store.AlertStore;
 import com.macrodash.support.CurrentUser;
@@ -54,9 +56,19 @@ public class AlertService {
      */
     private final Object ruleCapLock = new Object();
 
+    /** 관심 기관 선택지 = 기본 12곳 + 13F 즐겨찾기(ADR 0048 단계 3) — 검증과 규칙 설명의 이름. */
+    private final InstitutionHistory institutions;
+
+    /** 즐겨찾기를 보지 않는 서비스(관심 기관은 기본 12곳만) — 시험용. */
     public AlertService(AlertStore alerts, ObjectMapper mapper) {
+        this(alerts, mapper, new InstitutionHistory(null, InstitutionCatalog.defaultsOnly()));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AlertService(AlertStore alerts, ObjectMapper mapper, InstitutionHistory institutions) {
         this.alerts = alerts;
         this.mapper = mapper;
+        this.institutions = institutions;
     }
 
     public boolean ready() {
@@ -72,7 +84,7 @@ public class AlertService {
             row.put("params", rule.params());
             row.put("enabled", rule.enabled());
             row.put("createdAt", String.valueOf(rule.createdAt()));
-            row.put("description", describe(rule.kind(), rule.params()));
+            row.put("description", describe(rule.kind(), rule.params(), institutions::name));
             out.add(row);
         }
         return out;
@@ -125,8 +137,8 @@ public class AlertService {
             }
             case "INSTITUTION_NEW" -> {
                 String cik = text(params, "cik");
-                if (cik == null || !Institutions.ciks().contains(cik)) {
-                    return new Result(400, "추적하는 기관(12곳) 중에서 고르세요.");
+                if (cik == null || institutions.entry(cik).isEmpty()) {
+                    return new Result(400, "추적하는 기관(기본 12곳·13F 즐겨찾기) 중에서 고르세요.");
                 }
                 clean.put("cik", cik);
             }
@@ -221,12 +233,17 @@ public class AlertService {
     }
 
     static String describe(String kind, JsonNode params) {
+        return describe(kind, params, cik -> Institutions.byCik(cik).get("name"));
+    }
+
+    /** 규칙 설명 — 기관 이름은 {@code institutionName}(기본 12곳은 상수의 이름, 즐겨찾기는 표시 이름). */
+    static String describe(String kind, JsonNode params, java.util.function.Function<String, String> institutionName) {
         return switch (kind) {
             case "REGIME_CHANGE" -> "국면 전환(새 판정이 3일 이어질 때)";
             case "FOREIGN_STREAK" -> "외국인 %d일 연속 순매수 — %s".formatted(params.path("n").asInt(),
                     "STOCK".equals(params.path("target").asText()) ? "종목 " + params.path("code").asText()
                             : params.path("target").asText());
-            case "INSTITUTION_NEW" -> "13F 신규 편입 — " + Institutions.byCik(params.path("cik").asText()).get("name");
+            case "INSTITUTION_NEW" -> "13F 신규 편입 — " + institutionName.apply(params.path("cik").asText());
             default -> kind;
         };
     }

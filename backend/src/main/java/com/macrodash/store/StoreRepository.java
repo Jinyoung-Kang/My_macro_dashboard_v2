@@ -182,6 +182,19 @@ public class StoreRepository {
     }
 
     /**
+     * 13F 형식 저장본의 앞 {@code quarters}개 분기만 남긴 사본(캐시 없음 — {@link #readSnapshotMeta}의 이유). 트랙레코드 저장본(q30 — 기관 하나가 수 MB)을
+     * 13F 즐겨찾기로 교집합·스타일·알림이 읽을 때 30분기를 통째로 풀지 않게 DB에서 앞부분만 자릅니다({@code jsonb_path_query_array}, 분기 차례는
+     * 저장본 그대로 — 최신이 앞). 받지 않은 분기 보관({@code supersededQuarters})도 뺍니다. 저장본이 없으면 empty, DB 장애는 그대로 올립니다.
+     */
+    public Optional<Snapshot> readSnapshotFirstQuarters(String name, int quarters) {
+        String path = "$.quarters[0 to " + Math.max(0, quarters - 1) + "]";
+        return jdbc.query(
+                "SELECT name, jsonb_set(payload - 'supersededQuarters', '{quarters}', jsonb_path_query_array(payload, ?::jsonpath)) AS payload, "
+                        + "kind, status, error, collected_at FROM snapshots WHERE name = ? AND jsonb_typeof(payload->'quarters') = 'array'",
+                snapshotMapper(), path, name).stream().findFirst();
+    }
+
+    /**
      * 13F 형식 저장본({@code quarters[].holdings[]})의 분기·보유에서 필요한 열만, JSONB를 DB에서 풀어 읽습니다(캐시 없음 —
      * {@link #readSnapshotMeta}의 이유). 분기 순서는 저장본 그대로(quarterIndex 0부터)이고, 보유가 없는 분기도 한 줄(보유 열은 null)로
      * 나옵니다. 평가액·주식 수가 숫자가 아니면 null입니다(0으로 채우지 않음). 배열이 아닌 자리는 빈 배열로 봅니다.

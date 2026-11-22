@@ -51,9 +51,11 @@ public class InstitutionController {
     // ------------------------------------------------------- 13F
     /** 기관 목록 — {@code institutions}(기본 12곳, 지금 모양 그대로)와 {@code favorites}(13F 즐겨찾기 — ADR 0048). */
     @GetMapping("/sec13f/institutions")
-    public Map<String, Object> institutions() {
+    public Map<String, Object> institutions(HttpServletRequest request) {
         Map<String, Object> out = new LinkedHashMap<>(Institutions.list());
-        out.put("favorites", favorites.listEntries());
+        CurrentUser user = CurrentUser.of(request);
+        // 운영자에게만 즐겨찾기마다 그 기관의 13F 신규 편입 알림 규칙 수(지울 때 함께 지워지는 수 — 확인 창)
+        out.put("favorites", favorites.listEntries(user != null && user.isOwner()));
         out.put("favoriteLimit", InstitutionCatalog.FAVORITE_LIMIT);
         return out;
     }
@@ -152,7 +154,7 @@ public class InstitutionController {
         return cache.get("guru.risk:" + cik + ":" + benchmark + ":" + years, () -> guru.risk(cik, benchmark, years));
     }
 
-    /** 쉼표로 구분한 CIK 목록. 비어 있으면 추적하는 기관 전체입니다. */
+    /** 쉼표로 구분한 CIK 목록. 비어 있으면 기본 12곳입니다(즐겨찾기는 고른 것만 — ADR 0048 단계 3). */
     private static List<String> selectedCiks(String ciks) {
         return (ciks == null || ciks.isBlank())
                 ? Institutions.ciks()

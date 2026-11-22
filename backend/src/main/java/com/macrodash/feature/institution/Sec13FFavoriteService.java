@@ -3,6 +3,7 @@ package com.macrodash.feature.institution;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.read.ComputedCache;
 import com.macrodash.read.StoreReader;
+import com.macrodash.store.AlertStore;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Sec13FFavoriteStore;
 import com.macrodash.store.StoreRepository;
@@ -44,14 +45,23 @@ public class Sec13FFavoriteService {
     private final StoreReader store;
     private final CollectorClient collector;
     private final ComputedCache cache;
+    /** 13F 신규 편입 알림 규칙 — 즐겨찾기를 지우면 그 기관의 규칙도 함께 지움(ADR 0048 단계 3). 없으면(시험) 건드리지 않음. */
+    private final AlertStore alerts;
 
     public Sec13FFavoriteService(InstitutionCatalog catalog, Sec13FFavoriteStore favorites, StoreReader store,
                                  CollectorClient collector, ComputedCache cache) {
+        this(catalog, favorites, store, collector, cache, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Sec13FFavoriteService(InstitutionCatalog catalog, Sec13FFavoriteStore favorites, StoreReader store,
+                                 CollectorClient collector, ComputedCache cache, AlertStore alerts) {
         this.catalog = catalog;
         this.favorites = favorites;
         this.store = store;
         this.collector = collector;
         this.cache = cache;
+        this.alerts = alerts;
     }
 
     /** 숫자 1~10자리 → 10자리 CIK. 그 밖은 400. */
@@ -68,6 +78,14 @@ public class Sec13FFavoriteService {
      * {@code source}는 화면이 읽는 저장본(q30이 있으면 'q30', 아니면 'q8', 없으면 null), 최신 보고 기준일은 그 저장본의 첫 분기.
      */
     public List<Map<String, Object>> listEntries() {
+        return listEntries(false);
+    }
+
+    /**
+     * 기관 목록 응답의 즐겨찾기 줄. {@code withAlertRules}(운영자에게만)면 줄마다 그 기관의 13F 신규 편입 알림 규칙 수({@code alertRules} — 모든 사용자,
+     * 지울 때 함께 지워지는 수)를 더합니다.
+     */
+    public List<Map<String, Object>> listEntries(boolean withAlertRules) {
         List<Sec13FFavoriteStore.Favorite> rows = catalog.favorites();
         if (rows.isEmpty()) {
             return List.of();
@@ -92,6 +110,9 @@ public class Sec13FFavoriteService {
             entry.put("stored", head != null);
             entry.put("source", q30 != null ? "q30" : q8 != null ? "q8" : null);
             entry.put("latestReportDate", head == null ? null : head.firstReportDate());
+            if (withAlertRules) {
+                entry.put("alertRules", alertRuleCount(row.cik()));
+            }
             out.add(entry);
         }
         return out;
@@ -222,11 +243,19 @@ public class Sec13FFavoriteService {
         if (favorites.delete(cik) != 1) {
             return failure(404, "즐겨찾기에 없는 기관입니다.");
         }
+        // 그 기관의 13F 신규 편입 알림 규칙도 함께(모든 사용자 — 대상이 목록에서 빠지면 규칙을 고칠 길이 없음). 받은 알림함 기록은 그대로.
+        int removedRules = alerts != null && alerts.ready() ? alerts.deleteInstitutionRules(cik) : 0;
         cache.clear();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
-        body.put("message", "즐겨찾기에서 지웠습니다. 13F 저장본은 남겨 둡니다(다시 더하면 바로 보입니다).");
+        body.put("removedAlertRules", removedRules);
+        body.put("message", "즐겨찾기에서 지웠습니다" + (removedRules > 0 ? "(13F 신규 편입 알림 규칙 " + removedRules + "개도 함께)" : "")
+                + ". 13F 저장본은 남겨 둡니다(다시 더하면 바로 보입니다).");
         return new Result(200, body);
+    }
+
+    private int alertRuleCount(String cik) {
+        return alerts != null && alerts.ready() ? alerts.countInstitutionRules(cik) : 0;
     }
 
     private boolean hasStored(String cik) {

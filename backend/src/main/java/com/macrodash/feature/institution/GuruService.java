@@ -40,9 +40,18 @@ public class GuruService {
     /** 위험 분석에 쓸 벤치마크. 저장본에 함께 실려 오는 티커여야 합니다. */
 
     private final StoreReader store;
+    /** 대상 기관(기본 12곳 + 13F 즐겨찾기 — ADR 0048 단계 3)과 그 분기 이력을 읽는 길. */
+    private final InstitutionHistory history;
 
+    /** 즐겨찾기를 보지 않는 서비스(기본 12곳만) — 시험·즐겨찾기를 모르는 호출용. */
     public GuruService(StoreReader store) {
+        this(store, InstitutionCatalog.defaultsOnly());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public GuruService(StoreReader store, InstitutionCatalog catalog) {
         this.store = store;
+        this.history = new InstitutionHistory(store, catalog);
     }
 
     // ==================================================== 스타일 프로파일
@@ -57,8 +66,8 @@ public class GuruService {
         Map<String, Object> out = new LinkedHashMap<>();
         List<Map<String, Object>> rows = new ArrayList<>();
 
-        for (Map<String, String> institution : Institutions.ALL) {
-            String cik = institution.get("cik");
+        for (InstitutionHistory.Entry institution : history.entries()) {
+            String cik = institution.cik();
             List<JsonNode> quarters = quartersOf(cik);
             if (quarters.isEmpty()) {
                 continue;
@@ -74,9 +83,12 @@ public class GuruService {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("cik", cik);
-            row.put("key", institution.get("key"));
-            row.put("name", institution.get("name"));
-            row.put("desc", institution.get("desc"));
+            row.put("key", institution.key());
+            row.put("name", institution.name());
+            row.put("desc", institution.desc());
+            if (institution.favorite()) {
+                row.put("favorite", true);   // 13F 즐겨찾기(ADR 0048) — 기본 12곳 줄에는 이 칸이 없음(응답 그대로)
+            }
             row.put("reportDate", Json.asText(latest, "reportDate"));
             row.put("totalValue", Json.asDouble(latest, "totalValue"));
             row.put("holdingCount", weights.size());
@@ -116,8 +128,8 @@ public class GuruService {
         List<Map<String, String>> institutions = new ArrayList<>();
         List<Map<String, Double>> weights = new ArrayList<>();
 
-        for (Map<String, String> institution : Institutions.ALL) {
-            List<JsonNode> quarters = quartersOf(institution.get("cik"));
+        for (InstitutionHistory.Entry institution : history.entries()) {
+            List<JsonNode> quarters = quartersOf(institution.cik());
             if (quarters.isEmpty()) {
                 continue;
             }
@@ -125,7 +137,7 @@ public class GuruService {
             if (weight.isEmpty()) {
                 continue;
             }
-            Map<String, String> meta = new LinkedHashMap<>(institution);
+            Map<String, String> meta = institution.asMap();
             meta.put("reportDate", String.valueOf(Json.asText(quarters.get(0), "reportDate")));
             institutions.add(meta);
             weights.add(weight);
@@ -242,8 +254,8 @@ public class GuruService {
      */
     public List<HoldingRow> holdersIndex() {
         List<HoldingRow> index = new ArrayList<>();
-        for (Map<String, String> institution : Institutions.ALL) {
-            List<JsonNode> quarters = quartersOf(institution.get("cik"));
+        for (InstitutionHistory.Entry institution : history.entries()) {
+            List<JsonNode> quarters = quartersOf(institution.cik());
             if (quarters.isEmpty()) {
                 continue;
             }
@@ -254,7 +266,7 @@ public class GuruService {
                 if (name == null) {
                     continue;
                 }
-                index.add(new HoldingRow(institution.get("name"), institution.get("cik"), name,
+                index.add(new HoldingRow(institution.name(), institution.cik(), name,
                         Json.asText(holding, "cusip"), Json.asDouble(holding, "weight"),
                         Json.asDouble(holding, "value"), reportDate));
             }
@@ -328,14 +340,17 @@ public class GuruService {
      * 전체인 것처럼 보여 주면 안 됩니다.
      */
     public Map<String, Object> risk(String cik, String benchmark, int years) {
-        Institutions.requireKnownCik(cik);
+        Optional<InstitutionHistory.Entry> target = history.entry(cik);
+        if (target.isEmpty()) {
+            Institutions.requireKnownCik(cik);   // 기본 12곳·즐겨찾기가 아니면 지금처럼 400
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         String benchmarkTicker = Benchmarks.resolve(benchmark);
         int window = Math.max(1, Math.min(5, years));
         out.put("cik", cik);
         out.put("benchmark", benchmarkTicker);
         out.put("years", window);
-        out.put("institution", Institutions.byCik(cik));
+        out.put("institution", target.get().favorite() ? target.get().asMap() : Institutions.byCik(cik));
 
         Optional<Snapshot> priceSnapshot = store.read(
                 Datasets.SNAP_EQUITY_HISTORY, Datasets.MAX_AGE_DAILY, "equity_history");
@@ -516,9 +531,8 @@ public class GuruService {
     // ------------------------------------------------------------ 공통 도구
     /** 기관의 분기 목록 (최신 우선, 중복 분기 제거). */
     private List<JsonNode> quartersOf(String cik) {
-        Optional<Snapshot> snapshot = store.read(
-                Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS),
-                Datasets.MAX_AGE_SLOW, "sec_13f");
+        // 기본 12곳은 지금 그대로(q8 — 없거나 오래면 수집을 부름), 즐겨찾기는 q30 앞 8분기 또는 q8을 수집 없이(InstitutionHistory).
+        Optional<Snapshot> snapshot = history.read(cik);
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             return List.of();
         }
