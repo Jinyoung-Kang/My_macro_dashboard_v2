@@ -126,6 +126,28 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
     await waitFor(() => expect(paths().filter((path) => path === endpoints.institution.institutions).length).toBe(before + 1));
   });
 
+  // QA-986: 후보마다 최근 13F 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
+  it.fails("QA-986 후보마다 최근 13F 공시일, 최근 공시 목록에 13F-HR이 없으면 그 사실과 고르기 없음", async () => {
+    api.apiGet.mockResolvedValue({
+      ok: true, query: "fake",
+      candidates: [
+        { cik: "0009900002", name: "FAKE TWO LLC", status: null, latest13F: { filingDate: "2026-08-14", reportDate: "2026-06-30" }, checked: true },
+        { cik: "0009900003", name: "FAKE THREE LLC", status: null, latest13F: null, checked: true },
+        { cik: "0009900004", name: "FAKE FOUR LLC", status: null, latest13F: null, checked: false },
+      ],
+    });
+    const dialog = await openEditor();
+    fireEvent.change(within(dialog).getByLabelText("기관 이름(영문) 또는 CIK"), { target: { value: "fake" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "찾기" }));
+    const found = await within(dialog).findByRole("list", { name: "찾은 기관" });
+    const rows = within(found).getAllByRole("listitem");
+    expect(rows[0].textContent).toContain("최근 13F 2026-08-14 공시(2026-06-30 기준)");
+    expect(rows[1].textContent).toContain("최근 공시 목록에 13F-HR 없음");
+    expect(within(rows[1]).queryByRole("button", { name: /고르기/ })).toBeNull();
+    expect(rows[2].textContent).toContain("공시일 확인 못 함");
+    expect(within(rows[2]).getByRole("button", { name: /고르기/ })).toBeTruthy();
+  });
+
   it("숫자는 SEC 이름 검색 없이 CIK 후보로(10자리로 채움), 기본 12곳이면 그 표시", async () => {
     const dialog = await openEditor();
     const input = within(dialog).getByLabelText("기관 이름(영문) 또는 CIK");

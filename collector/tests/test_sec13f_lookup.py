@@ -147,3 +147,72 @@ def test_QA983_영문이_아닌_검색어는_SEC를_부르지_않는다(session)
     assert fake.calls == []
     assert out["candidates"] == [] and "영문" in (out["error"] or "")
 
+
+
+# ------------------------------------------------------------------ QA-985·986 (2026-11-23)
+
+FTS_GREENLIGHT = {
+    "hits": {"total": {"value": 97}, "hits": []},
+    "aggregations": {"entity_filter": {"buckets": [
+        {"key": "GREENLIGHT CAPITAL INC  (CIK 0009900011)", "doc_count": 97},
+        {"key": "FAKE GREENLIGHT FUND LP  (GLX, GLX-W)  (CIK 0009900012)", "doc_count": 3},
+    ]}},
+}
+
+
+def _submissions(name: str, form: str = "13F-HR", filed: str = "2026-08-14") -> dict:
+    return {"name": name, "filings": {"recent": {"form": [form], "filingDate": [filed], "reportDate": ["2026-06-30"]}}}
+
+
+class _Router:
+    """주소마다 다른 가짜 응답 — 회사 검색(atom)·전문 검색(JSON)·submissions(JSON)."""
+
+    def __init__(self, atom: bytes, fts: dict | None, submissions: dict[str, dict]):
+        self.atom, self.fts, self.submissions = atom, fts, submissions
+        self.calls: list[str] = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append(url)
+        if url == lookup.EDGAR_BROWSE:
+            return SimpleNamespace(status_code=200, content=self.atom)
+        if "efts.sec.gov" in url:
+            if self.fts is None:
+                return SimpleNamespace(status_code=503, content=b"", json=lambda: {})
+            return SimpleNamespace(status_code=200, json=lambda: self.fts)
+        cik = url.rsplit("CIK", 1)[-1].split(".")[0]
+        body = self.submissions.get(cik)
+        if body is None:
+            return SimpleNamespace(status_code=404, content=b"", json=lambda: {})
+        return SimpleNamespace(status_code=200, json=lambda body=body: body)
+
+
+@pytest.fixture
+def router(monkeypatch):
+    def install(atom=EMPTY_ATOM, fts=None, submissions=None):
+        fake = _Router(atom, fts, submissions or {})
+        monkeypatch.setattr(http, "get_sec_session", lambda: fake)
+        monkeypatch.setattr(http, "sec_rate_limit", lambda: None)
+        return fake
+    return install
+
+
+# QA-985: 회사 검색(앞부분 일치)만 써서 'greenlight'로 옛 13F 제출자(GREENLIGHT CAPITAL INC)·이름 가운데 낱말('square')을 찾지 못했습니다.
+@pytest.mark.xfail(strict=True, reason="QA-985 재현 — 고치기 전")
+def test_QA985_이름_가운데_낱말과_옛_제출자도_전문_검색_제출자_묶음으로_찾는다(router):
+    router(fts=FTS_GREENLIGHT)
+    out = lookup.search_filers("greenlight")
+    assert out["error"] is None
+    assert [(row["cik"], row["name"]) for row in out["candidates"]] == [
+        ("0009900011", "GREENLIGHT CAPITAL INC"), ("0009900012", "FAKE GREENLIGHT FUND LP")]
+
+
+# QA-986: 후보마다 최근 13F 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
+@pytest.mark.xfail(strict=True, reason="QA-986 재현 — 고치기 전")
+def test_QA986_후보마다_최근_원본_13F_HR_공시일(router):
+    router(atom=ATOM, submissions={"0009900001": _submissions("FAKE CAPITAL LLC"),
+                                   "0009900002": _submissions("FAKE CAPITAL GROUP", form="13F-NT")})
+    out = lookup.search_filers("fake capital")
+    by_cik = {row["cik"]: row for row in out["candidates"]}
+    assert by_cik["0009900001"]["latest13F"] == {"filingDate": "2026-08-14", "reportDate": "2026-06-30"}
+    assert by_cik["0009900001"]["checked"] is True
+    assert by_cik["0009900002"]["latest13F"] is None and by_cik["0009900002"]["checked"] is True

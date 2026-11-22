@@ -240,4 +240,21 @@ class Sec13FFavoriteServiceTest {
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("영문");
         verify(collector, never()).sec13fSearch(anyString());
     }
+
+    // QA-986: 이름 검색 후보에 최근 원본 13F-HR 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-986 재현 — 고치기 전")
+    @DisplayName("QA-986 이름 검색 후보마다 최근 13F 공시일(수집기가 확인한 값 그대로 — 확인 못 했으면 checked=false)")
+    @SuppressWarnings("unchecked")
+    void searchCarriesLatestThirteenF() {
+        when(collector.sec13fSearch("fake")).thenReturn(json("""
+                {"query":"fake","candidates":[
+                  {"cik":"0009900003","name":"FAKE ONE","latest13F":{"filingDate":"2026-08-14","reportDate":"2026-06-30"},"checked":true},
+                  {"cik":"0009900004","name":"FAKE TWO","latest13F":null,"checked":true},
+                  {"cik":"0009900005","name":"FAKE THREE","latest13F":null,"checked":false}],"error":null}"""));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) service.search(OWNER, "fake").body().get("candidates");
+        assertThat(rows.get(0)).containsEntry("latest13F", Map.of("filingDate", "2026-08-14", "reportDate", "2026-06-30")).containsEntry("checked", true);
+        assertThat(rows.get(1)).containsEntry("latest13F", null).containsEntry("checked", true);
+        assertThat(rows.get(2)).containsEntry("checked", false);
+    }
 }
