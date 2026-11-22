@@ -65,3 +65,14 @@
 - 지키는 방법(시험): `Sec13FFavoriteAnalysisTest`(교집합·공통 신규 매수가 즐겨찾기를 받고 이름은 표시 이름, q30은 앞 분기 자르기 길로만, 기본 12곳 교집합은 즐겨찾기와 무관, 스타일 표·유사도·보유 기관·위험,
   즐겨찾기를 모르는 서비스는 400), `AlertFavoriteInstitutionTest`(관심 기관 검증·설명·평가), `Sec13FFavoriteServiceTest.removeDeletesAlertRules`, `Sec13FFavoriteStoreDbTest`(앞 분기 자르기·알림 규칙 세기·지우기),
   화면 `favoritesAnalysis.test.tsx`(교집합 즐겨찾기 목록·요청 ciks), `institutionsFavorites.test.tsx`(확인 창의 규칙 수).
+
+## 덧붙임 — 알려진 한계 셋을 고침(2026-11-23, QA-984~986 — 사용자 지시)
+
+- **결정 8 개정(이름 검색)**: EDGAR 회사 검색(앞부분 일치)에 EDGAR 전문 검색의 제출자 묶음(`efts.sec.gov/LATEST/search-index?q=&entityName=<이름>&forms=13F-HR`의 `aggregations.entity_filter`)을 더한다 —
+  2026-11-23 실제 응답으로 확인: 이름 어디에든 든 낱말이 맞고('square' → Pershing Square·Key Square 등, 'greenlight' → 옛 제출자 GREENLIGHT CAPITAL INC), 0.4초, 2026-11-16 공시까지 들어 있음.
+  13F 보유 표 본문이 아니라 제출자 이름으로 거르므로 결정 8이 걱정한 '보유 종목 이름에 걸리는 다른 기관'은 없다. 앞부분 일치 먼저, 그다음 공시 수 차례, 최대 20곳(QA-985).
+- **결정 8 개정(후보의 최근 13F 공시일)**: 후보마다 SEC submissions를 한 번씩(최대 20곳, 넷씩 — 공용 토큰 버킷 초당 8건이라 20곳 3초 안팎) 불러 최근 원본 13F-HR 공시일·보고 기준일을 보인다.
+  최근 공시 목록에 13F-HR이 없는 후보는 더해도 거절되므로 고르기 대신 '13F-HR 없음'(QA-986). 이름 검색 한 번의 SEC 호출은 최대 22건이 된다(누를 때만).
+- **기관 상세 보유 표**: 패널 안 폭이 560px 이상이면 검사 칸 옆 표와 같은 좁은 배치로 칸 폭에 맞춘다(1440 가운데 칸 584px — QA-984, ADR 0042 2026-11-23 덧붙임의 넘김 안내를 고침).
+- 알려진 한계 문단의 '이름 검색은 영문 등록 이름의 앞부분 일치라…'는 이 덧붙임으로 낱말 일치까지로 바뀐다(한국어로는 여전히 찾지 못함 — QA-983).
+
