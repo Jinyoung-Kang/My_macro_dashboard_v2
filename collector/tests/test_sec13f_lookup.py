@@ -103,14 +103,16 @@ def session(monkeypatch):
     return install
 
 
-def test_이름_검색은_13F_HR_회사_검색_한_번_atom(session):
-    fake = session(SimpleNamespace(status_code=200, content=ATOM))
+def test_이름_검색은_13F_HR_회사_검색_atom과_전문_검색_제출자_묶음(session):
+    # 두 번째(전문 검색) 응답은 제출자 묶음이 없는 빈 JSON — 앞부분 일치 후보만 남습니다(QA-985 뒤 SEC 두 번).
+    fake = session(SimpleNamespace(status_code=200, content=ATOM, json=lambda: {}))
     out = lookup.search_filers("  fake   capital ")
     assert out["error"] is None and out["query"] == "fake capital"
-    assert [row["cik"] for row in out["candidates"]] == ["0009900001", "0009900002"]
-    (url, params), = fake.calls
+    assert [row["cik"] for row in out["candidates"]][:2] == ["0009900001", "0009900002"]
+    (url, params), (fts_url, fts_params) = fake.calls[:2]
     assert url == lookup.EDGAR_BROWSE
     assert params["company"] == "fake capital" and params["type"] == "13F-HR" and params["output"] == "atom"
+    assert "efts.sec.gov" in fts_url and fts_params == {"q": "", "entityName": "fake capital", "forms": "13F-HR"}
 
 
 def test_검색어가_맞지_않으면_SEC를_부르지_않는다(session):
@@ -197,7 +199,6 @@ def router(monkeypatch):
 
 
 # QA-985: 회사 검색(앞부분 일치)만 써서 'greenlight'로 옛 13F 제출자(GREENLIGHT CAPITAL INC)·이름 가운데 낱말('square')을 찾지 못했습니다.
-@pytest.mark.xfail(strict=True, reason="QA-985 재현 — 고치기 전")
 def test_QA985_이름_가운데_낱말과_옛_제출자도_전문_검색_제출자_묶음으로_찾는다(router):
     router(fts=FTS_GREENLIGHT)
     out = lookup.search_filers("greenlight")

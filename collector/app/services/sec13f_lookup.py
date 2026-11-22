@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from .. import http
+from . import search_filings
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ EDGAR_BROWSE = "https://www.sec.gov/cgi-bin/browse-edgar"
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 TIMEOUT = (5, 20)            # (연결, 읽기) 초
 SEARCH_COUNT = 40            # 회사 검색 한 쪽의 행 수(browse-edgar count — 첫 쪽만)
+CANDIDATE_MAX = 20           # 돌려주는 후보 수 상한(앞부분 일치 먼저, 그다음 낱말 일치)
+_BUCKET_CIK = re.compile(r"\(CIK\s+(\d{1,10})\)\s*$")
 QUERY_MAX = 60               # 이름 검색어 상한(글자)
 CIK_PATTERN = re.compile(r"^\d{1,10}$")
 UNREADY = "SEC_USER_AGENT가 설정되지 않아 SEC를 부르지 않았습니다"
@@ -100,8 +103,37 @@ def parse_company_atom(content: bytes | str) -> list[dict]:
     return out
 
 
+def parse_fts_filers(payload: Any) -> list[dict]:
+    """
+    EDGAR 전문 검색의 제출자 묶음(``aggregations.entity_filter.buckets`` — 'NAME  (TICK)  (CIK 0001234567)', 공시 수 차례) → [{cik, name}].
+    ``entityName``으로 거른 13F-HR 검색이면 이름 어디에든 그 낱말이 든 제출자(옛 이름으로 낸 제출자 포함)입니다. 모양이 다르면 빈 목록.
+    """
+    aggregations = payload.get("aggregations") if isinstance(payload, dict) else None
+    entity = aggregations.get("entity_filter") if isinstance(aggregations, dict) else None
+    buckets = entity.get("buckets") if isinstance(entity, dict) else None
+    out: list[dict] = []
+    seen: set[str] = set()
+    for bucket in buckets if isinstance(buckets, list) else []:
+        key = bucket.get("key") if isinstance(bucket, dict) else None
+        match = _BUCKET_CIK.search(key) if isinstance(key, str) else None
+        cik = normalize_cik(match.group(1)) if match else None
+        name = search_filings.clean_filer_name(key)
+        if cik is None or not name or cik in seen:
+            continue
+        seen.add(cik)
+        out.append({"cik": cik, "name": " ".join(name.split())})
+    return out
+
+
 def search_filers(query: str) -> dict:
-    """이름 → {query, candidates: [{cik, name}], error}. 검색어가 맞지 않으면 SEC를 부르지 않고 error."""
+    """
+    이름 → {query, candidates: [{cik, name}], error}. 검색어가 맞지 않으면 SEC를 부르지 않고 error.
+
+    SEC 두 번(QA-985 — 2026-11-23 실제 응답으로 확인): ① EDGAR 회사 검색(``type=13F-HR`` — 지금·옛 등록 이름의 앞부분 일치, 13F-HR 제출자만),
+    ② EDGAR 전문 검색의 제출자 묶음(``entityName`` + ``forms=13F-HR`` — 이름 가운데 낱말도, 'greenlight' → 옛 제출자 GREENLIGHT CAPITAL INC,
+    'square' → Pershing Square 등). 앞부분 일치 먼저, 그다음 공시 수 차례로 합쳐 CIK가 겹치면 하나, 최대 :data:`CANDIDATE_MAX`곳.
+    둘 다 실패할 때만 error(하나만 실패하면 나머지로 답함).
+    """
     text = clean_query(query)
     if text is None:
         cleaned = " ".join(str(query or "").split())
@@ -110,9 +142,23 @@ def search_filers(query: str) -> dict:
         return {"query": query, "candidates": [], "error": f"검색어는 2~{QUERY_MAX}자입니다"}
     res, error = _get(EDGAR_BROWSE, {"action": "getcompany", "company": text, "type": "13F-HR", "dateb": "",
                                       "owner": "include", "count": SEARCH_COUNT, "output": "atom"})
-    if error:
+    prefix = parse_company_atom(res.content) if res is not None else []
+    fts, fts_error = _get(search_filings.EFTS_URL, {"q": "", "entityName": text, "forms": "13F-HR"})
+    words: list[dict] = []
+    if fts is not None:
+        try:
+            words = parse_fts_filers(fts.json())
+        except ValueError:
+            fts_error = "efts.sec.gov 응답이 JSON이 아님"
+    if error and fts_error:
         return {"query": text, "candidates": [], "error": error}
-    return {"query": text, "candidates": parse_company_atom(res.content), "error": None}
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for row in prefix + words:
+        if row["cik"] not in seen:
+            seen.add(row["cik"])
+            merged.append(row)
+    return {"query": text, "candidates": merged[:CANDIDATE_MAX], "error": None}
 
 
 def parse_submissions_13f(payload: Any) -> dict:
