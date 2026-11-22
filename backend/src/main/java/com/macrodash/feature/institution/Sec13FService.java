@@ -40,9 +40,17 @@ import java.util.regex.Pattern;
 public class Sec13FService {
 
     private final StoreReader store;
+    private final InstitutionCatalog catalog;
 
+    /** 즐겨찾기를 보지 않는 서비스(기본 12곳만) — 시험·즐겨찾기를 모르는 호출용. */
     public Sec13FService(StoreReader store) {
+        this(store, InstitutionCatalog.defaultsOnly());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Sec13FService(StoreReader store, InstitutionCatalog catalog) {
         this.store = store;
+        this.catalog = catalog;
     }
 
     /** 13F 메뉴 밖 기관의 CIK 모양(SEC CIK 10자리). */
@@ -52,8 +60,10 @@ public class Sec13FService {
      * 기관 1곳의 분기 이력 + 최신 분기 QoQ 분석.
      *
      * <p>13F 메뉴 기관은 그 저장본(q8)을 읽습니다(없거나 오래면 수집을 부름 — 지금까지와 같음). 13F 메뉴 밖 기관은 모의 매매 트랙레코드 후보 기관의
-     * 저장본(q30 — 신호 기관 팝업, 2026-11-22 사용자 결정)이 있을 때만 그것을 <b>수집을 부르지 않고</b> 읽습니다(StoreReader.quietly). 그 저장본도 없거나
-     * CIK 모양이 아니면 지금처럼 400입니다 — 모르는 CIK로 13F 수집을 기다리지 않게(Institutions.requireKnownCik).
+     * 저장본(q30 — 신호 기관 팝업, 2026-11-22 사용자 결정)이 있을 때만 그것을 <b>수집을 부르지 않고</b> 읽습니다(StoreReader.quietly). 13F 즐겨찾기(ADR 0048)는
+     * q30이 있으면 그것, 없으면 q8을 역시 수집 없이 읽습니다(더하기 때 단건 수집을 기다리고 정기 sec_13f가 이어 모음 — 여기서 태스크 전체를 기다리지 않게).
+     * 즐겨찾기인데 저장본이 없으면 '아직 모으지 못함'(available=false). 그 밖의 CIK에 저장본이 없거나 CIK 모양이 아니면 지금처럼 400입니다 — 모르는 CIK로
+     * 13F 수집을 기다리지 않게(Institutions.requireKnownCik).
      */
     public Map<String, Object> portfolio(String cik, int quarters, int topN) {
         boolean tracked = Institutions.isKnownCik(cik);
@@ -71,16 +81,23 @@ public class Sec13FService {
         int wanted = Math.min(Math.max(1, quarters), Datasets.MAX_TRACKED_QUARTERS);
         out.put("quartersUsed", wanted);
 
+        Optional<com.macrodash.store.Sec13FFavoriteStore.Favorite> favorite = tracked ? Optional.empty() : catalog.favorite(cik);
         Optional<Snapshot> snapshot = tracked
                 ? readHistory(cik, wanted)
                 : store.quietly(() -> store.read(Datasets.sec13f(cik, Datasets.TRACK_RECORD_QUARTERS), Datasets.MAX_AGE_SLOW, "sec_13f"));
-        if (!tracked && (snapshot.isEmpty() || snapshot.get().payload() == null)) {
+        if (!tracked && favorite.isPresent() && (snapshot.isEmpty() || snapshot.get().payload() == null)) {
+            snapshot = store.quietly(() -> store.read(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), Datasets.MAX_AGE_SLOW, "sec_13f"));
+        }
+        if (!tracked && favorite.isEmpty() && (snapshot.isEmpty() || snapshot.get().payload() == null)) {
             Institutions.requireKnownCik(cik);
         }
         if (snapshot.isEmpty() || snapshot.get().payload() == null) {
             out.put("available", false);
             out.put("quarters", List.of());
-            out.put("message", "13F 저장본이 없습니다. 수집기의 weekly 작업을 실행하세요.");
+            out.put("message", favorite.isPresent()
+                    ? "즐겨찾기에 더한 기관의 13F를 아직 모으지 못했습니다. 수집이 끝나면 보입니다."
+                    : "13F 저장본이 없습니다. 수집기의 weekly 작업을 실행하세요.");
+            favorite.ifPresent(row -> out.put("institution", favoriteInstitution(row, null)));
             return out;
         }
 
@@ -100,7 +117,8 @@ public class Sec13FService {
         out.put("available", true);
         snapshot.get().putFreshness(out);
         out.put("error", Json.asText(payload, "error"));
-        out.put("institution", tracked ? Institutions.byCik(cik) : candidateInstitution(cik, payload));
+        out.put("institution", tracked ? Institutions.byCik(cik)
+                : favorite.isPresent() ? favoriteInstitution(favorite.get(), payload) : candidateInstitution(cik, payload));
 
         List<Map<String, Object>> quarterSummaries = new ArrayList<>();
         for (JsonNode quarter : selected) {
@@ -134,6 +152,23 @@ public class Sec13FService {
      * 씁니다. 이름이 없으면 지금처럼 CIK(Institutions.byCik의 대체값)라, 기관 상세의 제목·뉴스·AI 요약 검색어가 CIK 숫자가 되던 것을 막습니다
      * (2026-11-23 요청). 설명(desc)은 후보 목록에 없어 빈 글, 스타일은 있을 때만 {@code style}로.
      */
+    /**
+     * 13F 즐겨찾기 기관의 기관 칸(ADR 0048) — 표시 이름(없으면 SEC 등록 이름)·설명·{@code favorite: true}, 트랙레코드 저장본(q30)이면 그 스타일도.
+     */
+    static Map<String, Object> favoriteInstitution(com.macrodash.store.Sec13FFavoriteStore.Favorite favorite, JsonNode payload) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("key", "fav-" + favorite.cik());
+        out.put("cik", favorite.cik());
+        out.put("name", favorite.name());
+        out.put("desc", favorite.description() == null ? "" : favorite.description());
+        out.put("favorite", true);
+        String style = payload == null ? null : Json.asText(payload, "style");
+        if (style != null && !style.isBlank()) {
+            out.put("style", style.strip());
+        }
+        return out;
+    }
+
     static Map<String, Object> candidateInstitution(String cik, JsonNode payload) {
         Map<String, Object> out = new LinkedHashMap<>(Institutions.byCik(cik));
         String name = Json.asText(payload, "name");

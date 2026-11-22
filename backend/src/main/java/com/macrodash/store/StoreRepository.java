@@ -120,6 +120,27 @@ public class StoreRepository {
         return rows.isEmpty() || rows.get(0) == null ? null : toInstant(rows.get(0));
     }
 
+    /**
+     * 저장본 여러 개의 머리 — 이름마다 수집 시각과 첫 분기 보고 기준일({@code payload->'quarters'->0->>'reportDate'} — 13F 형식, 없으면 null).
+     * 본문을 백엔드로 가져오지 않고(캐시 없음) 있는 이름만 돌려줍니다. 13F 즐겨찾기 목록이 기관마다 저장본이 있는지와 최신 보고 기준일을 볼 때 씁니다.
+     */
+    public Map<String, SnapshotHead> readSnapshotHeads(Collection<String> names) {
+        if (names.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, SnapshotHead> out = new java.util.LinkedHashMap<>();
+        jdbc.query("SELECT name, collected_at, payload->'quarters'->0->>'reportDate' AS report_date FROM snapshots WHERE name = ANY (?)",
+                (RowCallbackHandler) rs -> {
+                    out.put(rs.getString("name"), new SnapshotHead(toInstant(rs.getTimestamp("collected_at")), rs.getString("report_date")));
+                },
+                (Object) names.toArray(String[]::new));
+        return out;
+    }
+
+    /** 저장본 머리({@link #readSnapshotHeads}) — 수집 시각과 첫 분기 보고 기준일(없으면 null). */
+    public record SnapshotHead(Instant collectedAt, String firstReportDate) {
+    }
+
     /** DB에 닿는가(헬스체크용). 여기서는 예외를 삼키는 것이 맞습니다 — 답이 곧 상태입니다. */
     public boolean ping() {
         try {

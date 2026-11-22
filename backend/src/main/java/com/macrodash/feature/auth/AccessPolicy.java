@@ -88,6 +88,8 @@ public final class AccessPolicy {
         member("GET /api/search/recent", "GET /api/search/watch", "POST /api/search/watch", "DELETE /api/search/watch/{id}",
                 "PATCH /api/search/watch/{id}", "POST /api/search/watch/{id}/seen", "GET /api/search/excludes");
         owner("POST /api/search/excludes", "DELETE /api/search/excludes/{id}");
+        // 13F 즐겨찾기 기관(ADR 0048) — 목록 읽기는 기관 목록(회원)에 함께 오고, 이름 검색·더하기·지우기는 운영자만.
+        owner("GET /api/sec13f/favorites/search", "POST /api/sec13f/favorites", "DELETE /api/sec13f/favorites/{cik}");
         // 정보 검색 AI 요약(계약 §9-6) — 운영자만(유료 모델·번역과 함께 세는 하루 글자 상한). 데모의 POST는 데모 쓰기 금지 규칙이 먼저 막음
         owner("POST /api/search/summary");
         // 정보 검색 본문 보기(ADR 0043) — 운영자만(누를 때 외부 기사 한 건을 받음: 저작권·비용 — 번역·AI 요약과 같은 결정). 본문 번역도 저장하지 않음.

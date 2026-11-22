@@ -256,6 +256,34 @@ class ArchitectureRulesTest {
         assertThat(SEARCH_DATA.matcher("researchNotes searchable").find()).as("다른 낱말은 잡지 않음").isFalse();
     }
 
+    /** 13F 즐겨찾기 자료(ADR 0048) — 표·저장소·카탈로그·서비스. */
+    private static final Pattern FAVORITE_DATA = Pattern.compile(
+            "\\bsec13f_favorites\\b|Sec13FFavoriteStore|Sec13FFavoriteService|InstitutionCatalog");
+
+    @Test
+    @DisplayName("모의 매매·AI 리포트 원문·AI(feature.paper·snapshot·ai)는 13F 즐겨찾기를 읽지 않는다 — 기본 12곳 상수(Institutions)만(ADR 0048 불변식 1)")
+    void paperSnapshotAiDoNotReadFavorites() {
+        List<String> found = new ArrayList<>();
+        SOURCES.forEach((file, source) -> {
+            String pkg = source.pkg();
+            boolean guarded = Stream.of("com.macrodash.feature.paper", "com.macrodash.feature.snapshot", "com.macrodash.feature.ai")
+                    .anyMatch(root -> pkg.equals(root) || pkg.startsWith(root + "."));
+            if (!guarded) {
+                return;
+            }
+            Matcher matcher = FAVORITE_DATA.matcher(CODE.get(file));
+            while (matcher.find()) {
+                found.add(source.simpleName() + ": " + matcher.group());
+            }
+            source.refs().stream().filter(ref -> ref.equals("com.macrodash.feature.institution.InstitutionCatalog")
+                            || ref.equals("com.macrodash.feature.institution.Sec13FFavoriteService")
+                            || ref.equals("com.macrodash.store.Sec13FFavoriteStore"))
+                    .forEach(ref -> found.add(source.simpleName() + " → " + ref));
+        });
+        assertThat(found).isEmpty();
+        assertThat(FAVORITE_DATA.matcher("SELECT cik FROM sec13f_favorites").find()).as("규칙이 실제로 잡는지").isTrue();
+    }
+
     private static final String BROKERAGE = "com.macrodash.feature.brokerage";
 
     /**

@@ -1,12 +1,20 @@
 package com.macrodash.feature.institution;
 
 import com.macrodash.read.ComputedCache;
+import com.macrodash.support.CurrentUser;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,7 +22,8 @@ import java.util.Map;
  * 기관 13F 포트폴리오 · 13F 교집합 · 기관 13F 스타일·위험.
  *
  * <pre>
- *  GET /api/sec13f/*   기관 목록·포트폴리오·교집합·공통 신규 매수
+ *  GET /api/sec13f/*   기관 목록(기본 12곳 + 즐겨찾기)·포트폴리오·교집합·공통 신규 매수
+ *  GET·POST·DELETE /api/sec13f/favorites*   (운영자) 13F 즐겨찾기 이름 검색·더하기·지우기(ADR 0048)
  *  GET /api/guru/*     기관 성격·유사도·보유 기관 검색·위험 (경로는 호환을 위해 guru 유지)
  * </pre>
  */
@@ -24,19 +33,52 @@ public class InstitutionController {
 
     private final Sec13FService sec13f;
     private final GuruService guru;
+    private final Sec13FFavoriteService favorites;
 
     private final ComputedCache cache;
 
-    public InstitutionController(Sec13FService sec13f, GuruService guru, ComputedCache cache) {
+    public InstitutionController(Sec13FService sec13f, GuruService guru, Sec13FFavoriteService favorites, ComputedCache cache) {
         this.sec13f = sec13f;
         this.guru = guru;
+        this.favorites = favorites;
         this.cache = cache;
     }
 
+    /** 즐겨찾기 더하기 본문 — CIK(숫자 1~10자리), 표시 이름·설명(선택). */
+    public record FavoriteRequest(String cik, String displayName, String description) {
+    }
+
     // ------------------------------------------------------- 13F
+    /** 기관 목록 — {@code institutions}(기본 12곳, 지금 모양 그대로)와 {@code favorites}(13F 즐겨찾기 — ADR 0048). */
     @GetMapping("/sec13f/institutions")
     public Map<String, Object> institutions() {
-        return Institutions.list();
+        Map<String, Object> out = new LinkedHashMap<>(Institutions.list());
+        out.put("favorites", favorites.listEntries());
+        out.put("favoriteLimit", InstitutionCatalog.FAVORITE_LIMIT);
+        return out;
+    }
+
+    /** (운영자) 이름 → 13F-HR 제출 기관 후보(SEC — 누를 때만). */
+    @GetMapping("/sec13f/favorites/search")
+    public ResponseEntity<Map<String, Object>> searchFavorites(@RequestParam(required = false) String q, HttpServletRequest request) {
+        return respond(favorites.search(CurrentUser.of(request), q));
+    }
+
+    /** (운영자) 즐겨찾기 더하기 — SEC 확인과 그 기관의 13F 수집을 기다림(상한 넘으면 '수집 중'). */
+    @PostMapping("/sec13f/favorites")
+    public ResponseEntity<Map<String, Object>> addFavorite(@RequestBody(required = false) FavoriteRequest body, HttpServletRequest request) {
+        FavoriteRequest given = body == null ? new FavoriteRequest(null, null, null) : body;
+        return respond(favorites.add(CurrentUser.of(request), given.cik(), given.displayName(), given.description()));
+    }
+
+    /** (운영자) 즐겨찾기 지우기 — 13F 저장본은 남김. */
+    @DeleteMapping("/sec13f/favorites/{cik}")
+    public ResponseEntity<Map<String, Object>> removeFavorite(@PathVariable String cik, HttpServletRequest request) {
+        return respond(favorites.remove(CurrentUser.of(request), cik));
+    }
+
+    private static ResponseEntity<Map<String, Object>> respond(Sec13FFavoriteService.Result result) {
+        return ResponseEntity.status(result.status()).body(result.body());
     }
 
     @GetMapping("/sec13f/portfolio")

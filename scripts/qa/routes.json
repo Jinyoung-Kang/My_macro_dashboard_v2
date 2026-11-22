@@ -161,6 +161,33 @@
     },
     {
       "m": "GET",
+      "p": "/api/sec13f/favorites/search",
+      "q": {
+        "q": "str"
+      }
+    },
+    {
+      "m": "POST",
+      "p": "/api/sec13f/favorites",
+      "body": {
+        "cik": "str",
+        "displayName": "str",
+        "description": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "DELETE",
+      "p": "/api/sec13f/favorites/{cik}",
+      "path": {
+        "cik": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "GET",
       "p": "/api/sec13f/portfolio",
       "q": {
         "cik": "str",

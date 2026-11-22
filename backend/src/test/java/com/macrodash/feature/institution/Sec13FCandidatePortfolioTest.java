@@ -120,4 +120,66 @@ class Sec13FCandidatePortfolioTest {
         verify(store, never()).read(anyString(), anyLong(), anyString());
         verify(store, never()).quietly(any());
     }
+
+    // ------------------------------------------------------------ 13F 즐겨찾기(ADR 0048)
+
+    private static final String FAVORITE = "0009900007";
+
+    private static InstitutionCatalog catalogWith(String cik) {
+        com.macrodash.store.Sec13FFavoriteStore favorites = mock(com.macrodash.store.Sec13FFavoriteStore.class);
+        when(favorites.ready()).thenReturn(true);
+        when(favorites.all()).thenReturn(java.util.List.of(
+                new com.macrodash.store.Sec13FFavoriteStore.Favorite(cik, "FAKE CAPITAL LLC", "가짜 운용", "설명", Instant.now())));
+        return new InstitutionCatalog(favorites);
+    }
+
+    private static Snapshot snapshot(String name, String extra) {
+        return new Snapshot(name, MAPPER.readTree("{" + extra + "\"quarters\":" + QUARTERS + "}"), "json", "ok", null, Instant.now());
+    }
+
+    @Test
+    @DisplayName("즐겨찾기는 q30이 없으면 q8을 수집 없이 읽고, 기관 칸은 표시 이름·설명·favorite")
+    @SuppressWarnings("unchecked")
+    void favoriteReadsQ8Quietly() {
+        StoreReader store = store(false);
+        when(store.read(eq(Datasets.sec13f(FAVORITE, Datasets.MAX_TRACKED_QUARTERS)), anyLong(), anyString()))
+                .thenReturn(Optional.of(snapshot(Datasets.sec13f(FAVORITE, Datasets.MAX_TRACKED_QUARTERS), "")));
+        Map<String, Object> out = new Sec13FService(store, catalogWith(FAVORITE)).portfolio(FAVORITE, 8, 30);
+
+        assertThat(out).containsEntry("available", true);
+        assertThat((Map<String, Object>) out.get("institution")).containsEntry("name", "가짜 운용").containsEntry("desc", "설명")
+                .containsEntry("favorite", true).containsEntry("key", "fav-" + FAVORITE);
+        // 두 읽기 모두 quietly 안 — 수집을 부르지 않음
+        verify(store, org.mockito.Mockito.times(2)).quietly(any());
+    }
+
+    @Test
+    @DisplayName("즐겨찾기가 트랙레코드 후보(q30 있음)면 q30을 읽고 q8은 찾지 않음(불변식 2), 스타일은 저장본의 것")
+    @SuppressWarnings("unchecked")
+    void favoriteCandidateReadsQ30() {
+        StoreReader store = store(false);
+        when(store.read(eq(Datasets.sec13f(FAVORITE, Datasets.TRACK_RECORD_QUARTERS)), anyLong(), anyString()))
+                .thenReturn(Optional.of(snapshot(Datasets.sec13f(FAVORITE, Datasets.TRACK_RECORD_QUARTERS), "\"style\":\"가치·집중\",")));
+        Map<String, Object> out = new Sec13FService(store, catalogWith(FAVORITE)).portfolio(FAVORITE, 8, 30);
+
+        assertThat((Map<String, Object>) out.get("institution")).containsEntry("style", "가치·집중").containsEntry("name", "가짜 운용");
+        verify(store, never()).read(eq(Datasets.sec13f(FAVORITE, Datasets.MAX_TRACKED_QUARTERS)), anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("즐겨찾기인데 저장본이 없으면 400이 아니라 '아직 모으지 못함'(available=false)")
+    @SuppressWarnings("unchecked")
+    void favoriteWithoutSnapshot() {
+        Map<String, Object> out = new Sec13FService(store(false), catalogWith(FAVORITE)).portfolio(FAVORITE, 8, 30);
+        assertThat(out).containsEntry("available", false);
+        assertThat(out.get("message").toString()).contains("아직 모으지 못했습니다");
+        assertThat((Map<String, Object>) out.get("institution")).containsEntry("favorite", true);
+    }
+
+    @Test
+    @DisplayName("즐겨찾기가 아닌 CIK는 지금처럼 400(카탈로그가 있어도)")
+    void nonFavoriteStillRejected() {
+        assertThatThrownBy(() -> new Sec13FService(store(false), catalogWith(FAVORITE)).portfolio("0009900008", 8, 30))
+                .isInstanceOf(InvalidRequestException.class);
+    }
 }

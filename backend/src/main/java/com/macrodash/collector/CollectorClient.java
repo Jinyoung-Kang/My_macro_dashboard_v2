@@ -55,8 +55,21 @@ public class CollectorClient {
      */
     static final Duration SEARCH_SUGGEST_READ_TIMEOUT = Duration.ofSeconds(10);
 
+    /**
+     * 13F 즐겨찾기의 SEC 조회({@link #sec13fSearch}·{@link #sec13fFiler} — 수집기가 SEC를 한 번 부름, 읽기 상한 (5, 20)초)의 읽기 타임아웃(ADR 0048).
+     */
+    static final Duration SEC13F_LOOKUP_READ_TIMEOUT = Duration.ofSeconds(25);
+
+    /**
+     * 13F 즐겨찾기 단건 수집({@link #sec13fCollectFavorite})을 기다리는 상한(ADR 0048). 조회(25초)와 합쳐 90초 안 — 넘기면 백엔드는 '수집 중'으로 답하고
+     * 수집기는 그 호출을 끝까지 돌려 저장합니다(sec_13f 12곳 병렬 실행이 45~57초 — 기관 하나는 보통 이보다 짧음).
+     */
+    static final Duration FAVORITE_COLLECT_READ_TIMEOUT = Duration.ofSeconds(65);
+
     private final RestClient client;
     private final RestClient controlClient;
+    private final RestClient secLookupClient;
+    private final RestClient favoriteCollectClient;
     private final RestClient accountClient;
     private final RestClient suggestClient;
     private final AppProperties properties;
@@ -67,6 +80,8 @@ public class CollectorClient {
         this.controlClient = build(properties, CONTROL_READ_TIMEOUT);
         this.accountClient = build(properties, ACCOUNT_READ_TIMEOUT);
         this.suggestClient = build(properties, SEARCH_SUGGEST_READ_TIMEOUT);
+        this.secLookupClient = build(properties, SEC13F_LOOKUP_READ_TIMEOUT);
+        this.favoriteCollectClient = build(properties, FAVORITE_COLLECT_READ_TIMEOUT);
     }
 
     private static RestClient build(AppProperties properties, Duration readTimeout) {
@@ -377,6 +392,24 @@ public class CollectorClient {
     /** 매체 제외 목록의 처음 값(수집기 /live/search/excludes — 코드 상수, 외부 호출 없음). 운영자가 더한 줄은 백엔드 표에 있습니다. */
     public Optional<JsonNode> liveSearchExcludes() {
         return getQuietly(controlClient, uri -> uri.path("/live/search/excludes").build(), "/live/search/excludes");
+    }
+
+    // -------------------------------------------------------------- 13F 즐겨찾기(ADR 0048)
+
+    /** 이름 → 13F-HR 제출 기관 후보(수집기 /sec13f/search — EDGAR 회사 검색 한 번). 닿지 못하면 empty. */
+    public Optional<JsonNode> sec13fSearch(String q) {
+        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/search").queryParam("q", q).build(), "/sec13f/search");
+    }
+
+    /** CIK → SEC 등록 이름과 가장 최근 원본 13F-HR(수집기 /sec13f/filer — submissions 한 번). 닿지 못하면 empty. */
+    public Optional<JsonNode> sec13fFiler(String cik) {
+        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/filer").queryParam("cik", cik).build(), "/sec13f/filer");
+    }
+
+    /** 즐겨찾기 기관 하나의 13F 수집을 기다림(수집기 /sec13f/favorite/collect). 시간 상한을 넘기거나 닿지 못하면 empty — 수집기는 끝까지 돕니다. */
+    public Optional<JsonNode> sec13fCollectFavorite(String cik) {
+        return post(favoriteCollectClient, uri -> uri.path("/sec13f/favorite/collect").queryParam("cik", cik).build(), Map.of(),
+                "/sec13f/favorite/collect");
     }
 
     // -------------------------------------------------------------- 호출 공통

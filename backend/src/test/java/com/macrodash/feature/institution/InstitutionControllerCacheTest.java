@@ -45,7 +45,7 @@ class InstitutionControllerCacheTest {
         when(repository.latestCollectedAt()).thenReturn(Instant.parse("2026-10-12T06:43:12Z"));
         Sec13FService sec13f = mock(Sec13FService.class);
         when(sec13f.portfolio("0001608046", 8, 30)).thenReturn(Map.of("available", true));
-        InstitutionController controller = new InstitutionController(sec13f, mock(GuruService.class), new ComputedCache(repository));
+        InstitutionController controller = new InstitutionController(sec13f, mock(GuruService.class), mock(Sec13FFavoriteService.class), new ComputedCache(repository));
 
         Map<String, Object> first = controller.portfolio("0001608046", 8, 30);
         Map<String, Object> second = controller.portfolio("0001608046", 8, 30);
@@ -74,7 +74,7 @@ class InstitutionControllerCacheTest {
         when(store.read(eq(filingName), anyLong(), anyString()))
                 .thenReturn(Optional.of(new Snapshot(filingName, filings, "json", "ok", null, Instant.now())));
         InstitutionController controller = new InstitutionController(
-                mock(Sec13FService.class), new GuruService(store), new ComputedCache(repository));
+                mock(Sec13FService.class), new GuruService(store), mock(Sec13FFavoriteService.class), new ComputedCache(repository));
 
         // 빈 검색어는 안내 문구만 — 13F 저장본을 읽지 않습니다.
         assertThat(controller.guruHolders(" ").get("message")).isEqualTo("찾을 종목명을 입력하세요.");
