@@ -47,43 +47,13 @@ def task_sec_13f() -> str:
     saved = 0
     errors: list[str] = []
 
-    def collect(item):
-        name, cik, merge_ciks = item
-        # 받지 못한 공시는 직전 저장본의 같은 공시로 잇습니다(QA-031).
-        previous = store.read_snapshot(catalog.snap_sec_13f(cik, quarters))
-        previous_quarters = (previous.payload or {}).get("quarters") if previous else None
-        payload = sec_service.collect_13f(cik, quarters, previous_quarters=previous_quarters)
-        if merge_ciks and payload.get("quarters"):
-            # 그룹이 13F-NT로 바꾼 뒤의 분기는 자회사들의 공시를 합칩니다(QA-140, 뱅가드). 한 곳이라도 실패하면 이번에는
-            # 저장하지 않습니다 — 그룹 공시만으로 덮으면 이미 합쳐 둔 최근 분기가 사라집니다.
-            filers = [{**sec_service.collect_13f(sub, quarters), "cik": sub} for sub in merge_ciks]
-            failed = next((filer for filer in filers if not filer.get("quarters")), None)
-            if failed is not None:
-                return name, cik, {"cik": cik, "quarters": None,
-                                   "error": f"자회사 {failed['cik']} 13F 수집 실패({failed.get('error')}) — 합산하지 않고 저장본 유지"}
-            payload = {**payload, "quarters": sec_service.merge_filers(payload["quarters"], filers, quarters)}
-        return name, cik, payload
-
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for name, cik, payload in pool.map(http.bind_guard(collect), targets):
+        for name, cik, payload in pool.map(http.bind_guard(_collect_institution_13f), targets):
             if not payload.get("quarters"):
                 logger.info("13F 빈 결과(저장본 유지): %s (%s)", name, payload.get("error"))
                 errors.append(f"{name}: {payload.get('error') or '빈 결과'}")
                 continue
-
-            # 저장본 모양은 예전 그대로 {"cik", "error", "quarters"} — collect_13f의 진행 정보(fetchedFilings 등)는
-            # 트랙레코드 수집만 씁니다.
-            payload = {key: payload.get(key) for key in ("cik", "error", "quarters")}
-            equities.attach_tickers(payload["quarters"])
-            store.put_snapshot(catalog.snap_sec_13f(cik, quarters), payload)
-            saved += 1
-
-            # q1은 q8의 첫 분기와 같은 데이터입니다. 재수집하지 않습니다.
-            store.put_snapshot(
-                catalog.snap_sec_13f(cik, 1),
-                {**payload, "quarters": payload["quarters"][:1]},
-            )
-            saved += 1
+            saved += _store_institution_13f(cik, payload)
             ok += 1
 
     if not ok:
@@ -96,6 +66,46 @@ def task_sec_13f() -> str:
     if errors:
         detail += f", 실패 {len(errors)}곳"
     return detail
+
+
+def _collect_institution_13f(item: tuple[str, str, tuple[str, ...]]) -> tuple[str, str, dict]:
+    """
+    기관 하나(이름, CIK, 합산할 자회사 CIK)의 q8 수집 → (이름, CIK, collect_13f 결과). 저장하지 않습니다(:func:`_store_institution_13f`).
+    실패면 결과의 ``quarters``가 비고 ``error``에 사유가 있습니다.
+    """
+    name, cik, merge_ciks = item
+    quarters = catalog.MAX_TRACKED_QUARTERS
+    # 받지 못한 공시는 직전 저장본의 같은 공시로 잇습니다(QA-031).
+    previous = store.read_snapshot(catalog.snap_sec_13f(cik, quarters))
+    previous_quarters = (previous.payload or {}).get("quarters") if previous else None
+    payload = sec_service.collect_13f(cik, quarters, previous_quarters=previous_quarters)
+    if merge_ciks and payload.get("quarters"):
+        # 그룹이 13F-NT로 바꾼 뒤의 분기는 자회사들의 공시를 합칩니다(QA-140, 뱅가드). 한 곳이라도 실패하면 이번에는
+        # 저장하지 않습니다 — 그룹 공시만으로 덮으면 이미 합쳐 둔 최근 분기가 사라집니다.
+        filers = [{**sec_service.collect_13f(sub, quarters), "cik": sub} for sub in merge_ciks]
+        failed = next((filer for filer in filers if not filer.get("quarters")), None)
+        if failed is not None:
+            return name, cik, {"cik": cik, "quarters": None,
+                               "error": f"자회사 {failed['cik']} 13F 수집 실패({failed.get('error')}) — 합산하지 않고 저장본 유지"}
+        payload = {**payload, "quarters": sec_service.merge_filers(payload["quarters"], filers, quarters)}
+    return name, cik, payload
+
+
+def _store_institution_13f(cik: str, payload: dict) -> int:
+    """수집 결과(분기가 있는 것)를 q8과 q1로 저장 → 저장한 스냅샷 수(2)."""
+    quarters = catalog.MAX_TRACKED_QUARTERS
+    # 저장본 모양은 예전 그대로 {"cik", "error", "quarters"} — collect_13f의 진행 정보(fetchedFilings 등)는
+    # 트랙레코드 수집만 씁니다.
+    payload = {key: payload.get(key) for key in ("cik", "error", "quarters")}
+    equities.attach_tickers(payload["quarters"])
+    store.put_snapshot(catalog.snap_sec_13f(cik, quarters), payload)
+
+    # q1은 q8의 첫 분기와 같은 데이터입니다. 재수집하지 않습니다.
+    store.put_snapshot(
+        catalog.snap_sec_13f(cik, 1),
+        {**payload, "quarters": payload["quarters"][:1]},
+    )
+    return 2
 
 
 # ==============================================================================
