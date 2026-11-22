@@ -127,7 +127,7 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
   });
 
   // QA-986: 후보마다 최근 13F 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
-  it.fails("QA-986 후보마다 최근 13F 공시일, 최근 공시 목록에 13F-HR이 없으면 그 사실과 고르기 없음", async () => {
+  it("QA-986 후보마다 최근 13F 공시일, 최근 공시 목록에 13F-HR이 없으면 그 사실과 고르기 없음", async () => {
     api.apiGet.mockResolvedValue({
       ok: true, query: "fake",
       candidates: [

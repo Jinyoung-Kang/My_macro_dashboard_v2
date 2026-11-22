@@ -243,7 +243,6 @@ class Sec13FFavoriteServiceTest {
 
     // QA-986: 이름 검색 후보에 최근 원본 13F-HR 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
     @Test
-    @org.junit.jupiter.api.Disabled("QA-986 재현 — 고치기 전")
     @DisplayName("QA-986 이름 검색 후보마다 최근 13F 공시일(수집기가 확인한 값 그대로 — 확인 못 했으면 checked=false)")
     @SuppressWarnings("unchecked")
     void searchCarriesLatestThirteenF() {

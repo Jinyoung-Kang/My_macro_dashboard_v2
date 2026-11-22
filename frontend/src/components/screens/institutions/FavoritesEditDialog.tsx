@@ -116,10 +116,16 @@ function EditorBody({
               <li key={candidate.cik} className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
                 <span className="flex min-w-0 flex-col">
                   <span className="break-keep font-medium text-text wrap-anywhere">{candidate.name ?? `CIK ${candidate.cik}`}</span>
-                  <span className="font-mono text-xs text-text-3">CIK {candidate.cik}</span>
+                  <span className="text-xs text-text-3">
+                    <span className="font-mono">CIK {candidate.cik}</span>
+                    {candidate.checked === undefined ? null : ` · ${latestText(candidate)}`}
+                  </span>
                 </span>
                 {candidate.status ? (
                   <Tag>{candidate.status === "default" ? "기본 12곳" : "즐겨찾기에 있음"}</Tag>
+                ) : candidate.checked === true && !candidate.latest13F ? (
+                  // 최근 공시 목록에 원본 13F-HR이 없으면 더해도 서버가 거절하므로 고르기를 두지 않습니다(QA-986).
+                  <Tag>13F-HR 없음</Tag>
                 ) : (
                   <Button size="sm" onClick={() => setPicked(candidate)} expanded={picked?.cik === candidate.cik}>
                     {picked?.cik === candidate.cik ? "고름" : "고르기"} <span className="sr-only">{candidate.name ?? `CIK ${candidate.cik}`}</span>
@@ -202,6 +208,14 @@ function EditorBody({
       />
     </div>
   );
+}
+
+/** 후보의 최근 13F 공시 글(QA-986) — 공시일(보고 기준일), 최근 공시 목록에 없음, 확인 못 함. */
+function latestText(candidate: FavoriteCandidate): string {
+  if (!candidate.checked) return "공시일 확인 못 함";
+  if (!candidate.latest13F) return "최근 공시 목록에 13F-HR 없음";
+  const report = candidate.latest13F.reportDate ? `(${candidate.latest13F.reportDate} 기준)` : "";
+  return `최근 13F ${candidate.latest13F.filingDate} 공시${report}`;
 }
 
 /** 지우기 확인 글 — 그 기관의 13F 신규 편입 알림 규칙이 있으면 함께 지워지는 수(ADR 0048 단계 3). */

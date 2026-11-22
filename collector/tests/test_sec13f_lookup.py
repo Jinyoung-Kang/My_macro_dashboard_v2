@@ -208,7 +208,6 @@ def test_QA985_이름_가운데_낱말과_옛_제출자도_전문_검색_제출�
 
 
 # QA-986: 후보마다 최근 13F 공시일이 없어 오래 전에 멈춘 제출자인지 고르기 전에 알 수 없었습니다.
-@pytest.mark.xfail(strict=True, reason="QA-986 재현 — 고치기 전")
 def test_QA986_후보마다_최근_원본_13F_HR_공시일(router):
     router(atom=ATOM, submissions={"0009900001": _submissions("FAKE CAPITAL LLC"),
                                    "0009900002": _submissions("FAKE CAPITAL GROUP", form="13F-NT")})

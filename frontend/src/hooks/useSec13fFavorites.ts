@@ -7,8 +7,17 @@ import { apiDelete, apiGet, apiPost, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { favoriteWriteError } from "@/lib/institutionFavorites";
 
-/** 이름 검색 후보 — status는 이미 기본 12곳('default')·즐겨찾기('favorite')인지, name이 null이면 CIK로 넣은 줄(더할 때 서버가 SEC 이름을 확인). */
-export type FavoriteCandidate = { cik: string; name: string | null; status: "default" | "favorite" | null };
+/**
+ * 이름 검색 후보 — status는 이미 기본 12곳('default')·즐겨찾기('favorite')인지, name이 null이면 CIK로 넣은 줄(더할 때 서버가 SEC 이름을 확인).
+ * latest13F는 최근 원본 13F-HR 공시(QA-986 — 목록에 없으면 null), checked는 그것을 SEC에서 확인했는지(CIK로 넣은 줄은 없음 — 더할 때 확인).
+ */
+export type FavoriteCandidate = {
+  cik: string;
+  name: string | null;
+  status: "default" | "favorite" | null;
+  latest13F?: { filingDate: string; reportDate: string | null } | null;
+  checked?: boolean;
+};
 
 export type FavoriteMessage = { tone: "ok" | "error"; text: string };
 
@@ -53,7 +62,11 @@ export function useSec13fFavorites(reload: () => Promise<void> | void): Sec13fFa
   const search = useCallback(
     async (q: string) => {
       const found = await run(() => apiGet<{ candidates: FavoriteCandidate[] }>(endpoints.institution.favoriteSearch(q)));
-      return found ? (found.candidates ?? []).map((row) => ({ cik: row.cik, name: row.name, status: row.status ?? null })) : null;
+      return found
+        ? (found.candidates ?? []).map((row) => ({
+            cik: row.cik, name: row.name, status: row.status ?? null, latest13F: row.latest13F ?? null, checked: row.checked,
+          }))
+        : null;
     },
     [run],
   );

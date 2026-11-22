@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -158,7 +159,27 @@ def search_filers(query: str) -> dict:
         if row["cik"] not in seen:
             seen.add(row["cik"])
             merged.append(row)
-    return {"query": text, "candidates": merged[:CANDIDATE_MAX], "error": None}
+    return {"query": text, "candidates": with_latest_13f(merged[:CANDIDATE_MAX]), "error": None}
+
+
+NO_LIST = "이 CIK의 SEC 공시 목록이 없습니다"
+
+
+def with_latest_13f(candidates: list[dict]) -> list[dict]:
+    """
+    후보마다 가장 최근 원본 13F-HR 공시(``latest13F`` — SEC submissions 한 번씩, QA-986)와 확인했는지(``checked``). 최근 공시 목록에 13F-HR이 없거나
+    목록 자체가 없으면(404) ``latest13F=None, checked=True``, SEC를 부르지 못했으면 ``checked=False``. 넷씩 함께 부르되 SEC 속도는 공용 토큰 버킷이
+    지킵니다(초당 8건 — 20곳이면 3초 안팎).
+    """
+    def one(row: dict) -> dict:
+        info = filer_info(row["cik"])
+        checked = info["error"] is None or info["error"] == NO_LIST
+        return {**row, "latest13F": info["latest13F"] if checked else None, "checked": checked}
+
+    if not candidates:
+        return []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return list(pool.map(one, candidates))
 
 
 def parse_submissions_13f(payload: Any) -> dict:
@@ -192,7 +213,7 @@ def filer_info(cik: str) -> dict:
     res, error = _get(SEC_SUBMISSIONS_URL.format(cik=padded), None)
     if error:
         if error.endswith("HTTP 404"):
-            error = "이 CIK의 SEC 공시 목록이 없습니다"
+            error = NO_LIST
         return {"cik": padded, "name": None, "latest13F": None, "error": error}
     try:
         payload = res.json()

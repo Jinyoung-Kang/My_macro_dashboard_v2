@@ -153,6 +153,16 @@ public class Sec13FFavoriteService {
             row.put("cik", cik);
             row.put("name", name);
             row.put("status", catalog.isDefault(cik) ? "default" : catalog.isFavorite(cik) ? "favorite" : null);
+            // 최근 원본 13F-HR 공시(수집기가 SEC submissions로 확인 — QA-986). 확인 못 했으면 checked=false, 목록에 없으면 latest13F=null.
+            JsonNode latest = node.get("latest13F");
+            Map<String, Object> latestRow = null;
+            if (latest != null && latest.isObject() && Json.asText(latest, "filingDate") != null) {
+                latestRow = new LinkedHashMap<>();
+                latestRow.put("filingDate", Json.asText(latest, "filingDate"));
+                latestRow.put("reportDate", Json.asText(latest, "reportDate"));
+            }
+            row.put("latest13F", latestRow);
+            row.put("checked", node.path("checked").asBoolean(false));
             candidates.add(row);
         }
         Map<String, Object> body = new LinkedHashMap<>();
