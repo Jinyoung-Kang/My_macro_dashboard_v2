@@ -139,3 +139,13 @@ export function participantsLine(participants: readonly string[] | null | undefi
   const names = (participants ?? []).map((name) => filerName(name) ?? name);
   return `참여 기관: ${names.join(", ") || EMPTY}`;
 }
+
+/**
+ * 교집합 요청의 ciks — 즐겨찾기를 켜지 않았으면 지금 그대로(빈 글 = 기본 12곳 전체, 아니면 고른 기본 기관), 켰으면 기본 12곳의 유효 선택(빈 목록이면 전체)
+ * 다음에 켠 즐겨찾기(ADR 0048 단계 3 — 서버는 기본 12곳·즐겨찾기 CIK만 받음).
+ */
+export function consensusCiks(allCiks: readonly string[], selected: readonly string[], favorites: readonly string[]): string {
+  if (favorites.length === 0) return selected.length > 0 ? selected.join(",") : "";
+  const defaults = selected.length > 0 ? selected : allCiks;
+  return [...defaults, ...favorites.filter((cik) => !defaults.includes(cik))].join(",");
+}

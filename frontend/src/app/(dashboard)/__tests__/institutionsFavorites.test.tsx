@@ -33,7 +33,7 @@ const LIST = {
   institutions: [{ key: "berkshire", name: "가상 버크셔 (Fictional Berkshire)", cik: BERKSHIRE, desc: "가치" }],
   favorites: [
     { key: `fav-${FAV}`, name: "가짜 운용 (Fake Capital)", cik: FAV, desc: "더한 기관", secName: "FAKE CAPITAL LLC", stored: true, source: "q8",
-      latestReportDate: "2026-06-30" },
+      latestReportDate: "2026-06-30", alertRules: 2 },
   ],
   favoriteLimit: 20,
 };
@@ -152,6 +152,8 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
     const current = within(dialog).getByRole("region", { name: "지금 즐겨찾기" });
     fireEvent.click(within(current).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" }));
     const confirm = await screen.findByRole("alertdialog", { name: "즐겨찾기에서 지울까요?" }).catch(() => screen.findByRole("dialog", { name: "즐겨찾기에서 지울까요?" }));
+    // 그 기관의 13F 신규 편입 알림 규칙 수(운영자 목록의 alertRules — ADR 0048 단계 3)
+    expect(confirm.textContent).toContain("알림 규칙 2개도 함께 지웁니다");
     expect(api.apiDelete).not.toHaveBeenCalled();
     fireEvent.click(within(confirm).getByRole("button", { name: "지우기" }));
     await waitFor(() => expect(api.apiDelete).toHaveBeenCalledWith(endpoints.institution.favorite(FAV)));

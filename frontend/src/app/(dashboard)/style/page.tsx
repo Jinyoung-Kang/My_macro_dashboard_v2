@@ -17,6 +17,7 @@ import {
   Panel,
   Select,
   SKELETON_BAR,
+  Tag,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
@@ -150,9 +151,13 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
                   rowHeader: true,
                   className: "break-keep",
                   cell: (row) => (
-                    <InspectorTrigger inspector={inspector} itemKey={row.cik}>
-                      {profileName(row)}
-                    </InspectorTrigger>
+                    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                      <InspectorTrigger inspector={inspector} itemKey={row.cik}>
+                        {profileName(row)}
+                      </InspectorTrigger>
+                      {/* 13F 즐겨찾기(ADR 0048 단계 3) — 기본 12곳과 글로 구분 */}
+                      {row.favorite ? <Tag>즐겨찾기</Tag> : null}
+                    </span>
                   ),
                 },
                 { key: "totalValue", header: "포트폴리오 총액", align: "right", cell: (row) => moneyCell(row.totalValue, usdKrw) },

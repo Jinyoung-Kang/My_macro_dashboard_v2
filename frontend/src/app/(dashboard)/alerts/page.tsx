@@ -45,7 +45,10 @@ export default function AlertsPage() {
   const demo = isDemo(useSessionUser());
   const inbox = useApi<InboxResponse>(endpoints.alerts.inbox(50), 300_000);
   const rules = useApi<AlertRulesResponse>(endpoints.alerts.rules, 0);
-  const institutions = useApi<{ institutions?: { cik: string; name: string }[] }>(endpoints.institution.institutions, 0);
+  const institutions = useApi<{ institutions?: { cik: string; name: string }[]; favorites?: { cik: string; name: string }[] }>(
+    endpoints.institution.institutions,
+    0,
+  );
 
   const read = useAsyncAction((ids: number[] | null) =>
     apiPost<{ changed: number }>(endpoints.alerts.read, ids === null ? { all: true } : { ids }), "읽음 처리에 실패했습니다.");
@@ -280,7 +283,9 @@ export default function AlertsPage() {
           {kind === "INSTITUTION_NEW" && (
             <Select label="관심 기관" value={cik} onChange={setCik}
               options={[{ value: "", label: "기관을 고르세요" },
-                ...(institutions.data?.institutions ?? []).map((i) => ({ value: i.cik, label: filerName(i.name) ?? `CIK ${i.cik}` }))]} />
+                ...(institutions.data?.institutions ?? []).map((i) => ({ value: i.cik, label: filerName(i.name) ?? `CIK ${i.cik}` })),
+                // 13F 즐겨찾기(ADR 0048 단계 3) — 기본 12곳 뒤에, 이름 끝에 '(즐겨찾기)'
+                ...(institutions.data?.favorites ?? []).map((i) => ({ value: i.cik, label: `${filerName(i.name) ?? `CIK ${i.cik}`} (즐겨찾기)` }))]} />
           )}
           {create.error && <Callout tone="warn">{create.error}</Callout>}
           {create.result && <Callout tone={create.result.ok ? "ok" : "warn"}>{create.result.message}</Callout>}

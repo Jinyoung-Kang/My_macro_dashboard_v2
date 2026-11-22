@@ -98,6 +98,8 @@ export interface GuruProfile {
   /** 직전 분기가 없으면 null (0이 아닙니다). */
   turnover: number | null;
   quarterCount: number;
+  /** 13F 즐겨찾기(ADR 0048)면 true — 기본 12곳 줄에는 없음. */
+  favorite?: boolean;
 }
 
 /** 기관 간 유사도. */

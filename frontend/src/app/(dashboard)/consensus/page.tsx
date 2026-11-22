@@ -42,6 +42,7 @@ import {
   participantsLine,
   securityTitles,
   selectionCountText,
+  consensusCiks,
 } from "@/lib/consensusScreen";
 import { effectiveSelection, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, ConsensusRow, NewBuysResponse } from "@/lib/types";
@@ -61,16 +62,21 @@ import { endpoints } from "@/lib/endpoints";
  * 한 칸으로 왼쪽 칸이 위입니다(접지 않음).
  */
 export default function ConsensusPage() {
-  const institutions = useApi<{ institutions: { name: string; cik: string }[] }>(
+  const institutions = useApi<{ institutions: { name: string; cik: string }[]; favorites?: { name: string; cik: string }[] }>(
     endpoints.institution.institutions,
   );
   // 빈 목록 = 전체. 화면과 요청은 lib/selection의 유효 선택을 씁니다(QA-003).
   const [selected, setSelected] = useState<string[]>([]);
   const allCiks = (institutions.data?.institutions ?? []).map((entry) => entry.cik);
+  // 13F 즐겨찾기(ADR 0048 단계 3) — 처음엔 모두 꺼짐. 하나라도 켜면 요청 ciks에 기본 12곳의 유효 선택과 함께 적습니다(켠 것이 없으면 요청은 지금 그대로).
+  const favorites = institutions.data?.favorites ?? [];
+  const [favoriteSelected, setFavoriteSelected] = useState<string[]>([]);
+  const toggleFavorite = (cik: string) =>
+    setFavoriteSelected((previous) => (previous.includes(cik) ? previous.filter((item) => item !== cik) : [...previous, cik]));
   const [reportDate, setReportDate] = useState("");
   const [minHolders, setMinHolders] = useState("2");
 
-  const ciks = selected.length > 0 ? selected.join(",") : "";
+  const ciks = consensusCiks(allCiks, selected, favoriteSelected);
   const consensus = useApi<ConsensusResponse>(endpoints.institution.consensus({ minHolders, topN: 40, ciks, reportDate }));
   const { data, error, reload } = consensus;
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다.
@@ -159,6 +165,23 @@ export default function ConsensusPage() {
                 emptyText="고를 기관이 없습니다."
               />
             </Panel>
+            {favorites.length > 0 ? (
+              <Panel
+                title="즐겨찾기"
+                count={favoriteSelected.length > 0 ? `${favoriteSelected.length}곳 선택` : undefined}
+                subtitle="처음엔 모두 꺼져 있습니다. 누른 기관을 위 분석 대상에 더합니다."
+              >
+                <FilterList
+                  label="교집합에 더할 즐겨찾기 기관"
+                  items={institutionChoices(favorites)}
+                  selected={favoriteSelected}
+                  onToggle={toggleFavorite}
+                  selection="multiple"
+                  narrow="wrap"
+                  status={favoriteSelected.length > 0 ? `즐겨찾기 ${favoriteSelected.length}곳을 더함` : "즐겨찾기를 더하지 않음"}
+                />
+              </Panel>
+            ) : null}
           </>
         }
       >

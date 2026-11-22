@@ -186,17 +186,31 @@ function EditorBody({
         open={removing !== null}
         onOpenChange={(next) => (next ? undefined : setRemoving(null))}
         title="즐겨찾기에서 지울까요?"
-        description={removing ? `${removing.name}(CIK ${removing.cik})을 즐겨찾기에서 지웁니다. 13F 저장본은 남겨 두어 다시 더하면 바로 보입니다.` : undefined}
+        description={removing ? removeDescription(removing) : undefined}
         confirmLabel="지우기"
         tone="danger"
         busy={editor.busy}
         onConfirm={async () => {
           if (!removing) return;
           const ok = await editor.remove(removing.cik);
-          if (ok) setRemoving(null);
+          if (ok) {
+            setRemoving(null);
+            // 지운 줄의 단추가 사라져 포커스가 몸통으로 떨어지지 않게 찾기 칸으로(확인 창이 닫힌 뒤).
+            requestAnimationFrame(() => queryRef.current?.focus());
+          }
         }}
       />
     </div>
+  );
+}
+
+/** 지우기 확인 글 — 그 기관의 13F 신규 편입 알림 규칙이 있으면 함께 지워지는 수(ADR 0048 단계 3). */
+function removeDescription(favorite: InstitutionFavoriteEntry): string {
+  const rules = favorite.alertRules ?? 0;
+  return (
+    `${favorite.name}(CIK ${favorite.cik})을 즐겨찾기에서 지웁니다.` +
+    (rules > 0 ? ` 이 기관의 13F 신규 편입 알림 규칙 ${rules}개도 함께 지웁니다(모든 사용자).` : "") +
+    " 13F 저장본은 남겨 두어 다시 더하면 바로 보입니다."
   );
 }
 

@@ -22,6 +22,8 @@ export type InstitutionFavoriteEntry = InstitutionEntry & {
   stored: boolean;
   source: "q30" | "q8" | null;
   latestReportDate: string | null;
+  /** 그 기관의 13F 신규 편입 알림 규칙 수(모든 사용자 — 지우면 함께 지워짐, 운영자에게만 옴). */
+  alertRules?: number;
 };
 
 /** 기관 목록 응답 — 기본 12곳과 즐겨찾기(예전 응답에는 favorites가 없음). */
