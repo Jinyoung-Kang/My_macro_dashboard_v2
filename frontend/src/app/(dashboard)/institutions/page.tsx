@@ -33,17 +33,8 @@ import {
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
-import { HoldingsPanel } from "./HoldingsPanel";
-
-/**
- * 비중 추이 선 10개의 색(순서 고정). dataviz 검증기로 라이트(#ffffff)·다크(#1a1a19) 표면 모두 통과한 값입니다 — 이웃 쌍 색약 ΔE 최소 8.2·
- * 정상 시각 17.2, 밝기 띠·채도·대비 3:1 모두 통과. 예전 값(#58A6FF…)은 색약 5.1(노랑↔초록)·다크 밝기 띠 6칸 이탈·회색 한 칸으로
- * 실패해, 칸마다 가장 가까운 통과 값으로 옮겼습니다(모든 쌍 최소 정상 ΔE 8.1은 예전과 같음 — 10개는 범례·히트맵 표가 함께 나름).
- */
-const SERIES_COLORS = [
-  "#4798ee", "#1da967", "#c68206", "#eb5070", "#a371f7",
-  "#22a2bd", "#dd6836", "#8b8dd1", "#81a022", "#cf7787",
-];
+import { PortfolioHoldingsPanel } from "@/components/screens/institutions/PortfolioHoldingsPanel";
+import { WEIGHT_LINE_COLORS } from "@/components/screens/institutions/weightLineColors";
 
 /**
  * 기관 13F 포트폴리오 분석.
@@ -90,8 +81,8 @@ export default function InstitutionsPage() {
 
   const chartData = history ? weightHistoryRows(history.dates, history.series) : [];
 
-  // 범례·툴팁 이름표(구분자를 남기고 이름 쪽을 줄임 — QA-120)와 선 색(이 파일의 SERIES_COLORS 차례) — lib/institutionsScreen weightLines.
-  const chartSeries = weightLines(history?.series, SERIES_COLORS);
+  // 범례·툴팁 이름표(구분자를 남기고 이름 쪽을 줄임 — QA-120)와 선 색(WEIGHT_LINE_COLORS 차례) — lib/institutionsScreen weightLines.
+  const chartSeries = weightLines(history?.series, WEIGHT_LINE_COLORS);
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -222,7 +213,7 @@ export default function InstitutionsPage() {
               )}
             </Panel>
 
-            <HoldingsPanel data={data} krw={usdKrw} />
+            <PortfolioHoldingsPanel data={data} krw={usdKrw} />
           </>
         )}
       </SplitPane>

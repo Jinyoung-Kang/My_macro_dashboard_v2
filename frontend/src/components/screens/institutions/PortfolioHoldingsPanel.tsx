@@ -56,7 +56,7 @@ const SIDE_COMPACT = "[&_td]:px-2 [&_th]:px-2";
  *   것이 없습니다(요청 +0).
  * - 표는 옆 칸 배치가 아니면 최소 640px + 넘칠 때 넘김 안내(`scrollHint="overflow"`), 옆 칸 배치면 최소 폭 없이 칸 폭에 맞춥니다(매크로 지표 표와 같은 꼴).
  */
-export function HoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: KrwConversion }) {
+export function PortfolioHoldingsPanel({ data, krw }: { data: PortfolioResponse; krw: KrwConversion }) {
   const user = useSessionUser();
   // 보유 표 줄 — 키는 'CUSIP:클래스'(겹치면 '#n' 꼬리), 이름표는 공시 이름(겹치는 줄에만 클래스·CUSIP — QA-587 규칙).
   const holdings = data.holdings ?? [];

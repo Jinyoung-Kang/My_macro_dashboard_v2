@@ -120,7 +120,7 @@ export const WEIGHT_LINE_LABEL_WIDTH = 19;
 export type WeightLine = { key: string; name: string; color: string };
 
 /**
- * 비중 추이 선(상위 10줄) — 키 차례는 응답 그대로, 색은 받은 색 목록을 차례대로 돌려 씁니다(색 상수는 화면 파일 — 팔레트 기록이 그 자리를 읽음).
+ * 비중 추이 선(상위 10줄) — 키 차례는 응답 그대로, 색은 받은 색 목록을 차례대로 돌려 씁니다(색 상수는 components/screens/institutions/weightLineColors — 팔레트 기록이 그 자리를 읽음).
  * 이름표는 키 뒤의 구분자(' · 클래스', ' · CUSIP …')를 남기고 이름 쪽을 줄입니다 — 앞에서 자르면 같은 이름의 두 줄이 같은 이름표가 됩니다(QA-120).
  */
 export function weightLines(series: Readonly<Record<string, unknown>> | null | undefined, colors: readonly string[]): WeightLine[] {

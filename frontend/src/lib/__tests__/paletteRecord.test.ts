@@ -67,7 +67,7 @@ const RECORDED_SOURCES: Readonly<Record<string, readonly string[]>> = {
   // 계좌 상세 구성 도넛 — 상위 세 종목은 SERIES_COLORS, 기타(2026-11-15 #6e6e7c)·현금 회색.
   "components/screens/paper/AccountDetailPanel.tsx": ["#6e6e7c", "#9ea7b3"],
   // 기관 비중 추이 선 10색(순서 고정).
-  "app/(dashboard)/institutions/page.tsx": [
+  "components/screens/institutions/weightLineColors.ts": [
     "#4798ee", "#1da967", "#c68206", "#eb5070", "#a371f7",
     "#22a2bd", "#dd6836", "#8b8dd1", "#81a022", "#cf7787",
   ],
