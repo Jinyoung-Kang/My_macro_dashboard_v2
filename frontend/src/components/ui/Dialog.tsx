@@ -5,13 +5,16 @@ import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { useRef, type ReactElement, type ReactNode } from "react";
 import { XIcon } from "@/components/ui/icons";
 
-/** 폭 — 확인 창은 sm, 보통은 md, 검색처럼 목록이 긴 것은 lg. 좁은 화면에서는 양옆 16px만 남기고 다 씁니다. */
-const WIDTH = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-2xl" } as const;
+/**
+ * 폭 — 확인 창은 sm, 보통은 md, 검색처럼 목록이 긴 것은 lg, 여러 칸 표가 든 상세(보안 공지 '자세히 보기' — 2026-11-22)는 xl. 좁은 화면에서는 양옆 16px만
+ * 남기고 다 씁니다.
+ */
+const WIDTH = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-2xl", xl: "max-w-5xl" } as const;
 
 export type DialogSize = keyof typeof WIDTH;
 
 /** 오른쪽 세로 패널(`placement="end"`)의 폭 — 좁은 화면(sm 미만)은 화면 전체 폭, 그 위는 같은 크기 이름의 폭까지. */
-const END_WIDTH = { sm: "sm:max-w-sm", md: "sm:max-w-md", lg: "sm:max-w-2xl" } as const;
+const END_WIDTH = { sm: "sm:max-w-sm", md: "sm:max-w-md", lg: "sm:max-w-2xl", xl: "sm:max-w-5xl" } as const;
 
 /** 대화상자 자리 — 가운데(기본)·위쪽 고정·오른쪽 끝에 붙은 세로 패널(서랍 — ui/Drawer). */
 export type DialogPlacement = "center" | "top" | "end";

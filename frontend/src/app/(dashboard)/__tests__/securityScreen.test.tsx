@@ -3,12 +3,12 @@
  * - 네 판정은 아이콘 + 글(색만이 아님), 사유는 한국어 글
  * - 거르기(판정·사유)와 검색이 API 인자(verdict·reason·q)로 가고 첫 쪽부터 다시 읽음
  * - 요약 칸(2026-11-21 사용자 결정): 판정·사유 한 줄, 이 환경에 걸린 것(해당·확인 필요만 — 패치됨 행은 그리지 않음), '패치됨 N개 · 무관 N개' 한 줄,
- *   ※ 조건 문장 수, '자세히 보기'(/security/<번호>)·원문 링크(새 창) — 행 표 전체는 그리지 않음, 새 사유 DISTRO_OPEN·추적기 칸 있음/없음
+ *   ※ 조건 문장 수, '자세히 보기'(팝업 — 상세 구역 ①~⑤, 다시 읽지 않음)·원문 링크(새 창) — 행 표 전체는 그리지 않음, 새 사유 DISTRO_OPEN·추적기 칸 있음/없음
  * - 버전 목록 없음 안내·오래됨 경고·한계 한 줄(늘)·수집 상태 한 줄
  * - 알림함 링크 ?ntt=<번호>가 그 공지의 요약 칸을 엶(좁은 화면 대화상자·넓은 화면 옆 칸)
  * - 회원·데모에게는 메뉴가 없음, 이 화면은 GET만(쓰기 0)
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -283,13 +283,23 @@ describe("보안 공지 — 요약 칸", () => {
     // ※ 조건 문장은 수와 첫 문장 한 줄(주의 아이콘 + 글).
     expect(within(dialog).getByText("※ 조건 문장 1개 — ※ 가짜 확장을 켠 설치에서만 영향(가짜 조건 문장)")).toBeTruthy();
 
-    const more = within(dialog).getByRole("link", { name: "자세히 보기" });
-    expect(more.getAttribute("href")).toBe("/security/900001");
-    expect(more.getAttribute("target")).toBeNull();
     const link = within(dialog).getByRole("link", { name: /원문 열기\(새 창\)/ });
     expect(link.getAttribute("href")).toBe("https://example.invalid/qa/900001");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+
+    // '자세히 보기'는 팝업(2026-11-22 사용자 요청) — 요약 칸이 읽은 응답 그대로 상세 구역 ①~⑤를 넓은 대화상자에(다시 읽지 않음).
+    const reads900001 = () => calledPaths().filter((path) => path === endpoints.security.notice(900001)).length;
+    const before = reads900001();
+    fireEvent.click(within(dialog).getByRole("button", { name: "자세히 보기" }));
+    // 팝업이 열리면 바깥 요약 대화상자는 접근성 트리에서 가려집니다(Radix 모달) — 보이는 대화상자는 팝업 하나.
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
+    const popup = screen.getByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
+    expect(within(popup).getByText(/^글 900001 · 게시 /)).toBeTruthy();
+    expect(within(popup).getByText("공지 본문")).toBeTruthy();
+    expect(within(popup).getAllByRole("table").length).toBeGreaterThan(0);
+    expect(within(popup).getByRole("link", { name: /원문 열기\(새 창\)/ }).getAttribute("target")).toBe("_blank");
+    expect(reads900001()).toBe(before);
   });
 
   it("새 사유 DISTRO_OPEN은 '배포판 미수정', 추적기 칸이 있으면 고친 판이 해결 판으로, 걸린 것이 없으면 그 사실 한 줄", async () => {
@@ -328,7 +338,7 @@ describe("보안 공지 — 요약 칸", () => {
     await within(patched).findByText("이 환경에 걸린 것 0줄");
     expect(within(patched).getByText("해당·확인 필요인 근거가 없습니다.")).toBeTruthy();
     expect(within(patched).getByText("패치됨 1개 · 무관 0개 — 목록은 ‘자세히 보기’에서 봅니다.")).toBeTruthy();
-    expect(within(patched).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900002");
+    expect(within(patched).getByRole("button", { name: "자세히 보기" })).toBeTruthy();
   });
 
   it("알림함 링크 ?ntt=<번호>는 그 공지의 요약 칸을 연다 — 좁은 화면은 대화상자", async () => {
@@ -336,7 +346,7 @@ describe("보안 공지 — 요약 칸", () => {
     await renderPage();
     const dialog = await screen.findByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
     await within(dialog).findByText("이 환경에 걸린 것 2줄");
-    expect(within(dialog).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900001");
+    expect(within(dialog).getByRole("button", { name: "자세히 보기" })).toBeTruthy();
   });
 
   it("?ntt=의 공지가 지금 쪽에 없어도 연다(제목 '보안 공지 <번호>'), 숫자가 아니면 열지 않는다", async () => {
@@ -345,7 +355,7 @@ describe("보안 공지 — 요약 칸", () => {
     await renderPage();
     const dialog = await screen.findByRole("dialog", { name: "보안 공지 900099" });
     await within(dialog).findByText("이 환경에 걸린 것 2줄");
-    expect(within(dialog).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900099");
+    expect(within(dialog).getByRole("button", { name: "자세히 보기" })).toBeTruthy();
     cleanup();
 
     nav.search = "?ntt=abc";
@@ -361,7 +371,7 @@ describe("보안 공지 — 요약 칸", () => {
     await within(inspector).findByText("이 환경에 걸린 것 2줄");
     expect(within(inspector).getByText("패치됨 1개 · 무관 1개 — 목록은 ‘자세히 보기’에서 봅니다.")).toBeTruthy();
     expect(within(inspector).queryByRole("table")).toBeNull();
-    expect(within(inspector).getByRole("link", { name: "자세히 보기" }).getAttribute("href")).toBe("/security/900001");
+    expect(within(inspector).getByRole("button", { name: "자세히 보기" })).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(rowOf("[가짜] 합성 DB 보안 업데이트 권고").getAttribute("aria-current")).toBeTruthy();
   });

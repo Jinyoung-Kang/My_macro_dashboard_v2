@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "@/components/ui/IntentLink";
 import { InspectorSubheading, Skeleton } from "@/components/patterns";
 import { Callout, ErrorState, buttonClasses } from "@/components/ui";
 import { ExternalLinkIcon, StatusText } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
-import { securityNoticeHref } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import {
@@ -21,6 +19,7 @@ import {
   type EvidenceLine,
 } from "@/lib/security";
 import type { SecurityNoticeResponse } from "@/lib/types";
+import { NoticeDetailDialog } from "./NoticeDetailDialog";
 import { VerdictText } from "./VerdictText";
 
 const SUBHEADING = "mb-1 text-caption font-semibold text-text-2";
@@ -33,7 +32,8 @@ const SUBHEADING = "mb-1 text-caption font-semibold text-text-2";
  * - 이 환경에 걸린 것 — 해당·확인 필요인 근거만, 같은 제품·구역·판정은 한 줄(제품·구역, 설치 판·해결 판, 사유·근거 한 줄). 없으면 그 사실 한 줄.
  * - '패치됨 N개 · 무관 N개' 한 줄(펼치기 없음 — 상세 페이지에서 봄).
  * - ※ 조건 문장 수와 첫 문장(있을 때만).
- * - 단추 둘: '자세히 보기'(상세 페이지 /security/<번호>)·'원문 열기(새 창)'.
+ * - 단추 둘: '자세히 보기'(팝업 — 상세 페이지와 같은 구역 ①~⑤, NoticeDetailDialog, 2026-11-22 사용자 요청)·'원문 열기(새 창)'.
+ *   상세 페이지 주소(/security/<번호>)는 그대로 열립니다.
  */
 export function NoticeSummary({ nttId }: { nttId: string }) {
   const read = useApi<SecurityNoticeResponse>(endpoints.security.notice(nttId), 0);
@@ -82,9 +82,14 @@ export function NoticeSummary({ nttId }: { nttId: string }) {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={securityNoticeHref(nttId)} className={buttonClasses("primary", "md")}>
-          자세히 보기
-        </Link>
+        <NoticeDetailDialog
+          data={data}
+          trigger={
+            <button type="button" className={buttonClasses("primary", "md")}>
+              자세히 보기
+            </button>
+          }
+        />
         {url ? (
           <a href={url} target="_blank" rel="noopener noreferrer" className={buttonClasses("default", "md")}>
             원문 열기(새 창)
