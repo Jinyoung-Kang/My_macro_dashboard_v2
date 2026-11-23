@@ -582,22 +582,22 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("QA-381: 손절 지시를 만들 때 앞 세션의 미확인 종가 스탑 지시를 닫음(QA-382와 같은 규칙) — 같은 보유의 매도 지시 둘을 함께 열어 두지 않음, 기준가를 몰라도 손절 지시는 만듦")
-    void stopOnlyClosesEarlierClosingStop() {
+    @DisplayName("QA-381·QA-990: 현금이 음수여도 앞 세션 스탑 지시가 대기 중이면 손절 지시도 기다림(stops-pending) — 건너뛰면 다음 주기에 손절 지시, 기준가를 몰라도 만듦")
+    void stopOnlyWaitsForEarlierClosingStop() {
         ManualAccountStore.StopInstruction stop = closingStopPastClose();   // E 종가 스탑 A 10주 — 미확인, 잔고 A 10주 그대로
         store.updateCash("isa", d("-100000"));
         targets(E2, Map.of(B, 30.0), Map.of(B, 20_000.0), true);   // 규칙 계좌는 A를 E 종가 스탑으로 팖 — 그 STOP이 아직 대기(지난 세션의 STOP)
         when(paper.pendingStopSymbols(BOOK, E2)).thenReturn(Set.of(A));
 
         cycleAt("2026-11-09T22:35");
+        assertThat(lines(E2)).isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_STOPS);
+        assertThat(store.stopInstruction(stop.id()).orElseThrow().status()).isEqualTo("PLANNED");
 
+        store.updateStopInstructionStatus(stop.id(), "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));   // 종가에 팔지 않음
+        cycleAt("2026-11-09T22:45");
         assertThat(lines(E2)).containsExactly("SELL " + A + " 10 PLANNED");
         assertThat(store.instructions("isa", E2).getFirst().refPrice()).as("목표에 가격이 없는 종목 — 수량은 가격에 달려 있지 않음").isNull();
-        assertThat(store.stopInstruction(stop.id()).orElseThrow()).satisfies(row -> {
-            assertThat(row.status()).isEqualTo("SKIPPED");
-            assertThat(row.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
-        });
-        assertThat(store.plannedStopInstructions("isa")).as("열린 A 매도는 손절 지시 하나뿐").isEmpty();
     }
 
     @Test
@@ -923,41 +923,6 @@ class ManualAccountJobDbTest {
         assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.timing()).isEqualTo("NEXT_CLOSE"));
     }
 
-    @Test
-    @DisplayName("마감까지 알리지 못한 스탑 지시는 SKIPPED(not-notified) — 잔고를 바꾸지 않음, 다음 세션 지시를 막지 않음")
-    void unnotifiedStopIsSkippedAtClose() {
-        timedPlanned(List.of());
-        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
-        when(telegram.configured()).thenReturn(false);
-        stopCycleAt("2026-11-09T11:30");
-        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.notifiedAt()).isNull());
-        stopCycleAt("2026-11-09T15:31");
-        assertThat(stops()).singleElement().satisfies(stop -> {
-            assertThat(stop.status()).isEqualTo("SKIPPED");
-            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_NOT_NOTIFIED);
-        });
-    }
-
-    @Test
-    @DisplayName("알린 스탑 지시가 미확인으로 세션 마감을 넘기면 SKIPPED(expired), 보기에 금액 없이 그 상태")
-    void notifiedStopExpiresAtClose() {
-        timedPlanned(List.of());
-        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
-        stopCycleAt("2026-11-09T11:30");
-        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of());
-        cycleAt("2026-11-09T15:40");
-        assertThat(stops()).singleElement().satisfies(stop -> {
-            assertThat(stop.status()).isEqualTo("SKIPPED");
-            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
-        });
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> shown = (List<Map<String, Object>>) service().view().get("stopInstructions");
-        assertThat(shown).singleElement().satisfies(row -> {
-            assertThat(row).containsEntry("symbol", A).containsEntry("quantity", 50).containsEntry("status", "SKIPPED").containsEntry("autoNote", "expired");
-            assertThat(row).doesNotContainKey("price");
-        });
-    }
-
     // ------------------------------------------------------------------ 종가 스탑 지시의 확인 기한(QA-382 — ADR 0034 결정 7 개정)
     private static DueOrder closingStopOrder(long id, String ticker, LocalDate session) {
         return new DueOrder(id, id, ticker, "SELL", "NEXT_CLOSE", "STOP", session.atTime(15, 30).atZone(SEOUL).toInstant(),
@@ -1002,50 +967,29 @@ class ManualAccountJobDbTest {
         });
     }
 
-    // 수정 전 실패: 15:40 주기에 이미 SKIPPED라 첫 단언('마감 뒤에도 미확인')에서 'expected: "PLANNED" but was: "SKIPPED"'.
+    // QA-382 때는 다음 세션 지시를 만들 때 닫았다 — QA-990부터는 닫지 않고, 대기 중인 동안 다음 세션 지시를 기다림(같은 보유를 두 지시로 열어 두지 않는 방법이 바뀜).
     @Test
-    @DisplayName("QA-382: 종가 스탑 지시는 다음 세션 지시를 만들 때 SKIPPED(expired) — 미확인이면 잔고 보유 그대로 다음 지시를 계산(같은 종목을 두 지시로 열어 두지 않음), 닫힌 뒤에는 확인 400")
-    void closingStopExpiresWhenNextSessionPlanned() {
+    @DisplayName("QA-382·QA-990: 종가 스탑 지시는 다음 세션 지시를 만들 때도 닫지 않음 — 대기 중이면 다음 지시를 기다리고(stops-pending), 확인하면 판 보유가 빠진 잔고로 다음 지시")
+    void closingStopBlocksNextSessionUntilConfirmed() {
         ManualAccountStore.StopInstruction stop = closingStopPastClose();
         assertThat(stop.status()).as("마감 뒤에도 미확인").isEqualTo("PLANNED");
 
         targets(E2, Map.of(B, 30.0), Map.of(B, 20_000.0), true);   // 규칙 계좌는 A를 종가 스탑으로 팔았음
         when(paper.lastPrices(any())).thenReturn(Map.of(A, d("9500")));
         cycleAt("2026-11-09T22:35");
+        assertThat(store.stopInstruction(stop.id()).orElseThrow().status()).isEqualTo("PLANNED");
+        assertThat(lines(E2)).isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_STOPS);
 
-        assertThat(store.stopInstruction(stop.id()).orElseThrow()).satisfies(row -> {
-            assertThat(row.status()).isEqualTo("SKIPPED");
-            assertThat(row.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
-        });
-        // 평가액 900,000 + 10주 × 9,500 = 995,000 — 책에 없는 A는 전량 매도, B floor(298,500 ÷ 20,000) = 14
-        assertThat(lines(E2)).containsExactly("SELL " + A + " 10 PLANNED", "BUY " + B + " 14 PLANNED");
-        assertThat(store.plannedStopInstructions("isa")).as("열린 A 매도는 다음 세션 지시 하나뿐").isEmpty();
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service().apply(new ManualAccountService.ApplyRequest(List.of(
-                new ManualAccountService.ApplyItem(null, stop.id(), d("9500"), "live"))))).isInstanceOfSatisfying(ManualAccountException.class,
-                e -> assertThat(e.status()).isEqualTo(400));
-    }
-
-    // 수정 전 실패: 위와 같음('expected: "PLANNED" but was: "SKIPPED"').
-    @Test
-    @DisplayName("QA-382: 다음 세션 지시를 못 만들면 종가 스탑 지시는 다음 세션이 열릴 때까지 — 개장 뒤 첫 주기에 SKIPPED(expired), 그 사이 그날 스탑 수량은 잔고 보유만(이중으로 세지 않음)")
-    void closingStopExpiresAtNextOpenWithoutPlan() {
-        ManualAccountStore.StopInstruction stop = closingStopPastClose();
-
-        cycleAt("2026-11-09T22:35");   // E2 시가 목표 없음 — 지시를 만들지 못하고 기다림
-        cycleAt("2026-11-10T08:50");
-        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_TARGETS);
-        assertThat(store.stopInstruction(stop.id()).orElseThrow().status()).as("다음 세션 지시를 만들기 전 — 아직 확인할 수 있음").isEqualTo("PLANNED");
-
-        when(paper.dueOrders(eq(BOOK), eq(E2), any())).thenReturn(List.of(stopAt(61L, A, "MARKET", kst("2026-11-10T09:12"))));
-        stopCycleAt("2026-11-10T09:10:30");   // 개장 뒤 첫 전체 주기 전의 30초 주기
-        assertThat(store.stopInstructions("isa", E2)).singleElement().satisfies(next -> assertThat(next.quantity()).as("잔고 보유 10주 그대로").isEqualTo(10));
-
-        cycleAt("2026-11-10T09:15");
-        assertThat(store.stopInstruction(stop.id()).orElseThrow()).satisfies(row -> {
-            assertThat(row.status()).isEqualTo("SKIPPED");
-            assertThat(row.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
-        });
-        assertThat(store.stopInstructions("isa", E2)).singleElement().satisfies(next -> assertThat(next.status()).isEqualTo("PLANNED"));
+        when(paper.krTradeCosts(anyString(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any()))
+                .thenReturn(new PaperMirrorService.TradeCosts(d("0"), d("0"), false));
+        clock.set(kst("2026-11-09T22:40"));
+        service().apply(new ManualAccountService.ApplyRequest(List.of(
+                new ManualAccountService.ApplyItem(null, stop.id(), null, "user", d("10"), d("95000"), d("0")))));
+        cycleAt("2026-11-09T22:45");
+        // 현금 900,000 + 95,000 = 995,000 — A는 없음, B floor(298,500 ÷ 20,000) = 14
+        assertThat(lines(E2)).containsExactly("BUY " + B + " 14 PLANNED");
+        assertThat(job.waiting()).isNull();
     }
 
     // 종가 스탑은 15:00(마감 30분 전 알림 시각) 뒤에 알린 지시라 확인 알림에 들지 않고, 마감 뒤에는 확인 알림이 없음 — 수정 전에도 통과(바꾸지 않은 것을 고정).
@@ -1057,7 +1001,7 @@ class ManualAccountJobDbTest {
 
         job.reminders(kst("2026-11-09T15:25"));
         job.reminders(kst("2026-11-09T15:45"));
-        store.updateStopInstructionStatus(stop.id(), "PLANNED", null, Map.of());   // 수정 전(15:40에 닫힘)에도 같은 조건으로 — 열려 있어도 다음 세션 알림에 들지 않음
+        store.updateStopInstructionStatus(stop.id(), "PLANNED", null, Map.of());   // 대기 중 그대로(QA-990) — 열려 있어도 다음 세션 알림에 들지 않음
         job.reminders(kst("2026-11-10T12:15"));
         job.reminders(kst("2026-11-10T15:00"));
 
@@ -1081,7 +1025,6 @@ class ManualAccountJobDbTest {
     }
 
     // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(15:40 첫 주기에 SKIPPED(expired) — 장중에 판 사용자가 마감 뒤에 매매 내역을 적을 수 없었음).
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 알린 장중 스탑 지시는 마감이 지나도 닫지 않음 — 다음 날에도 PLANNED(대기 중), 그때 '확인'으로 잔고에 반영")
     void notifiedStopStaysPendingAfterClose() {
@@ -1092,6 +1035,12 @@ class ManualAccountJobDbTest {
         assertThat(store.stopInstruction(stop.id()).orElseThrow()).satisfies(row -> {
             assertThat(row.status()).isEqualTo("PLANNED");
             assertThat(row.reason().has("autoNote")).isFalse();
+        });
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shown = (List<Map<String, Object>>) service().view().get("stopInstructions");
+        assertThat(shown).singleElement().satisfies(row -> {
+            assertThat(row).containsEntry("symbol", A).containsEntry("quantity", 10).containsEntry("status", "PLANNED");
+            assertThat(row).doesNotContainKey("price");
         });
 
         when(paper.krTradeCosts(anyString(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any()))
@@ -1105,7 +1054,6 @@ class ManualAccountJobDbTest {
     }
 
     // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(마감 뒤 첫 주기에 SKIPPED(not-notified)).
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 마감까지 알리지 못한 스탑 지시도 닫지 않음(화면에 대기 중) — 마감 뒤에는 늦은 알림을 보내지 않음")
     void unnotifiedStopStaysPendingWithoutLateNotice() {
@@ -1127,7 +1075,6 @@ class ManualAccountJobDbTest {
     }
 
     // 수정 전 실패: E 15:40에 스탑 지시를 닫고 22:35에 E2 지시를 만들어 'Expecting empty but was: ["SELL 005930 10 PLANNED", "BUY 000660 14 PLANNED"]'.
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 앞 세션 스탑 지시가 대기 중이면 다음 세션 지시를 만들지 않음(stops-pending) — 08:00에 건수만 든 글 한 통, 사용자가 건너뛰면 다음 주기에 지시")
     void nextSessionWaitsForPendingStops() {
@@ -1141,7 +1088,7 @@ class ManualAccountJobDbTest {
         assertThat(lines(E2)).isEmpty();
         assertThat(store.session("isa", E2)).isEmpty();
         assertThat(job.waiting().session()).isEqualTo(E2);
-        assertThat(job.waiting().reason()).isEqualTo("stops-pending");
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_STOPS);
         verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());   // 밤에는 알리지 않음
 
         cycleAt("2026-11-10T08:05");
@@ -1159,7 +1106,6 @@ class ManualAccountJobDbTest {
     }
 
     // 수정 전 실패: E2 지시를 만들어 'expected: "UNAVAILABLE" but was: "PLANNED"'.
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 개장까지 앞 세션 스탑 지시가 대기 중이면 그 세션은 UNAVAILABLE(사유 stops-pending) — 스탑 지시는 그대로 대기 중")
     void pendingStopsUntilOpenMarkUnavailable() {
@@ -1171,13 +1117,12 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-10T09:05");
         assertThat(store.session("isa", E2)).hasValueSatisfying(s -> {
             assertThat(s.state()).isEqualTo("UNAVAILABLE");
-            assertThat(s.detail().path("reason").asString()).isEqualTo("stops-pending");
+            assertThat(s.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_STOPS);
         });
         assertThat(store.stopInstruction(stop.id()).orElseThrow().status()).isEqualTo("PLANNED");
     }
 
     // 수정 전 실패: E 스탑 지시가 15:40에 닫혀 E2 스탑 지시를 잔고 보유 10주로 바로 만듦 — 'Expecting empty but was: [StopInstruction[... quantity=10 ...]]'.
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 새 스탑 지시 수량은 같은 종목의 앞선 대기 중 스탑 지시를 뺌(같은 보유를 두 번 지시하지 않음) — 앞 지시를 건너뛰면 다음 30초 주기에 그 수량으로")
     void stopQuantitySubtractsPendingStop() {
@@ -1194,7 +1139,6 @@ class ManualAccountJobDbTest {
     }
 
     // 수정 전 실패: 마이그레이션 파일이 없음(V44).
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: V44는 자동 만료(skippedBy AUTO·autoNote expired)로 닫힌 스탑 지시만 PLANNED로 다시 열고(근거에 다시 연 표시), 사용자 건너뜀·알리지 못함·확인함은 그대로 — 두 번 실행해도 같음")
     void v44ReopensAutoExpiredStops() throws Exception {

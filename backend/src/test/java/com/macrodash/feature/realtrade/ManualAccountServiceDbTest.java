@@ -550,44 +550,8 @@ class ManualAccountServiceDbTest {
         assertThat(store.stopInstruction(stop).orElseThrow().status()).isEqualTo("PLANNED");
     }
 
-    // QA-382: 종가 스탑 지시의 확인 기한은 그 세션 마감이 아니라 다음 세션 지시를 만들 때(ADR 0034 결정 7 개정) — 되돌리기도 같은 기한으로 닫힘을 가린다.
-    // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(마감 뒤 확인한 종가 스탑을 되돌리면 다시 확인할 길이 없었음).
-    @Test
-    @DisplayName("QA-382: 마감 뒤 확인한 종가 스탑 지시를 되돌리면 다시 PLANNED, 다음 세션 행이 생긴 뒤에는 SKIPPED(expired) — 장중 스탑은 마감 뒤 되돌리면 SKIPPED 그대로")
-    void undoClosingStopAfterClose() {
-        startSynthetic();
-        long closing = store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, 81, A, 5, "NEXT_CLOSE", kst("2026-11-09T15:30"),
-                MAPPER.createObjectNode())).orElseThrow();
-        long intraday = stop(82, B, 2);
-        store.markStopNotified(List.of(closing, intraday), kst("2026-11-09T15:21"));
-
-        clock.set(kst("2026-11-09T16:00"));
-        apply(item(null, closing, "11000", "user"), item(null, intraday, "21000", "live"));
-        List<Trade> trades = store.recentTrades("isa", 2);
-        long closingTrade = trades.stream().filter(t -> t.stopInstructionId() == closing).findFirst().orElseThrow().id();
-        long intradayTrade = trades.stream().filter(t -> t.stopInstructionId() == intraday).findFirst().orElseThrow().id();
-
-        clock.set(kst("2026-11-09T16:10"));
-        service.undoTrade(closingTrade);
-        service.undoTrade(intradayTrade);
-        assertThat(store.stopInstruction(closing).orElseThrow().status()).as("종가 스탑 — 다음 세션 지시 전이라 다시 확인할 수 있음").isEqualTo("PLANNED");
-        assertThat(store.stopInstruction(intraday).orElseThrow()).satisfies(row -> {
-            assertThat(row.status()).as("장중 스탑 — 그 세션 마감이 기한").isEqualTo("SKIPPED");
-            assertThat(row.reason().path("autoNote").asString()).isEqualTo("expired");
-        });
-
-        apply(item(null, closing, "11000", "user"));
-        store.insertSession(ManualAccountService.CODE, MONDAY.plusDays(1), ManualAccountStore.SESSION_PLANNED, null, MAPPER.createObjectNode());
-        service.undoTrade(store.recentTrades("isa", 1).getFirst().id());
-        assertThat(store.stopInstruction(closing).orElseThrow()).satisfies(row -> {
-            assertThat(row.status()).as("다음 세션 지시를 만든 뒤").isEqualTo("SKIPPED");
-            assertThat(row.reason().path("autoNote").asString()).isEqualTo("expired");
-        });
-    }
-
     // QA-990: 스탑 지시는 사용자가 확인·건너뜀할 때까지 대기 중(ADR 0034 결정 7 개정) — 되돌리면 기한 없이 다시 대기 중.
     // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(장중 스탑을 마감 뒤 되돌리면 SKIPPED(expired)라 다시 적을 길이 없었음).
-    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
     @Test
     @DisplayName("QA-990: 마감 뒤 확인한 장중·종가 스탑 지시를 되돌리면 다음 세션 행이 생긴 뒤에도 다시 PLANNED(대기 중)")
     void undoStopAfterCloseReopens() {
@@ -609,6 +573,32 @@ class ManualAccountServiceDbTest {
                 assertThat(row.reason().has("autoNote")).isFalse();
             });
         }
+    }
+
+    @Test
+    @DisplayName("QA-990 스탑 지시 건너뜀 — PLANNED는 SKIPPED(USER)·잔고 그대로, 이미 건너뛴 지시는 그대로, 확인한 지시 409, 대체된 지시 400, 없는 지시 404, 시작 전 409")
+    void skipStop() {
+        rejects(() -> service.skipStopInstruction(1), 409, "not-started");
+        startSynthetic();
+        long stop = stop(71, A, 5);
+        BigDecimal before = cash();
+
+        assertThat(service.skipStopInstruction(stop)).containsEntry("ok", true);
+        assertThat(store.stopInstruction(stop).orElseThrow()).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("SKIPPED");
+            assertThat(row.reason().path("skippedBy").asString()).isEqualTo("USER");
+        });
+        assertThat(service.skipStopInstruction(stop)).containsEntry("ok", true);
+        assertThat(cash()).isEqualByComparingTo(before);
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
+
+        long recorded = stop(72, B, 1);
+        apply(item(null, recorded, "21000", "live"));
+        rejects(() -> service.skipStopInstruction(recorded), 409, "already-recorded");
+        long superseded = stop(73, A, 1);
+        store.updateStopInstructionStatus(superseded, "SUPERSEDED", "PLANNED", Map.of());
+        rejects(() -> service.skipStopInstruction(superseded), 400, "invalid-request");
+        rejects(() -> service.skipStopInstruction(999_999), 404, "not-found");
     }
 
     @Test

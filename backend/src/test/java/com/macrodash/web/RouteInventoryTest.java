@@ -117,6 +117,7 @@ class RouteInventoryTest {
             "POST /api/manual/isa/positions/{symbol}/delete",
             "POST /api/manual/isa/instructions/apply",
             "POST /api/manual/isa/instructions/{id}/skip",
+            "POST /api/manual/isa/stop-instructions/{id}/skip",
             "POST /api/manual/isa/trades/{id}/undo",
             "POST /api/manual/isa/trades/{id}",
             // 모의 매매(운영자 전용)

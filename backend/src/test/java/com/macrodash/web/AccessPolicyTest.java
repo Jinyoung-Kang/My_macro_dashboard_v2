@@ -113,7 +113,7 @@ class AccessPolicyTest {
     }
 
     @Test
-    @DisplayName("ISA 계좌 경로(/api/manual/isa, ADR 0029)는 모두 운영자만 — 다른 증권사 실제 계좌의 잔고 GET도, 시작·잔고 고침·확인·되돌림 POST도")
+    @DisplayName("ISA 계좌 경로(/api/manual/isa, ADR 0029)는 모두 운영자만 — 다른 증권사 실제 계좌의 잔고 GET도, 시작·잔고 고침·확인·건너뜀·되돌림 POST도")
     void manualAccountRoutesAreOwnerOnly() throws ClassNotFoundException {
         java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/manual/")).toList();
@@ -122,7 +122,7 @@ class AccessPolicyTest {
         assertThat(declared).as("컨트롤러가 여는 ISA 계좌 경로").containsExactlyInAnyOrder("GET /api/manual/isa", "POST /api/manual/isa/start",
                 "POST /api/manual/isa/balance/total", "POST /api/manual/isa/balance/commission", "POST /api/manual/isa/positions",
                 "POST /api/manual/isa/positions/{symbol}/delete", "POST /api/manual/isa/instructions/apply", "POST /api/manual/isa/instructions/{id}/skip",
-                "POST /api/manual/isa/trades/{id}/undo", "POST /api/manual/isa/trades/{id}");
+                "POST /api/manual/isa/stop-instructions/{id}/skip", "POST /api/manual/isa/trades/{id}/undo", "POST /api/manual/isa/trades/{id}");
         assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
         listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
         assertThat(AccessPolicy.required("GET", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);

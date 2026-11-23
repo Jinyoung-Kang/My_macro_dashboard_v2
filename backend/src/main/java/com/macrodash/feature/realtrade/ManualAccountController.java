@@ -26,7 +26,8 @@ import java.util.Map;
  *  POST /api/manual/isa/positions/{symbol}/delete    보유 지우기
  *  POST /api/manual/isa/instructions/apply           {items:[{instructionId 또는 stopInstructionId, price?, priceSource?}]} — 확인을 잔고에 바로 반영
  *  POST /api/manual/isa/instructions/{id}/skip
- *  POST /api/manual/isa/trades/{id}/undo             확인 되돌리기(잔고 되돌림, 지시는 PLANNED — 그 세션 마감이 지났으면 SKIPPED)
+ *  POST /api/manual/isa/stop-instructions/{id}/skip  스탑 지시 건너뜀(매매하지 않음 — QA-990, 스탑 지시는 확인·건너뜀 전까지 대기 중)
+ *  POST /api/manual/isa/trades/{id}/undo             확인 되돌리기(잔고 되돌림, 지시는 PLANNED — 지시는 그 세션 마감이 지났으면 SKIPPED, 스탑 지시는 늘 PLANNED)
  * </pre>
  *
  * <p>거절은 {@code {ok:false, error:<사유 코드>, message}}와 그 HTTP 상태(400 invalid-request, 404 not-found, 409 already-started·not-started·
@@ -80,6 +81,11 @@ public class ManualAccountController {
     @PostMapping("/instructions/{id}/skip")
     public Map<String, Object> skip(@PathVariable long id) {
         return service.skipInstruction(id);
+    }
+
+    @PostMapping("/stop-instructions/{id}/skip")
+    public Map<String, Object> skipStop(@PathVariable long id) {
+        return service.skipStopInstruction(id);
     }
 
     @PostMapping("/trades/{id}/undo")

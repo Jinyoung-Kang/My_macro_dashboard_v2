@@ -61,12 +61,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>한 주기
  * <ol>
- *   <li><b>만료</b>: 세션 마감이 지난 PLANNED 지시·알린 스탑 지시는 SKIPPED({@value #AUTO_EXPIRED}) — 확인을 누르지 않은 지시는 잔고에 쓰지 않습니다. 지시를 만든 뒤 그 세션이 거래일이
- *       아니게 되면 그 세션 PLANNED 지시는 SKIPPED({@value #AUTO_NOT_TRADING}). 종가 스탑 지시({@value #TIMING_CLOSE} — 종가 단일가에 체결)만은 마감에 닫지 않습니다
- *       (QA-382, ADR 0034 결정 7 개정 — 실제 체결이 마감 순간이라 마감에 닫으면 확인할 시간이 없음): 다음 세션 지시를 만들기 직전(같은 잠금 안)이나, 지시를 못 만들었으면
- *       다음 세션이 열린 뒤 첫 주기에 닫습니다({@link #stopExpired}).</li>
+ *   <li><b>만료</b>: 세션 마감이 지난 PLANNED 지시는 SKIPPED({@value #AUTO_EXPIRED}) — 확인을 누르지 않은 지시는 잔고에 쓰지 않습니다. 지시를 만든 뒤 그 세션이 거래일이
+ *       아니게 되면 그 세션 PLANNED 지시는 SKIPPED({@value #AUTO_NOT_TRADING}). <b>스탑 지시는 정기 작업이 닫지 않습니다</b>(QA-990, ADR 0034 결정 7 개정 —
+ *       장중에 판 사용자가 마감 뒤에도 매매 내역을 적을 수 있게): 사용자가 '확인'이나 '건너뜀'을 누를 때까지 PLANNED(화면 '대기 중')입니다.</li>
  *   <li><b>못 만듦</b>: 마지막으로 개장한 세션에 지시가 없으면(시작 뒤 세션만) 그 세션을 UNAVAILABLE로 남깁니다.</li>
- *   <li><b>지시 만들기</b>: 다음 세션 E(개장 전)의 지시가 아직 없고, 규칙 계좌의 D(E 전 거래일) 정기 결정이 최종(OK·NO_TRADE·SKIPPED 또는 기한 지남)이고, 규칙 계좌 장부가 D까지
+ *   <li><b>지시 만들기</b>: 다음 세션 E(개장 전)의 지시가 아직 없고, E 전 세션의 스탑 지시가 대기 중(PLANNED)이 아니고(QA-990 — 대기 중이면 사유 {@value #WAIT_STOPS}로
+ *       기다림: 그 매도를 잔고가 아직 모르므로 지금 잔고로 계산하면 같은 보유를 다시 지시함), 규칙 계좌의 D(E 전 거래일) 정기 결정이 최종(OK·NO_TRADE·SKIPPED 또는 기한 지남)이고, 규칙 계좌 장부가 D까지
  *       반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한
  *       트랜잭션으로 씁니다(입력은 지금 잔고 — 현금·보유). 지시가 없으면 NONE(알리지 않음). 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} —
  *       ADR 0033 결정 7)은 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후 시장가' 지시를 만듭니다. 그 목표에 들지 않는 시가 밖 시점 대기 주문(STOP 매도 제외 — 스탑 지시가 따로
@@ -78,7 +78,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *       확인했든 미확인이든 같은 보유를 두 번 지시하지 않음) 세션 기록을 온전한 것으로 바꿉니다. 손절 대상이 없으면 예전처럼 행 없이 기다립니다.</li>
  *   <li><b>알림</b>: 개장 전 08:00(그 전에 개장하면 개장 때) PLANNED 지시를 한 통. 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글은 종목 코드·이름·수량만.
  *       손절만 든 세션의 지시 글은 제목이 '손절 매도 지시'이고 '현금이 음수라 나머지 지시는 만들지 않았다'는 안내를 함께 싣습니다. 현금이 음수인데 그 안내를 실어 보낼 지시 글이
- *       없는 세션(손절 대상이 없거나 손절 지시가 알림 전에 모두 닫힘)은 같은 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyCashNegative} — 금액 없음).</li>
+ *       없는 세션(손절 대상이 없거나 손절 지시가 알림 전에 모두 닫힘)은 같은 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyCashNegative} — 금액 없음).
+ *       앞 세션 스탑 지시가 대기 중이라 지시를 만들지 않은 세션도 같은 때 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyStopsPending} — 건수만, 종목·금액 없음).</li>
  * </ol>
  *
  * <p><b>장 중반·마감 30분 전 확인 알림</b>(ADR 0034 — {@link #reminders}): 30초 주기마다, 그 세션 정규장 절반((개장 + 마감) / 2)과 마감 30분 전에 오늘 PLANNED 지시와 스탑 지시를
@@ -86,8 +87,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p><b>장중 스탑 지시</b>(ADR 0033 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 규칙 계좌의 오늘 STOP 매도 대기 주문({@link
  * PaperMirrorService#dueOrders} — 장중 감시·밤 대체, 지금 + 5분 안의 것)마다 그 주문이 그날 지시 목표에 반영된 것(세션 기록 {@value #DETAIL_COVERED_STOPS})이 아니면 스탑 지시 하나(모의
- * 주문 하나에 하나 — UNIQUE)를 씁니다. 수량은 잔고 보유 + 그 세션 이하의 미확인 지시(PLANNED) 증감 가운데 지시 시각이 지난 것의 정수 부분이고, 1주도 없으면 쓰지 않습니다. 알리지 않은 스탑
- * 지시는 바로 한 통으로 알리고(종목 코드·이름·수량만 — 종가 STOP은 '종가 단일가 시장가' 글), 그 세션 마감까지 못 알리면 SKIPPED({@value #AUTO_NOT_NOTIFIED}).
+ * 주문 하나에 하나 — UNIQUE)를 씁니다. 수량은 잔고 보유 + 그 세션 이하의 미확인 지시(PLANNED) 증감 가운데 지시 시각이 지난 것 − 그 종목의 대기 중 스탑 지시 수량(QA-990)의 정수
+ * 부분이고, 1주도 없으면 쓰지 않습니다. 알리지 않은 스탑 지시는 바로 한 통으로 알리고(종목 코드·이름·수량만 — 종가 STOP은 '종가 단일가 시장가' 글), 그 세션 마감까지 못 알렸으면
+ * 늦은 '지금 매도' 글을 보내지 않고 대기 중으로 둡니다(화면에 보임 — QA-990).
  *
  * <p>로그에는 세션·건수·사유 코드만 남깁니다(종목·수량·금액 없음). 예상 못 한 예외·오류는 클래스 이름만 남기고 다음 주기에 다시 봅니다(던지면 전용
  * 스케줄러가 뒤 주기를 모두 건너뜀).
@@ -117,8 +119,6 @@ class ManualAccountJob {
     static final String DETAIL_COVERED_STOPS = "coveredStopOrderIds";
     /** 스탑 지시를 만들 모의 STOP 주문 — 따라 할 시각이 지금 + 이 안(종가 STOP은 종가 단일가 시작 5분 전부터 알림). */
     static final Duration STOP_LOOKAHEAD = Duration.ofMinutes(5);
-    /** 스탑 지시를 적지 않고 건너뛴 사유(근거의 autoNote) — 그 세션 마감까지 알리지 못함. */
-    static final String AUTO_NOT_NOTIFIED = "not-notified";
     /** 스탑 지시를 찾는 KST 시각 범위(정규장 — 장 시간 변경일 10:00~16:30 포함, 그 안에서 그날 달력의 개장~마감만). */
     static final LocalTime STOP_SCAN_FROM = LocalTime.of(8, 30);
     static final LocalTime STOP_SCAN_UNTIL = LocalTime.of(17, 0);
@@ -143,6 +143,8 @@ class ManualAccountJob {
      * ({@link #stopOnly}).
      */
     static final String WAIT_CASH = "cash-negative";
+    /** 앞 세션 스탑 지시가 대기 중(사용자가 확인·건너뜀 전) — 그 매도를 잔고가 모르므로 다음 세션 지시를 만들지 않음(QA-990). */
+    static final String WAIT_STOPS = "stops-pending";
     /** 세션 계산 기록의 사유 칸(못 만듦의 사유, 손절만 든 세션의 표시). */
     static final String DETAIL_REASON = "reason";
     /** 손절만 든 세션의 안내(세션 기록 notes — 보기의 안내 목록). 개장 뒤에도 그대로 보이므로 '개장 전에 고치면 만든다'는 말은 넣지 않습니다(그 안내는 화면의 지시 카드가 개장 전에만). */
@@ -159,7 +161,8 @@ class ManualAccountJob {
             WAIT_PRICE, "ISA 보유 종목의 가격을 모름",
             WAIT_CASH, "ISA 잔고의 현금이 음수라 매매 지시를 만들지 않음(손절 매도가 있으면 그 지시만 만듦 — 잔고를 고치면 다음 주기부터 만듦)",
             WAIT_UNKNOWN, "개장 전에 지시를 만들지 못함",
-            WAIT_TIMED, "규칙 계좌가 지시 시각 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가·개장 10분 뒤 시각만 지시");
+            WAIT_TIMED, "규칙 계좌가 지시 시각 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가·개장 10분 뒤 시각만 지시",
+            WAIT_STOPS, "앞 세션 장중 스탑 매도 지시가 대기 중(확인·건너뜀 전) — 처리하면 다음 주기에 만듦");
 
     /** 다음 세션 지시를 아직 만들지 않은 사유(화면용 — 저장하지 않음). */
     record Waiting(LocalDate session, String reason, Instant at) {
@@ -183,6 +186,8 @@ class ManualAccountJob {
     private Instant lastFullAt;
     /** '현금이 음수라 지시 없음' 글을 보낸 마지막 세션(메모리 — 재기동하면 그 세션에 한 번 더 갈 수 있음, 표에 둘 칸이 없음). 손절 지시 글에 실어 보낸 안내는 그 지시 행의 알림 시각이 기록입니다. */
     private LocalDate cashNoticeSession;
+    /** '스탑 지시가 대기 중이라 지시 없음' 글을 보낸 마지막 세션(메모리 — 위와 같은 한계). */
+    private LocalDate stopsNoticeSession;
 
     @Autowired
     ManualAccountJob(ManualAccountStore store, PaperMirrorService paper, PaperTelegram telegram, ObjectMapper mapper,
@@ -309,6 +314,7 @@ class ManualAccountJob {
             plan(now);
             notifyPending(now);
             notifyCashNegative(now);
+            notifyStopsPending(now);
             stopScan(balance, now);
             stopNotify(now);
             reminders(now);
@@ -335,7 +341,7 @@ class ManualAccountJob {
     }
 
     // ------------------------------------------------------------------ 만료
-    /** 세션 마감이 지난 PLANNED 지시·알린 스탑 지시를 SKIPPED로(클래스 설명 1) — 확인을 누르지 않은 지시는 잔고에 쓰지 않습니다. */
+    /** 세션 마감이 지난 PLANNED 지시를 SKIPPED로(클래스 설명 1) — 확인을 누르지 않은 지시는 잔고에 쓰지 않습니다. 스탑 지시는 닫지 않습니다(QA-990). */
     void expire(Instant now) {
         Map<LocalDate, List<Instruction>> bySession = new TreeMap<>();
         for (Instruction i : store.plannedInstructions(CODE)) {
@@ -368,62 +374,14 @@ class ManualAccountJob {
                 log.info("ISA 계좌 지시 닫음 — 세션 {} · {}건 · {}", e.getKey(), changed, note);
             }
         }
-        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
-            if (s.notifiedAt() == null) {
-                continue;   // 알리지 못한 스탑 지시는 stopNotify가 not-notified로 닫음
-            }
-            if (!stopExpired(s, paper.sessionHours(s.session()).orElse(null), now)) {
-                continue;
-            }
-            store.lockAccount(CODE, acc -> {
-                if (store.updateStopInstructionStatus(s.id(), ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
-                        Map.of("skippedBy", "AUTO", "autoNote", AUTO_EXPIRED))) {
-                    store.bumpVersion(CODE);
-                }
-                return null;
-            });
-        }
-    }
-
-    /** 종가 스탑 지시인가 — 종가 단일가에 체결돼 실제 체결이 그 세션 마감 순간입니다. */
-    static boolean closingStop(StopInstruction s) {
-        return TIMING_CLOSE.equals(s.timing());
     }
 
     /**
-     * 알린 스탑 지시의 확인 기한이 지났는가(만료와 되돌리기가 함께 씀 — {@link ManualAccountService#undoTrade}). 장중 스탑은 그 세션 마감. 종가 스탑은 마감 뒤에도 열어 두고
-     * (QA-382), 그 뒤 세션의 행이 생겼거나(다음 지시를 만듦 — {@link #plan}이 만들기 직전에 닫지만 받침으로 봄, 못 만듦 기록 포함) 그 뒤 세션이 열렸으면 지난 것입니다.
-     * {@code hours}는 그 지시 세션의 시간 — 모르거나 마감이 없으면 false(다음 주기에 다시).
+     * 그 세션 전 세션의 대기 중(PLANNED) 스탑 지시 수(QA-990) — 0보다 크면 다음 세션 지시를 만들지 않습니다({@link #plan}). 사용자가 '확인'하거나 '건너뜀'을 눌러야 줄어듭니다
+     * (정기 작업은 스탑 지시를 닫지 않음).
      */
-    boolean stopExpired(StopInstruction s, SessionHours hours, Instant now) {
-        if (hours == null || hours.close() == null || now.isBefore(hours.close())) {
-            return false;
-        }
-        if (!closingStop(s)) {
-            return true;
-        }
-        if (store.latestSession(CODE).map(row -> row.session().isAfter(s.session())).orElse(false)) {
-            return true;
-        }
-        SessionHours last = ManualAccountCalendar.lastOpened(paper, now);
-        return last != null && last.date().isAfter(s.session());
-    }
-
-    /**
-     * 다음 세션({@code session}) 지시를 만들기 직전에 닫을 종가 스탑 지시 — 알린 것 가운데 그 앞 세션 것이고 그 세션 마감이 지난 것(잠금 밖에서 달력을 읽어 고름).
-     */
-    private List<Long> closingStopsBefore(LocalDate session, Instant now) {
-        List<Long> ids = new ArrayList<>();
-        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
-            if (s.notifiedAt() == null || !closingStop(s) || !s.session().isBefore(session)) {
-                continue;
-            }
-            SessionHours hours = paper.sessionHours(s.session()).orElse(null);
-            if (hours != null && hours.close() != null && !now.isBefore(hours.close())) {
-                ids.add(s.id());
-            }
-        }
-        return ids;
+    int pendingStopsBefore(LocalDate session) {
+        return (int) store.plannedStopInstructions(CODE).stream().filter(s -> s.session().isBefore(session)).count();
     }
 
     // ------------------------------------------------------------------ 장 중반·마감 30분 전 확인 알림(ADR 0034)
@@ -552,7 +510,8 @@ class ManualAccountJob {
     }
 
     /**
-     * 잠금 안 — 그 종목의 잔고 보유 + 그 세션 이하의 미확인 지시(PLANNED) 가운데 지시 시각(없으면 그 지시 세션의 개장)이 지난 것의 증감, 정수 부분(클래스 설명).
+     * 잠금 안 — 그 종목의 잔고 보유 + 그 세션 이하의 미확인 지시(PLANNED) 가운데 지시 시각(없으면 그 지시 세션의 개장)이 지난 것의 증감 − 그 종목의 대기 중 스탑 지시
+     * 수량(그 세션 이하 — QA-990: 스탑 지시는 사용자가 확인·건너뜀할 때까지 열려 있어, 빼지 않으면 같은 보유를 두 번 지시함), 정수 부분(클래스 설명).
      */
     private int stopQuantity(LocalDate session, String symbol, Instant now) {
         BigDecimal held = store.position(CODE, symbol).map(Position::quantity).orElse(BigDecimal.ZERO);
@@ -569,13 +528,18 @@ class ManualAccountJob {
             BigDecimal delta = BigDecimal.valueOf(i.quantity());
             held = ManualAccountStore.SIDE_SELL.equals(i.side()) ? held.subtract(delta) : held.add(delta);
         }
+        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
+            if (!s.session().isAfter(session) && symbol.equals(s.symbol())) {
+                held = held.subtract(BigDecimal.valueOf(s.quantity()));
+            }
+        }
         BigDecimal whole = held.setScale(0, RoundingMode.FLOOR);
         return whole.signum() <= 0 ? 0 : whole.min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValue();
     }
 
     /**
-     * 알리지 않은 스탑 지시를 세션마다 한 통으로 바로 알립니다(종목 코드·이름·수량만 — {@link ManualAccountNotices#stop}). 그 세션 마감이 지나도록 알리지
-     * 못한 지시는 SKIPPED({@value #AUTO_NOT_NOTIFIED} — 적지 않음). 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시.
+     * 알리지 않은 스탑 지시를 세션마다 한 통으로 바로 알립니다(종목 코드·이름·수량만 — {@link ManualAccountNotices#stop}). 그 세션 마감이 지나도록 알리지 못한 지시는
+     * 늦은 '지금 시장가로 매도' 글을 보내지 않고 대기 중으로 둡니다(화면에 보임 — 사용자가 확인·건너뜀, QA-990). 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시.
      */
     void stopNotify(Instant now) {
         Map<LocalDate, List<StopInstruction>> bySession = new TreeMap<>();
@@ -587,23 +551,7 @@ class ManualAccountJob {
         for (Map.Entry<LocalDate, List<StopInstruction>> e : bySession.entrySet()) {
             SessionHours hours = ManualAccountCalendar.hours(paper, e.getKey());
             if (hours == null || hours.close() == null || !now.isBefore(hours.close())) {
-                int skipped = store.lockAccount(CODE, acc -> {
-                    int n = 0;
-                    for (StopInstruction s : e.getValue()) {
-                        if (store.updateStopInstructionStatus(s.id(), ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
-                                Map.of("skippedBy", "AUTO", "autoNote", AUTO_NOT_NOTIFIED))) {
-                            n++;
-                        }
-                    }
-                    if (n > 0) {
-                        store.bumpVersion(CODE);
-                    }
-                    return n;
-                });
-                if (skipped > 0) {
-                    log.warn("ISA 계좌 스탑 지시 — 세션 {} 마감까지 알리지 못해 건너뜀 · {}건", e.getKey(), skipped);
-                }
-                continue;
+                continue;   // 마감이 지났거나 달력을 모름 — 늦은 매도 글은 보내지 않음, 지시는 대기 중 그대로(QA-990)
             }
             if (!telegram.configured()) {
                 continue;
@@ -675,6 +623,11 @@ class ManualAccountJob {
             waiting = null;   // 손절만 든 세션(현금 음수 — QA-381)은 끝난 세션이 아님: 아래 조건을 다시 보고 현금이 0 이상이면 나머지 지시를 채움
             return;
         }
+        if (pendingStopsBefore(session) > 0) {
+            // QA-990 — 앞 세션 스탑 지시는 사용자가 확인·건너뜀할 때까지 대기 중이고, 그 매도를 잔고가 아직 모름. 지금 잔고로 계산하면 같은 보유를 다시 지시하므로 기다림.
+            waitFor(session, WAIT_STOPS, now);
+            return;
+        }
         LocalDate decisionDate = ManualAccountCalendar.previousTradingDay(paper, session);
         if (decisionDate == null) {
             waitFor(session, WAIT_CALENDAR, now);
@@ -722,7 +675,6 @@ class ManualAccountJob {
             return;
         }
         Set<String> cashLike = new TreeSet<>(paper.cashLikeTickers());
-        List<Long> closingStops = closingStopsBefore(session, now);
         String outcome = store.lockAccount(CODE, acc -> {
             if (acc == null || !acc.active()) {
                 return "skip";
@@ -748,7 +700,6 @@ class ManualAccountJob {
                 if (stopSells.isEmpty()) {
                     return WAIT_CASH;
                 }
-                closeStops(closingStops);   // 평소 지시와 같이(QA-382) — 이 손절 지시도 지금 보유로 셌으므로 같은 보유의 앞 세션 종가 스탑 지시를 함께 열어 두지 않음
                 write(session, decision, new Result(stopSells, List.of(), null, null), syncAt, targets.stopOrderIds(), Fill.STOP_ONLY);
                 return STOP_ONLY;
             }
@@ -767,8 +718,6 @@ class ManualAccountJob {
             if (result.isEmpty()) {
                 return WAIT_PRICE;
             }
-            // 앞 세션의 미확인 종가 스탑 지시는 여기까지(QA-382) — 이 지시는 지금 잔고(그 매도를 반영하지 않은 보유)로 계산했으므로, 같은 보유를 두 지시로 열어 두지 않습니다.
-            closeStops(closingStops);
             if (row != null) {
                 // 손절만 든 세션에 나머지를 채움 — 이미 있는 종목(손절 지시 — 미확인·확인·건너뜀 모두)은 유일 제약이 막아 다시 지시하지 않음
                 write(session, decision, result.get(), syncAt, targets.stopOrderIds(), Fill.REST);
@@ -808,14 +757,6 @@ class ManualAccountJob {
     static boolean stopOnly(SessionRow row) {
         return row != null && ManualAccountStore.SESSION_PLANNED.equals(row.state()) && row.detail() != null
                 && WAIT_CASH.equals(row.detail().path(DETAIL_REASON).asString(""));
-    }
-
-    /** 잠금 안 — 다음 세션 지시를 만들면서 앞 세션의 미확인 종가 스탑 지시를 닫습니다(QA-382). */
-    private void closeStops(List<Long> ids) {
-        for (Long id : ids) {
-            store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
-                    Map.of("skippedBy", "AUTO", "autoNote", AUTO_EXPIRED));
-        }
     }
 
     /**
@@ -954,6 +895,29 @@ class ManualAccountJob {
         if (sendText(ManualAccountNotices.cashNegative(w.session(), stopOnly))) {
             cashNoticeSession = w.session();
             log.info("ISA 계좌 지시 없음 알림 — 세션 {} · 사유 {}{}", w.session(), WAIT_CASH, stopOnly ? "(손절 매도 지시만 만든 세션)" : "");
+        }
+    }
+
+    /**
+     * 앞 세션 스탑 지시가 대기 중이라 다음 세션 지시를 만들지 않았을 때(이번 주기의 {@link #plan} — 사유 {@value #WAIT_STOPS}) 그 세션 08:00부터 '매매 지시 없음' 글을
+     * 세션마다 한 통(QA-990). 알리지 않으면 지시가 왜 오지 않는지 알 수 없습니다. 글에는 대기 중 건수만 — 종목·수량·금액이 없습니다(ADR 0029 결정 4). 텔레그램이 설정되지
+     * 않았거나 실패하면 다음 주기에 다시, 보낸 기록은 메모리({@link #stopsNoticeSession})입니다.
+     */
+    void notifyStopsPending(Instant now) {
+        Waiting w = waiting;
+        if (w == null || w.session() == null || !WAIT_STOPS.equals(w.reason()) || w.session().equals(stopsNoticeSession) || !telegram.configured()) {
+            return;
+        }
+        if (now.isBefore(w.session().atTime(MORNING).atZone(Kst.ZONE).toInstant())) {
+            return;
+        }
+        int pending = pendingStopsBefore(w.session());
+        if (pending < 1) {
+            return;
+        }
+        if (sendText(ManualAccountNotices.stopsPending(w.session(), pending))) {
+            stopsNoticeSession = w.session();
+            log.info("ISA 계좌 지시 없음 알림 — 세션 {} · 사유 {} · {}건", w.session(), WAIT_STOPS, pending);
         }
     }
 

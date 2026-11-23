@@ -825,6 +825,15 @@
     },
     {
       "m": "POST",
+      "p": "/api/manual/isa/stop-instructions/{id}/skip",
+      "path": {
+        "id": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/manual/isa/trades/{id}/undo",
       "path": {
         "id": "int"
