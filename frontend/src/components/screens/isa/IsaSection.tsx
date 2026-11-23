@@ -37,6 +37,7 @@ import {
   sideLabel,
   STOP_GUIDE,
   stopOnlyText,
+  stopsWaitingText,
   symbolText,
   targetClock,
   toNumber,
@@ -52,7 +53,7 @@ import { IsaConfirmDialog, type IsaConfirmTarget } from "./IsaConfirmDialog";
 import { IsaPositionDialog, type IsaPositionTarget } from "./IsaPositionDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
 import { IsaInstructionsTable, IsaPositionsTable, IsaRecentInstructionsTable, IsaStopInstructionsTable, IsaTradesTable } from "./IsaTables";
-import { postDeletePosition, postSkipInstruction, postUndoTrade, sendIsa } from "./isaRequests";
+import { postDeletePosition, postSkipInstruction, postSkipStopInstruction, postUndoTrade, sendIsa } from "./isaRequests";
 
 /** 다시 읽는 주기 — 잔고는 밤 결정·사용자 고침 때만 바뀝니다(개요와 같은 1분). */
 const POLL_MS = 60_000;
@@ -80,6 +81,7 @@ export function IsaSection() {
   const [confirmTarget, setConfirmTarget] = useState<IsaConfirmTarget | null>(null);
   const [deleteRow, setDeleteRow] = useState<IsaPositionView | null>(null);
   const [skipItem, setSkipItem] = useState<IsaInstructionItem | null>(null);
+  const [skipStop, setSkipStop] = useState<IsaStopInstruction | null>(null);
   const [undoRow, setUndoRow] = useState<IsaTrade | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, reloadNow), [reloadNow]);
@@ -153,6 +155,17 @@ export function IsaSection() {
     reloadNow();
   };
 
+  // 스탑 지시 건너뜀(QA-990) — 스탑 지시는 정기 작업이 닫지 않으므로 '확인'과 이것이 대기 중을 끝냅니다.
+  const confirmSkipStop = async () => {
+    const row = skipStop;
+    if (!row) return;
+    setNotice(null);
+    const ok = await action.run(() => postSkipStopInstruction(row.id));
+    setSkipStop(null);
+    if (ok) setNotice("스탑 지시를 건너뜀으로 두었습니다 — 잔고에 쓰지 않습니다.");
+    reloadNow();
+  };
+
   const confirmDelete = async () => {
     const row = deleteRow;
     if (!row) return;
@@ -169,7 +182,7 @@ export function IsaSection() {
     setNotice(null);
     const ok = await action.run(() => postUndoTrade(row.id));
     setUndoRow(null);
-    if (ok) setNotice("확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인(확인 기한 — 그 세션 마감, 종가 단일가 스탑 지시는 다음 세션 지시를 만들 때 — 이 지났으면 닫힘)입니다.");
+    if (ok) setNotice("확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).");
     reloadNow();
   };
 
@@ -234,6 +247,10 @@ export function IsaSection() {
           onSkip={(item) => {
             setNotice(null);
             setSkipItem(item);
+          }}
+          onSkipStop={(row) => {
+            setNotice(null);
+            setSkipStop(row);
           }}
           onAddPosition={() => {
             setNotice(null);
@@ -346,12 +363,27 @@ export function IsaSection() {
         onConfirm={() => void confirmSkip()}
       />
       <ConfirmDialog
+        open={skipStop !== null}
+        onOpenChange={(open) => {
+          if (!open && !action.busy) setSkipStop(null);
+        }}
+        title="스탑 지시 건너뜀"
+        description={
+          skipStop
+            ? `${sessionLabel(skipStop.session ?? null)} 매도 ${symbolText(skipStop.symbol, skipStop.name)} ${formatShares(skipStop.quantity)}주 스탑 지시를 건너뜀으로 둡니다 — 잔고에 쓰지 않습니다(팔지 않았을 때). 되돌릴 수 없습니다.`
+            : undefined
+        }
+        confirmLabel="건너뜀"
+        busy={action.busy}
+        onConfirm={() => void confirmSkipStop()}
+      />
+      <ConfirmDialog
         open={undoRow !== null}
         onOpenChange={(open) => {
           if (!open && !action.busy) setUndoRow(null);
         }}
         title="확인 되돌리기"
-        description={undoRow ? `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인(확인 기한 — 그 세션 마감, 종가 단일가 스탑 지시는 다음 세션 지시를 만들 때 — 이 지났으면 닫힘)입니다.` : undefined}
+        description={undoRow ? `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).` : undefined}
         confirmLabel="되돌리기"
         busy={action.busy}
         onConfirm={() => void confirmUndo()}
@@ -368,6 +400,7 @@ function StartedBody({
   onConfirm,
   onConfirmStops,
   onSkip,
+  onSkipStop,
   onAddPosition,
   onEditPosition,
   onDeletePosition,
@@ -384,6 +417,7 @@ function StartedBody({
   onConfirm: (items: readonly IsaInstructionItem[]) => void;
   onConfirmStops: (rows: readonly IsaStopInstruction[]) => void;
   onSkip: (item: IsaInstructionItem) => void;
+  onSkipStop: (row: IsaStopInstruction) => void;
   onAddPosition: () => void;
   onEditPosition: (row: IsaPositionView) => void;
   onDeletePosition: (row: IsaPositionView) => void;
@@ -408,7 +442,8 @@ function StartedBody({
   const notes = cleanNotes(data.notes);
   // 현금이 음수라 지시를 만들지 않았다는 배너 — 정기 작업의 사유(waiting)는 다음 주기(최대 10분)에야 바뀌므로, 잔고를 고쳐 현금이 0 이상이 됐으면 바로 내립니다
   // (요약의 음수 경고와 같은 순간에 — 고친 뒤에도 '현금이 음수입니다'가 남지 않게).
-  const waitText = valuation.cash !== null && valuation.cash >= 0 ? null : waitingText(data.waiting);
+  // 앞 세션 장중 스탑 지시가 대기 중이라 지시를 만들지 않았다는 배너(QA-990) — 화면의 스탑 지시를 모두 처리했으면 사유가 바뀌기 전이라도 바로 내립니다.
+  const waitText = stopsWaitingText(data.waiting, stops) ?? (valuation.cash !== null && valuation.cash >= 0 ? null : waitingText(data.waiting));
   // 손절 매도 지시만 만든 세션(현금 음수 — QA-381 후속) — 그 세션의 사실이라 현금을 고친 뒤에도 서버가 나머지를 채울 때(사유를 지울 때)까지 그대로 둡니다.
   // 그 세션이 이미 개장했으면(응답의 서버 시각 기준) '개장 전에 고치면 만든다' 대신 '이 세션의 나머지는 만들지 않는다'로 끝납니다.
   const stopOnly = stopOnlyText(instructions, data.serverTime);
@@ -503,7 +538,7 @@ function StartedBody({
       </Card>
 
       {stops.length > 0 && (
-        <Card title="장중 스탑 매도 지시" subtitle="규칙 계좌가 트레일링 스탑으로 판 종목 — 감지 즉시 텔레그램으로 알립니다(종목·수량만). 매매했으면 '확인'을 누르세요">
+        <Card title="장중 스탑 매도 지시" subtitle="규칙 계좌가 트레일링 스탑으로 판 종목 — 감지 즉시 텔레그램으로 알립니다(종목·수량만). 매매했으면 '확인', 하지 않았으면 '건너뜀'을 누르세요 — 누를 때까지 대기 중입니다">
           <div className="flex flex-col gap-3">
             {confirmableStops.length > 1 && (
               <div>
@@ -512,7 +547,7 @@ function StartedBody({
                 </Button>
               </div>
             )}
-            <IsaStopInstructionsTable rows={stops} onConfirm={(row) => onConfirmStops([row])} disabled={busy} />
+            <IsaStopInstructionsTable rows={stops} onConfirm={(row) => onConfirmStops([row])} onSkip={onSkipStop} disabled={busy} />
             <p className="text-xs leading-relaxed text-text-3">{STOP_GUIDE}</p>
           </div>
         </Card>

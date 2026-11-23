@@ -19,6 +19,7 @@ import {
   sideLabel,
   stopAutoNoteLabel,
   stopNotifiedText,
+  stopStatusLabel,
   stopTimingLabel,
   stopWindowText,
   symbolText,
@@ -220,42 +221,71 @@ export function IsaRecentInstructionsTable({ rows }: { rows: readonly IsaInstruc
   );
 }
 
-const stopColumns = (onConfirm: (row: IsaStopInstruction) => void, disabled: boolean): readonly Column<IsaStopInstruction>[] => [
+/** 스탑 지시 줄의 단추 — 확인·건너뜀(대기 중만 — QA-990: 스탑 지시는 이 둘 가운데 하나를 누를 때까지 대기 중). 닫힌 줄은 칸이 비어 "—". */
+function StopActions({
+  row,
+  onConfirm,
+  onSkip,
+  disabled,
+}: {
+  row: IsaStopInstruction;
+  onConfirm: (row: IsaStopInstruction) => void;
+  onSkip: (row: IsaStopInstruction) => void;
+  disabled: boolean;
+}) {
+  const who = symbolText(row.symbol, row.name);
+  if (!canConfirm(row) && !canSkip(row)) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {canConfirm(row) && (
+        <button type="button" onClick={() => onConfirm(row)} disabled={disabled} aria-label={`확인 — ${who}`} className={buttonClasses("primary", "sm")}>
+          확인
+        </button>
+      )}
+      {canSkip(row) && (
+        <button type="button" onClick={() => onSkip(row)} disabled={disabled} aria-label={`건너뜀 — 스탑 지시 ${who}`} className={buttonClasses("ghost", "sm")}>
+          건너뜀
+        </button>
+      )}
+    </div>
+  );
+}
+
+const stopColumns = (
+  onConfirm: (row: IsaStopInstruction) => void,
+  onSkip: (row: IsaStopInstruction) => void,
+  disabled: boolean,
+): readonly Column<IsaStopInstruction>[] => [
   { key: "session", header: "세션", cell: (row) => sessionLabel(row.session ?? null), sortValue: (row) => row.session ?? null },
   { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
   { key: "quantity", header: "매도 수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
   { key: "timing", header: "방식", cell: (row) => stopTimingLabel(row.timing), sortValue: (row) => labelSort(stopTimingLabel(row.timing)) },
   { key: "window", header: "매도 창", cell: (row) => stopWindowText(row) },
   { key: "targetAt", header: "규칙 계좌 기준 시각", cell: (row) => formatKst(row.targetAt), sortValue: (row) => timeSortValue(row.targetAt) },
-  { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
+  { key: "status", header: "상태", cell: (row) => stopStatusLabel(row.status), sortValue: (row) => labelSort(stopStatusLabel(row.status)) },
   { key: "notified", header: "알림", cell: (row) => stopNotifiedText(row) },
   { key: "note", header: "메모", cell: (row) => stopAutoNoteLabel(row) },
-  {
-    key: "actions",
-    header: "확인",
-    cell: (row) =>
-      canConfirm(row) ? (
-        <button type="button" onClick={() => onConfirm(row)} disabled={disabled} aria-label={`확인 — ${symbolText(row.symbol, row.name)}`} className={buttonClasses("primary", "sm")}>
-          확인
-        </button>
-      ) : null,
-  },
+  { key: "actions", header: "확인", cell: (row) => <StopActions row={row} onConfirm={onConfirm} onSkip={onSkip} disabled={disabled} /> },
 ];
 
-/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 줄의 '확인'으로 잔고에 반영합니다. */
+/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 줄의 '확인'으로 잔고에 반영하고, 매매하지 않았으면 '건너뜀'(QA-990). */
 export function IsaStopInstructionsTable({
   rows,
   onConfirm,
+  onSkip,
   disabled,
 }: {
   rows: readonly IsaStopInstruction[];
   onConfirm: (row: IsaStopInstruction) => void;
+  onSkip: (row: IsaStopInstruction) => void;
   disabled: boolean;
 }) {
   return (
     <DataTable
       caption="장중 스탑 매도 지시"
-      columns={stopColumns(onConfirm, disabled)}
+      columns={stopColumns(onConfirm, onSkip, disabled)}
       rows={rows}
       rowKey={(row) => String(row.id)}
       emptyText="스탑 지시 없음"

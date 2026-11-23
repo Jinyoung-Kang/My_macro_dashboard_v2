@@ -205,6 +205,7 @@ const CASES: Case[] = [
   // ISA 계좌(ADR 0034) — 보유 지우기·지시 건너뜀·되돌리기.
   { name: "isa.deletePosition", before: "/api/manual/isa/positions/005930/delete", after: endpoints.isa.deletePosition("005930") },
   { name: "isa.skipInstruction", before: `/api/manual/isa/instructions/${8}/skip`, after: endpoints.isa.skipInstruction(8) },
+  { name: "isa.skipStopInstruction", before: `/api/manual/isa/stop-instructions/${6}/skip`, after: endpoints.isa.skipStopInstruction(6) },
   { name: "isa.undoTrade", before: `/api/manual/isa/trades/${9}/undo`, after: endpoints.isa.undoTrade(9) },
 ];
 
@@ -325,13 +326,14 @@ describe("실제 매매 경로(ADR 0028)", () => {
 
 describe("ISA 계좌 경로(ADR 0029)", () => {
   it("/api/manual/isa 아래 읽기 하나와 쓰기(시작·총 잔고·수수료율·보유 고침·지우기·확인·건너뜀·되돌리기) — 증권사 주문 경로가 없다", () => {
-    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "total", "commission", "position", "deletePosition", "apply", "skipInstruction", "undoTrade", "editTrade"]);
+    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "total", "commission", "position", "deletePosition", "apply", "skipInstruction", "skipStopInstruction", "undoTrade", "editTrade"]);
     expect([endpoints.isa.account, endpoints.isa.start, endpoints.isa.total, endpoints.isa.commission, endpoints.isa.position, endpoints.isa.apply]).toEqual([
       "/api/manual/isa", "/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission", "/api/manual/isa/positions",
       "/api/manual/isa/instructions/apply",
     ]);
     expect(endpoints.isa.deletePosition("005930")).toBe("/api/manual/isa/positions/005930/delete");
     expect(endpoints.isa.skipInstruction(3)).toBe("/api/manual/isa/instructions/3/skip");
+    expect(endpoints.isa.skipStopInstruction(4)).toBe("/api/manual/isa/stop-instructions/4/skip");
     expect(endpoints.isa.undoTrade(5)).toBe("/api/manual/isa/trades/5/undo");
     expect(endpoints.isa.editTrade(5)).toBe("/api/manual/isa/trades/5");
   });
@@ -367,6 +369,7 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/paper\/reviews\/(?!run$)[^/]+$/, "/api/paper/reviews/{weekEnding}")
   .replace(/^\/api\/manual\/isa\/positions\/[^/]+\/delete$/, "/api/manual/isa/positions/{symbol}/delete")
   .replace(/^\/api\/manual\/isa\/instructions\/[^/]+\/skip$/, "/api/manual/isa/instructions/{id}/skip")
+  .replace(/^\/api\/manual\/isa\/stop-instructions\/[^/]+\/skip$/, "/api/manual/isa/stop-instructions/{id}/skip")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+\/undo$/, "/api/manual/isa/trades/{id}/undo")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+$/, "/api/manual/isa/trades/{id}")
   .replace(/^\/api\/info\/items\/[^/]+$/, "/api/info/items/{id}")
@@ -387,6 +390,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(83);
+    expect(functions).toBe(84);
   });
 });

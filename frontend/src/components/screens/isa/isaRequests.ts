@@ -51,6 +51,11 @@ export function postSkipInstruction(id: number): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.skipInstruction(id));
 }
 
+/** 장중 스탑 매도 지시 건너뜀(매매하지 않음 — 잔고에 쓰지 않음, QA-990). */
+export function postSkipStopInstruction(id: number): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.skipStopInstruction(id));
+}
+
 /** 매매 내역 되돌리기(잔고를 되돌리고 지시를 다시 PLANNED로). */
 export function postEditTrade(id: number, body: IsaEditTradeRequest): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.editTrade(id), body);

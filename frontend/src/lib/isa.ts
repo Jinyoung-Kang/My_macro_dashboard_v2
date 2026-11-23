@@ -76,6 +76,8 @@ export function unavailableText(reason: string | null | undefined): string {
   switch (reason) {
     case "timed-orders":
       return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
+    case "stops-pending":
+      return "앞 세션 장중 스탑 매도 지시가 개장까지 대기 중(확인·건너뜀 전)이라 이 세션의 매매 지시를 만들지 않았습니다 — 그 매도를 잔고가 아직 몰라, 지금 잔고로 계산하면 같은 보유를 다시 지시할 수 있어서입니다. 아래 '장중 스탑 매도 지시'에서 실제로 팔았으면 '확인', 팔지 않았으면 '건너뜀'을 누르면 다음 세션 지시부터 만듭니다.";
     case "cash-negative":
       return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(규칙 계좌의 손절 매도 지시와 장중 스탑 매도 지시만 그대로 나옵니다 — 이 세션에는 개장 전에 지시할 손절 매도가 없었습니다).";
     default:
@@ -94,6 +96,25 @@ export function waitingText(waiting: IsaWaiting | null | undefined): string | nu
   }
   const session = sessionLabel(waiting.session);
   return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 규칙 계좌의 손절 매도 지시는 현금이 음수여도 만듭니다 — 지금은 이 세션에 지시할 손절 매도가 없고, 장중 스탑 매도 지시도 그대로 나옵니다.`;
+}
+
+/**
+ * 앞 세션 장중 스탑 매도 지시가 대기 중이라 다음 세션 지시를 만들지 않은 사유(응답 waiting.reason = stops-pending — QA-990)의 지시 카드 글. 정기 작업의 사유는 다음
+ * 주기(최대 10분)에야 바뀌므로, 화면에 대기 중(PLANNED) 스탑 지시가 하나도 없으면(방금 모두 확인·건너뜀) 바로 null — 처리한 뒤에도 '대기 중'이 남지 않게. 건수만 적습니다.
+ */
+export function stopsWaitingText(
+  waiting: IsaWaiting | null | undefined,
+  stops: readonly Pick<IsaStopInstruction, "status">[] | null | undefined,
+): string | null {
+  if (waiting?.reason !== "stops-pending") {
+    return null;
+  }
+  const pending = (stops ?? []).filter((stop) => stop.status === "PLANNED").length;
+  if (pending < 1) {
+    return null;
+  }
+  const session = sessionLabel(waiting.session);
+  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 장중 스탑 매도 지시 ${pending}건이 대기 중입니다(확인·건너뜀 전). 그 매도를 잔고가 아직 몰라 지금 잔고로 계산하면 같은 보유를 다시 지시할 수 있습니다. 아래 '장중 스탑 매도 지시'에서 실제로 팔았으면 '확인', 팔지 않았으면 '건너뜀'을 누르면 다음 주기(10분 안)에 지시를 만듭니다.`;
 }
 
 /**
@@ -155,12 +176,13 @@ export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "target
 }
 
 /**
- * 장중 스탑 카드 아래 안내 — 시각은 줄마다의 매도 창(stopWindowText)이 그 세션 시각으로 적으므로 여기에는 고정 시각을 넣지 않습니다(QA-314).
+ * 장중 스탑 카드 아래 안내 — 시각은 줄마다의 매도 창(stopWindowText)이 그 세션 시각으로 적으므로 여기에는 고정 시각을 넣지 않습니다(QA-314). 스탑 지시는 마감이 지나도
+ * 닫히지 않고 확인·건너뜀 전까지 대기 중입니다(QA-990 — ADR 0034 결정 7 개정).
  */
 export const STOP_GUIDE =
   "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
   + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다. "
-  + "확인은 그 세션 마감까지이고, 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전(보통 그날 밤 규칙 계좌 결정 뒤)까지 누를 수 있습니다.";
+  + "매매하지 않았으면 '건너뜀'을 누르세요. 스탑 지시는 마감이 지나도 닫히지 않고 둘 가운데 하나를 누를 때까지 '대기 중'이며, 앞 세션 스탑 지시가 대기 중이면 다음 매매 지시를 만들지 않고 기다립니다.";
 
 const AUTO_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",
@@ -263,6 +285,11 @@ const INSTRUCTION_STATUS: Readonly<Record<string, string>> = {
 /** 지시 한 줄의 상태 이름표. */
 export function instructionStatusLabel(status: string | null | undefined): string {
   return labelOf(INSTRUCTION_STATUS, status);
+}
+
+/** 장중 스탑 지시 한 줄의 상태 이름표 — 확인·건너뜀 전(PLANNED)은 기한 없이 '대기 중'(QA-990), 나머지는 지시와 같습니다. */
+export function stopStatusLabel(status: string | null | undefined): string {
+  return status === "PLANNED" ? "대기 중" : instructionStatusLabel(status);
 }
 
 const SESSION_STATUS: Readonly<Record<string, string>> = { PLANNED: "지시 있음", NONE: "지시 없음", UNAVAILABLE: "못 만듦" };

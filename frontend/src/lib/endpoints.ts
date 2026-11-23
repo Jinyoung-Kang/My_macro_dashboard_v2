@@ -406,6 +406,8 @@ export const endpoints = {
     /** 지시·스탑 지시 '확인' — 누른 순간의 가격으로 잔고에 바로 반영(본문 items, 한 트랜잭션). */
     apply: "/api/manual/isa/instructions/apply",
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
+    /** 장중 스탑 매도 지시 건너뜀(매매하지 않음 — QA-990). */
+    skipStopInstruction: (id: number) => `/api/manual/isa/stop-instructions/${segment(String(id))}/skip`,
     /** '확인' 되돌리기. */
     undoTrade: (id: number) => `/api/manual/isa/trades/${segment(String(id))}/undo`,
     /** 확인한 매매의 실제 수량·체결 금액·수수료를 고칩니다. */

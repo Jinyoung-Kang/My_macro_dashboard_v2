@@ -145,7 +145,7 @@ export interface IsaTrade {
   stopInstructionId?: number | null;
 }
 
-/** 다음 세션 지시를 아직 만들지 않은 사유(정기 작업이 기다리는 중) — 세션(YYYY-MM-DD)과 사유 코드(cash-negative·decision-pending·price-missing 등). */
+/** 다음 세션 지시를 아직 만들지 않은 사유(정기 작업이 기다리는 중) — 세션(YYYY-MM-DD)과 사유 코드(cash-negative·stops-pending·decision-pending·price-missing 등). */
 export interface IsaWaiting {
   session: string | null;
   reason: string | null;
@@ -168,7 +168,7 @@ export interface IsaResponse {
   stopInstructions?: IsaStopInstruction[] | null;
   /** 매매 내역(최근 200). */
   trades?: IsaTrade[] | null;
-  /** 다음 세션 지시를 아직 만들지 않은 사유 — 기다리는 것이 없으면 null. 화면은 cash-negative(현금이 음수라 만들지 않음 — QA-381)만 지시 카드에 띄웁니다. 손절 매도 지시만 만든 세션은 여기가 아니라 instructions.reason으로 옵니다. */
+  /** 다음 세션 지시를 아직 만들지 않은 사유 — 기다리는 것이 없으면 null. 화면은 cash-negative(현금이 음수라 만들지 않음 — QA-381)와 stops-pending(앞 세션 장중 스탑 지시가 대기 중 — QA-990)만 지시 카드에 띄웁니다. 손절 매도 지시만 만든 세션은 여기가 아니라 instructions.reason으로 옵니다. */
   waiting?: IsaWaiting | null;
   notes?: string[] | null;
 }

@@ -53,6 +53,8 @@ import {
   sessionStatusLabel,
   sideLabel,
   STOP_GUIDE,
+  stopStatusLabel,
+  stopsWaitingText,
   stopAutoNoteLabel,
   stopNotifiedText,
   stopOnlyText,
@@ -269,6 +271,28 @@ describe("안내 글", () => {
     expect(targetClock(null)).toBeNull();
   });
 
+  it("QA-990 스탑 지시 상태 — 확인·건너뜀 전은 '대기 중', 나머지는 지시와 같은 이름표", () => {
+    expect(stopStatusLabel("PLANNED")).toBe("대기 중");
+    expect(stopStatusLabel("RECORDED")).toBe("확인함(잔고 반영)");
+    expect(stopStatusLabel("SKIPPED")).toBe("건너뜀");
+    expect(stopStatusLabel(null)).toBe("—");
+  });
+
+  it("QA-990 앞 세션 스탑 지시가 대기 중이라 지시를 만들지 않음 — 건수만, 화면에 대기 중 스탑이 없으면 null, 못 만듦 글", () => {
+    const waiting = { session: "2026-11-24", reason: "stops-pending" };
+    const stops = [{ status: "PLANNED" }, { status: "PLANNED" }, { status: "RECORDED" }];
+    expect(stopsWaitingText(waiting, stops)).toMatch(/^11\/24\(화\) 매매 지시를 만들지 않았습니다 — 장중 스탑 매도 지시 2건이 대기 중입니다/);
+    expect(stopsWaitingText(waiting, stops)).toContain("'건너뜀'");
+    expect(stopsWaitingText(waiting, [{ status: "SKIPPED" }])).toBeNull();
+    expect(stopsWaitingText(waiting, null)).toBeNull();
+    expect(stopsWaitingText({ session: "2026-11-24", reason: "cash-negative" }, stops)).toBeNull();
+    expect(stopsWaitingText(null, stops)).toBeNull();
+    expect(stopsWaitingText({ session: null, reason: "stops-pending" }, stops)).toMatch(/^다음 세션 매매 지시를/);
+    expect(waitingText(waiting)).toBeNull();
+    expect(unavailableText("stops-pending")).toMatch(/^앞 세션 장중 스탑 매도 지시가 개장까지 대기 중/);
+    expect(unavailableText("stops-pending")).not.toMatch(/원|[0-9]{3,}/);
+  });
+
   it("'못 만듦' 사유별 문구 — 시가 밖 시점 주문은 할 일을, 그 밖·없음은 중립 문구", () => {
     expect(unavailableText("timed-orders")).toContain("규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다");
     for (const reason of ["decision-pending", "price-missing", "record-pending", null, undefined, ""]) {
@@ -355,9 +379,12 @@ describe("안내 글", () => {
     expect(text({ status: "PLANNED", reason: "cash-negative", open: null }, "2026-11-09T00:05:00Z")).toContain("개장 전에 잔고(현금·보유)를 고치면");
   });
 
-  // QA-382: 종가 스탑 지시는 15:30 체결 뒤에도 다음 세션 지시를 만들기 전까지 확인할 수 있다(ADR 0034 결정 7 개정). 수정 전 안내에는 기한이 없었다(재현 커밋에서는 it.fails).
-  it("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
-    expect(STOP_GUIDE).toContain("종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전");
+  // QA-382 → QA-990: 스탑 지시는 마감이 지나도 닫히지 않고 확인·건너뜀 전까지 대기 중(ADR 0034 결정 7 개정 2026-11-23). 지난 기록의 닫힌 까닭 이름표는 그대로.
+  it("QA-990 스탑 안내 — 매매하지 않았으면 건너뜀, 마감이 지나도 닫히지 않고 대기 중, 앞 세션 스탑이 대기 중이면 다음 지시를 기다림(고정 시각 없이)", () => {
+    expect(STOP_GUIDE).toContain("매매하지 않았으면 '건너뜀'을 누르세요");
+    expect(STOP_GUIDE).toContain("마감이 지나도 닫히지 않고");
+    expect(STOP_GUIDE).toContain("앞 세션 스탑 지시가 대기 중이면 다음 매매 지시를 만들지 않고 기다립니다");
+    expect(STOP_GUIDE).not.toContain("다음 세션 지시를 만들기 전");
     expect(STOP_GUIDE).not.toMatch(/\d{2}:\d{2}/);
     expect(stopAutoNoteLabel({ timing: "NEXT_CLOSE", autoNote: "expired" })).toBe("다음 지시를 만들 때까지 확인하지 않아 닫힘");
     expect(stopAutoNoteLabel({ timing: "MARKET", autoNote: "expired" })).toBe("마감까지 확인하지 않아 닫힘");

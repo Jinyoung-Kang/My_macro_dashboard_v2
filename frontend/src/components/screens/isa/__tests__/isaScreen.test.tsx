@@ -483,14 +483,16 @@ describe("확인·건너뜀·되돌리기", () => {
     expect(await inRegion().findByText(/팔 보유가 없어 1건은 닫았습니다/)).toBeTruthy();
   });
 
-  it("장중 스탑 지시도 확인 창으로 — stopInstructionId, 잔고의 현재가로 채움, 표에 매도 창·상태·메모, 닫힌 스탑에는 단추 없음", async () => {
+  it("장중 스탑 지시도 확인 창으로 — stopInstructionId, 잔고의 현재가로 채움, 표에 매도 창·상태(대기 중)·메모, 닫힌 스탑에는 단추 없음", async () => {
     const stop = { id: 41, session: "2026-11-09", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: "2026-11-09T09:12:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T09:10:55+09:00" };
     reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [stop, { ...stop, id: 42, symbol: "222220", name: "합성화학", status: "SKIPPED", autoNote: "expired" }] }));
     renderIsa();
     const stops = await screen.findByRole("table", { name: "장중 스탑 매도 지시" });
     const row = within(stops).getByRole("button", { name: "확인 — 합성전자 111110" }).closest("tr") as HTMLElement;
-    expect(row.textContent).toContain("미확인");
+    expect(row.textContent).toContain("대기 중");
+    expect(row.textContent).not.toContain("미확인");
     expect(within(stops).queryByRole("button", { name: "확인 — 합성화학 222220" })).toBeNull();
+    expect(within(stops).queryByRole("button", { name: "건너뜀 — 스탑 지시 합성화학 222220" })).toBeNull();
     fireEvent.click(within(stops).getByRole("button", { name: "확인 — 합성전자 111110" }));
     expect((within(dialog()).getByRole("textbox", { name: "체결 금액(총액, 원) — 매도 합성전자 111110" }) as HTMLInputElement).value).not.toBe("");
     api.apiPost.mockResolvedValue({ ok: true, count: 1, skipped: 0 });
@@ -518,7 +520,39 @@ describe("확인·건너뜀·되돌리기", () => {
     const rowText = (text: string) => within(stops).getAllByRole("row").find((row) => row.textContent?.includes(text))?.textContent ?? "";
     expect(rowText("합성화학")).toContain("다음 지시를 만들 때까지 확인하지 않아 닫힘");
     expect(rowText("합성바이오")).toContain("마감까지 확인하지 않아 닫힘");
-    expect(inRegion().getByText(/종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전/)).toBeTruthy();
+    expect(inRegion().getByText(/스탑 지시는 마감이 지나도 닫히지 않고/)).toBeTruthy();
+  });
+
+  // QA-990: 스탑 지시는 정기 작업이 닫지 않으므로 줄마다 '건너뜀'(매매하지 않음)이 있다 — 수정 전에는 확인 단추뿐이었다.
+  it("QA-990 스탑 지시 건너뜀 — 대기 중 줄에 확인·건너뜀, 확인 창 뒤 POST stop-instructions/{id}/skip, 안내", async () => {
+    const stop = { id: 41, session: "2026-11-23", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: "2026-11-23T11:56:00+09:00", status: "PLANNED", notifiedAt: "2026-11-23T11:55:10+09:00" };
+    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [stop] }));
+    renderIsa();
+    const stops = await screen.findByRole("table", { name: "장중 스탑 매도 지시" });
+    expect(within(stops).getByRole("button", { name: "확인 — 합성전자 111110" })).toBeTruthy();
+    fireEvent.click(within(stops).getByRole("button", { name: "건너뜀 — 스탑 지시 합성전자 111110" }));
+    expect(dialog().textContent).toContain("스탑 지시를 건너뜀으로 둡니다 — 잔고에 쓰지 않습니다");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "건너뜀" }));
+    await waitFor(() => expect(postPaths()).toEqual(["/api/manual/isa/stop-instructions/41/skip"]));
+    expect(await screen.findByText(/스탑 지시를 건너뜀으로 두었습니다/)).toBeTruthy();
+  });
+
+  // QA-990: 앞 세션 스탑 지시가 대기 중이면 다음 세션 지시를 만들지 않는다(waiting.reason = stops-pending) — 지시 카드에 건수와 할 일, 현금과 무관.
+  it("QA-990 앞 세션 스탑 지시가 대기 중이면 지시 카드에 사유(건수·확인·건너뜀), 화면에 대기 중 스탑이 없으면 내림, 개장 뒤 못 만듦도 같은 사유", async () => {
+    const stop = { id: 41, session: "2026-11-23", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: "2026-11-23T11:56:00+09:00", status: "PLANNED", notifiedAt: "2026-11-23T11:55:10+09:00" };
+    const waiting = { session: "2026-11-24", reason: "stops-pending" };
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: null, waiting, stopInstructions: [stop] }));
+    renderIsa();
+    expect(await inRegion().findByText(/^11\/24\(화\) 매매 지시를 만들지 않았습니다 — 장중 스탑 매도 지시 1건이 대기 중입니다/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: null, waiting, stopInstructions: [{ ...stop, status: "SKIPPED" }] }));
+    renderIsa();
+    await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
+    expect(inRegion().queryByText(/매매 지시를 만들지 않았습니다/)).toBeNull();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-24", status: "UNAVAILABLE", items: [], reason: "stops-pending" }, stopInstructions: [stop] }));
+    renderIsa();
+    expect(await inRegion().findByText(/^앞 세션 장중 스탑 매도 지시가 개장까지 대기 중/)).toBeTruthy();
   });
 
   it("매매 내역 고치기 — 적어 둔 값으로 열리고 POST trades/{id}(수량·금액·수수료), 안내", async () => {
