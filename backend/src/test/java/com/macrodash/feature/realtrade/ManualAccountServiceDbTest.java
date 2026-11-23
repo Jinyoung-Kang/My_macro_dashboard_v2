@@ -927,4 +927,109 @@ class ManualAccountServiceDbTest {
                 .isInstanceOfSatisfying(ManualAccountException.class, e -> assertThat(e.getMessage().length()).as("입력 글자는 잘라 넣음").isLessThan(120));
         assertThat(store.balance("isa")).isEmpty();
     }
+
+    // ------------------------------------------------------------------ 지시 없는 매매(2026-11-24)
+    private Map<String, Object> direct(String side, String symbol, String quantity, String amount, String fee) {
+        return service.recordTrade(new ManualAccountService.DirectTradeRequest(side, symbol, quantity == null ? null : d(quantity), amount == null ? null : d(amount),
+                fee == null ? null : d(fee)));
+    }
+
+    @Test
+    @DisplayName("지시 없는 매도 — 지시와 다른 종목을 판 날: 적은 값으로 현금·보유·실현 손익을 반영하고 지시 번호 없는 내역 한 줄, 그날 지시는 그대로, 되돌리면 시작 잔고로")
+    void recordTradeSellWithoutInstruction() {
+        startSynthetic();                                          // 현금 775,000, A 10주(100,000), B 5주(100,000)
+        long instructed = instruction(A, "SELL", 10);              // 지시는 A 매도였지만 실제로는 B를 팜
+
+        Map<String, Object> out = direct("sell", B, "5", "110000", "16");
+
+        assertThat(out).containsEntry("ok", true).containsEntry("symbol", B);
+        Trade t = onlyTrade();
+        assertThat(out.get("id")).isEqualTo(t.id());
+        assertThat(t.instructionId()).isNull();
+        assertThat(t.stopInstructionId()).isNull();
+        assertThat(t.side()).isEqualTo("SELL");
+        assertThat(t.gross()).isEqualByComparingTo("110000");
+        assertThat(t.price()).isEqualByComparingTo("22000");
+        assertThat(t.fee()).isEqualByComparingTo("16");
+        assertThat(t.tax()).as("매도 세금 자동").isPositive();
+        assertThat(t.priceSource()).isEqualTo("user");
+        assertThat(store.position("isa", B)).as("다 팔면 보유 줄을 지움").isEmpty();
+        assertThat(cash()).isEqualByComparingTo(d("775000").add(d("110000")).subtract(d("16")).subtract(t.tax()));
+        assertThat(t.realizedPnl()).isEqualByComparingTo(d("110000").subtract(d("100000")).subtract(d("16")).subtract(t.tax()));
+        assertThat(store.instruction(instructed).orElseThrow().status()).as("그날 지시는 건드리지 않음").isEqualTo("PLANNED");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> trades = (List<Map<String, Object>>) service.view().get("trades");
+        assertThat(trades).singleElement().satisfies(row -> {
+            assertThat(row).containsEntry("instructionId", null).containsEntry("stopInstructionId", null).containsEntry("symbol", B);
+        });
+
+        service.undoTrade(t.id());
+
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(position(B).quantity()).isEqualByComparingTo("5");
+        assertThat(position(B).purchaseAmount()).isEqualByComparingTo("100000");
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+        assertThat(store.instruction(instructed).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    @Test
+    @DisplayName("지시 없는 매수 — 이름으로 찾은 새 종목(직전 종가 모름 — 범위 검사 없음)을 보유에 더하고 수수료를 안 적으면 수수료율로, 고치기는 확인한 매매와 같음")
+    void recordTradeBuyByNameAndEdit() {
+        startSynthetic();
+
+        Map<String, Object> out = direct("BUY", "합성화학", "2", "30000", null);
+
+        assertThat(out).containsEntry("symbol", C);
+        Trade t = onlyTrade();
+        assertThat(t.side()).isEqualTo("BUY");
+        assertThat(t.fee()).as("1.5bp 절사").isEqualByComparingTo("4");
+        assertThat(t.tax()).isEqualByComparingTo("0");
+        assertThat(position(C).quantity()).isEqualByComparingTo("2");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("30000");
+        assertThat(cash()).isEqualByComparingTo(d("775000").subtract(d("30000")).subtract(d("4")));
+
+        service.editTrade(t.id(), new ManualAccountService.EditTradeRequest(d("2"), d("31000"), d("5")));
+
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("31000");
+        assertThat(cash()).isEqualByComparingTo(d("775000").subtract(d("31000")).subtract(d("5")));
+        assertThat(onlyTrade().instructionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("지시 없는 매매 거절 — 보유 없는 매도·보유보다 많은 매도·모르는 방향·종가 ±40% 밖·수수료 상한·못 찾는 종목·빈 칸은 400, 시작 전 409, 아무것도 쓰지 않음")
+    void recordTradeGuards() {
+        rejects(() -> direct("SELL", A, "1", "12000", null), 409, "not-started");
+        startSynthetic();
+
+        rejects(() -> direct("SELL", C, "1", "15000", null), 400, "invalid-request");
+        rejects(() -> direct("SELL", A, "11", "132000", null), 400, "invalid-request");
+        rejects(() -> direct("HOLD", A, "1", "12000", null), 400, "invalid-request");
+        rejects(() -> direct(null, A, "1", "12000", null), 400, "invalid-request");
+        rejects(() -> direct("BUY", B, "1", "2100", null), 400, "invalid-request");
+        rejects(() -> direct("BUY", B, "1", "21000", "5000"), 400, "invalid-request");
+        rejects(() -> direct("BUY", "없는종목", "1", "21000", null), 400, "invalid-request");
+        rejects(() -> direct("BUY", B, "1.5", "21000", null), 400, "invalid-request");
+        rejects(() -> direct("BUY", B, "1", null, null), 400, "invalid-request");
+        rejects(() -> service.recordTrade(null), 400, "invalid-request");
+
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
+        assertThat(position(B).quantity()).isEqualByComparingTo("5");
+    }
+
+    @Test
+    @DisplayName("지시 없는 매매 — 다음 세션 08:00 전이면 그 세션의 지시를 지워 고친 잔고로 다시 만들게 함(다른 잔고 쓰기와 같음)")
+    void recordTradeInvalidatesUpcomingSession() {
+        startSynthetic();
+        LocalDate tomorrow = MONDAY.plusDays(1);
+        long upcoming = instruction(tomorrow, A, "SELL", 1);
+        store.insertSession("isa", tomorrow, "PLANNED", null, MAPPER.createObjectNode());
+        clock.set(kst("2026-11-09T23:40"));
+
+        direct("SELL", B, "5", "105000", null);
+
+        assertThat(store.instruction(upcoming)).isEmpty();
+        assertThat(store.session("isa", tomorrow)).isEmpty();
+    }
 }

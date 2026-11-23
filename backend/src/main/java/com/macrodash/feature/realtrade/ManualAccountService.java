@@ -50,8 +50,10 @@ import java.util.TreeSet;
  *       새 잔고로 다시 만들게 합니다.</li>
  *   <li><b>확인</b>({@link #apply}): 지시 또는 스탑 지시 줄마다 가격(본문 → 서버 직전 종가, 직전 종가의 ±40% 밖이면 400)으로 비용을 더해 잔고에 바로 반영하고
  *       {@code manual_trades}에 남깁니다(한 트랜잭션). PLANNED만 받습니다. 팔 보유가 없는 매도는 그 지시만 SKIPPED({@code no-holding}).</li>
+ *   <li><b>지시 없는 매매</b>({@link #recordTrade}): 지시에 없던 매매(지시와 다른 종목을 사고판 날)를 확인과 같은 계산으로 반영하고 지시 번호 없이 내역에 남깁니다
+ *       (2026-11-24). 매도는 정수 보유까지만, 보유가 없으면 400.</li>
  *   <li><b>되돌림</b>({@link #undoTrade}): 잔고를 정확히 되돌리고 그 지시를 PLANNED(지시는 세션 마감이 지났으면 SKIPPED — 스탑 지시는 기한 없이 PLANNED, QA-990)로,
- *       내역 행은 지웁니다.</li>
+ *       내역 행은 지웁니다(지시 없이 적은 매매는 다시 열 지시가 없음).</li>
  *   <li><b>건너뜀</b>({@link #skipInstruction}·{@link #skipStopInstruction}): 매매하지 않은 지시를 잔고에 쓰지 않고 닫습니다. 스탑 지시는 정기 작업이 닫지 않으므로
  *       '확인'과 이것만이 대기 중을 끝냅니다(QA-990).</li>
  *   <li><b>고친 잔고로 다음 지시</b>: 잔고를 바꾸는 쓰기는 같은 잠금 안에서 다음 세션 S의 지시가 이미 있으면 S 08:00(KST) 전에는 S의 PLANNED 지시와 세션 행을 지워 정기
@@ -166,6 +168,15 @@ public class ManualAccountService {
 
     /** {@code POST /api/manual/isa/trades/{id}} 본문 — 확인한 매매의 실제 수량·체결 금액(총액)·수수료. */
     public record EditTradeRequest(BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+    }
+
+    /** {@code POST /api/manual/isa/trades} 본문 — 지시에 없던 매매: 방향(BUY·SELL)·종목(이름 또는 코드)·수량·체결 금액(총액)·수수료(없으면 수수료율로). */
+    public record DirectTradeRequest(String side, String symbol, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+
+        @Override
+        public String toString() {
+            return "DirectTradeRequest[side=" + side + ", symbol=" + symbol + "]";
+        }
     }
 
     /** {@code POST /api/manual/isa/instructions/apply} 본문. */
@@ -809,6 +820,80 @@ public class ManualAccountService {
             return null;
         });
         return Map.of("ok", true);
+    }
+
+    /**
+     * {@code POST /api/manual/isa/trades} — 지시에 없던 매매(지시와 다른 종목을 사거나 판 날 — 2026-11-24 사용자 결정)를 적습니다. 확인과 같은 계산(평균 단가 = 체결
+     * 금액 ÷ 수량, 직전 종가 ±40% 밖이면 400, 수수료 상한, 매도 세금 자동)으로 잔고에 바로 반영하고 지시 번호 없이 {@code manual_trades}에 남깁니다(한 트랜잭션).
+     * 매도는 그 종목의 정수 보유까지만 — 보유가 없으면 400(확인처럼 닫을 지시가 없으므로 조용히 넘기지 않음). 시각은 적은 때입니다. 고치기·되돌리기는 확인한 매매와 같고,
+     * 되돌려도 다시 열 지시가 없습니다.
+     */
+    public Map<String, Object> recordTrade(DirectTradeRequest body) {
+        requireReady();
+        if (body == null || body.quantity() == null || body.amount() == null) {
+            throw ManualAccountException.invalid("매수·매도, 종목, 수량, 체결 금액을 넣으세요.");
+        }
+        String side = side(body.side());
+        boolean sell = ManualAccountStore.SIDE_SELL.equals(side);
+        int quantity = wholeQuantity(body.quantity());
+        BigDecimal gross = ManualAccountBalance.money(amount(body.amount(), "체결 금액", true));
+        BigDecimal given = body.fee() == null ? null : ManualAccountBalance.money(amount(body.fee(), "수수료", false));
+        String symbol = resolve(body.symbol(), paper.allKrNames());
+        if (given != null) {
+            requireFeeInRange(symbol, given, gross);
+        }
+        BigDecimal qty = BigDecimal.valueOf(quantity);
+        BigDecimal chosen = averagePrice(gross, qty);
+        BigDecimal close = paper.lastPrices(Set.of(symbol)).get(symbol);
+        if (close != null && close.signum() > 0 && outOfBand(chosen, close)) {
+            throw ManualAccountException.invalid(outOfBandText(symbol));
+        }
+        Instant now = clock.instant();
+        LocalDate today = Kst.today(clock);
+        SessionHours next = ManualAccountCalendar.nextSession(paper, now);
+        long id = store.lockAccount(CODE, acc -> {
+            Balance balance = requireStarted(acc);
+            Position held = store.position(CODE, symbol).orElse(null);
+            if (sell) {
+                BigDecimal whole = held == null ? BigDecimal.ZERO : held.quantity().setScale(0, RoundingMode.FLOOR);
+                if (whole.signum() <= 0) {
+                    throw ManualAccountException.invalid(symbol + "의 보유가 없어 매도를 적을 수 없습니다 — 잔고에서 그 종목을 확인하세요.");
+                }
+                if (qty.compareTo(whole) > 0) {
+                    throw ManualAccountException.invalid(symbol + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
+                }
+            }
+            TradeCosts costs = paper.krTradeCosts(symbol, sell, quantity, chosen, balance.commissionBp(), today);
+            BigDecimal fee = given != null ? given : costs.fee();
+            ManualAccountBalance.Applied result = sell
+                    ? ManualAccountBalance.sell(balance.cash(), held.quantity(), held.purchaseAmount(), qty, gross, fee, costs.tax())
+                    : ManualAccountBalance.buy(balance.cash(), held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), qty, gross, fee);
+            store.updateCash(CODE, bounded(result.cash()));
+            if (result.empty()) {
+                store.deletePosition(CODE, symbol);
+            } else {
+                store.upsertPosition(CODE, symbol, held == null ? null : held.name(), result.quantity(), bounded(result.purchaseAmount()));
+            }
+            long tradeId = store.insertTrade(CODE, new TradeValues(now, side, symbol, qty, chosen, fee, costs.tax(), result.costBasis(), result.realizedPnl(),
+                    costs.taxAssumed(), null, null, SOURCE_USER, gross));
+            invalidateUpcoming(acc, next, now);
+            store.bumpVersion(CODE);
+            return tradeId;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("id", id);
+        out.put("symbol", symbol);
+        return out;
+    }
+
+    /** 방향 — BUY·SELL(대소문자 무시). */
+    private static String side(String raw) {
+        String side = raw == null ? "" : raw.strip().toUpperCase(Locale.ROOT);
+        if (!ManualAccountStore.SIDE_BUY.equals(side) && !ManualAccountStore.SIDE_SELL.equals(side)) {
+            throw ManualAccountException.invalid("방향은 매수(BUY) 또는 매도(SELL)입니다.");
+        }
+        return side;
     }
 
     private Ref instructionRef(long id) {

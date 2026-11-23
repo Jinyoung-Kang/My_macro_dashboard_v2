@@ -127,7 +127,8 @@ public final class AccessPolicy {
         owner("GET /api/manual/isa", "POST /api/manual/isa/start", "POST /api/manual/isa/balance/total",
                 "POST /api/manual/isa/balance/commission", "POST /api/manual/isa/positions", "POST /api/manual/isa/positions/{symbol}/delete",
                 "POST /api/manual/isa/instructions/apply", "POST /api/manual/isa/instructions/{id}/skip", "POST /api/manual/isa/stop-instructions/{id}/skip",
-                "POST /api/manual/isa/trades/{id}/undo", "POST /api/manual/isa/trades/{id}");
+                "POST /api/manual/isa/trades", "POST /api/manual/isa/trades/{id}/undo",
+                "POST /api/manual/isa/trades/{id}");
         // 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
         owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",

@@ -834,6 +834,19 @@
     },
     {
       "m": "POST",
+      "p": "/api/manual/isa/trades",
+      "body": {
+        "side": "str",
+        "symbol": "str",
+        "quantity": "int",
+        "amount": "int",
+        "fee": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/manual/isa/trades/{id}/undo",
       "path": {
         "id": "int"
