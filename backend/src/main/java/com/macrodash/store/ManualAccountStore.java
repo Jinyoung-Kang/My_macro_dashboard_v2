@@ -374,11 +374,12 @@ public class ManualAccountStore {
         return id;
     }
 
-    /** 매매 내역 한 행의 체결 값을 고칩니다(시각·지시 묶음은 그대로). */
-    public boolean updateTrade(String code, long id, BigDecimal quantity, BigDecimal price, BigDecimal amount, BigDecimal fee, BigDecimal tax, BigDecimal costBasis,
-                               BigDecimal realizedPnl, boolean taxAssumed, String priceSource) {
-        return jdbc.update("UPDATE manual_trades SET quantity = ?, price = ?, amount = ?, fee = ?, tax = ?, cost_basis = ?, realized_pnl = ?, tax_assumed = ?, "
-                + "price_source = ? WHERE id = ? AND account = ?", quantity, price, amount, fee, tax, costBasis, realizedPnl, taxAssumed, priceSource, id, code) == 1;
+    /** 매매 내역 한 행의 시각·체결 값을 고칩니다(지시 묶음은 그대로 — 시각은 부르는 쪽이 그대로 넘기면 안 바뀜). */
+    public boolean updateTrade(String code, long id, Instant at, BigDecimal quantity, BigDecimal price, BigDecimal amount, BigDecimal fee, BigDecimal tax,
+                               BigDecimal costBasis, BigDecimal realizedPnl, boolean taxAssumed, String priceSource) {
+        return jdbc.update("UPDATE manual_trades SET at = ?, quantity = ?, price = ?, amount = ?, fee = ?, tax = ?, cost_basis = ?, realized_pnl = ?, tax_assumed = ?, "
+                + "price_source = ? WHERE id = ? AND account = ?", Timestamp.from(at), quantity, price, amount, fee, tax, costBasis, realizedPnl, taxAssumed, priceSource,
+                id, code) == 1;
     }
 
     /** 매매 내역을 지웁니다(되돌리기). 없으면 false. */

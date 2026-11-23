@@ -1032,4 +1032,52 @@ class ManualAccountServiceDbTest {
         assertThat(store.instruction(upcoming)).isEmpty();
         assertThat(store.session("isa", tomorrow)).isEmpty();
     }
+
+    // ------------------------------------------------------------------ 매매 내역 시각 고치기(2026-11-24)
+    @Test
+    @DisplayName("고치기의 시각 — 시간대 없는 값은 KST로, 시간대 있는 ISO도 받고 내역 순서가 그 시각을 따름, 값 고치기는 그대로, 없으면 시각은 그대로")
+    void editTradeTime() {
+        startSynthetic();                                          // 잔고 시작 = 11-09 11:00 KST
+        long first = instruction(A, "SELL", 2);
+        apply(filled(first, null, "2", "24000", "3"));
+        clock.set(kst("2026-11-10T20:00"));
+        direct("BUY", B, "1", "21000", "3");
+        List<Trade> before = store.recentTrades("isa", 10);
+        Trade sell = before.stream().filter(t -> "SELL".equals(t.side())).findFirst().orElseThrow();
+        assertThat(before.getFirst().side()).as("처음에는 늦게 적은 매수가 위").isEqualTo("BUY");
+
+        service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("24200"), d("3"), "2026-11-10T15:10"));
+
+        Trade edited = store.trade(sell.id()).orElseThrow();
+        assertThat(edited.at()).isEqualTo(kst("2026-11-10T15:10"));
+        assertThat(edited.gross()).isEqualByComparingTo("24200");
+        assertThat(cash()).isEqualByComparingTo(d("775000").add(d("24200")).subtract(d("3")).subtract(edited.tax()).subtract(d("21000")).subtract(d("3")));
+
+        clock.set(kst("2026-11-10T20:30"));
+        service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("24200"), d("3"), "2026-11-10T20:10:00+09:00"));
+        assertThat(store.trade(sell.id()).orElseThrow().at()).isEqualTo(kst("2026-11-10T20:10"));
+        assertThat(store.recentTrades("isa", 10).getFirst().id()).as("시각이 늦어지면 내역에서 위로").isEqualTo(sell.id());
+
+        service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("24300"), d("3")));
+        assertThat(store.trade(sell.id()).orElseThrow().at()).as("시각을 안 보내면 그대로").isEqualTo(kst("2026-11-10T20:10"));
+    }
+
+    @Test
+    @DisplayName("고치기의 시각 거절 — 지금보다 뒤·계좌 시작 전·못 읽는 글자는 400이고 아무것도 바꾸지 않음")
+    void editTradeTimeGuards() {
+        startSynthetic();
+        long first = instruction(A, "SELL", 2);
+        apply(filled(first, null, "2", "24000", "3"));
+        Trade sell = onlyTrade();
+        BigDecimal cashBefore = cash();
+
+        rejects(() -> service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("25000"), d("3"), "2026-11-09T11:30")), 400, "invalid-request");
+        rejects(() -> service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("25000"), d("3"), "2026-11-09T10:59")), 400, "invalid-request");
+        rejects(() -> service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("25000"), d("3"), "어제 오후")), 400, "invalid-request");
+
+        Trade same = onlyTrade();
+        assertThat(same.at()).isEqualTo(sell.at());
+        assertThat(same.gross()).isEqualByComparingTo("24000");
+        assertThat(cash()).isEqualByComparingTo(cashBefore);
+    }
 }

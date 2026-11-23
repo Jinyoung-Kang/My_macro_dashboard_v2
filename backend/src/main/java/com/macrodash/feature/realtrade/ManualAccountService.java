@@ -25,6 +25,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -166,8 +169,16 @@ public class ManualAccountService {
         }
     }
 
-    /** {@code POST /api/manual/isa/trades/{id}} 본문 — 확인한 매매의 실제 수량·체결 금액(총액)·수수료. */
-    public record EditTradeRequest(BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+    /**
+     * {@code POST /api/manual/isa/trades/{id}} 본문 — 적은 매매의 실제 수량·체결 금액(총액)·수수료와 시각({@code at} — ISO, 시간대가 없으면 KST로 읽음. 없으면 그대로,
+     * 2026-11-24).
+     */
+    public record EditTradeRequest(BigDecimal quantity, BigDecimal amount, BigDecimal fee, String at) {
+
+        /** 시각을 고치지 않는 요청. */
+        public EditTradeRequest(BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+            this(quantity, amount, fee, null);
+        }
     }
 
     /** {@code POST /api/manual/isa/trades} 본문 — 지시에 없던 매매: 방향(BUY·SELL)·종목(이름 또는 코드)·수량·체결 금액(총액)·수수료(없으면 수수료율로). */
@@ -758,7 +769,11 @@ public class ManualAccountService {
         return symbol + "의 평균 단가(체결 금액 ÷ 수량)가 직전 종가의 ±40% 밖입니다 — 체결 금액(총액)과 평균 단가 칸을 바꿔 적지 않았는지 확인하세요.";
     }
 
-    /** {@code POST /api/manual/isa/trades/{id}} — 확인한 매매의 수량·체결 금액·수수료를 실제 값으로 고칩니다(매도는 앞 값을 되돌린 뒤 새 값으로 다시 반영해 세금·매입 금액·실현 손익도 다시 셈, 매수는 차이만 옮김 — QA-339). */
+    /**
+     * {@code POST /api/manual/isa/trades/{id}} — 적은 매매의 수량·체결 금액·수수료를 실제 값으로 고칩니다(매도는 앞 값을 되돌린 뒤 새 값으로 다시 반영해 세금·매입 금액·실현
+     * 손익도 다시 셈, 매수는 차이만 옮김 — QA-339). 본문에 {@code at}이 있으면 시각도 그 값으로(지금보다 뒤·계좌 시작 전은 400 — 2026-11-24). 세금 날짜와 직전 종가
+     * 범위 검사 기간은 고친 시각으로 봅니다.
+     */
     public Map<String, Object> editTrade(long id, EditTradeRequest body) {
         requireReady();
         if (body == null || body.quantity() == null || body.amount() == null) {
@@ -777,8 +792,9 @@ public class ManualAccountService {
         BigDecimal qty = BigDecimal.valueOf(quantity);
         BigDecimal chosen = averagePrice(gross, qty);
         Instant now = clock.instant();
+        Instant at = body.at() == null ? found.at() : tradeTime(body.at(), now);
         BigDecimal close = paper.lastPrices(Set.of(found.symbol())).get(found.symbol());
-        if (close != null && close.signum() > 0 && found.at().isAfter(now.minus(EDIT_BAND_WINDOW)) && outOfBand(chosen, close)) {
+        if (close != null && close.signum() > 0 && at.isAfter(now.minus(EDIT_BAND_WINDOW)) && outOfBand(chosen, close)) {
             throw ManualAccountException.invalid(outOfBandText(found.symbol()));
         }
         boolean sell = ManualAccountStore.SIDE_SELL.equals(found.side());
@@ -787,10 +803,14 @@ public class ManualAccountService {
             Balance balance = requireStarted(acc);
             Trade trade = store.trade(id).filter(t -> CODE.equals(t.account()))
                     .orElseThrow(() -> ManualAccountException.notFound("매매 내역을 찾을 수 없습니다."));
+            Instant when = body.at() == null ? trade.at() : at;
+            if (body.at() != null && balance.startedAt() != null && when.isBefore(balance.startedAt())) {
+                throw ManualAccountException.invalid("계좌를 시작하기 전 시각은 적을 수 없습니다 — 그 매매는 시작 잔고에 이미 들어 있습니다.");
+            }
             Position held = store.position(CODE, trade.symbol()).orElse(null);
             BigDecimal heldQty = held == null ? null : held.quantity();
             BigDecimal heldPurchase = held == null ? null : held.purchaseAmount();
-            TradeCosts costs = paper.krTradeCosts(trade.symbol(), sell, quantity, chosen, balance.commissionBp(), LocalDate.ofInstant(trade.at(), Kst.ZONE));
+            TradeCosts costs = paper.krTradeCosts(trade.symbol(), sell, quantity, chosen, balance.commissionBp(), LocalDate.ofInstant(when, Kst.ZONE));
             BigDecimal fee = body.fee() != null ? ManualAccountBalance.money(body.fee()) : costs.fee();
             ManualAccountBalance.Applied result;
             if (sell) {
@@ -814,7 +834,7 @@ public class ManualAccountService {
             } else {
                 store.upsertPosition(CODE, trade.symbol(), held == null ? null : held.name(), result.quantity(), bounded(result.purchaseAmount()));
             }
-            store.updateTrade(CODE, trade.id(), qty, chosen, gross, fee, costs.tax(), result.costBasis(), result.realizedPnl(), costs.taxAssumed(), SOURCE_USER);
+            store.updateTrade(CODE, trade.id(), when, qty, chosen, gross, fee, costs.tax(), result.costBasis(), result.realizedPnl(), costs.taxAssumed(), SOURCE_USER);
             invalidateUpcoming(acc, next, now);
             store.bumpVersion(CODE);
             return null;
@@ -885,6 +905,27 @@ public class ManualAccountService {
         out.put("id", id);
         out.put("symbol", symbol);
         return out;
+    }
+
+    /**
+     * 고친 시각 — ISO(시간대 있음) 또는 시간대 없는 날짜·시각(KST로 읽음, 예: 2026-11-20T10:15). 못 읽거나 지금보다 뒤면 400(계좌 시작 전은 잠금 안에서 봄).
+     */
+    private static Instant tradeTime(String raw, Instant now) {
+        String text = raw.strip();
+        Instant at;
+        try {
+            at = OffsetDateTime.parse(text).toInstant();
+        } catch (DateTimeParseException offsetless) {
+            try {
+                at = LocalDateTime.parse(text).atZone(Kst.ZONE).toInstant();
+            } catch (DateTimeParseException e) {
+                throw ManualAccountException.invalid("시각은 날짜와 시각(예: 2026-11-20 10:15, KST)으로 넣으세요.");
+            }
+        }
+        if (at.isAfter(now)) {
+            throw ManualAccountException.invalid("앞으로의 시각은 적을 수 없습니다 — 체결한 시각을 넣으세요.");
+        }
+        return at;
     }
 
     /** 방향 — BUY·SELL(대소문자 무시). */
