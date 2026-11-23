@@ -11,7 +11,13 @@
 import { describe, expect, it } from "vitest";
 import {
   buildApplyRequest,
+  buildDirectTradeRequest,
   buildEditTradeRequest,
+  directTradeHolding,
+  directTradePrice,
+  emptyDirectTradeForm,
+  tradeOriginLabel,
+  updateDirectTradeForm,
   confirmLineFromInstruction,
   confirmLineFromStop,
   confirmLineFromTrade,
@@ -569,5 +575,62 @@ describe("체결 입력 창(2026-11-09)", () => {
     const line = confirmLineFromTrade(trade);
     expect(line).toMatchObject({ quantity: "3", amount: "150001", price: "50000.33", fee: "30", feeEdited: true, instructed: null });
     expect(buildEditTradeRequest(updateConfirmLine(line, "amount", "151000", 0.015))).toEqual({ ok: true, body: { quantity: 3, amount: 151_000, fee: 30 } });
+  });
+});
+
+describe("지시 없는 매매(2026-11-24)", () => {
+  const positions = [
+    { symbol: "111110", name: "합성전자" },
+    { symbol: "222220", name: null },
+  ];
+
+  it("빈 입력은 매도부터, 금액을 적으면 수수료를 수수료율로 다시 세고(직접 고치면 그대로), 방향은 BUY·SELL만", () => {
+    let form = emptyDirectTradeForm();
+    expect(form.side).toBe("SELL");
+    form = updateDirectTradeForm(form, "amount", "1,250,000", 0.015);
+    expect(form.fee).toBe("187");
+    form = updateDirectTradeForm(form, "amount", "abc", 0.015);
+    expect(form.fee).toBe("");
+    form = updateDirectTradeForm(form, "fee", "200", 0.015);
+    form = updateDirectTradeForm(form, "amount", "2,000,000", 0.015);
+    expect(form.fee).toBe("200");
+    expect(updateDirectTradeForm(form, "side", "BUY", 0.015).side).toBe("BUY");
+    expect(updateDirectTradeForm(form, "side", "HOLD", 0.015).side).toBe("SELL");
+  });
+
+  it("본문 — 종목은 앞뒤 공백을 떼고, 쉼표 금액을 읽고, 수수료 칸이 비면 보내지 않음", () => {
+    const form = { ...emptyDirectTradeForm(), side: "BUY" as const, symbol: " 합성전자 ", quantity: "3", amount: "37,500", fee: "" };
+    expect(buildDirectTradeRequest(form)).toEqual({ ok: true, body: { side: "BUY", symbol: "합성전자", quantity: 3, amount: 37_500 } });
+    expect(buildDirectTradeRequest({ ...form, fee: "5" })).toEqual({ ok: true, body: { side: "BUY", symbol: "합성전자", quantity: 3, amount: 37_500, fee: 5 } });
+  });
+
+  it("빈 종목·정수 아닌 수량·0 금액·틀린 수수료는 보내지 않고 글을 모음", () => {
+    const checked = buildDirectTradeRequest({ ...emptyDirectTradeForm(), quantity: "1.5", amount: "0", fee: "-1" });
+    expect(checked.ok).toBe(false);
+    if (!checked.ok) {
+      expect(checked.errors).toEqual([
+        "종목(이름 또는 여섯 자리 코드)을 넣으세요.",
+        "수량은 1 이상의 정수 주입니다.",
+        "체결 금액(총액)을 적으세요.",
+        "수수료는 0 이상의 원 단위 금액입니다.",
+      ]);
+    }
+  });
+
+  it("보유 줄 찾기는 코드나 표시 이름, 평균 단가는 금액 ÷ 수량(못 읽으면 null)", () => {
+    expect(directTradeHolding({ symbol: "합성전자" }, positions)?.symbol).toBe("111110");
+    expect(directTradeHolding({ symbol: " 222220 " }, positions)?.symbol).toBe("222220");
+    expect(directTradeHolding({ symbol: "합성화학" }, positions)).toBeNull();
+    expect(directTradeHolding({ symbol: "" }, positions)).toBeNull();
+    expect(directTradePrice({ quantity: "4", amount: "50,000" })).toBe(12_500);
+    expect(directTradePrice({ quantity: "0", amount: "50,000" })).toBeNull();
+    expect(directTradePrice({ quantity: "4", amount: "" })).toBeNull();
+  });
+
+  it("매매 내역의 근거 — 스탑 지시·매매 지시·지시 없음", () => {
+    expect(tradeOriginLabel({ instructionId: null, stopInstructionId: 4 })).toBe("스탑 지시");
+    expect(tradeOriginLabel({ instructionId: 3, stopInstructionId: null })).toBe("매매 지시");
+    expect(tradeOriginLabel({ instructionId: null, stopInstructionId: null })).toBe("지시 없음");
+    expect(tradeOriginLabel({})).toBe("지시 없음");
   });
 });

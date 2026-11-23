@@ -70,6 +70,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
     expect(files).toEqual([
       "components/screens/isa/IsaBalanceDialogs.tsx",
       "components/screens/isa/IsaConfirmDialog.tsx",
+      "components/screens/isa/IsaDirectTradeDialog.tsx",
       "components/screens/isa/IsaPositionDialog.tsx",
       "components/screens/isa/IsaSection.tsx",
       "components/screens/isa/IsaStartDialog.tsx",
@@ -130,7 +131,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (/\bfetch\s*\(/.test(text)) offenders.push(`${name}: fetch`);
       for (const match of text.matchAll(/\bapiPost\s*(?:<[^>()]*>)?\s*\(\s*([^,)]+)/g)) {
         const target = match[1].trim();
-        const leaf = /^endpoints\.isa\.(start|total|commission|position|deletePosition|apply|skipInstruction|skipStopInstruction|undoTrade|editTrade)\b/.exec(target)?.[1];
+        const leaf = /^endpoints\.isa\.(start|total|commission|position|deletePosition|apply|skipInstruction|skipStopInstruction|recordTrade|undoTrade|editTrade)\b/.exec(target)?.[1];
         if (leaf) posts.push(leaf);
         else offenders.push(`${name}: apiPost(${target})`);
       }
@@ -141,8 +142,8 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (mentions !== calls + imports) offenders.push(`${name}: apiPost를 부르지 않고 참조`);
     }
     expect(offenders).toEqual([]);
-    // 시작·총 잔고·수수료율·잔고 고침·지우기·확인·건너뜀(지시·스탑 지시)·되돌리기가 모두 이 모듈 안에서 나갑니다.
-    expect([...new Set(posts)].sort()).toEqual(["apply", "commission", "deletePosition", "editTrade", "position", "skipInstruction", "skipStopInstruction", "start", "total", "undoTrade"]);
+    // 시작·총 잔고·수수료율·잔고 고침·지우기·확인·건너뜀(지시·스탑 지시)·지시 없는 매매·되돌리기가 모두 이 모듈 안에서 나갑니다.
+    expect([...new Set(posts)].sort()).toEqual(["apply", "commission", "deletePosition", "editTrade", "position", "recordTrade", "skipInstruction", "skipStopInstruction", "start", "total", "undoTrade"]);
   });
 
   it("endpoints.isa를 쓰는 곳은 ISA 모듈뿐(경로 정의 lib/endpoints.ts 제외)", () => {

@@ -4,6 +4,7 @@ import { isaErrorCode, isaErrorNeedsReload, isaErrorText } from "@/lib/isa";
 import type {
   IsaApplyRequest,
   IsaCommissionRequest,
+  IsaDirectTradeRequest,
   IsaEditTradeRequest,
   IsaOkResponse,
   IsaPositionRequest,
@@ -56,11 +57,17 @@ export function postSkipStopInstruction(id: number): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.skipStopInstruction(id));
 }
 
-/** 매매 내역 되돌리기(잔고를 되돌리고 지시를 다시 PLANNED로). */
+/** 지시에 없던 매매 적기(잔고에 바로 반영, 지시 번호 없는 내역). */
+export function postDirectTrade(body: IsaDirectTradeRequest): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.recordTrade, body);
+}
+
+/** 확인한 매매를 실제 수량·체결 금액·수수료로 고치기. */
 export function postEditTrade(id: number, body: IsaEditTradeRequest): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.editTrade(id), body);
 }
 
+/** 매매 내역 되돌리기(잔고를 되돌리고 지시를 다시 PLANNED로 — 지시 없이 적은 매매는 다시 열 지시가 없음). */
 export function postUndoTrade(id: number): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.undoTrade(id));
 }

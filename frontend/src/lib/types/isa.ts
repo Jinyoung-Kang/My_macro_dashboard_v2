@@ -141,6 +141,7 @@ export interface IsaTrade {
   priceSource: string | null;
   /** 시장 구분을 몰라 코스피 세율로 어림한 매도인가. */
   taxAssumed: boolean | null;
+  /** 묶인 지시·스탑 지시 — 지시 없이 적은 매매는 둘 다 null. */
   instructionId?: number | null;
   stopInstructionId?: number | null;
 }
@@ -223,6 +224,17 @@ export interface IsaApplyItem {
   fee?: number;
 }
 
+/** POST /api/manual/isa/trades 본문 — 지시에 없던 매매(지시와 다른 종목을 사고판 날). 수수료가 없으면 서버가 수수료율로 셉니다. */
+export interface IsaDirectTradeRequest {
+  side: "BUY" | "SELL";
+  /** 이름 또는 여섯 자리 코드 — 서버가 코드로 찾습니다. */
+  symbol: string;
+  quantity: number;
+  /** 체결 금액(총액, 원). */
+  amount: number;
+  fee?: number;
+}
+
 /** POST /api/manual/isa/trades/{id} 본문 — 확인한 매매의 실제 수량·체결 금액·수수료. */
 export interface IsaEditTradeRequest {
   quantity: number;
@@ -238,6 +250,8 @@ export interface IsaApplyRequest {
 /** 쓰기 응답 — `{ok}`, 시작·총 잔고는 `notes`(어림한 가격 등), 확인은 `count`(반영)·`skipped`(보유가 없어 닫음). 오류는 `{ok:false, error, message}`. */
 export interface IsaOkResponse {
   ok: boolean;
+  /** 지시 없는 매매로 새로 적은 내역 번호. */
+  id?: number;
   symbol?: string;
   count?: number;
   skipped?: number;

@@ -42,6 +42,7 @@ import {
   targetClock,
   toNumber,
   tradeGuide,
+  tradeOriginLabel,
   unavailableText,
   unpricedText,
   waitingText,
@@ -50,6 +51,7 @@ import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
 import type { IsaInstructionItem, IsaOkResponse, IsaResponse, IsaStopInstruction, IsaTrade } from "@/lib/types/isa";
 import { IsaCommissionDialog, IsaTotalDialog } from "./IsaBalanceDialogs";
 import { IsaConfirmDialog, type IsaConfirmTarget } from "./IsaConfirmDialog";
+import { IsaDirectTradeDialog } from "./IsaDirectTradeDialog";
 import { IsaPositionDialog, type IsaPositionTarget } from "./IsaPositionDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
 import { IsaInstructionsTable, IsaPositionsTable, IsaRecentInstructionsTable, IsaStopInstructionsTable, IsaTradesTable } from "./IsaTables";
@@ -63,7 +65,7 @@ const POLL_MS = 60_000;
  * 보이고, 사용자가 그 지시(화면·텔레그램)를 보고 직접 매매한 뒤 '확인'을 누릅니다. 주문 기능은 없습니다.
  *
  * <p>GET /api/manual/isa 하나를 1분마다 읽습니다(모의 개요와 따로 — 개요가 실패해도 그립니다). 시작 전이면 '시작' 창(총 잔고 + 보유), 시작 뒤면 요약(총 평가액·현금·매입 금액 합·
- * 평가손익·누적 수수료·세금·수수료율) → 다음 매매 지시(줄마다 확인·건너뜀, 전부 확인) → 장중 스탑 지시 → 잔고(첫 열 고치기·지우기, 행 추가) → 매매 내역(되돌리기) 순입니다.
+ * 평가손익·누적 수수료·세금·수수료율) → 다음 매매 지시(줄마다 확인·건너뜀, 전부 확인) → 장중 스탑 지시 → 잔고(첫 열 고치기·지우기, 행 추가) → 매매 내역(고치기·되돌리기, 지시 없는 매매 적기) 순입니다.
  * 쓰기는 isaRequests의 apiPost(endpoints.isa.*)뿐이고, 결과가 나오면 다시 읽습니다. 서버 오류는 코드별 문구(lib/isa)로 보입니다.
  *
  * <p>평가: 탭 머리의 주기 상자로 고른 주기마다 보유 ∪ 지시 ∪ 스탑 지시 종목의 실시간 가격(hooks/useLivePrices — ADR 0024 SSE, 표시 전용)을 받아 평가액·손익·비중을 화면에서 다시 셉니다
@@ -83,6 +85,7 @@ export function IsaSection() {
   const [skipItem, setSkipItem] = useState<IsaInstructionItem | null>(null);
   const [skipStop, setSkipStop] = useState<IsaStopInstruction | null>(null);
   const [undoRow, setUndoRow] = useState<IsaTrade | null>(null);
+  const [directOpen, setDirectOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, reloadNow), [reloadNow]);
   const action = useAsyncAction(send, "요청을 처리하지 못했습니다.");
@@ -182,7 +185,13 @@ export function IsaSection() {
     setNotice(null);
     const ok = await action.run(() => postUndoTrade(row.id));
     setUndoRow(null);
-    if (ok) setNotice("확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).");
+    if (ok) {
+      setNotice(
+        tradeOriginLabel(row) === "지시 없음"
+          ? "지시 없이 적은 매매를 되돌렸습니다 — 잔고를 되돌리고 내역에서 지웠습니다."
+          : "확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).",
+      );
+    }
     reloadNow();
   };
 
@@ -265,6 +274,10 @@ export function IsaSection() {
             setDeleteRow(row);
           }}
           onEditTrade={editTrade}
+          onOpenDirect={() => {
+            setNotice(null);
+            setDirectOpen(true);
+          }}
           onUndo={(row) => {
             setNotice(null);
             setUndoRow(row);
@@ -290,6 +303,18 @@ export function IsaSection() {
           setConfirmTarget(null);
           const skipped = result.skipped ?? 0;
           setNotice(editing ? "매매를 고쳤습니다 — 현금·매입 금액·세금·실현 손익을 다시 계산했습니다." : `확인 ${result.count ?? count}건을 적은 값으로 잔고에 반영했습니다.${skipped > 0 ? ` 팔 보유가 없어 ${skipped}건은 닫았습니다.` : ""}`);
+          reloadNow();
+        }}
+      />
+      <IsaDirectTradeDialog
+        open={directOpen}
+        positions={valuation.positions}
+        commissionPct={commissionPct}
+        onClose={() => setDirectOpen(false)}
+        onReload={reloadNow}
+        onDone={() => {
+          setDirectOpen(false);
+          setNotice("지시 없는 매매를 적은 값으로 잔고에 반영했습니다 — 매매 내역에 '지시 없음'으로 남았습니다.");
           reloadNow();
         }}
       />
@@ -383,7 +408,13 @@ export function IsaSection() {
           if (!open && !action.busy) setUndoRow(null);
         }}
         title="확인 되돌리기"
-        description={undoRow ? `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).` : undefined}
+        description={
+          undoRow
+            ? tradeOriginLabel(undoRow) === "지시 없음"
+              ? `지시 없이 적은 ${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주를 되돌립니다 — 잔고를 원래대로 돌리고 내역에서 지웁니다(다시 열 지시는 없습니다).`
+              : `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인입니다(다음 매매 지시는 그 세션 마감이 지났으면 닫힘, 장중 스탑 매도 지시는 기한 없이 대기 중).`
+            : undefined
+        }
         confirmLabel="되돌리기"
         busy={action.busy}
         onConfirm={() => void confirmUndo()}
@@ -405,6 +436,7 @@ function StartedBody({
   onEditPosition,
   onDeletePosition,
   onEditTrade,
+  onOpenDirect,
   onUndo,
   onOpenTotal,
   onOpenCommission,
@@ -422,6 +454,7 @@ function StartedBody({
   onEditPosition: (row: IsaPositionView) => void;
   onDeletePosition: (row: IsaPositionView) => void;
   onEditTrade: (row: IsaTrade) => void;
+  onOpenDirect: () => void;
   onUndo: (row: IsaTrade) => void;
   onOpenTotal: () => void;
   onOpenCommission: () => void;
@@ -565,7 +598,15 @@ function StartedBody({
         <IsaPositionsTable rows={valuation.positions} onEdit={onEditPosition} onDelete={onDeletePosition} disabled={busy} />
       </Card>
 
-      <Card title="매매 내역" subtitle="'확인'으로 잔고에 반영한 매매(최근 200, 최근 순) — 체결 값(수량·금액·수수료)이 다르면 '고치기'로 고치세요. 잘못 눌렀으면 되돌리세요">
+      <Card
+        title="매매 내역"
+        subtitle="'확인'으로 잔고에 반영한 매매와 지시 없이 적은 매매(최근 200, 최근 순) — 체결 값(수량·금액·수수료)이 다르면 '고치기'로 고치세요. 잘못 적었으면 되돌리세요. 지시와 다른 종목을 사고팔았으면 '지시 없는 매매 적기'로 적으세요"
+        actions={
+          <Button size="sm" onClick={onOpenDirect} disabled={busy}>
+            지시 없는 매매 적기
+          </Button>
+        }
+      >
         <IsaTradesTable rows={data.trades ?? []} onEdit={onEditTrade} onUndo={onUndo} disabled={busy} />
       </Card>
     </>

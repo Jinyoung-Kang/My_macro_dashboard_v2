@@ -25,6 +25,7 @@ import {
   symbolText,
   timeSortValue,
   toNumber,
+  tradeOriginLabel,
 } from "@/lib/isa";
 import type { IsaInstructionItem, IsaStopInstruction, IsaTrade } from "@/lib/types/isa";
 
@@ -324,6 +325,7 @@ export function IsaTradesTable({
     },
     { key: "realizedPnl", header: "실현 손익", align: "right", cell: (row) => pnlWonCell(row.realizedPnl), sortValue: (row) => toNumber(row.realizedPnl) },
     { key: "realizedPct", header: "손익률", align: "right", cell: (row) => pnlPctCell(row.realizedPct), sortValue: (row) => toNumber(row.realizedPct) },
+    { key: "origin", header: "근거", cell: (row) => tradeOriginLabel(row), sortValue: (row) => labelSort(tradeOriginLabel(row)) },
     { key: "priceSource", header: "가격 출처", cell: (row) => (row.priceSource === "live" ? "실시간" : row.priceSource === "close" ? "직전 종가" : row.priceSource === "user" ? "직접 입력" : row.priceSource || null) },
     {
       key: "undo",
@@ -346,7 +348,7 @@ export function IsaTradesTable({
       columns={columns}
       rows={rows}
       rowKey={(row) => String(row.id)}
-      emptyText="아직 확인한 매매 없음"
+      emptyText="아직 적은 매매 없음"
       initialSort={{ key: "at", dir: "desc" }}
       maxHeight={480}
       scrollHint="overflow"

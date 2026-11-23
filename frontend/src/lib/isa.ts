@@ -12,6 +12,7 @@ import type {
   IsaApplyRequest,
   IsaCommissionRequest,
   IsaDecimal,
+  IsaDirectTradeRequest,
   IsaEditTradeRequest,
   IsaInstructionItem,
   IsaInstructions,
@@ -717,6 +718,80 @@ export function buildEditTradeRequest(line: IsaConfirmLine): Checked<IsaEditTrad
   const errors: string[] = [];
   const read = readConfirmLine(line, errors);
   return read ? { ok: true, body: read } : { ok: false, errors };
+}
+
+// ---------------------------------------------------------------- 지시 없는 매매(2026-11-24)
+
+/** 지시 없는 매매 창의 칸. */
+export type IsaDirectTradeField = "side" | "symbol" | "quantity" | "amount" | "fee";
+
+/** 지시 없는 매매 창의 입력(글자 그대로) — 지시와 다른 종목을 사고판 날. 수수료는 직접 고치기 전까지 체결 금액 × 수수료율로 다시 셉니다. */
+export interface IsaDirectTradeForm {
+  side: "BUY" | "SELL";
+  symbol: string;
+  quantity: string;
+  amount: string;
+  fee: string;
+  feeEdited: boolean;
+}
+
+/** 빈 입력 — 방향은 매도부터(지시와 다른 종목을 판 날이 처음 쓰임새). */
+export function emptyDirectTradeForm(): IsaDirectTradeForm {
+  return { side: "SELL", symbol: "", quantity: "", amount: "", fee: "", feeEdited: false };
+}
+
+/** 칸 하나를 고친 입력 — 체결 금액을 고치면 직접 고치지 않은 수수료를 수수료율로 다시 셉니다(읽지 못하는 금액이면 수수료 칸을 비움). */
+export function updateDirectTradeForm(form: IsaDirectTradeForm, field: IsaDirectTradeField, value: string, commissionPct: number | null): IsaDirectTradeForm {
+  if (field === "side") return { ...form, side: value === "BUY" ? "BUY" : "SELL" };
+  const next: IsaDirectTradeForm = { ...form, [field]: value };
+  if (field === "fee") return { ...next, feeEdited: true };
+  if (field === "amount" && !next.feeEdited) {
+    const amount = parseDecimal(value, { maxDecimals: AMOUNT_DECIMALS });
+    next.fee = amount === null || amount <= 0 ? "" : String(estimateFee(amount, commissionPct));
+  }
+  return next;
+}
+
+/** 입력한 종목에 맞는 보유 줄(코드 또는 표시 이름이 같음, 앞뒤 공백 무시) — 없으면 null. */
+export function directTradeHolding<T extends Pick<IsaPosition, "symbol" | "name">>(form: Pick<IsaDirectTradeForm, "symbol">, positions: readonly T[]): T | null {
+  const typed = form.symbol.trim();
+  if (typed === "") return null;
+  return positions.find((row) => row.symbol === typed || (row.name ?? "").trim() === typed) ?? null;
+}
+
+/** 평균 단가(체결 금액 ÷ 수량) — 두 칸을 읽지 못하면 null. */
+export function directTradePrice(form: Pick<IsaDirectTradeForm, "quantity" | "amount">): number | null {
+  const quantity = parseDecimal(form.quantity, { maxDecimals: 0 });
+  const amount = parseDecimal(form.amount, { maxDecimals: AMOUNT_DECIMALS });
+  return quantity === null || quantity <= 0 || amount === null || amount <= 0 ? null : amount / quantity;
+}
+
+/** 지시 없는 매매 입력 → POST /api/manual/isa/trades 본문. 수수료 칸이 비면 보내지 않습니다(서버가 수수료율로). 종목 해석·보유·가격 범위는 서버가 봅니다. */
+export function buildDirectTradeRequest(form: IsaDirectTradeForm): Checked<IsaDirectTradeRequest> {
+  const errors: string[] = [];
+  const symbol = form.symbol.trim();
+  const quantity = parseDecimal(form.quantity, { maxDecimals: 0 });
+  const amount = parseDecimal(form.amount, { maxDecimals: AMOUNT_DECIMALS });
+  const feeText = form.fee.trim();
+  const fee = feeText === "" ? null : parseDecimal(feeText, { maxDecimals: AMOUNT_DECIMALS });
+  if (symbol === "") errors.push("종목(이름 또는 여섯 자리 코드)을 넣으세요.");
+  if (quantity === null || quantity <= 0) errors.push("수량은 1 이상의 정수 주입니다.");
+  if (amount === null || amount <= 0) errors.push("체결 금액(총액)을 적으세요.");
+  if (feeText !== "" && fee === null) errors.push("수수료는 0 이상의 원 단위 금액입니다.");
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return {
+    ok: true,
+    body: { side: form.side, symbol, quantity: quantity as number, amount: amount as number, ...(fee !== null ? { fee } : {}) },
+  };
+}
+
+/** 매매 내역 한 줄의 근거 — 다음 매매 지시·장중 스탑 지시의 '확인' 또는 지시 없이 적은 매매. */
+export function tradeOriginLabel(trade: Pick<IsaTrade, "instructionId" | "stopInstructionId">): string {
+  if (trade.stopInstructionId !== null && trade.stopInstructionId !== undefined) return "스탑 지시";
+  if (trade.instructionId !== null && trade.instructionId !== undefined) return "매매 지시";
+  return "지시 없음";
 }
 
 /** 기준 시각 글 — "2026-11-06 14:31:05 KST"(초까지). 실시간 가격이 없거나 시각을 모르면 "—". */

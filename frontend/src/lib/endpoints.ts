@@ -391,7 +391,7 @@ export const endpoints = {
   },
 
   // ISA 계좌 — 연결되지 않은 다른 증권사 계좌의 잔고와 다음 매매 지시(운영자 전용, ADR 0029·0034). 증권사 연결·주문 경로는 없습니다(사용자가 직접 매매).
-  // 쓰기는 모두 POST — 시작(한 번만)·총 잔고·수수료율·보유 고침·지시 확인·건너뜀·되돌리기.
+  // 쓰기는 모두 POST — 시작(한 번만)·총 잔고·수수료율·보유 고침·지시 확인·건너뜀·지시 없는 매매·되돌리기.
   isa: {
     /** 계좌·요약·보유·다음 지시·최근 지시 30·매매 내역 최근 200. */
     account: "/api/manual/isa",
@@ -408,6 +408,8 @@ export const endpoints = {
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
     /** 장중 스탑 매도 지시 건너뜀(매매하지 않음 — QA-990). */
     skipStopInstruction: (id: number) => `/api/manual/isa/stop-instructions/${segment(String(id))}/skip`,
+    /** 지시에 없던 매매(지시와 다른 종목을 사고판 날)를 적음 — 잔고에 바로 반영, 지시 번호 없는 내역(본문 side·symbol·quantity·amount·fee?). */
+    recordTrade: "/api/manual/isa/trades",
     /** '확인' 되돌리기. */
     undoTrade: (id: number) => `/api/manual/isa/trades/${segment(String(id))}/undo`,
     /** 확인한 매매의 실제 수량·체결 금액·수수료를 고칩니다. */

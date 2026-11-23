@@ -325,8 +325,8 @@ describe("실제 매매 경로(ADR 0028)", () => {
 });
 
 describe("ISA 계좌 경로(ADR 0029)", () => {
-  it("/api/manual/isa 아래 읽기 하나와 쓰기(시작·총 잔고·수수료율·보유 고침·지우기·확인·건너뜀·되돌리기) — 증권사 주문 경로가 없다", () => {
-    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "total", "commission", "position", "deletePosition", "apply", "skipInstruction", "skipStopInstruction", "undoTrade", "editTrade"]);
+  it("/api/manual/isa 아래 읽기 하나와 쓰기(시작·총 잔고·수수료율·보유 고침·지우기·확인·건너뜀·지시 없는 매매·되돌리기) — 증권사 주문 경로가 없다", () => {
+    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "total", "commission", "position", "deletePosition", "apply", "skipInstruction", "skipStopInstruction", "recordTrade", "undoTrade", "editTrade"]);
     expect([endpoints.isa.account, endpoints.isa.start, endpoints.isa.total, endpoints.isa.commission, endpoints.isa.position, endpoints.isa.apply]).toEqual([
       "/api/manual/isa", "/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission", "/api/manual/isa/positions",
       "/api/manual/isa/instructions/apply",
@@ -334,6 +334,7 @@ describe("ISA 계좌 경로(ADR 0029)", () => {
     expect(endpoints.isa.deletePosition("005930")).toBe("/api/manual/isa/positions/005930/delete");
     expect(endpoints.isa.skipInstruction(3)).toBe("/api/manual/isa/instructions/3/skip");
     expect(endpoints.isa.skipStopInstruction(4)).toBe("/api/manual/isa/stop-instructions/4/skip");
+    expect(endpoints.isa.recordTrade).toBe("/api/manual/isa/trades");
     expect(endpoints.isa.undoTrade(5)).toBe("/api/manual/isa/trades/5/undo");
     expect(endpoints.isa.editTrade(5)).toBe("/api/manual/isa/trades/5");
   });
