@@ -585,6 +585,32 @@ class ManualAccountServiceDbTest {
         });
     }
 
+    // QA-990: 스탑 지시는 사용자가 확인·건너뜀할 때까지 대기 중(ADR 0034 결정 7 개정) — 되돌리면 기한 없이 다시 대기 중.
+    // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(장중 스탑을 마감 뒤 되돌리면 SKIPPED(expired)라 다시 적을 길이 없었음).
+    @org.junit.jupiter.api.Disabled("QA-990 재현 — 고치기 전")
+    @Test
+    @DisplayName("QA-990: 마감 뒤 확인한 장중·종가 스탑 지시를 되돌리면 다음 세션 행이 생긴 뒤에도 다시 PLANNED(대기 중)")
+    void undoStopAfterCloseReopens() {
+        startSynthetic();
+        long intraday = stop(82, B, 2);
+        long closing = store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, 81, A, 5, "NEXT_CLOSE", kst("2026-11-09T15:30"),
+                MAPPER.createObjectNode())).orElseThrow();
+        store.markStopNotified(List.of(intraday, closing), kst("2026-11-09T10:31"));
+        clock.set(kst("2026-11-09T16:00"));
+        apply(item(null, intraday, "21000", "live"), item(null, closing, "11000", "user"));
+        store.insertSession(ManualAccountService.CODE, MONDAY.plusDays(1), ManualAccountStore.SESSION_PLANNED, null, MAPPER.createObjectNode());
+
+        clock.set(kst("2026-11-10T19:00"));
+        store.recentTrades("isa", 2).forEach(trade -> service.undoTrade(trade.id()));
+
+        for (long id : List.of(intraday, closing)) {
+            assertThat(store.stopInstruction(id).orElseThrow()).satisfies(row -> {
+                assertThat(row.status()).isEqualTo("PLANNED");
+                assertThat(row.reason().has("autoNote")).isFalse();
+            });
+        }
+    }
+
     @Test
     @DisplayName("건너뜀 — PLANNED는 SKIPPED, 이미 건너뛴 지시는 그대로, 확인한 지시는 409, 대체된 지시 400, 없는 지시 404, 시작 전 409")
     void skip() {
