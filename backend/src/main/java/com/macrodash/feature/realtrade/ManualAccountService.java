@@ -231,7 +231,7 @@ public class ManualAccountService {
         Optional<SessionRow> latest = store.latestSession(CODE);
         List<Instruction> current = latest.map(s -> store.instructions(CODE, s.session())).orElse(List.of());
         List<Instruction> recent = store.recentInstructions(CODE, INSTRUCTIONS_SHOWN);
-        List<StopInstruction> stops = store.recentStopInstructions(CODE, INSTRUCTIONS_SHOWN);
+        List<StopInstruction> stops = shownStops();
         List<Trade> trades = store.recentTrades(CODE, TRADES_SHOWN);
         Map<String, CostTotals> costs = store.costsBySymbol(CODE);
 
@@ -972,6 +972,19 @@ public class ManualAccountService {
             return null;
         });
         return Map.of("ok", true);
+    }
+
+    /**
+     * 보기의 스탑 지시 — 최근 {@value #INSTRUCTIONS_SHOWN}줄에 그보다 오래된 대기 중(PLANNED) 줄을 더해 늦게 만든 것부터(QA-990 — 스탑 지시는 확인·건너뜀 전까지
+     * 대기 중이고 그동안 다음 세션 지시를 막으므로, 화면에서 늘 보이고 누를 수 있어야 함).
+     */
+    private List<StopInstruction> shownStops() {
+        List<StopInstruction> out = new ArrayList<>(store.recentStopInstructions(CODE, INSTRUCTIONS_SHOWN));
+        Set<Long> shown = new HashSet<>();
+        out.forEach(s -> shown.add(s.id()));
+        store.plannedStopInstructions(CODE).stream().filter(s -> !shown.contains(s.id())).forEach(out::add);
+        out.sort(java.util.Comparator.comparingLong(StopInstruction::id).reversed());
+        return out;
     }
 
     // ------------------------------------------------------------------ 검사

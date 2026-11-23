@@ -602,6 +602,22 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
+    @DisplayName("QA-990 보기 — 스탑 지시는 최근 30줄에 그보다 오래된 대기 중 줄을 더해 늦게 만든 것부터(대기 중 줄은 늘 보이고 누를 수 있음)")
+    void viewKeepsOldPendingStops() {
+        startSynthetic();
+        long oldest = stop(100, A, 1);
+        for (int i = 1; i <= 30; i++) {
+            long id = stop(100 + i, B, 1);
+            store.updateStopInstructionStatus(id, "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shown = (List<Map<String, Object>>) service.view().get("stopInstructions");
+        assertThat(shown).hasSize(31);
+        assertThat(shown.getLast()).containsEntry("id", oldest).containsEntry("status", "PLANNED");
+        assertThat(shown.getFirst().get("status")).isEqualTo("SKIPPED");
+    }
+
+    @Test
     @DisplayName("건너뜀 — PLANNED는 SKIPPED, 이미 건너뛴 지시는 그대로, 확인한 지시는 409, 대체된 지시 400, 없는 지시 404, 시작 전 409")
     void skip() {
         rejects(() -> service.skipInstruction(1), 409, "not-started");
