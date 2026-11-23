@@ -19,7 +19,7 @@ import type { IsaOkResponse } from "@/lib/types/isa";
 import { postApply, postEditTrade, sendIsa } from "./isaRequests";
 
 /**
- * 창을 연 대상 — 지시·스탑 지시의 '확인'(줄마다 하나, 전부 확인이면 여러 줄) 또는 매매 내역의 '고치기'(한 줄, {@code tradeId}).
+ * 창을 연 대상 — 지시·스탑 지시의 '확인'(줄마다 하나, 전부 확인이면 여러 줄) 또는 매매 내역의 '고치기'(한 줄, {@code tradeId} — 시각 칸도 있음, 2026-11-24).
  */
 export type IsaConfirmTarget = { mode: "apply"; lines: IsaConfirmLine[] } | { mode: "edit"; tradeId: number; line: IsaConfirmLine };
 
@@ -84,6 +84,7 @@ function ConfirmForm({
   const checked = editing ? buildEditTradeRequest(lines[0]) : buildApplyRequest(lines);
   const set = (key: string, field: IsaConfirmField, value: string) =>
     setLines((current) => current.map((line) => (line.key === key ? updateConfirmLine(line, field, value, commissionPct) : line)));
+  const setAt = (key: string, value: string) => setLines((current) => current.map((line) => (line.key === key ? { ...line, at: value } : line)));
 
   const submit = async () => {
     if (!checked.ok || action.busy) return;
@@ -140,6 +141,22 @@ function ConfirmForm({
                   </button>
                 )}
               </div>
+              {editing && typeof line.at === "string" && (
+                <div className="mt-2 flex min-w-0 flex-col gap-1 sm:max-w-xs">
+                  <label htmlFor={`${ids}-${line.key}-at`} className="text-xs font-medium text-text-2">
+                    시각(KST)
+                  </label>
+                  <input
+                    id={`${ids}-${line.key}-at`}
+                    type="datetime-local"
+                    value={line.at}
+                    onChange={(event) => setAt(line.key, event.target.value)}
+                    disabled={action.busy}
+                    aria-label={`시각(KST) — ${who}`}
+                    className={`w-full ${inputClasses()}`}
+                  />
+                </div>
+              )}
               <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <NumberField id={`${ids}-${line.key}-quantity`} label="수량(주)" who={who} value={line.quantity} disabled={action.busy} onChange={(v) => set(line.key, "quantity", v)} />
                 <NumberField id={`${ids}-${line.key}-amount`} label="체결 금액(총액, 원)" who={who} value={line.amount} disabled={action.busy} onChange={(v) => set(line.key, "amount", v)} />
@@ -153,7 +170,7 @@ function ConfirmForm({
       </ul>
 
       <p className="text-xs leading-relaxed text-text-3">
-        세금은 매도에 자동으로 계산합니다. {editing ? "고치면 현금·매입 금액·세금·실현 손익을 이 값으로 다시 셉니다." : "안 한 종목은 그 줄을 빼세요 — 뺀 지시는 미확인으로 남습니다."}
+        세금은 매도에 자동으로 계산합니다. {editing ? "고치면 현금·매입 금액·세금·실현 손익을 이 값으로 다시 셉니다. 시각은 실제로 체결한 때(KST)로 고칠 수 있습니다." : "안 한 종목은 그 줄을 빼세요 — 뺀 지시는 미확인으로 남습니다."}
       </p>
 
       {!checked.ok && (

@@ -575,6 +575,19 @@ describe("확인·건너뜀·되돌리기", () => {
     expect(await screen.findByText(/매매를 고쳤습니다/)).toBeTruthy();
   });
 
+  it("매매 내역 고치기의 시각 — 저장된 시각(KST)으로 채우고, 바꾸면 그 시각을 실어 POST trades/{id}", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ trades: [{ id: 9, at: "2026-11-09T09:15:00+09:00", side: "SELL", symbol: "222220", name: "합성화학", quantity: 3, price: 50_000, amount: 150_000, fee: 22, tax: 300, realizedPnl: 100, realizedPct: 1, priceSource: "live", taxAssumed: false }] }));
+    renderIsa();
+    fireEvent.click(await screen.findByRole("button", { name: "고치기 — 매도 합성화학 222220" }));
+    const time = within(dialog()).getByLabelText("시각(KST) — 매도 합성화학 222220") as HTMLInputElement;
+    expect(time.type).toBe("datetime-local");
+    expect(time.value).toBe("2026-11-09T09:15");
+    fireEvent.change(time, { target: { value: "2026-11-08T14:20" } });
+    api.apiPost.mockResolvedValue({ ok: true });
+    fireEvent.click(within(dialog()).getByRole("button", { name: "잔고에 반영" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades/9", { quantity: 3, amount: 150_000, fee: 22, at: "2026-11-08T14:20:00+09:00" }));
+  });
+
   it("지시 없는 매매 적기 — 매도 종목은 잔고에서 보유를 보여 주고, 금액을 적으면 수수료를 수수료율로 채워 POST trades(방향·종목·수량·금액·수수료), 안내와 다시 읽기", async () => {
     renderIsa();
     fireEvent.click(await inRegion().findByRole("button", { name: "지시 없는 매매 적기" }));

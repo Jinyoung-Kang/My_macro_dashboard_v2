@@ -634,3 +634,38 @@ describe("지시 없는 매매(2026-11-24)", () => {
     expect(tradeOriginLabel({})).toBe("지시 없음");
   });
 });
+
+describe("매매 고치기의 시각(2026-11-24)", () => {
+  const trade = {
+    id: 9, at: "2026-11-20T01:05:37Z", side: "SELL", symbol: "222220", name: "합성화학", quantity: 3, price: 50_000, amount: 150_000, fee: 22, tax: 300,
+    realizedPnl: 100, realizedPct: 1, priceSource: "user", taxAssumed: false,
+  };
+  const now = Date.parse("2026-11-24T01:30:00+09:00");
+
+  it("고치기 줄은 저장된 시각을 KST 분까지 채우고, 바꾸지 않으면 시각을 보내지 않음(초를 깎지 않음)", () => {
+    const line = confirmLineFromTrade(trade);
+    expect(line.at).toBe("2026-11-20T10:05");
+    expect(line.atOriginal).toBe("2026-11-20T10:05");
+    expect(buildEditTradeRequest(line, now)).toEqual({ ok: true, body: { quantity: 3, amount: 150_000, fee: 22 } });
+  });
+
+  it("바꾼 시각은 KST 시간대를 붙여 보냄(초가 있으면 그대로)", () => {
+    const line = { ...confirmLineFromTrade(trade), at: "2026-11-20T14:20" };
+    expect(buildEditTradeRequest(line, now)).toEqual({ ok: true, body: { quantity: 3, amount: 150_000, fee: 22, at: "2026-11-20T14:20:00+09:00" } });
+    expect(buildEditTradeRequest({ ...line, at: "2026-11-20T14:20:05" }, now)).toMatchObject({ ok: true, body: { at: "2026-11-20T14:20:05+09:00" } });
+  });
+
+  it("빈 칸·모양이 틀림·지금보다 뒤는 보내지 않고 글", () => {
+    const base = confirmLineFromTrade(trade);
+    expect(buildEditTradeRequest({ ...base, at: "" }, now)).toEqual({ ok: false, errors: ["시각을 날짜와 시각(KST)으로 넣으세요."] });
+    expect(buildEditTradeRequest({ ...base, at: "11/20 10:05" }, now)).toEqual({ ok: false, errors: ["시각을 날짜와 시각(KST)으로 넣으세요."] });
+    expect(buildEditTradeRequest({ ...base, at: "2026-11-24T01:31" }, now)).toEqual({ ok: false, errors: ["앞으로의 시각은 적을 수 없습니다 — 체결한 시각을 넣으세요."] });
+    expect(buildEditTradeRequest({ ...base, at: "2026-11-24T01:30" }, now).ok).toBe(true);
+  });
+
+  it("확인 창 줄에는 시각이 없음", () => {
+    const item = { id: 7, symbol: "222220", name: "합성화학", side: "SELL", quantity: 3, refPrice: 53_000, weightPct: 48.2, status: "PLANNED" };
+    expect(confirmLineFromInstruction(item as never, {}, 0.015).at).toBeUndefined();
+  });
+});
+

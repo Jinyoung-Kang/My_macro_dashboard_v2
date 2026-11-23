@@ -539,6 +539,10 @@ export interface IsaConfirmLine {
   source: "live" | "close" | "user";
   /** 벗어나면 경고할 참고 가격(실시간, 없으면 기준가·직전 종가). */
   refPrice: number | null;
+  /** 고치기 창의 시각(datetime-local 값, KST "YYYY-MM-DDTHH:mm") — 확인 창은 없음(2026-11-24). */
+  at?: string | null;
+  /** 고치기 창을 열 때의 시각 — 같으면 시각을 보내지 않습니다(초까지 적힌 원래 시각을 분으로 깎지 않게). */
+  atOriginal?: string | null;
 }
 
 /** 수수료 어림 — 금액 × 수수료율(%), 원 미만 절사. 수수료율을 모르면 0. */
@@ -626,6 +630,8 @@ export function confirmLineFromTrade(trade: IsaTrade): IsaConfirmLine {
     entered: "amount",
     source: "user",
     refPrice: price,
+    at: kstInputFromIso(trade.at),
+    atOriginal: kstInputFromIso(trade.at),
   };
 }
 
@@ -713,11 +719,38 @@ export function buildApplyRequest(lines: readonly IsaConfirmLine[]): Checked<Isa
   return errors.length > 0 ? { ok: false, errors } : { ok: true, body: { items } };
 }
 
-/** 매매 고치기 → POST /api/manual/isa/trades/{id} 본문. */
-export function buildEditTradeRequest(line: IsaConfirmLine): Checked<IsaEditTradeRequest> {
+/**
+ * 고치기 창의 시각 → 보낼 ISO(KST 시간대). 바꾸지 않았으면 undefined(보내지 않음). 빈 칸·모양이 틀림·지금보다 뒤면 errors에 글을 더하고 null.
+ * `now`는 시험용(기본 지금).
+ */
+function readTradeTime(line: IsaConfirmLine, errors: string[], now: number): string | undefined | null {
+  if (line.at === undefined || line.at === null || line.at === line.atOriginal) return undefined;
+  const text = line.at.trim();
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(:\d{2})?$/.exec(text);
+  if (!match) {
+    errors.push("시각을 날짜와 시각(KST)으로 넣으세요.");
+    return null;
+  }
+  const iso = `${match[1]}${match[2] ?? ":00"}+09:00`;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) {
+    errors.push("시각을 날짜와 시각(KST)으로 넣으세요.");
+    return null;
+  }
+  if (at > now) {
+    errors.push("앞으로의 시각은 적을 수 없습니다 — 체결한 시각을 넣으세요.");
+    return null;
+  }
+  return iso;
+}
+
+/** 매매 고치기 → POST /api/manual/isa/trades/{id} 본문(시각 칸을 바꿨으면 `at`도). */
+export function buildEditTradeRequest(line: IsaConfirmLine, now: number = Date.now()): Checked<IsaEditTradeRequest> {
   const errors: string[] = [];
   const read = readConfirmLine(line, errors);
-  return read ? { ok: true, body: read } : { ok: false, errors };
+  const at = readTradeTime(line, errors, now);
+  if (!read || at === null) return { ok: false, errors };
+  return { ok: true, body: at === undefined ? read : { ...read, at } };
 }
 
 // ---------------------------------------------------------------- 지시 없는 매매(2026-11-24)

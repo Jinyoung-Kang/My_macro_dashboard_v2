@@ -240,6 +240,8 @@ export interface IsaEditTradeRequest {
   quantity: number;
   amount: number;
   fee: number;
+  /** 고친 시각(ISO, KST 시간대) — 시각 칸을 바꿨을 때만 싣습니다(2026-11-24). */
+  at?: string;
 }
 
 /** POST /api/manual/isa/instructions/apply 본문 — 한 트랜잭션으로 잔고에 반영합니다. */
