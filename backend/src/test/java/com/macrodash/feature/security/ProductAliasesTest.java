@@ -4,6 +4,7 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -194,6 +195,35 @@ class ProductAliasesTest {
         assertThat(alias("brotli").matchesComponent(new Component("collector", "pypi", "brotli", "9.1.0", null))).isFalse();
         assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "git-man", "1:9.56.1-0ppa1~ubuntu99.04.1", "git"))).isTrue();
         assertThat(alias("git").matchesComponent(new Component("host", "dpkg", "libgit2-9.9", "9.9.0-1", "libgit2"))).isFalse();
+    }
+
+    @Test
+    @Disabled("QA-999 — 수정 커밋에서 표시를 뗀다")
+    @DisplayName("QA-999 한 칸에 여러 제품이 든 제품명 — 조각(쉼표·및·/·줄바꿈·와·과)마다 따로 보아, 한 조각이라도 제외·Windows에 걸리지 않고 이름이 맞으면 그 별칭")
+    void multiProductCell() {
+        assertThat(ids("Docker Engine, Docker Desktop")).containsExactly("docker");
+        assertThat(ids("Docker Engine 및 Docker Desktop")).containsExactly("docker");
+        assertThat(ids("Docker Desktop / Docker Engine")).containsExactly("docker");
+        assertThat(ids("Docker Engine, Docker Compose")).containsExactly("docker", "compose");
+        assertThat(ids("React, React Native")).containsExactly("react");
+        assertThat(ids("React Native 와 React")).containsExactly("react");
+        assertThat(ids("Git\nGit for Windows")).containsExactly("git");
+        assertThat(ids("OpenSSH for Windows、OpenSSH")).containsExactly("openssh");
+        // 제조사는 맞은 조각의 이름이 정함 — 제외에 걸린 조각(JavaFX)의 'Oracle'이 아니라 OpenJDK(따지지 않음).
+        Alias jdk = alias("jdk");
+        assertThat(jdk.vendorDiffers(jdk.matchProduct("Oracle JavaFX, OpenJDK").orElseThrow())).isFalse();
+
+        // 그대로인 것 — 조각이 하나뿐이거나, 어느 조각도 맞지 않음.
+        assertThat(ids("Docker Desktop")).isEmpty();
+        assertThat(ids("Docker Desktop, Docker Hub")).isEmpty();
+        assertThat(ids("Git Git for Windows")).as("공백으로만 이어진 꼴은 나뉘지 않음").isEmpty();
+        assertThat(ids("OpenSSH for Windows, Microsoft OpenSSH")).isEmpty();
+        // 괄호 안은 나누지 않음 — 괄호는 그 제품의 덧붙임(운영체제·묶음)이라 칸 전체로 봄.
+        assertThat(ids("pgAdmin 4 (PostgreSQL, JDBC)")).isEmpty();
+        assertThat(ids("Node.js (Windows, macOS)")).isEmpty();
+        assertThat(ids("Tailscale Full Client (Windows, Linux, macOS)")).containsExactly("tailscale");
+        // 칸 전체로 이미 맞던 것은 조각으로 나눠도 잃지 않음(Linux가 다른 조각에 적힌 꼴).
+        assertThat(ids("Google Chrome for Windows/Mac/Linux")).containsExactly("chrome");
     }
 
     @Test

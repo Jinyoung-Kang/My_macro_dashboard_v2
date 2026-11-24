@@ -15,6 +15,7 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -133,6 +134,25 @@ class NoticeJudgeTest {
             Verdict joined = judge(rows("PostgreSQL|16.0 이상 16.50 미만 17.0 이상 17.30 미만|16.50 17.30"), inventory(PG));
             assertThat(joined.status()).isEqualTo(Status.CHECK);
             assertThat(joined.reasons()).containsExactly(Reason.PARSE_FAILED);
+        }
+
+        @Test
+        @Disabled("QA-999 — 수정 커밋에서 표시를 뗀다")
+        @DisplayName("QA-999 해당 — 한 칸에 이 스택의 제품과 이름이 겹치는 다른 제품이 함께 적힌 행도 버전을 견줌(행이 통째로 빠지지 않음)")
+        void affectedInMultiProductCell() {
+            Component docker = comp("host", "runtime", "docker", "97.0.1");
+            Verdict v = judge(rows("Docker Engine, Docker Desktop|97 이상 98 미만|98.0.0"), inventory(docker));
+            assertThat(v.status()).isEqualTo(Status.AFFECTED);
+            assertThat(v.products()).extracting(ProductVerdict::aliasId).containsExactly("docker");
+
+            Verdict lines = judge(rows("Docker Desktop\nDocker Engine|97 이상 98 미만|98.0.0"), inventory(docker));
+            assertThat(lines.status()).isEqualTo(Status.AFFECTED);
+
+            Verdict patched = judge(rows("Docker Engine 및 Docker Desktop|96 이상 97 미만|97.0.0"), inventory(docker));
+            assertThat(patched.status()).isEqualTo(Status.PATCHED);
+
+            // 그대로 — 다른 제품만 적힌 행은 무관.
+            assertThat(judge(rows("Docker Desktop, Docker Hub|97 이상 98 미만|98.0.0"), inventory(docker)).status()).isEqualTo(Status.UNRELATED);
         }
 
         @Test
