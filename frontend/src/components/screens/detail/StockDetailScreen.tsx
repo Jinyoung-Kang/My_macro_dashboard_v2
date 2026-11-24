@@ -105,11 +105,11 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
     // 시세 읽기 실패의 다시 시도는 늘 보이는 대상 머리에 하나(지표 상세 QA-588과 같은 자리) — 왼쪽 칸은 좁은 화면에서 처음에 접혀(결정 2) 그 안에
     // 두면 펼치기 전에는 다시 읽을 방법이 보이지 않습니다. 칸의 '핵심 지표'는 까닭 글만(넓은 화면에 다시 시도가 둘이 되지 않게).
     // 읽는 중 자리는 시세가 온 뒤의 현재가 줄·배지 줄 높이만큼 잡습니다(QA-995 — 좁은 화면에서 머리가 자라 그 아래 본문을 밀었음, 모바일 CLS 0.11).
-    // 넓은 화면(lg 이상)은 머리 옆에 동작 칸이 놓여 자라지 않습니다. 높이는 QA에서 합성 정상 시세로 잰 값(390 +60px · 768 +36px).
+    // 높이는 QA에서 합성 정상 시세로 잰 값(뼈대 44px에 390 +60px · 768·1440 +36px).
     placeholder = quoteState.error ? (
       <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
     ) : (
-      <div className="min-h-[104px] sm:min-h-20 lg:min-h-0">
+      <div className="min-h-[104px] sm:min-h-20">
         <Skeleton lines={2} label="시세를 불러오는 중" />
       </div>
     );

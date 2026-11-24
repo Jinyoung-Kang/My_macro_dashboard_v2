@@ -207,6 +207,8 @@ export function PriceChartPanel({
   else if (!hasLineValues(rows, lineSeries)) drawState = "empty";
   else drawState = "drawn";
   const scrubbable = drawState === "drawn";
+  // 선을 기다리는 중 — 문지르기 줄·출처 줄 자리를 그린 뒤와 같은 자리에 빈 상자로 둡니다(QA-995). 글은 넣지 않습니다(출처는 그린 뒤에만 — QA-579 후속).
+  const chartPending = drawState === "loading";
   const point = scrubbable ? scrubModel(rows, CHART_KEY, index, format) : null;
   const pointMissing = point !== null && point.valueText === EMPTY;
   const pointUnit = point !== null && !pointMissing && unit ? ` ${unit}` : "";
@@ -218,7 +220,15 @@ export function PriceChartPanel({
   if (!symbol) {
     chart = <p className="break-keep text-sm text-text-2">{noChartReason ?? "이 항목은 시계열 차트를 받지 않습니다."}</p>;
   } else if (!series.data) {
-    chart = series.error ? <ErrorState message={series.error} onRetry={() => void series.reload()} /> : <Skeleton height={220} label="차트를 불러오는 중" />;
+    // 읽는 중 자리는 선을 그린 뒤의 꼴과 같은 크기·같은 자리 — 문지르기 줄 자리는 아래 차트 상자 밖(그린 뒤와 같은 위치), 차트 자리는 히어로 높이, 출처 줄 자리는
+    // 차트 아래. 예전에는 뼈대 220px 하나라 선이 오면 칸이 좁은 화면에서 74px 자라 아래 칸(AI 요약)을 밀었습니다(QA-995, 종목 상세 모바일).
+    chart = series.error ? (
+      <ErrorState message={series.error} onRetry={() => void series.reload()} />
+    ) : (
+      <div className="h-[200px] overflow-hidden lg:h-[260px]">
+        <Skeleton height={190} label="차트를 불러오는 중" />
+      </div>
+    );
   } else if (!series.data.available) {
     chart = <p className="break-keep text-sm text-text-2">{series.data.message ?? "표시할 시계열이 없습니다."}</p>;
   } else {
@@ -256,9 +266,14 @@ export function PriceChartPanel({
             )}
           </div>
         </div>
+      ) : chartPending ? (
+        <div aria-hidden="true" className="@container mb-2">
+          <div className="min-h-[2.375rem] @min-[26rem]:min-h-5" />
+        </div>
       ) : null}
       <div className="min-w-0">{chart}</div>
       {caption && scrubbable ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
+      {caption && chartPending ? <div aria-hidden="true" className="mt-2 h-4" /> : null}
       {scrubbable ? (
         // 조용한 알림 — 문지른 점의 '날짜 값'. 문지르지 않으면 비워 둡니다(미리 있어야 첫 점부터 읽힘).
         <div className="sr-only" aria-live="polite" aria-atomic="true">
