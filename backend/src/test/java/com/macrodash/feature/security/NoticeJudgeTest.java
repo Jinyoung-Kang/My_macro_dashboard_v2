@@ -15,6 +15,7 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -1121,6 +1122,51 @@ class NoticeJudgeTest {
             // 열림·영향 없음은 설치 판 없이도 씀.
             Verdict open = judge(kernelRows, withTracker(noModules, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.OPEN, null));
             assertThat(open.reasons()).containsExactly(Reason.DISTRO_OPEN);
+        }
+
+        @Test
+        @Disabled("QA-998 — 수정 커밋에서 표시를 뗀다")
+        @DisplayName("QA-998 실행 중인 커널의 원본 패키지가 linux가 아니면(HWE·클라우드 커널) 그 원본 이름으로 묻고, 추적기의 linux '영향 없음'으로 무관이 되지 않음")
+        void runningKernelOtherSource() {
+            Component running = comp("host", "runtime", "kernel", "9.11.0-29-fake");
+            Component image = pkg("host", "dpkg", "linux-image-9.11.0-29-fake", "9.11.0-29.29~99.04.1", "linux-signed-hwe-9.11");
+            Component modules = pkg("host", "dpkg", "linux-modules-9.11.0-29-fake", "9.11.0-29.29~99.04.1", "linux-hwe-9.11");
+            List<Row> kernelRows = List.of(new Row(0, "CVE-2099-7777", "Linux Kernel", "9.0 이상 9.12 미만", "9.12"));
+            EnvInventory inv = ubuntuHost(running, image, modules);
+
+            // 추적기가 GA 커널(linux)은 영향 없음이라고 적어도 이 서버의 커널(linux-hwe-9.11)의 답이 아님 — 그 원본의 결과가 없으니 모름.
+            Verdict v = judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.NOT_AFFECTED, null));
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(v.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+            assertThat(v.matches()).singleElement().satisfies(m -> {
+                assertThat(m.tracker().pkg()).as("추적기에 물을 원본 패키지").isEqualTo("linux-hwe-9.11");
+                assertThat(m.tracker().cves()).singleElement().satisfies(c -> assertThat(c.status()).isEqualTo(TrackerStatus.NONE));
+            });
+            // 그 원본의 결과가 오면 그대로 씀(설치 판은 그 패키지의 판).
+            assertThat(judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux-hwe-9.11", "CVE-2099-7777", TrackerStatus.NOT_AFFECTED, null))
+                    .status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux-hwe-9.11", "CVE-2099-7777", TrackerStatus.FIXED,
+                    "9.11.0-30.30~99.04.1")).status()).isEqualTo(Status.AFFECTED);
+            assertThat(judge(kernelRows, withTracker(inv, "ubuntu", SUITE, "linux-hwe-9.11", "CVE-2099-7777", TrackerStatus.FIXED,
+                    "9.11.0-29.29~99.04.1")).status()).isEqualTo(Status.PATCHED);
+
+            // 모듈 패키지가 없어도 이미지 패키지의 원본이 커널 원본이면 그 이름으로.
+            Component plainImage = pkg("host", "dpkg", "linux-image-9.11.0-29-fake", "9.11.0-29.29~99.04.1", "linux-fakecloud");
+            Verdict cloud = judge(kernelRows, withTracker(ubuntuHost(running, plainImage), "ubuntu", SUITE, "linux", "CVE-2099-7777",
+                    TrackerStatus.NOT_AFFECTED, null));
+            assertThat(cloud.status()).isEqualTo(Status.CHECK);
+            assertThat(cloud.matches()).singleElement().satisfies(m -> assertThat(m.tracker().pkg()).isEqualTo("linux-fakecloud"));
+
+            // 실행 중인 커널의 원본을 알 수 없으면(서명 이미지뿐) linux로 묻되, '영향 없음'을 무관으로 내리지 않음.
+            Verdict unknown = judge(kernelRows, withTracker(ubuntuHost(running, image), "ubuntu", SUITE, "linux", "CVE-2099-7777",
+                    TrackerStatus.NOT_AFFECTED, null));
+            assertThat(unknown.status()).isEqualTo(Status.CHECK);
+            assertThat(unknown.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
+
+            // 대조 — 원본이 linux인 같은 구성은 지금처럼 무관.
+            Component ga = pkg("host", "dpkg", "linux-modules-9.11.0-29-fake", "9.11.0-29.29", "linux");
+            assertThat(judge(kernelRows, withTracker(ubuntuHost(running, image, ga), "ubuntu", SUITE, "linux", "CVE-2099-7777",
+                    TrackerStatus.NOT_AFFECTED, null)).status()).isEqualTo(Status.UNRELATED);
         }
 
         @Test
