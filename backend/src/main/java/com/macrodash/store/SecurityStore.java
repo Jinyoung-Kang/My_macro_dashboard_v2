@@ -136,6 +136,36 @@ public class SecurityStore {
                 && schema.tableExists("env_pending_updates");
     }
 
+    /**
+     * 판정 입력의 판(QA-991) — 공지·표 행·버전 목록·추적기 결과 표가 바뀌면 반드시 달라지는 값 한 줄. 행을 내려받지 않는 집계 하나라 쌉니다.
+     *
+     * <p>수집기(collector/app/store.py)가 이 표들을 쓰는 방식에 기댑니다: 공지는 넣거나 고칠 때마다 {@code updated_at = now()}(상세를 받으면 그 공지의 표 행을
+     * 같은 트랜잭션에서 통째로 바꿈 — {@code save_security_detail}), 버전 목록 네 표는 한 트랜잭션으로 통째로 바꾸며 {@code received_at = now()}
+     * ({@code replace_env_inventory}), 추적기 결과는 행마다 그 실행의 {@code checked_at}({@code save_distro_cve_status}). 지우는 길은 공지의 건수·표 행
+     * 수로 봅니다. 그래서 (건수, 가장 늦은 시각)이 같으면 입력이 같다고 봅니다 — 놓치는 경우에 대비해 기억하는 쪽에 시간 상한도 둡니다.
+     * 표가 없으면 그 칸은 null(V40~V42 전).
+     */
+    public record InputVersion(boolean ready, boolean inventoryReady, long notices, Instant noticesUpdatedAt, long rows,
+                               Instant inventoryReceivedAt, Long trackers, Instant trackersCheckedAt) {
+    }
+
+    /** {@link InputVersion} 한 줄. */
+    public InputVersion inputVersion() {
+        boolean ready = ready();
+        boolean inventory = inventoryReady();
+        if (!ready) {
+            return new InputVersion(false, inventory, 0, null, 0, null, null, null);
+        }
+        boolean tracker = schema.tableExists("distro_cve_status");
+        String sql = "SELECT (SELECT count(*) FROM security_notices) AS notices, (SELECT max(updated_at) FROM security_notices) AS notices_at, "
+                + "(SELECT count(*) FROM security_notice_rows) AS row_count, "
+                + (inventory ? "(SELECT received_at FROM env_inventory WHERE id = 1)" : "NULL::timestamptz") + " AS inventory_at, "
+                + (tracker ? "(SELECT count(*) FROM distro_cve_status)" : "NULL::bigint") + " AS trackers, "
+                + (tracker ? "(SELECT max(checked_at) FROM distro_cve_status)" : "NULL::timestamptz") + " AS trackers_at";
+        return jdbc.queryForObject(sql, (rs, rowNum) -> new InputVersion(true, inventory, rs.getLong("notices"), instant(rs, "notices_at"),
+                rs.getLong("row_count"), instant(rs, "inventory_at"), (Long) rs.getObject("trackers"), instant(rs, "trackers_at")));
+    }
+
     /** 공지 전부(게시일·글 번호 최근부터). 90일 메우기 한 벌이라 수백 건 안쪽입니다. */
     public List<Notice> notices() {
         return jdbc.query("SELECT " + NOTICE_COLUMNS + " FROM security_notices ORDER BY posted_on DESC, ntt_id DESC",

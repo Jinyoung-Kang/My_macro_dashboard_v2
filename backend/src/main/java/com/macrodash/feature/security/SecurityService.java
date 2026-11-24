@@ -37,8 +37,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * 보안 공지 화면({@code /security}, ADR 0046) — 수집기가 받아 둔 보호나라 공지와 버전 목록을 <b>읽기만</b> 하고, 판정은 읽을 때마다
+ * 보안 공지 화면({@code /security}, ADR 0046) — 수집기가 받아 둔 보호나라 공지와 버전 목록을 <b>읽기만</b> 하고, 판정은
  * {@link NoticeJudge}로 계산합니다(결정 5 — 저장하지 않음). 스냅숏을 읽지 않으므로 화면 조회가 수집을 일으키지 않습니다.
+ *
+ * <p><b>판정 기억</b>(QA-991, ADR 0049): 공지 전부의 판정은 입력 표의 판({@link SecurityStore#inputVersion} — 집계 한 줄)이 그대로인 동안
+ * 기억해 두고 다시 계산하지 않습니다(운영 1.7초 → 판 확인 한 번). 부를 때마다 판을 확인하므로 수집기가 공지·버전 목록·추적기 결과를 고치면 다음 호출이 바로
+ * 다시 계산합니다. 판을 놓치는 경우에 대비해 {@link #JUDGEMENT_MAX_AGE}가 지나도 다시 계산합니다. 판정은 시각에 기대지 않아(입력과 별칭 표만) 기억한 값과 새로
+ * 계산한 값이 같습니다. 기억은 이 서비스 안에 둡니다 — 응답 캐시({@code read.ComputedCache})는 저장본 수집 시각으로만 값을 버려 보안 표의 변경을 모르고,
+ * 서비스가 그것을 부르는 것도 ADR 0001에 어긋납니다. 알림 작업({@link SecurityAlertJob})도 같은 기억을 쓰되 매번 판을 확인합니다.
  *
  * <p>버전 목록이 없으면(로컬·QA, 서버에서 아직 받지 않음) 판정에 {@code null}을 넘겨 제품이 맞는 공지는 모두 확인 필요({@code NO_INVENTORY})가
  * 됩니다(결정 8). 모르는 값은 null로 내립니다(지어내지 않음). 시각은 ISO(UTC, 초까지) 글자, 날짜는 {@code yyyy-MM-dd}입니다.
@@ -56,6 +62,9 @@ public class SecurityService {
     /** 버전 목록이 이보다 오래되면 {@code stale}(화면 경고 — 계획 커밋 10 '2일 넘게 오래됐으면 경고'). */
     static final Duration INVENTORY_STALE_AFTER = Duration.ofDays(2);
 
+    /** 판정 기억의 시간 상한 — 판({@link SecurityStore#inputVersion})이 그대로여도 이만큼 지나면 다시 계산합니다(판을 놓치는 경우 대비). */
+    static final Duration JUDGEMENT_MAX_AGE = Duration.ofMinutes(10);
+
     private static final Pattern CVE = Pattern.compile("CVE-\\d{4}-\\d{4,}", Pattern.CASE_INSENSITIVE);
     private static final List<String> STATUS_CODES = Arrays.stream(Status.values()).map(Status::code).toList();
     private static final List<String> REASON_CODES = Arrays.stream(Reason.values()).map(Reason::name).toList();
@@ -64,9 +73,20 @@ public class SecurityService {
     public record Judged(SecurityStore.Notice notice, List<SecurityStore.NoticeRow> rows, Verdict verdict) {
     }
 
+    /**
+     * 판정 한 벌 — 버전 목록 머리(없으면 비어 있음)와 판정 입력(없으면 null), 공지 전부의 판정(게시일 최근부터).
+     *
+     * @param version 이 판정을 계산할 때의 입력 판(null이면 판을 몰라 기억하지 않은 것)
+     */
+    public record Judgement(SecurityStore.InputVersion version, Optional<SecurityStore.Inventory> head, EnvInventory inventory,
+                            List<Judged> judged, Instant computedAt) {
+    }
+
     private final SecurityStore store;
     private final ProductAliases aliases;
     private final Clock clock;
+    private final Object judgementLock = new Object();
+    private volatile Judgement judgement;
 
     @Autowired
     public SecurityService(SecurityStore store) {
@@ -128,6 +148,37 @@ public class SecurityService {
                         c.sourcePackage())).toList(),
                 pending.stream().map(p -> new EnvInventory.Pending(p.pkg(), p.installed(), p.candidate(), p.security())).toList(),
                 cves, os, trackerEntries);
+    }
+
+    /**
+     * 지금 입력의 판정 한 벌 — 입력 판이 기억과 같고 {@link #JUDGEMENT_MAX_AGE} 안이면 기억한 것, 아니면 새로 계산해 기억합니다(클래스 설명).
+     * 판을 확인하는 집계 한 줄은 늘 보냅니다. 판을 모르면(null) 기억하지 않고 매번 계산합니다. 같은 때 여럿이 부르면 계산은 한 번만 합니다.
+     */
+    public Judgement judgement() {
+        SecurityStore.InputVersion version = store.inputVersion();
+        Instant now = clock.instant();
+        Judgement known = judgement;
+        if (fresh(known, version, now)) {
+            return known;
+        }
+        synchronized (judgementLock) {
+            known = judgement;
+            if (fresh(known, version, now)) {
+                return known;
+            }
+            Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
+            EnvInventory inventory = head.map(this::loadInventory).orElse(null);
+            Judgement computed = new Judgement(version, head, inventory, List.copyOf(judgeAll(inventory)), now);
+            if (version != null) {
+                judgement = computed;
+            }
+            return computed;
+        }
+    }
+
+    private static boolean fresh(Judgement known, SecurityStore.InputVersion version, Instant now) {
+        return known != null && version != null && version.equals(known.version())
+                && now.isBefore(known.computedAt().plus(JUDGEMENT_MAX_AGE)) && !now.isBefore(known.computedAt());
     }
 
     /** 공지 전부를 판정합니다(게시일 최근부터). {@code inventory}가 {@code null}이면 버전 목록 없음. */
@@ -241,9 +292,9 @@ public class SecurityService {
             paging.put(out, 0);
             return out;
         }
-        Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(this::loadInventory).orElse(null);
-        List<Judged> all = judgeAll(inventory);
+        Judgement judged = judgement();
+        Optional<SecurityStore.Inventory> head = judged.head();
+        List<Judged> all = judged.judged();
 
         List<Judged> searched = q == null ? all : all.stream().filter(j -> matchesQuery(j, q)).toList();
         Map<String, Object> counts = new LinkedHashMap<>();
@@ -283,8 +334,9 @@ public class SecurityService {
         SecurityStore.Notice notice = store.notice(nttId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그 번호의 보안 공지가 없습니다."));
         Instant now = clock.instant();
-        Optional<SecurityStore.Inventory> head = store.inventoryReady() ? store.inventory() : Optional.empty();
-        EnvInventory inventory = head.map(this::loadInventory).orElse(null);
+        Judgement current = judgement();
+        Optional<SecurityStore.Inventory> head = current.head();
+        EnvInventory inventory = current.inventory();
         List<SecurityStore.NoticeRow> rows = store.rows(nttId);
         Verdict verdict = judge(notice, rows, inventory);
         Judged judged = new Judged(notice, rows, verdict);

@@ -105,11 +105,12 @@ public class SecurityAlertJob {
         if (!security.ready() || !records.ready() || !alerts.ready()) {
             return Outcome.NONE;            // V40 전
         }
-        Optional<EnvInventory> inventory = security.loadInventory();
-        if (inventory.isEmpty()) {
+        // 판정은 입력 판이 그대로면 화면과 같은 기억을 씁니다 — 판은 이 주기에도 새로 확인하므로 옛 판정으로 알리지 않습니다(QA-991).
+        SecurityService.Judgement judgement = security.judgement();
+        if (judgement.inventory() == null) {
             return Outcome.NONE;            // 버전 목록 없음 — 해당이 나올 수 없음
         }
-        List<SecurityService.Judged> all = security.judgeAll(inventory.get());
+        List<SecurityService.Judged> all = judgement.judged();
         syncTrackerWants(all);
         List<SecurityService.Judged> affected = all.stream().filter(j -> j.verdict().status() == Status.AFFECTED).toList();
         if (affected.isEmpty()) {
