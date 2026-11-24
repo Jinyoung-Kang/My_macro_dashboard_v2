@@ -106,7 +106,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - Claude Code 셸의 `grep`·`find`는 ugrep·bfs로 바뀌어 있어 `.gitignore` 대상(`.venv`, `.next`,
   `node_modules`, `.git`)을 건너뛴다. 파일 시스템 전체를 훑을 때는 `/usr/bin/grep`을 쓴다.
 - 테스트 DB·백업 스크립트는 `docker compose exec -T postgres`로 컨테이너 안의 psql을 쓴다.
-  이 PC에는 `psql`·`pg_dump`가 없다 — 없어도 되고, 그러면 `test_db_scripts.py` 12개가 건너뛰어진다(CI에서는 돈다).
+  이 PC에는 `psql`·`pg_dump`가 없다 — 없어도 되고, 그러면 `psql`이 필요한 시험(`test_db_scripts.py` 전부와 `test_vultr_scripts.py`의 일부)이 건너뛰어진다(CI에서는 돈다).
 - `.claude/worktrees/…` 안에서는 `git checkout main`이 실패한다. 작업은 본체 폴더에서 한다.
 - 테스트 DB를 쓰는 테스트는 postgres 컨테이너가 떠 있어야 한다(`make infra` 또는 `make up`).
 - 수집기 `/health`는 DB까지 확인한다(없으면 503). `/health`를 공개 경로 예시로 쓰는 테스트는 `store.ping`을

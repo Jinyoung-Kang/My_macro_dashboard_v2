@@ -428,8 +428,8 @@ make doctor     # 컨테이너 → 수집기 → DB → 백엔드 → 화면 순
 
 ```bash
 make test              # 세 언어 전부 (PostgreSQL 필요)
-make test-collector    # pytest 129건
-make test-backend      # JUnit 83건 (Java 21 · Maven 필요)
+make test-collector    # ruff + pytest
+make test-backend      # JUnit (Java 21 · Maven 필요)
 make test-frontend     # 자가검증 + 훅 테스트 + 린트 + 빌드 (Node 24 권장 — 이미지·CI와 같은 판, Next 16은 20.9 이상)
 make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으로 부릅니다)
 ```
