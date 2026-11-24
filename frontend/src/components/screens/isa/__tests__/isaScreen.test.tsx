@@ -930,6 +930,27 @@ describe("장중 스탑 매도 지시·매매 내역 — 5줄씩 쪽 넘김(사�
     expect(bodyRows(stopName).map((row) => /90000\d/.exec(row.textContent ?? "")?.[0])).toEqual(["900005", "900006"]);
   });
 
+  // QA-1027: 서버는 스탑 지시를 번호 내림차순(최근 30줄 + 그보다 오래된 대기 줄)으로 줍니다. 오래된 대기 줄은 2쪽 뒤로 밀려, 지시 카드가 "아래에서
+  // 누르세요"라고 하는데 첫 쪽에 누를 줄이 없었습니다(대기 줄이 1건이면 '전부 확인'도 없음 — 그동안 다음 세션 지시는 만들어지지 않음, QA-990).
+  it.fails("QA-1027: 오래된 대기 중 스탑 지시는 닫힌 줄이 많아도 첫 쪽 맨 위 — 확인·건너뜀 단추가 바로 보인다", async () => {
+    const closed = Array.from({ length: 6 }, (_, index) => ({
+      ...STOP_ITEM, id: 306 - index, symbol: `90000${index}`, name: `합성스탑${index}`, status: "CONFIRMED",
+    }));
+    const pending = { ...STOP_ITEM, id: 300, session: "2026-11-06", symbol: "900009", name: "합성대기" };
+    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [...closed, pending] }));
+    renderIsa();
+    const stopName = "장중 스탑 매도 지시";
+    const stops = await inRegion().findByRole("table", { name: stopName });
+
+    expect(within(pagerOf(stopName)).getByText("1/2쪽")).toBeTruthy();
+    // 대기 줄 먼저, 나머지는 서버 차례(번호 내림차순) 그대로.
+    expect(bodyRows(stopName).map((row) => /90000\d/.exec(row.textContent ?? "")?.[0])).toEqual(["900009", "900000", "900001", "900002", "900003"]);
+    expect(within(stops).getByRole("button", { name: "확인 — 합성대기 900009" })).toBeTruthy();
+    expect(within(stops).getByRole("button", { name: "건너뜀 — 스탑 지시 합성대기 900009" })).toBeTruthy();
+    fireEvent.click(within(pagerOf(stopName)).getByRole("button", { name: "2" }));
+    expect(bodyRows(stopName).map((row) => /90000\d/.exec(row.textContent ?? "")?.[0])).toEqual(["900004", "900005"]);
+  });
+
   it("5줄 이하면 쪽 넘기기가 없다", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
