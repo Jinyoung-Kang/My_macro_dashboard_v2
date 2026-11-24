@@ -2,8 +2,10 @@
 
 import { useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
+import { Pager } from "@/components/Pager";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ariaSortOf, nextSort, sortRows, type SortState, type SortValue } from "@/lib/dataTable";
+import { pageSlice } from "@/lib/info";
 import { isMissingValue } from "@/lib/patterns";
 
 import { Empty } from "./Empty";
@@ -87,6 +89,9 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   inline-block·w-fit·auto 격자 칸)에서는 상자가 옆 글 폭까지 줄어듭니다 — 그래서 행이 있는 표에는 붙이지 않습니다(2026-11-16 검토 지적:
  *   붙이면 그런 부모 안에서 상자가 표보다 좁아져 표가 잘림). 행 없는 표를 그런 자리에 둘 때만 바깥이 폭을 정해 줍니다(minmax(0,1fr)·flex-1 등).
  *   칸 안의 크기 질의(@ 변형·cq 단위)는 이 상자를 기준으로 삼지 않습니다(행이 있을 때 상자는 기준이 아님).
+ * - `pageSize`(선택, 기본 없음 — 모든 행): 한 쪽에 그 줄 수만 그리고 표 아래에 쪽 넘기기(공용 `Pager` — 이전·번호·다음, 한 쪽뿐이면 없음)를 둡니다
+ *   (사용자 요청 2026-11-24 — 실제 매매·실제 계좌·ISA의 긴 내역을 5줄씩). 정렬한 뒤에 나누므로 정렬은 모든 행에 걸리고, 머리로 정렬을 바꾸면 첫 쪽으로
+ *   돌아갑니다. 행이 줄어 지금 쪽이 없어지면 마지막 쪽을 그립니다. 개수 줄(`count`)은 모든 행의 수입니다.
  */
 export function DataTable<T>({
   columns,
@@ -101,6 +106,7 @@ export function DataTable<T>({
   dense = false,
   count,
   selectedKey,
+  pageSize,
 }: {
   columns: readonly Column<T>[];
   rows: readonly T[];
@@ -118,12 +124,18 @@ export function DataTable<T>({
   count?: boolean | ((count: number) => string);
   /** 고른 행의 rowKey — 막대·바탕·aria-current(위 설명). */
   selectedKey?: string | null;
+  /** 한 쪽의 줄 수 — 주면 쪽 넘기기(위 설명). */
+  pageSize?: number;
 }): JSX.Element {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
+  const [page, setPage] = useState(1);
   const sortColumn = sort ? columns.find((column) => column.key === sort.key && column.sortValue) : undefined;
   // 정렬할 수 없는 열을 가리키는 정렬 상태(잘못된 initialSort)는 없는 것으로 봅니다 — aria-sort도 붙이지 않음.
   const activeSort = sortColumn ? sort : null;
-  const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
+  const sorted = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
+  // 쪽 넘기기(pageSize) — 정렬한 뒤에 그 쪽의 행만. 아래 그리기는 모두 이 쪽의 행(shown)을 씁니다.
+  const paged = pageSize !== undefined && pageSize > 0 ? pageSlice(sorted, page, pageSize) : null;
+  const shown = paged ? paged.rows : sorted;
 
   const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
   // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 넓은 화면 32·28px — 아래 구분선 1px 포함, 좁은 화면의 행은 모두 44px 이상).
@@ -214,7 +226,10 @@ export function DataTable<T>({
                     {column.sortValue ? (
                       <button
                         type="button"
-                        onClick={() => setSort(nextSort(activeSort, column.key))}
+                        onClick={() => {
+                          setSort(nextSort(activeSort, column.key));
+                          setPage(1);
+                        }}
                         className={`inline-flex min-h-11 items-center gap-1 rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0 ${
                           ariaSort ? "text-text" : ""
                         }`}
@@ -308,6 +323,7 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
+      {paged ? <Pager page={paged.page} pages={paged.pages} onChange={setPage} label={caption ?? "표"} /> : null}
     </>
   );
 }

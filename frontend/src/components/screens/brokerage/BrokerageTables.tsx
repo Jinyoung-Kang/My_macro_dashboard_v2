@@ -1,6 +1,7 @@
 import { type Column, DataTable } from "@/components/patterns";
 import { StockQuickLink } from "@/components/screens/detail/StockQuickLink";
 import { Card } from "@/components/ui";
+import { useTickerNames } from "@/hooks/useTickerNames";
 import {
   amountDigits,
   formatAmount,
@@ -11,6 +12,7 @@ import {
   orderPriceText,
   orderSideLabel,
   orderStatusLabel,
+  orderSymbolName,
 } from "@/lib/brokerage";
 import { deltaColor, EMPTY, formatKst, formatPercent } from "@/lib/format";
 import { marketMeta, type PaperMarketCode } from "@/lib/paperMarket";
@@ -129,11 +131,11 @@ export function BrokerageHoldings({
   );
 }
 
-function orderColumns(market: PaperMarketCode, closed: boolean): Column<BrokerageOrderRow>[] {
+function orderColumns(market: PaperMarketCode, closed: boolean, names: Readonly<Record<string, string>>): Column<BrokerageOrderRow>[] {
   const unit = marketMeta(market).unitLabel;
   const base: Column<BrokerageOrderRow>[] = [
     { key: "orderedAt", header: "주문 시각", cell: (row) => formatKst(row.orderedAtKst) },
-    { key: "symbol", header: "종목", cell: (row) => symbolCell(row.name, row.symbol) },
+    { key: "symbol", header: "종목", cell: (row) => symbolCell(orderSymbolName(row, names), row.symbol) },
     { key: "side", header: "방향", cell: (row) => orderSideLabel(row.side) },
     { key: "kind", header: "호가·조건", cell: (row) => orderKindText(row) },
     { key: "status", header: "상태", cell: (row) => orderStatusLabel(row.status) },
@@ -155,7 +157,8 @@ function orderColumns(market: PaperMarketCode, closed: boolean): Column<Brokerag
 
 /**
  * 주문 표(실제) — 진행 중이거나 최근 끝난 주문. 서버 순서 그대로
- * (끝난 주문은 최신순). 취소·정정 단추는 없습니다(읽기 전용).
+ * (끝난 주문은 최신순). 취소·정정 단추는 없습니다(읽기 전용). 종목 칸은 이름과 작은 코드 — 응답에 이름이 없으면(다 판 종목) 화면의 종목 이름표로
+ * 채웁니다(lib/brokerage `orderSymbolName`). `pageSize`를 주면 그 줄 수씩 쪽을 넘깁니다(최근 끝난 주문 5줄 — 사용자 요청 2026-11-24).
  */
 export function BrokerageOrders({
   title,
@@ -165,6 +168,7 @@ export function BrokerageOrders({
   emptyText,
   closed = false,
   note,
+  pageSize,
 }: {
   title: string;
   subtitle?: string;
@@ -173,17 +177,20 @@ export function BrokerageOrders({
   emptyText: string;
   closed?: boolean;
   note?: string | null;
+  pageSize?: number;
 }) {
+  const names = useTickerNames();
   return (
     <Card title={title} subtitle={subtitle} source={SOURCES.tossAccount}>
       {note && <p className="mb-3 text-xs text-warn">{note}</p>}
       <DataTable
-        columns={orderColumns(market, closed)}
+        columns={orderColumns(market, closed, names)}
         rows={rows}
         rowKey={rowKeys(rows, (row) => `${row.orderedAtKst ?? ""}:${row.symbol ?? ""}`)}
         caption={title}
         emptyText={emptyText}
         scrollHint="overflow"
+        pageSize={pageSize}
       />
     </Card>
   );

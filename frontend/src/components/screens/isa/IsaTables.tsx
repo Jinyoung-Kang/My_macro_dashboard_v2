@@ -271,7 +271,10 @@ const stopColumns = (
   { key: "actions", header: "확인", cell: (row) => <StopActions row={row} onConfirm={onConfirm} onSkip={onSkip} disabled={disabled} /> },
 ];
 
-/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 줄의 '확인'으로 잔고에 반영하고, 매매하지 않았으면 '건너뜀'(QA-990). */
+/** 한 쪽의 줄 수 — 장중 스탑 매도 지시·매매 내역을 한 화면에 늘어놓지 않고 5줄씩(사용자 요청 2026-11-24). */
+export const ISA_PAGE_SIZE = 5;
+
+/** 장중 스탑 매도 지시(최근 30 — ADR 0033, 5줄씩 쪽 넘김) — 줄의 '확인'으로 잔고에 반영하고, 매매하지 않았으면 '건너뜀'(QA-990). */
 export function IsaStopInstructionsTable({
   rows,
   onConfirm,
@@ -290,13 +293,13 @@ export function IsaStopInstructionsTable({
       rows={rows}
       rowKey={(row) => String(row.id)}
       emptyText="스탑 지시 없음"
-      maxHeight={360}
       scrollHint="overflow"
+      pageSize={ISA_PAGE_SIZE}
     />
   );
 }
 
-/** 매매 내역(최근 200, 읽기 전용 + 되돌리기). 처음에는 시각 내림차순(최근 순). */
+/** 매매 내역(최근 200, 고치기·되돌리기, 5줄씩 쪽 넘김). 처음에는 시각 내림차순(최근 순) — 정렬은 모든 줄에 걸고 나서 쪽을 나눕니다. */
 export function IsaTradesTable({
   rows,
   onEdit,
@@ -350,8 +353,8 @@ export function IsaTradesTable({
       rowKey={(row) => String(row.id)}
       emptyText="아직 적은 매매 없음"
       initialSort={{ key: "at", dir: "desc" }}
-      maxHeight={480}
       scrollHint="overflow"
+      pageSize={ISA_PAGE_SIZE}
     />
   );
 }

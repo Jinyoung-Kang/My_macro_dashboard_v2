@@ -1030,3 +1030,28 @@ describe("미국", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 });
+
+describe("최근 실제 주문·이벤트 — 5줄씩 쪽 넘김(사용자 요청 2026-11-24)", () => {
+  it("일곱 줄이면 5줄·2줄로 나누고 표 아래 쪽 넘기기, 서버 순서는 그대로", async () => {
+    const base = status();
+    const orders = Array.from({ length: 7 }, (_, index) => ({ ...base.orders[0], symbol: `00000${index}`, name: `합성종목${index}` }));
+    const events = Array.from({ length: 7 }, (_, index) => ({ ...base.events[0], at: `2026-11-06T09:0${9 - index}:05+09:00` }));
+    reads[STATUS_PATH] = () => Promise.resolve(status({ orders, events }));
+    renderKr();
+    const ordersTable = await inRegion().findByRole("table", { name: "최근 실제 주문" });
+    expect(within(ordersTable).getAllByRole("row")).toHaveLength(1 + 5);
+    expect(within(ordersTable).getByText(/합성종목0/)).toBeTruthy();
+    const orderPager = inRegion().getByRole("navigation", { name: "최근 실제 주문 쪽" });
+    expect(within(orderPager).getByText("1/2쪽")).toBeTruthy();
+    fireEvent.click(within(orderPager).getByRole("button", { name: "다음" }));
+    const second = inRegion().getByRole("table", { name: "최근 실제 주문" });
+    expect(within(second).getAllByRole("row")).toHaveLength(1 + 2);
+    expect(within(second).getByText(/합성종목6/)).toBeTruthy();
+
+    const eventsTable = inRegion().getByRole("table", { name: "실제 매매 이벤트" });
+    expect(within(eventsTable).getAllByRole("row")).toHaveLength(1 + 5);
+    const eventPager = inRegion().getByRole("navigation", { name: "실제 매매 이벤트 쪽" });
+    fireEvent.click(within(eventPager).getByRole("button", { name: "2" }));
+    expect(within(inRegion().getByRole("table", { name: "실제 매매 이벤트" })).getAllByRole("row")).toHaveLength(1 + 2);
+  });
+});

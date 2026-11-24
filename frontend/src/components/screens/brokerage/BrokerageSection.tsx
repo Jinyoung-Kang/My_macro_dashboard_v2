@@ -24,6 +24,9 @@ import type { BrokerageAccountResponse } from "@/lib/types/brokerage";
 import { BrokerageSummary } from "./BrokerageSummary";
 import { BrokerageHoldings, BrokerageOrders } from "./BrokerageTables";
 
+/** 최근 끝난 주문(실제) 한 쪽의 줄 수 — 한 화면에 늘어놓지 않고 5줄씩(사용자 요청 2026-11-24). */
+const CLOSED_PAGE_SIZE = 5;
+
 /** 화면이 기다리는 한도 — 백엔드가 수집기를 기다리는 35초(수집기 갱신 예산 12초 + 끊지 않는 토큰 발급 최대 16초)보다 조금 길게. */
 const TIMEOUT_MS = 40_000;
 
@@ -192,6 +195,7 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
             emptyText="최근 끝난 주문 없음"
             closed
             note={data.closedTruncated ? "최근 끝난 주문은 일부만 받았습니다(토스에 더 남아 있음)." : null}
+            pageSize={CLOSED_PAGE_SIZE}
           />
         </>
       )}

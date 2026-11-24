@@ -899,3 +899,40 @@ describe("실시간 평가와 '확인' 가격", () => {
     expect(FakeEventSource.instances).toEqual([]);
   });
 });
+
+describe("장중 스탑 매도 지시·매매 내역 — 5줄씩 쪽 넘김(사용자 요청 2026-11-24)", () => {
+  const bodyRows = (name: string) => within(table(name)).getAllByRole("row").slice(1);
+  const pagerOf = (name: string) => inRegion().getByRole("navigation", { name: `${name} 쪽` });
+
+  it("매매 내역 7줄은 시각 내림차순으로 정렬한 뒤 5줄·2줄로 나누고, 스탑 지시 7줄도 5줄씩 — 전부 확인은 모든 쪽의 대기 줄", async () => {
+    const base = started();
+    // 합성 매매 7줄 — 09:01 ~ 09:07, 서버 순서는 일부러 섞음.
+    const trades = [3, 7, 1, 5, 2, 6, 4].map((minute) => ({
+      ...base.trades[0], id: 100 + minute, at: `2026-11-09T09:0${minute}:00+09:00`, symbol: `${minute}${minute}${minute}${minute}${minute}0`,
+    }));
+    const stops = Array.from({ length: 7 }, (_, index) => ({ ...STOP_ITEM, id: 200 + index, symbol: `90000${index}`, name: `합성스탑${index}` }));
+    reads[ISA_PATH] = () => Promise.resolve(started({ trades, stopInstructions: stops }));
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
+
+    const tradeName = "ISA 계좌 매매 내역";
+    expect(bodyRows(tradeName).map((row) => /\d{6}/.exec(row.textContent ?? "")?.[0])).toEqual(["777770", "666660", "555550", "444440", "333330"]);
+    expect(within(pagerOf(tradeName)).getByText("1/2쪽")).toBeTruthy();
+    fireEvent.click(within(pagerOf(tradeName)).getByRole("button", { name: "다음" }));
+    expect(bodyRows(tradeName).map((row) => /\d{6}/.exec(row.textContent ?? "")?.[0])).toEqual(["222220", "111110"]);
+
+    const stopName = "장중 스탑 매도 지시";
+    expect(bodyRows(stopName)).toHaveLength(5);
+    expect(within(pagerOf(stopName)).getByText("1/2쪽")).toBeTruthy();
+    // 전부 확인은 쪽과 상관없이 대기 중인 일곱 줄 모두.
+    expect(inRegion().getByRole("button", { name: "전부 확인(7)" })).toBeTruthy();
+    fireEvent.click(within(pagerOf(stopName)).getByRole("button", { name: "2" }));
+    expect(bodyRows(stopName).map((row) => /90000\d/.exec(row.textContent ?? "")?.[0])).toEqual(["900005", "900006"]);
+  });
+
+  it("5줄 이하면 쪽 넘기기가 없다", async () => {
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
+    expect(inRegion().queryByRole("navigation", { name: "ISA 계좌 매매 내역 쪽" })).toBeNull();
+  });
+});

@@ -28,7 +28,10 @@ const ORDER_COLUMNS: readonly Column<RealTradeOrderRow>[] = [
   { key: "code", header: "사유", cell: (row) => row.outcomeCode || null },
 ];
 
-/** 최근 실제 주문(최근 50, 서버 순서 그대로) — 누를 수 없는 표. 토스 주문 번호는 응답에 없어 싣지 않습니다. 모르는 칸은 "—". */
+/** 한 쪽의 줄 수 — 주문·이벤트를 한 화면에 늘어놓지 않고 5줄씩(사용자 요청 2026-11-24). */
+export const REAL_TRADE_PAGE_SIZE = 5;
+
+/** 최근 실제 주문(최근 50, 서버 순서 그대로, 5줄씩 쪽 넘김) — 누를 수 없는 표. 토스 주문 번호는 응답에 없어 싣지 않습니다. 모르는 칸은 "—". */
 export function RealTradeOrders({ rows }: { rows: readonly RealTradeOrderRow[] }) {
   return (
     <section aria-label="최근 실제 주문" className="flex flex-col gap-2">
@@ -40,6 +43,7 @@ export function RealTradeOrders({ rows }: { rows: readonly RealTradeOrderRow[] }
         rowKey={(row) => `${orderTime(row) ?? ""}-${row.purpose ?? ""}-${row.symbol ?? ""}-${row.side ?? ""}-${rows.indexOf(row)}`}
         emptyText="이 기능이 낸 실제 주문 없음"
         scrollHint="overflow"
+        pageSize={REAL_TRADE_PAGE_SIZE}
       />
     </section>
   );
@@ -51,7 +55,7 @@ const EVENT_COLUMNS: readonly Column<RealTradeEvent>[] = [
   { key: "detail", header: "내용", cell: (row) => eventDetailText(row.detail, row.kind) },
 ];
 
-/** 이벤트(최근 30) — 켜기·끄기·멈춤·창 요약·비밀번호 틀림 등. 내용은 용도·사유 코드·건수만 적습니다. */
+/** 이벤트(최근 30, 5줄씩 쪽 넘김) — 켜기·끄기·멈춤·창 요약·비밀번호 틀림 등. 내용은 용도·사유 코드·건수만 적습니다. */
 export function RealTradeEvents({ rows }: { rows: readonly RealTradeEvent[] }) {
   return (
     <section aria-label="실제 매매 이벤트" className="flex flex-col gap-2">
@@ -62,7 +66,7 @@ export function RealTradeEvents({ rows }: { rows: readonly RealTradeEvent[] }) {
         rows={rows}
         rowKey={(row) => `${row.at ?? ""}-${row.kind ?? ""}-${rows.indexOf(row)}`}
         emptyText="이벤트 없음"
-        maxHeight={320}
+        pageSize={REAL_TRADE_PAGE_SIZE}
       />
     </section>
   );

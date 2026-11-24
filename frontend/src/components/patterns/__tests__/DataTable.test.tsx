@@ -575,3 +575,58 @@ describe("QA-624·QA-630 고른 행이 바뀌어도 첫 칸 안 조작은 다시
     expect(screen.getByRole("button", { name: "AAPL" })).toBe(aapl);
   });
 });
+
+describe("DataTable — 쪽 넘기기(pageSize, 사용자 요청 2026-11-24)", () => {
+  type Line = { id: number; label: string };
+  const LINES: Line[] = Array.from({ length: 7 }, (_, index) => ({ id: index + 1, label: `줄 ${index + 1}` }));
+  const LINE_COLUMNS: Column<Line>[] = [
+    { key: "id", header: "번호", cell: (row) => String(row.id), sortValue: (row) => row.id },
+    { key: "label", header: "이름", cell: (row) => row.label },
+  ];
+  const ids = () => bodyRows().map((row) => within(row).getAllByRole("cell")[0].textContent);
+
+  it("한 쪽에 pageSize 줄만 그리고 표 아래 쪽 넘기기로 다음 쪽을 연다 — 끝 쪽은 남은 줄만", () => {
+    render(<DataTable columns={LINE_COLUMNS} rows={LINES} rowKey={(row) => String(row.id)} caption="줄 목록" pageSize={5} />);
+    expect(ids()).toEqual(["1", "2", "3", "4", "5"]);
+    const pager = screen.getByRole("navigation", { name: "줄 목록 쪽" });
+    expect(within(pager).getByText("1/2쪽")).toBeTruthy();
+    fireEvent.click(within(pager).getByRole("button", { name: "다음" }));
+    expect(ids()).toEqual(["6", "7"]);
+    expect(within(screen.getByRole("navigation", { name: "줄 목록 쪽" })).getByRole("button", { name: "2" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("정렬은 모든 줄에 걸고 나서 쪽을 나누고, 정렬을 바꾸면 첫 쪽으로 돌아간다", () => {
+    render(
+      <DataTable
+        columns={LINE_COLUMNS}
+        rows={LINES}
+        rowKey={(row) => String(row.id)}
+        caption="줄 목록"
+        pageSize={3}
+        initialSort={{ key: "id", dir: "desc" }}
+      />,
+    );
+    expect(ids()).toEqual(["7", "6", "5"]);
+    fireEvent.click(screen.getByRole("button", { name: "3" }));
+    expect(ids()).toEqual(["1"]);
+    // 머리로 정렬을 바꾸면(내림 → 오름) 첫 쪽에서 다시 — 오름차순의 첫 세 줄.
+    fireEvent.click(screen.getByRole("button", { name: /번호/ }));
+    expect(ids()).toEqual(["1", "2", "3"]);
+    expect(screen.getByRole("button", { name: "1" }).getAttribute("aria-current")).toBe("page");
+  });
+
+  it("줄이 pageSize 이하이거나 pageSize가 없으면 쪽 넘기기를 그리지 않는다 — 행이 줄어 지금 쪽이 없어지면 마지막 쪽", () => {
+    const { rerender } = render(<DataTable columns={LINE_COLUMNS} rows={LINES.slice(0, 5)} rowKey={(row) => String(row.id)} caption="줄 목록" pageSize={5} />);
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(ids()).toHaveLength(5);
+    rerender(<DataTable columns={LINE_COLUMNS} rows={LINES} rowKey={(row) => String(row.id)} caption="줄 목록" />);
+    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(ids()).toHaveLength(7);
+    rerender(<DataTable columns={LINE_COLUMNS} rows={LINES} rowKey={(row) => String(row.id)} caption="줄 목록" pageSize={3} />);
+    fireEvent.click(screen.getByRole("button", { name: "3" }));
+    expect(ids()).toEqual(["7"]);
+    rerender(<DataTable columns={LINE_COLUMNS} rows={LINES.slice(0, 4)} rowKey={(row) => String(row.id)} caption="줄 목록" pageSize={3} />);
+    expect(ids()).toEqual(["4"]);
+    expect(within(screen.getByRole("navigation", { name: "줄 목록 쪽" })).getByText("2/2쪽")).toBeTruthy();
+  });
+});

@@ -33,6 +33,7 @@ import {
   orderPriceText,
   orderSideLabel,
   orderStatusLabel,
+  orderSymbolName,
   orderTypeLabel,
   profitLossNote,
   timeInForceLabel,
@@ -108,6 +109,20 @@ describe("주문 이름표", () => {
     expect(orderKindText({ orderType: "LIMIT", timeInForce: "CLS" })).toBe("지정가 · 장 마감");
     expect(orderKindText({ orderType: "MARKET", timeInForce: null })).toBe("시장가");
     expect(orderKindText({ orderType: null, timeInForce: null })).toBe("—");
+  });
+
+  it("주문 종목 이름 — 응답의 이름 → 화면의 종목 이름표 → 없으면 null(종목 칸은 코드만, 사용자 요청 2026-11-24)", () => {
+    const names = { "005930": "삼성전자", "000660": "SK하이닉스", "123450": "  " };
+    // 응답에 이름이 있으면 그 이름(이름표보다 먼저).
+    expect(orderSymbolName({ name: "삼성전자우", symbol: "005930" }, names)).toBe("삼성전자우");
+    // 다 판 종목 — 수집기가 이름을 붙이지 못해 비었으면 이름표에서.
+    expect(orderSymbolName({ name: null, symbol: "000660" }, names)).toBe("SK하이닉스");
+    expect(orderSymbolName({ name: "  ", symbol: "000660" }, names)).toBe("SK하이닉스");
+    // 이름표에도 없거나(빈 글 포함) 이름표가 없거나 코드가 없으면 null.
+    expect(orderSymbolName({ name: null, symbol: "999990" }, names)).toBeNull();
+    expect(orderSymbolName({ name: null, symbol: "123450" }, names)).toBeNull();
+    expect(orderSymbolName({ name: null, symbol: "000660" }, null)).toBeNull();
+    expect(orderSymbolName({ name: null, symbol: null }, names)).toBeNull();
   });
 
   it("주문 가격 — 지정가는 가격, 시장가 금액 주문은 '금액 …', 둘 다 없으면 '—'", () => {

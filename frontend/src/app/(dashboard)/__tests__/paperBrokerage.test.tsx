@@ -487,3 +487,31 @@ describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfi
     expect(within(panel()).getByRole("combobox", { name: "새로고침 주기" })).toBeTruthy();
   });
 });
+
+describe("최근 끝난 주문 — 종목 이름·5줄씩 쪽 넘김(사용자 요청 2026-11-24)", () => {
+  it("다 판 종목처럼 응답에 이름이 없으면 화면의 종목 이름표로 이름을 채우고(코드는 작게), 5줄씩 쪽을 넘긴다", async () => {
+    // 합성 값 — 진행 중 1건, 끝난 주문 7건(가장 최근 줄은 이름 없는 000660, 나머지는 응답 이름 그대로).
+    const closed = [
+      order({ symbol: "000660", name: null, status: "FILLED", side: "SELL", orderedAtKst: "2026-03-28 09:31" }),
+      ...Array.from({ length: 6 }, (_, index) =>
+        order({ status: "FILLED", side: "BUY", orderedAtKst: `2026-03-2${index} 09:30` })),
+    ];
+    reads["/api/paper/names?market=KR"] = () => Promise.resolve({ market: "KR", names: { "000660": "SK하이닉스" } });
+    reads["/api/brokerage/account?market=KR"] = () => Promise.resolve(account("KR", { closedOrders: closed }));
+    window.history.replaceState(null, "", "/paper/kr/real");
+    render(<PaperScreen market="KR" initialTab="real" />);
+
+    const table = await within(await screen.findByRole("tabpanel")).findByRole("table", { name: "최근 끝난 주문(실제)" });
+    await waitFor(() => expect(within(table).getByText("SK하이닉스")).toBeTruthy());
+    const cell = within(table).getByText("SK하이닉스").closest("td");
+    expect(cell?.textContent).toBe("SK하이닉스000660");
+    // 한 쪽에 5줄(머리 줄 빼고), 표 아래 쪽 넘기기 — 다음 쪽은 남은 2줄.
+    expect(within(table).getAllByRole("row")).toHaveLength(1 + 5);
+    const pager = within(panel()).getByRole("navigation", { name: "최근 끝난 주문(실제) 쪽" });
+    expect(within(pager).getByText("1/2쪽")).toBeTruthy();
+    fireEvent.click(within(pager).getByRole("button", { name: "다음" }));
+    expect(within(within(panel()).getByRole("table", { name: "최근 끝난 주문(실제)" })).getAllByRole("row")).toHaveLength(1 + 2);
+    // 진행 중 주문은 그대로 — 쪽 넘기기 없음.
+    expect(within(panel()).queryByRole("navigation", { name: "진행 중 주문(실제) 쪽" })).toBeNull();
+  });
+});

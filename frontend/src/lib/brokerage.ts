@@ -117,6 +117,22 @@ export function orderKindText(row: Pick<BrokerageOrderRow, "orderType" | "timeIn
 }
 
 /**
+ * 주문 행의 종목 이름 — 응답의 이름이 있으면 그 이름, 없으면 화면의 종목 이름표(한국 화면이 읽는 `GET /api/paper/names` — 코드 → 기업명)에서 찾고,
+ * 거기도 없으면 null(종목 칸은 코드만). 수집기는 지금 보유 중인 종목에서만 이름을 붙여, 다 판 종목의 끝난 주문은 이름이 비어 코드만 보였습니다
+ * (사용자 요청 2026-11-24). 이름표는 모의 쪽에서 읽어 오기만 하고, 실제 계좌 자료를 그쪽으로 넘기지 않습니다.
+ */
+export function orderSymbolName(
+  row: Pick<BrokerageOrderRow, "name" | "symbol">,
+  names: Readonly<Record<string, string>> | null | undefined,
+): string | null {
+  if (typeof row.name === "string" && row.name.trim() !== "") {
+    return row.name;
+  }
+  const found = row.symbol ? names?.[row.symbol] : undefined;
+  return typeof found === "string" && found.trim() !== "" ? found : null;
+}
+
+/**
  * 주문 가격 칸 — 지정가면 그 가격, 시장가라 가격이 없고 금액 기반 미국 매수면 "금액 1,000.00", 둘 다 없으면 "—".
  */
 export function orderPriceText(row: Pick<BrokerageOrderRow, "price" | "orderAmount">, market: PaperMarketCode): string {
