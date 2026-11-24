@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -137,7 +136,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-999 — 수정 커밋에서 표시를 뗀다")
         @DisplayName("QA-999 해당 — 한 칸에 이 스택의 제품과 이름이 겹치는 다른 제품이 함께 적힌 행도 버전을 견줌(행이 통째로 빠지지 않음)")
         void affectedInMultiProductCell() {
             Component docker = comp("host", "runtime", "docker", "97.0.1");

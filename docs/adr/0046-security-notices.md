@@ -224,3 +224,11 @@
   - 응답 `GET /api/security/notices/{id}`의 행 글자에 `\n`이 들어갈 수 있습니다(화면은 공백으로 그림).
   - 이미 받아 둔 공지의 행은 다시 받기 전까지 공백으로 합쳐진 채입니다(상세는 한 번 받으면 다시 받지 않음 — 다시 받게 하는 것은 운영 DB를 바꾸는 일이라 사용자 몫).
   - 지키는 방법(시험): `test_kisa_notices.py::test_QA_1000_…`, `NoticeJudgeTest`의 '줄마다 적힌 구간'.
+- **QA-999 한 칸에 여러 제품이 든 제품명은 조각마다 봄**: 표 행의 제품명 칸에 제외 낱말이나 Windows 표기가 한 곳에라도 있으면 그 별칭은 행을 통째로 잃었습니다
+  (`Docker Engine, Docker Desktop` → Docker 별칭 아님 → 설치 버전이 영향 구간 안이어도 무관). 이제 칸 전체로 맞지 않으면 칸을 제품 조각으로 나눠
+  (`ProductAliases.productPieces` — 괄호 밖의 쉼표류·`/`·줄바꿈(QA-1000)·앞뒤가 빈칸인 `및`·`와`·`과`) 조각마다 Windows 전용·제외·이름을 따로 보고, 한 조각이라도 맞으면 그 별칭의 행입니다.
+  - 칸 전체로 이미 맞던 행은 그대로입니다(조각으로 나눠 잃는 것이 없게 칸 전체를 먼저 봄 — `Chrome for Windows/Mac/Linux`). 조각이 하나뿐인 칸도 그대로입니다.
+  - 괄호 안은 나누지 않습니다 — 괄호는 그 제품의 덧붙임(운영체제·묶음 이름)이라 조각에 붙여 둡니다(`pgAdmin 4 (PostgreSQL)`은 여전히 PostgreSQL이 아님,
+    `Node.js (Windows)`는 여전히 Windows 전용). 그래서 `PostgreSQL (JDBC 포함)` 꼴은 지금도 맞지 않습니다(괄호 안을 따로 제품으로 보면 앞의 두 꼴이 틀림 — 남은 한계).
+  - 제조사는 맞은 조각의 이름이 정합니다. 동작 변화: 한 칸에 여러 제품이 든 행이 무관·이름만 맞음에서 버전 비교 결과(해당·패치됨)로 바뀔 수 있고, 해당이면 알림이 갑니다.
+  - 지키는 방법(시험): `ProductAliasesTest.multiProductCell`, `NoticeJudgeTest`의 `affectedInMultiProductCell`.

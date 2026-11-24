@@ -4,7 +4,6 @@ import com.macrodash.feature.security.EnvInventory.Component;
 import com.macrodash.feature.security.ProductAliases.Alias;
 import com.macrodash.feature.security.ProductAliases.Family;
 import com.macrodash.feature.security.ProductAliases.Kind;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -198,7 +197,6 @@ class ProductAliasesTest {
     }
 
     @Test
-    @Disabled("QA-999 — 수정 커밋에서 표시를 뗀다")
     @DisplayName("QA-999 한 칸에 여러 제품이 든 제품명 — 조각(쉼표·및·/·줄바꿈·와·과)마다 따로 보아, 한 조각이라도 제외·Windows에 걸리지 않고 이름이 맞으면 그 별칭")
     void multiProductCell() {
         assertThat(ids("Docker Engine, Docker Desktop")).containsExactly("docker");

@@ -8,13 +8,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * 별칭 표(ADR 0046 결정 6) — 이 스택의 구성 요소(버전 목록의 {@code ecosystem}·{@code name}) ↔ 보호나라 공지의 제품명. 순수 자료입니다.
  *
  * <p>제품명은 대소문자를 가리지 않는 정규식으로 맞춥니다. 표 행의 제품명은 제외 정규식이 어디에든 맞으면 그 별칭이 아니고(이름 겹침 —
- * PostgreSQL↔pgAdmin, Next.js↔Nextcloud, Java↔JavaScript 등), 제목·본문은 제외 정규식에 맞는 구절을 지운 뒤 찾습니다. 단어 경계 {@code \b}는
+ * PostgreSQL↔pgAdmin, Next.js↔Nextcloud, Java↔JavaScript 등 — 한 칸에 여러 제품이 적혔으면 조각마다 따로 봄, QA-999),
+ * 제목·본문은 제외 정규식에 맞는 구절을 지운 뒤 찾습니다. 단어 경계 {@code \b}는
  * 영문·숫자만 글자로 보므로 {@code PostgreSQL에서}처럼 한국어가 바로 붙어도 맞습니다. Windows 전용 제품명(Linux 계열 이름이 함께 적히지 않은
  * {@code OpenSSH for Windows}·{@code Microsoft OpenSSH} 등 — QA-978)은 어느 별칭에도 맞지 않고, 제목·본문에서는 그 구절을 지운 뒤 찾습니다.
  *
@@ -140,14 +142,34 @@ public final class ProductAliases {
         }
 
         /**
-         * 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 제외 정규식이 어디에든 맞거나 Windows 전용 제품명이면
-         * ({@link #windowsOnlyProduct}) 아님.
+         * 표 행의 제품명이 이 별칭인지 — 맞으면 처음 맞은 이름(제조사 판정용). 칸 전체에 제외 정규식이 어디에든 맞거나 Windows 전용 제품명이면
+         * ({@link #windowsOnlyProduct}) 칸을 제품 조각({@link #productPieces})으로 나눠 조각마다 다시 봅니다 — 한 조각이라도 제외·Windows에
+         * 걸리지 않고 이름이 맞으면 이 별칭입니다(QA-999 — {@code Docker Engine, Docker Desktop}의 Desktop 때문에 행이 통째로 빠지던 것).
+         * 조각이 하나뿐인 칸은 전과 같습니다.
          */
         public Optional<ProductName> matchProduct(String product) {
             if (product == null || product.isBlank()) {
                 return Optional.empty();
             }
-            String text = normalizeText(product);
+            Optional<ProductName> whole = matchPiece(normalizeText(product));
+            if (whole.isPresent()) {
+                return whole;
+            }
+            List<String> pieces = productPieces(product);
+            if (pieces.size() < 2) {
+                return Optional.empty();
+            }
+            for (String piece : pieces) {
+                Optional<ProductName> hit = matchPiece(piece);
+                if (hit.isPresent()) {
+                    return hit;
+                }
+            }
+            return Optional.empty();
+        }
+
+        /** 정규화한 글 하나(칸 전체나 조각)가 이 별칭인지 — Windows 전용이거나 제외 정규식이 어디에든 맞으면 아님. */
+        private Optional<ProductName> matchPiece(String text) {
             if (windowsOnlyProduct(text)) {
                 return Optional.empty();
             }
@@ -250,6 +272,57 @@ public final class ProductAliases {
     /** 표 행 제품명이 Windows 전용인지({@link #WINDOWS_PRODUCT}) — Linux 계열 이름이 함께 있으면 아님. */
     static boolean windowsOnlyProduct(String product) {
         return WINDOWS_PRODUCT.matcher(product).find() && !LINUX_PRODUCT.matcher(product).find();
+    }
+
+    /** 제품명 칸의 낱말 구분자 — 앞뒤가 빈칸인 {@code 및}·{@code 와}·{@code 과}. */
+    private static final Pattern PIECE_WORD = Pattern.compile("[ \\t\u00A0]+(?:및|와|과)[ \\t\u00A0]+");
+
+    /**
+     * 표 행 제품명 칸 → 제품 조각(QA-999). 괄호 밖의 쉼표류({@code , ， 、})·{@code /}·줄바꿈(수집기가 칸 안 줄 경계를 {@code \n}으로 남김 — QA-1000)·
+     * 앞뒤가 빈칸인 {@code 및}·{@code 와}·{@code 과}에서 나눕니다. 괄호 안은 나누지 않습니다 — 괄호는 그 제품의 덧붙임(운영체제·묶음 이름)이라
+     * 조각에 붙여 둡니다({@code Full Client (Windows, Linux, macOS)}, {@code pgAdmin 4 (PostgreSQL)}). 조각은 정규화한 글이고 빈 조각은 없습니다.
+     */
+    static List<String> productPieces(String product) {
+        List<String> out = new ArrayList<>();
+        if (product == null) {
+            return out;
+        }
+        StringBuilder piece = new StringBuilder();
+        Matcher word = PIECE_WORD.matcher(product);
+        int depth = 0;
+        int i = 0;
+        while (i < product.length()) {
+            char ch = product.charAt(i);
+            if (ch == '(' || ch == '（') {
+                depth++;
+            } else if (ch == ')' || ch == '）') {
+                depth = Math.max(0, depth - 1);
+            } else if (depth == 0) {
+                int next = -1;
+                if (ch == ',' || ch == '，' || ch == '、' || ch == '/' || ch == '\n' || ch == '\r') {
+                    next = i + 1;
+                } else if (word.region(i, product.length()).lookingAt()) {
+                    next = word.end();
+                }
+                if (next >= 0) {
+                    addPiece(out, piece);
+                    i = next;
+                    continue;
+                }
+            }
+            piece.append(ch);
+            i++;
+        }
+        addPiece(out, piece);
+        return out;
+    }
+
+    private static void addPiece(List<String> out, StringBuilder piece) {
+        String text = normalizeText(piece.toString());
+        if (!text.isEmpty()) {
+            out.add(text);
+        }
+        piece.setLength(0);
     }
 
     static String normalizeText(String text) {
