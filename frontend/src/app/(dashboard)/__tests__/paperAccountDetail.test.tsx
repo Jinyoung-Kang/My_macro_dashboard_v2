@@ -220,6 +220,10 @@ describe("계좌 표의 줄 단추를 누르면 그 계좌의 검사 칸과 상�
     button.focus();
     fireEvent.click(button);
     const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    // 2026-11-24 사용자 결정: 넓은 화면의 상세는 옆 검사 칸(좁은 28rem)이 아니라 계좌 표 아래 상자 폭 전체에 — 옆 칸에는 요약과 한 줄 안내만.
+    const side = screen.getByRole("region", { name: "계좌 자세히 — 규칙 계좌" });
+    expect(side.contains(panel)).toBe(false);
+    expect(within(side).getByText("규칙 계좌 상세는 계좌 표 아래에 펼쳤습니다.")).toBeTruthy();
     const heading = within(panel).getByRole("heading", { name: "규칙 계좌 상세" });
     expect(document.activeElement).toBe(heading);
     expect(heading.getAttribute("tabindex")).toBe("-1");

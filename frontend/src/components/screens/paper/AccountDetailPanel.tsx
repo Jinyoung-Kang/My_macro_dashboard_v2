@@ -151,7 +151,9 @@ export function AccountDetailPanel({
         </div>
       </header>
 
-      <div className="grid gap-5 @min-[40rem]:grid-cols-2">
+      {/* 칸 폭에 따라(크기 질의): 좁은 칸(옆 검사 칸·대화상자)은 한 줄로 쌓고, 40rem부터 정의|핵심 숫자 두 칸 + 구성은 그 아래 두 칸 폭,
+          64rem부터(개요 계좌 상자의 표 아래 넓은 자리 — 2026-11-24 사용자 결정) 정의|핵심 숫자|구성 세 칸. 최근 체결은 늘 상자 폭 전체입니다. */}
+      <div className="grid gap-5 @min-[40rem]:grid-cols-2 @min-[64rem]:grid-cols-3">
         <section aria-label="정의" className="flex flex-col gap-2">
           <InspectorSubheading fallback="h5" depth={2} className="text-xs font-semibold text-text">정의</InspectorSubheading>
           {profile ? (
@@ -215,9 +217,11 @@ export function AccountDetailPanel({
           {card.staleWarning && <p className="text-xs text-warn">{card.staleWarning}</p>}
           <SourceLine>{korea ? PAPER_SOURCES.krLedger : PAPER_SOURCES.ledger}</SourceLine>
         </section>
-      </div>
 
-      <section aria-label="구성" className="flex flex-col gap-3 border-t border-border pt-4">
+        <section
+          aria-label="구성"
+          className="flex flex-col gap-3 border-t border-border pt-4 @min-[40rem]:col-span-2 @min-[64rem]:col-span-1 @min-[64rem]:border-t-0 @min-[64rem]:pt-0"
+        >
         <div>
           <InspectorSubheading fallback="h5" depth={2} className="text-xs font-semibold text-text">구성 — 순자산 대비 비중</InspectorSubheading>
           <p className="mt-0.5 text-xs text-text-3">
@@ -229,7 +233,8 @@ export function AccountDetailPanel({
         {positions.error && <ErrorState message={positions.error} onRetry={positions.reload} />}
         {positions.data && !positions.data.available && <Callout tone="warn">{positions.data.message}</Callout>}
         {composition && <CompositionView label={book.label} composition={composition} />}
-      </section>
+        </section>
+      </div>
 
       <section aria-label="최근 체결" className="flex flex-col gap-2 border-t border-border pt-4">
         <InspectorSubheading fallback="h5" depth={2} className="text-xs font-semibold text-text">최근 체결 ({RECENT_FILLS}건)</InspectorSubheading>

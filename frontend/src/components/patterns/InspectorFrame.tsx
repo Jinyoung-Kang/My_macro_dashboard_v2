@@ -120,6 +120,7 @@ export function InspectorFrame({
   headingLevel = 3,
   dialogFocus = "content",
   dialogDescriptionOf,
+  below,
   children,
 }: {
   /** 검사 칸 영역 이름의 앞부분 — 예 '지표 미리보기'. */
@@ -127,8 +128,8 @@ export function InspectorFrame({
   layout?: InspectorLayout;
   /** 검사 칸 제목·대화상자 이름. null이면 자료에서 사라진 키입니다. */
   titleOf: (key: string) => string | null;
-  /** 검사 칸·대화상자 내용. */
-  renderDetail: (key: string) => ReactNode;
+  /** 검사 칸·대화상자 내용. 두째 인자는 지금 옆 칸 배치인가(`inline` — 옆 칸이면 true, 대화상자면 false). */
+  renderDetail: (key: string, where: { inline: boolean }) => ReactNode;
   /** 주면 고른 키를 부르는 쪽이 쥡니다. */
   selectedKey?: string | null;
   onSelectedKeyChange?: (key: string | null) => void;
@@ -141,6 +142,11 @@ export function InspectorFrame({
   dialogFocus?: "content" | "title";
   /** 대화상자 제목 아래 설명 줄(ui/Dialog description — aria-describedby). 옆 검사 칸에는 그리지 않습니다. 주지 않으면 설명 줄 없음. */
   dialogDescriptionOf?: (key: string) => ReactNode;
+  /**
+   * 표와 옆 검사 칸 아래, 틀 폭 전체에 그릴 것(선택) — 옆 칸에 다 넣기에는 긴 자세한 내용을 넓게 펼칠 때(개요 계좌 상세 — 2026-11-24 사용자 결정).
+   * 틀의 Esc·포커스 처리 밖에 그립니다(그 안의 닫기는 부르는 쪽). 문맥은 children과 같습니다(`inline`으로 배치를 봄).
+   */
+  below?: (inspector: InspectorContext) => ReactNode;
   children: (inspector: InspectorContext) => ReactNode;
 }): JSX.Element {
   const wide = useWideShell();
@@ -277,7 +283,7 @@ export function InspectorFrame({
       <>
         <Heading className="break-keep wrap-anywhere text-heading-sm text-text">{shownTitle}</Heading>
         <div className="mt-2 min-w-0">
-          <InspectorHeadingScope level={headingLevel}>{renderDetail(shownKey)}</InspectorHeadingScope>
+          <InspectorHeadingScope level={headingLevel}>{renderDetail(shownKey, { inline: true })}</InspectorHeadingScope>
         </div>
       </>
     );
@@ -286,7 +292,7 @@ export function InspectorFrame({
     panelBody = <p className="break-keep wrap-break-word text-sm text-text-2">{vanished ? VANISHED : inspectorHint}</p>;
   }
 
-  return (
+  const frame = (
     // 틀 안 포커스의 Esc만 받습니다(셸 단축키 아님) — 키보드 조작은 안의 표·단추가 받고 이 상자는 거기서 올라온 Esc를 봅니다.
     // 포커스는 줄 단추의 키를 적는 데만 봅니다(배치가 바뀔 때 고를 줄 — QA-660).
     <div ref={frameRef} onKeyDown={onKeyDown} onFocus={onFocus} className="@container min-w-0">
@@ -318,10 +324,18 @@ export function InspectorFrame({
       >
         {dialogTitle !== null && dialogKey !== null ? (
           <div className="mt-3 min-w-0">
-            <InspectorHeadingScope level={2}>{renderDetail(dialogKey)}</InspectorHeadingScope>
+            <InspectorHeadingScope level={2}>{renderDetail(dialogKey, { inline: false })}</InspectorHeadingScope>
           </div>
         ) : null}
       </Dialog>
+    </div>
+  );
+  if (!below) return frame;
+  // 틀 아래 넓은 자리(below) — 틀의 Esc·포커스 처리 밖입니다.
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      {frame}
+      {below({ shownKey, inspect, triggerProps, inline })}
     </div>
   );
 }

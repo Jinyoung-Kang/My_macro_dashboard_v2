@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTickerName } from "@/hooks/useTickerNames";
 import { InstitutionQuickView } from "@/components/screens/detail/InstitutionQuickView";
 import { MultiLineSeries } from "@/components/charts";
@@ -88,7 +88,7 @@ import type {
   PaperStatusResponse,
 } from "@/lib/types";
 import { AccountComparisonCard } from "./AccountComparisonCard";
-import { accountDetailTitleId } from "./AccountDetailPanel";
+import { AccountDetailPanel, accountDetailTitleId } from "./AccountDetailPanel";
 import { AccountInspector } from "./AccountInspector";
 import { BOOK_COLORS, bookColor, REFERENCE_COLOR, SPARE_COLORS } from "./bookColors";
 import { Claude2StartSection } from "./Claude2StartSection";
@@ -446,11 +446,12 @@ export function OverviewSection({
               if (code === null) setSelected(null);
               else setHeroPick(code);
             }}
-            renderDetail={(code) => {
+            renderDetail={(code, { inline }) => {
               const book = books.find((entry) => entry.code === code);
               if (!book) return null;
               return (
                 <AccountInspector
+                  detailBelow={inline}
                   book={book}
                   books={books}
                   row={rowOf.get(code) ?? null}
@@ -467,6 +468,34 @@ export function OverviewSection({
                   market={market}
                   session={session}
                 />
+              );
+            }}
+            // 옆 검사 칸 배치에서 고른 계좌의 상세는 표·검사 칸 아래 상자 폭 전체에(정의|핵심 숫자|구성 세 칸 + 최근 체결 — 2026-11-24 사용자 결정).
+            // 좁은 화면·좁은 틀(대화상자 배치)은 검사 칸 안(대화상자)에 그대로 그립니다.
+            below={(inspector) => {
+              const book = inspector.inline && selected !== null ? books.find((entry) => entry.code === selected) : undefined;
+              if (!book) return null;
+              // Esc는 옆 칸 안에 있을 때와 같이 상세만 닫고 포커스를 그 계좌의 줄 단추로 옮깁니다(보는 계좌·요약은 그대로 — 틀의 Esc 처리 밖이라 여기서).
+              const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+                if (event.key !== "Escape" || event.defaultPrevented) return;
+                event.preventDefault();
+                const trigger = event.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-inspect-key="${book.code}"]`);
+                trigger?.focus();
+                setSelected(null);
+              };
+              return (
+                <div className="min-w-0" onKeyDown={onKeyDown}>
+                  <AccountDetailPanel
+                    key={book.code}
+                    id={ACCOUNT_PANEL_ID}
+                    book={book}
+                    books={books}
+                    onClose={closeAccount}
+                    onOpenTab={onOpenTab}
+                    market={market}
+                    session={session}
+                  />
+                </div>
               );
             }}
           >

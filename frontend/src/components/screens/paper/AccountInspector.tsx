@@ -19,7 +19,9 @@ import { PaperBadge } from "./PaperBadge";
  * - 요약(늘): 상태 배지·경고, 곡선 패널(그 계좌 한 줄·기간 탭·문지르기 — AccountCurvePanel), 장부 속성(한 줄 소개·종류·처음 현금·현금·보유·출발일·장부 마지막
  *   관측·비교 기준 — 맨 위 KPI 띠와 겹치지 않는 값). 새 요청이 없습니다(개요 응답 그대로).
  * - 상세(`detail` — 사용자가 그 계좌의 줄 단추나 '상세 보기'를 눌렀을 때만): 예전 계좌 상세 몸통(AccountDetailPanel — 정의·지금 설정·핵심 숫자·구성·최근 체결·
- *   다른 탭으로). 그때만 그 계좌의 보유·체결·설정을 읽습니다(예전 행 누르기와 같은 GET 셋). 아무것도 고르지 않은 처음 화면(기본 규칙 계좌)은 요약만이라
+ *   다른 탭으로). 옆 검사 칸 배치(`detailBelow`)에서는 이 칸에 그리지 않고 개요가 계좌 표 아래 상자 폭 전체에 펼칩니다(좁은 28rem 칸에 세로로 길게 쌓여
+ *   상자가 약 3,000px로 길어지고 표 아래가 비던 것 — 2026-11-24 사용자 결정 '표 아래 넓게 펼침'). 대화상자 배치(좁은 화면)는 지금처럼 이 안에 그립니다.
+ *   상세를 열 때만 그 계좌의 보유·체결·설정을 읽습니다(예전 행 누르기와 같은 GET 셋). 아무것도 고르지 않은 처음 화면(기본 규칙 계좌)은 요약만이라
  *   개요를 열 때 요청 수가 늘지 않습니다.
  */
 export function AccountInspector({
@@ -38,6 +40,7 @@ export function AccountInspector({
   onOpenTab,
   market = "US",
   session = null,
+  detailBelow = false,
 }: {
   book: PaperOverviewBook;
   books: readonly PaperBookSummary[];
@@ -59,6 +62,8 @@ export function AccountInspector({
   onOpenTab?: (tab: "holdings" | "decisions", code: string) => void;
   market?: PaperMarketCode;
   session?: PaperLiveSessionSummary | null;
+  /** 상세를 이 칸이 아니라 계좌 표 아래 넓은 자리에 그리는가(옆 검사 칸 배치 — 위 설명). */
+  detailBelow?: boolean;
 }): JSX.Element {
   const properties = accountSummaryProperties(book, books, market);
   return (
@@ -80,7 +85,9 @@ export function AccountInspector({
         dense
         items={properties.map((property) => ({ key: property.key, label: property.label, value: property.value, block: property.block }))}
       />
-      {detail ? (
+      {detail && detailBelow ? (
+        <p className="text-xs text-text-3">{book.label} 상세는 계좌 표 아래에 펼쳤습니다.</p>
+      ) : detail ? (
         <AccountDetailPanel
           key={book.code}
           id={detailId}
