@@ -919,7 +919,7 @@ public class ManualAccountService {
             try {
                 at = LocalDateTime.parse(text).atZone(Kst.ZONE).toInstant();
             } catch (DateTimeParseException e) {
-                throw ManualAccountException.invalid("시각은 날짜와 시각(예: 2026-11-20 10:15, KST)으로 넣으세요.");
+                throw ManualAccountException.invalid("시각은 날짜와 시각(예: 2026-11-20T10:15, KST)으로 넣으세요.");
             }
         }
         if (at.isAfter(now)) {

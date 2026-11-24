@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1083,7 +1082,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-1025: 거절 글의 예시(2026-11-20 10:15)가 파서가 받지 않는 형식")
     @DisplayName("QA-1025: 못 읽는 시각의 거절 글에 든 예시를 그대로 넣으면 받아들여진다")
     void tradeTimeRefusalExampleIsAccepted() {
         startSynthetic();
