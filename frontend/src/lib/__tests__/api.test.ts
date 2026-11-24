@@ -5,7 +5,7 @@
  * localhost를 찾고, LAN IP를 박으면 맥의 localhost:3000에서 쿠키가 다른 사이트가 됩니다.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiBase, apiGet, apiPatch, apiPost, NetworkError, UnauthorizedError } from "@/lib/api";
+import { ApiError, apiBase, apiDelete, apiGet, apiGetShared, apiPatch, apiPost, NetworkError, UnauthorizedError } from "@/lib/api";
 
 describe("apiBase", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -188,5 +188,90 @@ describe("오류 본문의 코드", () => {
     expect(failure.status).toBe(503);
     expect(failure.message).toBe("합성 사유");
     expect(failure.body).toEqual(body);
+  });
+});
+
+describe("QA-1008 쓰기 뒤의 공유 GET", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /**
+   * GET은 손으로 끝낼 때까지 기다리고(나간 순서대로 `gets`에 쌓임), 그 밖의 메서드는 곧바로 `writeStatus`(기본 200)를 주는 fetch.
+   * `apiGetShared`를 목으로 두지 않고 실제 묶기를 지나게 한다.
+   */
+  function stubFetch(writeStatus = 200) {
+    const gets: { url: string; resolve: (body: unknown) => void }[] = [];
+    const fetchMock = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+      if (init.method !== "GET") {
+        return Promise.resolve(new Response("{\"ok\":true}", { status: writeStatus, headers: { "Content-Type": "application/json" } }));
+      }
+      return new Promise<Response>((resolve) => {
+        gets.push({
+          url,
+          resolve: (body) => resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })),
+        });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+    return gets;
+  }
+
+  // 수정 전에는 쓰기 뒤의 다시 읽기가 쓰기 전에 나간 같은 GET의 약속을 그대로 받아(요청 1번) 쓰기 전 값이 화면에 남았다.
+  it.fails("쓰기가 끝난 뒤의 GET은 쓰기 전에 나간 같은 GET에 합류하지 않는다", async () => {
+    const gets = stubFetch();
+
+    const before = apiGetShared<{ mode: string }>("/api/qa1008/state");
+    await apiPost("/api/qa1008/enable", { on: true });
+    const after = apiGetShared<{ mode: string }>("/api/qa1008/state");
+
+    expect(gets).toHaveLength(2);
+    expect(after).not.toBe(before);
+    gets[0].resolve({ mode: "OFF" });   // 쓰기 전에 나간 요청의 응답(옛 값)
+    gets[1].resolve({ mode: "LIVE" });  // 쓰기 뒤에 나간 요청의 응답
+    await expect(before).resolves.toEqual({ mode: "OFF" });
+    await expect(after).resolves.toEqual({ mode: "LIVE" });
+  });
+
+  it.fails("실패한 쓰기 뒤에도 새로 읽는다 — 서버가 처리했을 수 있다", async () => {
+    const gets = stubFetch(500);
+
+    const before = apiGetShared("/api/qa1008/list");
+    await expect(apiDelete("/api/qa1008/list/1")).rejects.toBeInstanceOf(ApiError);
+    const after = apiGetShared("/api/qa1008/list");
+
+    expect(gets).toHaveLength(2);
+    expect(after).not.toBe(before);
+    gets.forEach((get) => get.resolve([]));
+    await Promise.all([before, after]);
+  });
+
+  it("쓰기가 없으면 진행 중인 같은 GET을 함께 쓴다(요청 한 번) — 시간 한도가 다르면 따로", async () => {
+    const gets = stubFetch();
+
+    const first = apiGetShared("/api/qa1008/shared");
+    const second = apiGetShared("/api/qa1008/shared");
+    const other = apiGetShared("/api/qa1008/shared", 5000);
+
+    expect(second).toBe(first);
+    expect(other).not.toBe(first);
+    expect(gets).toHaveLength(2);
+    expect(gets[0].url).toMatch(/\/api\/qa1008\/shared$/);
+    gets.forEach((get) => get.resolve({ n: 1 }));
+    await expect(Promise.all([first, second, other])).resolves.toEqual([{ n: 1 }, { n: 1 }, { n: 1 }]);
+  });
+
+  it("GET은 쓰기 차례를 올리지 않는다 — 다른 GET이 끝나도 진행 중인 GET은 계속 함께 쓴다", async () => {
+    const gets = stubFetch();
+
+    const first = apiGetShared("/api/qa1008/slow");
+    const quick = apiGet("/api/qa1008/quick");
+    gets[1].resolve({});
+    await quick;
+    const second = apiGetShared("/api/qa1008/slow");
+
+    expect(second).toBe(first);
+    expect(gets).toHaveLength(2);
+    gets[0].resolve({});
+    await first;
   });
 });
