@@ -346,3 +346,39 @@ def test_V42_추적기_표_둘은_두_번_적용해도_되고_모양과_고친_�
     with pytest.raises(psycopg.errors.NotNullViolation):
         conn.execute("INSERT INTO distro_cve_status (distro, suite, package, cve, status) "
                      "VALUES ('debian', 'fakedeb', 'fakessl', 'CVE-2099-0001', 'open')")
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1012 재현 — search_watch_items에 표에 넣은 시각(added_at) 칸이 없어 새 글·알림이 first_seen_at에 기댑니다")
+def test_V45_모은_글의_넣은_시각_칸은_있던_줄을_처음_받은_시각으로_채우고_다시_실행해도_안전하다(conn):
+    """정보 검색 관심 대상의 새 글·알림 기준(QA-1012) — search_watch_items.added_at(표에 넣은 시각). 있던 칸의 값은 그대로, 있던 줄은 first_seen_at으로."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v45 = next(m for m in found if m.version == 45)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 45])
+    insert = ("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
+              "VALUES ('topic:합성 주제', %s, 'news', '합성 제목', 'feeds', %s, %s)")
+    conn.execute(insert, ("old-undated", None, "2026-11-20T22:00:00+00:00"))
+    conn.execute(insert, ("old-dated", "2026-11-21T01:00:00+00:00", "2026-11-21T05:00:00+00:00"))
+    before = conn.execute("SELECT item_id, published_at, first_seen_at FROM search_watch_items ORDER BY item_id").fetchall()
+
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 45]) == [45]
+    conn.execute(v45.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v45.sql)
+
+    rows = conn.execute("SELECT item_id, published_at, first_seen_at, added_at FROM search_watch_items ORDER BY item_id").fetchall()
+    assert [{k: row[k] for k in ("item_id", "published_at", "first_seen_at")} for row in rows] == before, "있던 칸의 값은 그대로"
+    assert all(row["added_at"] == row["first_seen_at"] for row in rows), "있던 줄의 넣은 시각은 처음 받은 시각(판정이 그대로)"
+    column = conn.execute(
+        "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'search_watch_items' AND column_name = 'added_at'").fetchone()
+    assert column == {"data_type": "timestamp with time zone", "is_nullable": "NO", "column_default": "clock_timestamp()"}
+
+    conn.execute(insert, ("new", None, "2026-11-20T22:00:00+00:00"))
+    fresh = conn.execute("SELECT added_at, first_seen_at, now() AS moment FROM search_watch_items WHERE item_id = 'new'").fetchone()
+    assert abs((fresh["moment"] - fresh["added_at"]).total_seconds()) < 60, "주지 않으면 넣는 순간"
+    assert fresh["first_seen_at"].isoformat() == "2026-11-20T22:00:00+00:00"
+    conn.execute(v45.sql)
+    again = conn.execute("SELECT added_at FROM search_watch_items WHERE item_id = 'new'").fetchone()
+    assert again["added_at"] == fresh["added_at"], "다시 실행해도 이미 채운 값을 덮지 않음"
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute("UPDATE search_watch_items SET added_at = NULL")
+

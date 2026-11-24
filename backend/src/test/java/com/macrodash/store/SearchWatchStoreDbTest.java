@@ -2,6 +2,7 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -185,6 +186,27 @@ class SearchWatchStoreDbTest {
         insertItem(MARK + "b", "stale", seen.minus(Duration.ofDays(5)), later);
         assertThat(store.newCounts(alice, List.of())).as("등록 하루 뒤부터는 본 때의 24시간 전 뒤에 나온 늦게 잡힌 글을 셈, 5일 전 글은 아님")
                 .containsEntry(watch.id(), 1);
+    }
+
+    /** 표에 넣은 시각(V45 {@code added_at})을 처음 받은 시각과 따로 정해 넣는 합성 글 — 작성 시각은 모름. */
+    private void addedItem(String key, String itemId, Instant firstSeenAt, Instant addedAt) {
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at, added_at) "
+                + "VALUES (?, ?, 'news', '합성 제목', 'feeds', NULL, ?, ?)", key, itemId, Timestamp.from(firstSeenAt), Timestamp.from(addedAt));
+    }
+
+    @Test
+    @Disabled("QA-1012 재현 — 새 글 수가 표에 넣은 시각이 아니라 처음 받은 시각(first_seen_at)을 기준으로 삼아, 본 뒤에 들어온 작성 시각 없는 저장본 글이 빠짐")
+    @DisplayName("QA-1012: 새 글 수의 기준은 표에 넣은 시각 — 처음 받은 시각이 마지막으로 본 때보다 앞선 글도 그 뒤에 들어왔으면 새 글")
+    void newCountsFollowTheMomentTheRowWasAdded() {
+        Instant now = AT.plus(Duration.ofHours(10));
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "added", "topic", "added", List.of("added"), null, AT);
+        store.markSeen(watch.id(), alice, now.minus(Duration.ofHours(3)));
+        // 저장본이 7시간 전에 받은 작성 시각 없는 글을 정기 수집이 1시간 전에 표에 넣음(본 뒤).
+        addedItem(MARK + "added", "late", now.minus(Duration.ofHours(7)), now.minus(Duration.ofHours(1)));
+        // 본 때보다 먼저 들어온 글은 처음 받은 시각이 언제든 새 글이 아님.
+        addedItem(MARK + "added", "early", now.minus(Duration.ofHours(7)), now.minus(Duration.ofHours(4)));
+
+        assertThat(store.newCounts(alice, List.of())).containsEntry(watch.id(), 1);
     }
 
     private void insertItem(String key, String itemId, Instant publishedAt, Instant firstSeenAt) {

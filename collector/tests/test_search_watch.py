@@ -325,6 +325,32 @@ def test_이미_있는_글은_처음_받은_시각_그대로이고_경유_주소
     assert [row["source"] for row in again.values() if row["title"] == "SynthChip opens new fab"] == ["bing"]
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1012 재현 — 표에 넣은 시각(added_at) 칸이 없어 백엔드의 새 글·알림이 깨기 시작 시각·원래 받은 시각(first_seen_at)에 기댑니다")
+def test_QA1012_넣은_시각은_표에_넣는_순간이고_처음_받은_시각은_그대로(store, world, monkeypatch):
+    """
+    새 글 수·알림(백엔드)의 기준은 표에 넣은 시각(V45 added_at — DB 기본값)입니다. 깨기 시작 시각(30분 전)이나 저장본이 원래 받은 시각(3일 전)이
+    아니라 넣는 순간이어야, 그 사이에 사용자가 대상을 봤거나 알림이 나갔어도 뒤이어 들어온 줄이 새 글에서 빠지지 않습니다. 처음 받은 시각(화면의 '받은
+    시각')과 작성 시각은 계약 §6-3 그대로입니다.
+    """
+    woke = NOW - timedelta(minutes=30)
+    monkeypatch.setattr(task, "_now", lambda: woke)
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    _bundle(store, "f2", "SynthChip Corporation expands", published=None, fetched=_iso(timedelta(days=3)))
+    before = datetime.now(timezone.utc)
+
+    task.task_search_watch()
+
+    after = datetime.now(timezone.utc)
+    items = _items(store, "us:SCHP")
+    undated, dated = items["SynthChip Corporation expands"], items["SynthChip opens new fab"]
+    assert undated["published_at"] is None and abs(undated["first_seen_at"] - (NOW - timedelta(days=3))) < timedelta(seconds=2)
+    assert dated["first_seen_at"] == woke, "처음 받은 시각은 깨기 시작 시각 그대로"
+    skew = timedelta(seconds=5)                           # 시험 과정과 DB의 시계 차이
+    for row in items.values():
+        assert before - skew <= row["added_at"] <= after + skew, "넣은 시각은 넣는 순간(깨기 시작 시각·원래 받은 시각이 아님)"
+        assert row["added_at"] - woke > timedelta(minutes=29)
+
+
 def test_구글_경유_글은_제목_앞_24자가_같아도_다른_기사면_둘_다_남는다(store, world):
     """경유 주소 줄의 저장 id는 경유 주소의 기사 경로 — 같은 실행 안에서도, 다음 실행에서도 앞 24자가 같은 다른 기사를 막지 않습니다."""
     _watch(store, _user(store, "a@example.org"), ENTITY)
