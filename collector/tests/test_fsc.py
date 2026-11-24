@@ -724,3 +724,107 @@ def test_B2_과거_쪽_메우기는_실제_저장본에서_멱등이다(b2_day, 
     assert tasks.task_fsc_prices() == f"최신 상태 (기준일 {latest.isoformat()}, 호출 0회)"
     assert calls == []
     assert store.list_observation_dates(catalog.OBS_FSC_PRICE) == sorted(d.isoformat() for d in [latest, *expected])
+
+
+# ---- QA-997: 발표 전 기다림은 할 일 없는 실행(Idle) — 주식시세·증권상품시세 두 태스크 ------------------------------------------------
+def _frozen_at(year, month, day, hour, minute=17):
+    """korea_public.datetime 자리에 넣을, 그 KST 시각에 멈춘 시계(slow는 매시 :17 무렵에 돎)."""
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(year, month, day, hour, minute, tzinfo=tz)
+
+    return _Clock
+
+
+def _qa997_setup(monkeypatch, at, stored, error=None):
+    """
+    두 금융위 태스크를 at(KST)에, 저장된 마지막 기준일 stored로 놓고 출처는 '그날 자료 없음'(1쪽이 비고 totalCount 0 — 발표 전)으로 답하게
+    합니다. error를 주면 그 대신 출처 오류를 냅니다. 과거 쪽 메우기는 끝난 상태(_FakeStore의 첫 기준일 기본값)입니다.
+    """
+    from app import krcalendar, tasks
+
+    monkeypatch.setattr(tasks.korea_public, "datetime", _frozen_at(*at))
+    monkeypatch.setattr(krcalendar, "_holidays", set(B2_HOLIDAYS_2026))
+    monkeypatch.setattr(tasks.korea_public, "store", _FakeStore(latest=stored))
+    calls: list[str] = []
+
+    def fetch(bas_dt, budget):
+        budget.take()
+        calls.append(bas_dt)
+        if error:
+            raise publicapi.PublicApiError(error)
+        return [], fsc.URL
+
+    monkeypatch.setattr(tasks.fsc_service, "fetch_day", fetch)
+    monkeypatch.setattr(tasks.fsc_service, "fetch_etf_day", fetch)
+    return calls
+
+
+def _qa997_run(store, name):
+    """실행기로 돌려 (성공 여부, 실행 기록의 상태, 상세 글)."""
+    from app import tasks
+
+    run = {"fsc_prices": tasks.task_fsc_prices, "fsc_etf_prices": tasks.task_fsc_etf_prices}[name]
+    ok, detail = tasks.run_task(tasks.Task(name, "slow", run, ""))
+    return ok, {row["task"]: row for row in store.read_task_summary()}[name]["status"], detail
+
+
+FSC_TASKS = ["fsc_prices", "fsc_etf_prices"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-997 — 고치기 전: 발표 전 기다림이 수집 결과 없음(empty)으로 남아 경고로 뜸")
+@pytest.mark.parametrize("name", FSC_TASKS)
+@pytest.mark.parametrize("at, stored, waiting_for, published", [
+    ((2026, 11, 24, 9), "2026-11-20", "2026-11-23", "2026-11-24 13시"),        # 화 오전 — 월요일 값은 오늘 13시 뒤
+    ((2026, 11, 23, 12), "2026-11-19", "2026-11-20", "2026-11-23 13시"),       # 월 12:17 — 금요일 값은 월 13시 뒤(아직 전)
+    ((2026, 11, 21, 15), "2026-11-19", "2026-11-20", "2026-11-23 13시"),       # 토 — 금요일 값은 다음 거래일(월) 13시 뒤
+    ((2026, 12, 25, 15), "2026-12-23", "2026-12-24", "2026-12-28 13시"),       # 성탄절(휴장) — 목요일 값은 다음 거래일(월) 13시 뒤
+])
+def test_QA997_발표_전_기다림은_정상으로_집계하고_상세_글을_남긴다(store, monkeypatch, name, at, stored, waiting_for, published):
+    """
+    QA-997: 금융위 시세(주식·ETF)는 기준일 다음 거래일 13시 뒤에 올라오는데(출처 안내 — 운영 2026-11에는 평일 10:40~11:33에 들어옴), 그 전의
+    매시 실행이 '그날 자료 없음'을 받고 EmptyResult로 끝나 collector_task_runs에 'empty'로 남았고 상태 화면 '수집 오류·경고'에 늘 떴습니다
+    (운영 11-17~24 — 두 태스크 각 empty 120회 중 119회가 이것: 평일 00~10시 매시·토일 종일, 호출 1회씩). 출처는 정상으로 답했고 아직 올라올
+    때가 아닌 것이라 정상(ok)이고, 어느 기준일을 언제까지 기다리는지는 상세 글로 남아야 합니다.
+    """
+    calls = _qa997_setup(monkeypatch, at, stored)
+    ok, status, detail = _qa997_run(store, name)
+
+    assert (ok, status) == (True, "ok")
+    assert detail.startswith(f"아직 발표 전 — 기준일 {waiting_for} 값은 {published} 이후 (호출 1회)")
+    assert "기존 저장본 유지" in detail
+    assert calls == [waiting_for.replace("-", "")]
+
+
+@pytest.mark.parametrize("name", FSC_TASKS)
+def test_QA997_올라올_시각이_지나도_없으면_지금처럼_수집_결과_없음이다(store, monkeypatch, name):
+    """발표 시각(다음 거래일 13시)이 지났는데도 자료가 없으면 늦은 것 — 기다림이 아니라 경고로 남아야 출처가 멈춘 것을 알아차립니다."""
+    _qa997_setup(monkeypatch, (2026, 11, 24, 13), "2026-11-20")
+    ok, status, detail = _qa997_run(store, name)
+
+    assert (ok, status) == (False, "empty")
+    assert "새 기준일 데이터가 없습니다" in detail and "아직 발표 전" not in detail
+
+
+@pytest.mark.parametrize("name", FSC_TASKS)
+def test_QA997_발표_전이어도_출처_오류면_지금처럼_수집_결과_없음이다(store, monkeypatch, name):
+    """운영 11-21(토) 13:17의 HTTP 500처럼 출처가 실패하면 기다림이 아닙니다 — 사유를 단 경고 그대로."""
+    _qa997_setup(monkeypatch, (2026, 11, 21, 13), "2026-11-19",
+                 error="HTTP 500 — APPLICATION_ERROR / 어플리케이션 에러 / 코드 01")
+    ok, status, detail = _qa997_run(store, name)
+
+    assert (ok, status) == (False, "empty")
+    assert "HTTP 500" in detail and "아직 발표 전" not in detail
+
+
+@pytest.mark.parametrize("name", FSC_TASKS)
+def test_QA997_빠진_날_가운데_올라올_시각이_지난_날이_있으면_수집_결과_없음이다(store, monkeypatch, name):
+    """화 09시에 금·월 둘이 빠졌으면 금요일 값(월 13시)은 이미 늦은 것 — 기다리는 날(월)이 섞여 있어도 경고입니다."""
+    calls = _qa997_setup(monkeypatch, (2026, 11, 24, 9), "2026-11-19")
+    ok, status, detail = _qa997_run(store, name)
+
+    assert (ok, status) == (False, "empty")
+    assert calls == ["20261120", "20261123"], "오래된 날부터 둘 다 물음"
+    assert "아직 발표 전" not in detail
