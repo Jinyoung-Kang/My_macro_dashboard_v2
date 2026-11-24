@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 
 /**
  * 정보 검색 관심 대상의 새 글 알림(계약 docs/specs/2026-11-14-info-search-contract.md §9-5) — 15분마다 알림을 켠 줄({@code notify})을 보고, 새 글(§6-4의
- * 새 글 수와 같은 규칙) 가운데 지난 알림 뒤에 처음 받았고 처음 받은 지 {@link #FRESH} 안인 글이 한 건 이상이면 알림 사건 하나(종류 {@link #KIND})와 그 사용자의
+ * 새 글 수와 같은 규칙) 가운데 지난 알림 뒤에 표에 들어왔고({@code added_at} — V45) 들어온 지 {@link #FRESH} 안인 글이 한 건 이상이면 알림 사건 하나(종류 {@link #KIND})와 그 사용자의
  * 알림함 한 줄을 만들고 알린 시각을 고칩니다.
  *
  * <ul>
@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 public class SearchWatchAlertJob {
 
     static final String KIND = "SEARCH_WATCH";
-    /** 알리는 글 — 처음 받은 지 이만큼 안(오래 쌓인 새 글을 뒤늦게 알리지 않게). */
+    /** 알리는 글 — 표에 들어온 지 이만큼 안(오래 쌓인 새 글을 뒤늦게 알리지 않게). */
     static final Duration FRESH = Duration.ofHours(6);
     /** 본문 제목 한 줄의 상한(글자). */
     static final int MAX_TITLE = 200;

@@ -325,7 +325,6 @@ def test_이미_있는_글은_처음_받은_시각_그대로이고_경유_주소
     assert [row["source"] for row in again.values() if row["title"] == "SynthChip opens new fab"] == ["bing"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1012 재현 — 표에 넣은 시각(added_at) 칸이 없어 백엔드의 새 글·알림이 깨기 시작 시각·원래 받은 시각(first_seen_at)에 기댑니다")
 def test_QA1012_넣은_시각은_표에_넣는_순간이고_처음_받은_시각은_그대로(store, world, monkeypatch):
     """
     새 글 수·알림(백엔드)의 기준은 표에 넣은 시각(V45 added_at — DB 기본값)입니다. 깨기 시작 시각(30분 전)이나 저장본이 원래 받은 시각(3일 전)이

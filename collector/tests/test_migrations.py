@@ -348,7 +348,6 @@ def test_V42_추적기_표_둘은_두_번_적용해도_되고_모양과_고친_�
                      "VALUES ('debian', 'fakedeb', 'fakessl', 'CVE-2099-0001', 'open')")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1012 재현 — search_watch_items에 표에 넣은 시각(added_at) 칸이 없어 새 글·알림이 first_seen_at에 기댑니다")
 def test_V45_모은_글의_넣은_시각_칸은_있던_줄을_처음_받은_시각으로_채우고_다시_실행해도_안전하다(conn):
     """정보 검색 관심 대상의 새 글·알림 기준(QA-1012) — search_watch_items.added_at(표에 넣은 시각). 있던 칸의 값은 그대로, 있던 줄은 first_seen_at으로."""
     found = migrations.discover(REPO_MIGRATIONS)

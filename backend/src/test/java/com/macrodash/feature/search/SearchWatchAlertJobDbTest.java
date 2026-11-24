@@ -5,7 +5,6 @@ import com.macrodash.store.SchemaCheck;
 import com.macrodash.store.SearchWatchStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -73,8 +72,10 @@ class SearchWatchAlertJobDbTest {
     }
 
     private void item(String key, String itemId, String title, Instant publishedAt, Instant firstSeenAt) {
-        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
-                + "VALUES (?, ?, 'news', ?, 'google_en', ?, ?)", key, itemId, title, Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
+        // 넣은 시각(added_at — V45, 알림의 기준)은 처음 받은 시각과 같게 — 주지 않으면 DB 기본값(시험을 돌리는 지금)이 들어가 합성 시계와 어긋납니다.
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at, added_at) "
+                + "VALUES (?, ?, 'news', ?, 'google_en', ?, ?, ?)", key, itemId, title, Timestamp.from(publishedAt), Timestamp.from(firstSeenAt),
+                Timestamp.from(firstSeenAt));
     }
 
     private long events(long watchId) {
@@ -128,7 +129,6 @@ class SearchWatchAlertJobDbTest {
     }
 
     @Test
-    @Disabled("QA-1012 재현 — 알림이 표에 넣은 시각이 아니라 처음 받은 시각(first_seen_at)의 6시간 창을 봐, 늦게 들어온 작성 시각 없는 저장본 글을 알리지 않음")
     @DisplayName("QA-1012: 알림의 기준은 표에 넣은 시각 — 저장본이 7시간 전에 받은 작성 시각 없는 글도 방금 표에 들어왔으면 알림")
     void notifiesByTheMomentTheRowWasAdded() {
         String key = MARK + " 다섯";

@@ -2,7 +2,6 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,7 +21,8 @@ import static org.assertj.core.api.Assertions.within;
 /**
  * 관심 대상·매체 제외 표(V37, ADR 0041 결정 9) — 실제 테스트 DB에서 사용자·대상마다 한 줄, 자기 줄만 지우고 '봤음'을 적기, 새 글 수(마지막으로 본 뒤 처음 받은 글,
  * 회원은 운영자 전용 출처를 세지 않음), 서로 다른 대상 수, 매체 제외의 대소문자 무시 유일을 확인합니다. 수집기 글 표({@code search_watch_items})는 백엔드가
- * 읽기만 하므로 이 시험의 준비 줄은 시험 코드가 직접 넣습니다.
+ * 읽기만 하므로 이 시험의 준비 줄은 시험 코드가 직접 넣습니다. 준비 줄의 넣은 시각({@code added_at} — V45, 새 글·알림의 기준)은 따로 정하지 않으면 처음 받은 시각과
+ * 같게 넣습니다(주지 않으면 DB 기본값인 시험을 돌리는 지금이 들어가 합성 시각과 어긋남).
  *
  * <p>운영 DB로 돌지 않도록 이름이 {@code _test}로 끝나는지 먼저 확인합니다. 시험용 사용자(이메일 표지)와 대상 키 표지({@code topic:시험표지…})만 지웁니다.
  */
@@ -75,14 +75,14 @@ class SearchWatchStoreDbTest {
 
     /** 알림 판정용 합성 글 — 제목을 정해 넣습니다(작성 시각을 모르면 null). */
     private void titled(String key, String itemId, String source, String title, Instant publishedAt, Instant firstSeenAt) {
-        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
-                        + "VALUES (?, ?, 'news', ?, ?, ?, ?)", key, itemId, title, source,
-                publishedAt == null ? null : Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at, added_at) "
+                        + "VALUES (?, ?, 'news', ?, ?, ?, ?, ?)", key, itemId, title, source,
+                publishedAt == null ? null : Timestamp.from(publishedAt), Timestamp.from(firstSeenAt), Timestamp.from(firstSeenAt));
     }
 
     private void item(String key, String itemId, String source, Instant firstSeenAt) {
-        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
-                + "VALUES (?, ?, 'news', '합성 제목', ?, NULL, ?)", key, itemId, source, Timestamp.from(firstSeenAt));
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at, added_at) "
+                + "VALUES (?, ?, 'news', '합성 제목', ?, NULL, ?, ?)", key, itemId, source, Timestamp.from(firstSeenAt), Timestamp.from(firstSeenAt));
     }
 
     @Test
@@ -195,7 +195,6 @@ class SearchWatchStoreDbTest {
     }
 
     @Test
-    @Disabled("QA-1012 재현 — 새 글 수가 표에 넣은 시각이 아니라 처음 받은 시각(first_seen_at)을 기준으로 삼아, 본 뒤에 들어온 작성 시각 없는 저장본 글이 빠짐")
     @DisplayName("QA-1012: 새 글 수의 기준은 표에 넣은 시각 — 처음 받은 시각이 마지막으로 본 때보다 앞선 글도 그 뒤에 들어왔으면 새 글")
     void newCountsFollowTheMomentTheRowWasAdded() {
         Instant now = AT.plus(Duration.ofHours(10));
@@ -210,8 +209,9 @@ class SearchWatchStoreDbTest {
     }
 
     private void insertItem(String key, String itemId, Instant publishedAt, Instant firstSeenAt) {
-        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
-                + "VALUES (?, ?, 'news', '합성 제목', 'google_en', ?, ?)", key, itemId, Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at, added_at) "
+                + "VALUES (?, ?, 'news', '합성 제목', 'google_en', ?, ?, ?)", key, itemId, Timestamp.from(publishedAt), Timestamp.from(firstSeenAt),
+                Timestamp.from(firstSeenAt));
     }
 
     /** 화제 판정용 합성 글 — 작성 시각을 모르면(정기 피드의 처음 받은 시각 기준 줄) null. */

@@ -131,10 +131,12 @@ public class SearchWatchStore {
     /** 알림 본문에 싣는 최근 제목 수(계약 §9-5). */
     public static final int NOTIFY_TITLES = 3;
     /**
-     * 새 글 규칙(계약 §6-4) — 관심 대상 줄 {@code w}와 모은 글 {@code i}의 조건. 마지막으로 본 뒤(없으면 등록 뒤) 처음 받았고, 작성 시각(모르면 처음 받은 시각)이
-     * 그때의 {@link #NEW_ITEM_LOOKBACK} 전과 등록 시각 가운데 늦은 것보다 늦은 글. 새 글 수({@link #newCounts})와 알림({@link #notifyCandidates})이 같은 글을 씁니다.
+     * 새 글 규칙(계약 §6-4) — 관심 대상 줄 {@code w}와 모은 글 {@code i}의 조건. 마지막으로 본 뒤(없으면 등록 뒤) 표에 들어왔고({@code added_at} — V45),
+     * 작성 시각(모르면 처음 받은 시각)이 그때의 {@link #NEW_ITEM_LOOKBACK} 전과 등록 시각 가운데 늦은 것보다 늦은 글. 새 글 수({@link #newCounts})와
+     * 알림({@link #notifyCandidates})이 같은 글을 씁니다. '들어온 시각'을 처음 받은 시각({@code first_seen_at})으로 보지 않습니다 — 작성 시각 없는 저장본 글은
+     * 그 글을 원래 받은 시각을, 한 번 깰 때의 줄은 깨기 시작 시각을 갖고 있어 본 뒤에 들어온 줄이 빠집니다(QA-1012).
      */
-    private static final String NEW_ITEM = "i.entity_key = w.entity_key AND i.first_seen_at > COALESCE(w.last_seen_at, w.created_at)"
+    private static final String NEW_ITEM = "i.entity_key = w.entity_key AND i.added_at > COALESCE(w.last_seen_at, w.created_at)"
             + " AND COALESCE(i.published_at, i.first_seen_at) > GREATEST(COALESCE(w.last_seen_at, w.created_at) - INTERVAL '"
             + NEW_ITEM_LOOKBACK.toHours() + " hours', w.created_at)";
 
@@ -151,9 +153,10 @@ public class SearchWatchStore {
         this.transactions = jdbc == null ? null : new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
     }
 
-    /** 두 표가 다 있는가 — 수집기가 V37을 적용하기 전에는 '준비 중'. */
+    /** 두 표와 모은 글의 넣은 시각 칸({@code added_at} — V45, 새 글 규칙이 읽음)이 다 있는가 — 수집기가 V37·V45를 적용하기 전에는 '준비 중'. */
     public boolean ready() {
-        return schema.tableExists("search_watches") && schema.tableExists("search_watch_items");
+        return schema.tableExists("search_watches") && schema.tableExists("search_watch_items")
+                && schema.columnExists("search_watch_items", "added_at");
     }
 
     /** V38(알림 칸 {@code notify}·{@code notified_at}과 등록 때의 이름 {@code name_ko}·{@code name_en})까지 있는가 — 없으면 알림 켜기·정기 알림 작업은 일하지 않습니다. */
@@ -280,9 +283,9 @@ public class SearchWatchStore {
     }
 
     /**
-     * 알림을 만들 줄(계약 §9-5) — 알림을 켠 줄마다 새 글({@link #NEW_ITEM} — 새 글 수와 같은 규칙) 가운데 {@code notified_at} 뒤에(없으면 조건 없음) 처음 받았고
-     * {@code since} 뒤 {@code now} 이하에 처음 받은 글이 한 건 이상인 줄. 운영자가 아닌 사용자의 줄은 {@code memberHidden} 출처(운영자 전용 저장본)의 글을 세지
-     * 않습니다({@link #newCounts}와 같음 — 운영자는 {@code users.role = 'OWNER'}, {@code CurrentUser.isOwner()}와 같은 규칙). 지금 뒤에 처음 받은 글(시계
+     * 알림을 만들 줄(계약 §9-5) — 알림을 켠 줄마다 새 글({@link #NEW_ITEM} — 새 글 수와 같은 규칙) 가운데 {@code notified_at} 뒤에(없으면 조건 없음) 표에 들어왔고
+     * {@code since} 뒤 {@code now} 이하에 표에 들어온({@code added_at}) 글이 한 건 이상인 줄. 운영자가 아닌 사용자의 줄은 {@code memberHidden} 출처(운영자 전용 저장본)의 글을 세지
+     * 않습니다({@link #newCounts}와 같음 — 운영자는 {@code users.role = 'OWNER'}, {@code CurrentUser.isOwner()}와 같은 규칙). 지금 뒤에 들어온 글(시계
      * 어긋남)은 다음 실행에 넘깁니다 — 이번 알림 시각보다 늦어 다시 세어지기 때문입니다.
      */
     public List<NotifyCandidate> notifyCandidates(List<String> memberHidden, Instant since, Instant now) {
@@ -291,8 +294,8 @@ public class SearchWatchStore {
                 + "CROSS JOIN LATERAL (SELECT COUNT(*) AS fresh, (array_agg(i.title ORDER BY COALESCE(i.published_at, i.first_seen_at) DESC,"
                 + " i.first_seen_at DESC, i.item_id))[1:" + NOTIFY_TITLES + "] AS titles FROM search_watch_items i"
                 + " WHERE " + NEW_ITEM
-                + " AND (w.notified_at IS NULL OR i.first_seen_at > w.notified_at)"
-                + " AND i.first_seen_at > ? AND i.first_seen_at <= ?"
+                + " AND (w.notified_at IS NULL OR i.added_at > w.notified_at)"
+                + " AND i.added_at > ? AND i.added_at <= ?"
                 + " AND (u.role = 'OWNER' OR i.source <> ALL (?))) c "
                 + "WHERE w.notify AND c.fresh > 0 ORDER BY w.id";
         List<String> hidden = memberHidden == null ? List.of() : memberHidden;
@@ -322,7 +325,7 @@ public class SearchWatchStore {
     }
 
     /**
-     * 내 관심 대상마다 새 글 수 — 수집기 글 표({@code search_watch_items})에서 그 대표 키의 글 가운데 마지막으로 본 뒤(없으면 등록 뒤) 처음 받았고,
+     * 내 관심 대상마다 새 글 수 — 수집기 글 표({@code search_watch_items})에서 그 대표 키의 글 가운데 마지막으로 본 뒤(없으면 등록 뒤) 표에 들어왔고,
      * 작성 시각(모르면 처음 받은 시각)이 그때의 {@link #NEW_ITEM_LOOKBACK} 전과 등록 시각 가운데 늦은 것보다 늦은 것. 등록 직후 첫 수집은 2년치 글을
      * 한꺼번에 넣으므로 작성 시각 조건이 없으면 '새 글 100+'이 되고(늦게 찾은 옛 글도 새 글이 아님), 등록 전에 나온 글은 등록할 때 화면에서 이미 본
      * 글입니다. {@code hiddenSources}를 주면(회원) 그 출처의 글은 세지 않습니다(운영자 전용 저장본에서 온 글). 글이 없는 대상은 0.

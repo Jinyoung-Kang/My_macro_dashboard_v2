@@ -2129,6 +2129,7 @@ _WATCH_ITEM_COLUMNS = ("item_id", "kind", "title", "url", "publisher", "publishe
 def insert_search_watch_items(entity_key: str, items: Iterable[dict]) -> int:
     """
     관심 대상의 글을 **넣기만** 합니다 — 같은 (대상, 글)이 이미 있으면 그대로(처음 받은 시각을 지킴). 넣은 행 수.
+    표에 넣은 시각(V45 ``added_at`` — 백엔드의 새 글 수·알림 기준)은 주지 않습니다(DB 기본값 = 넣는 순간, QA-1012).
 
     :param items: {item_id, kind, title, url, publisher, publisher_domain, source, lang, summary, published_at(datetime|None),
         first_seen_at(datetime)} — 규칙(2년·중국어·매체 제외)은 부르는 쪽(tasks/search_watch)이 적용한 뒤입니다

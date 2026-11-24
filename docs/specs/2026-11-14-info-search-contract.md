@@ -200,7 +200,7 @@ SourceStatus = {
 |---|---|---|
 | `search_watches` | 백엔드 | `id bigserial PK`, `user_id bigint FK users ON DELETE CASCADE`, `entity_key text`, `kind text`, `name text`, `aliases jsonb`(문자열 배열), `ids jsonb`, `created_at timestamptz`, `last_seen_at timestamptz`, `UNIQUE(user_id, entity_key)` |
 | `search_media_excludes` | 백엔드 | `id bigserial PK`, `kind text`(`domain`·`name`), `value text`(도메인은 소문자 호스트, 이름은 그대로), `note text`, `created_at timestamptz`, `UNIQUE(kind, lower(value))` |
-| `search_watch_items` | 수집기 | `entity_key text`, `item_id text`, `kind text`, `title text`, `url text`, `publisher text`, `publisher_domain text`, `source text`, `lang text`, `summary text`, `published_at timestamptz NULL`, `first_seen_at timestamptz NOT NULL`, `PRIMARY KEY(entity_key, item_id)`, 색인 `(entity_key, coalesce(published_at, first_seen_at) DESC)`·`(coalesce(published_at, first_seen_at))`(2년 정리용) |
+| `search_watch_items` | 수집기 | `entity_key text`, `item_id text`, `kind text`, `title text`, `url text`, `publisher text`, `publisher_domain text`, `source text`, `lang text`, `summary text`, `published_at timestamptz NULL`, `first_seen_at timestamptz NOT NULL`, `added_at timestamptz NOT NULL DEFAULT clock_timestamp()`(V45 — 표에 넣은 시각, 새 글·알림의 기준), `PRIMARY KEY(entity_key, item_id)`, 색인 `(entity_key, coalesce(published_at, first_seen_at) DESC)`·`(coalesce(published_at, first_seen_at))`(2년 정리용) |
 | `fetch_budgets` | 수집기 | `host text`, `purpose text`(`watch`·`search`), `budget_day date`, `budget_used int`, `updated_at`, `PRIMARY KEY(host, purpose)` — 즉석 검색·관심 대상의 호스트별 하루 예산(정기 polite 예산 `fetch_hosts`와 따로, 날이 바뀌면 그 줄을 0부터). `search` 용도는 단계 5(Finviz)부터 씀 — 단계 3의 즉석 검색은 사용자당 새로 받기 10분 1번과 같은 키 호출 묶기로만 막음 |
 
 구현에서 더한 제약: `search_watches.kind`는 `company·institution·person·topic` CHECK, `aliases`는 배열 CHECK, `last_seen_at NOT NULL DEFAULT now()`,
@@ -224,6 +224,9 @@ SourceStatus = {
   기사 경로(`/rss/articles/<id>`, 인자 없음)의 같은 해시, 주소가 없으면 전체 제목의 해시 — 4절 규칙 4의 제목 앞 24자(한 요청 안의 임시 키)는 2년 보관 키로 쓰지
   않음(앞 24자가 같은 다른 기사를 막지 않게). 경유 주소·주소 없는 줄은 같은 실행이나 그 대상의 저장본에 전체 제목이 같은 글이 있으면 넣지 않음. 이미 있는 글은 처음
   받은 시각 그대로. 작성 시각이 없는 저장본 글(Nikkei 등)의 처음 받은 시각은 그 글을 처음 받은 시각.
+- 넣은 시각(`added_at`, V45 — 2026-11-25 QA-1012): 수집기는 이 칸을 주지 않고 DB 기본값(넣는 순간)이 듭니다. 새 글 수·알림(6-4·9-5)의 '본 뒤·알린 뒤에 들어온 글'은
+  이 칸으로 가립니다 — 처음 받은 시각(`first_seen_at`)은 화면의 '받은 시각'과 화제(9-2)에만 씁니다(작성 시각 없는 저장본 글은 넣는 순간 이미 몇 시간 전의 값이고,
+  한 번 깰 때의 줄은 모두 깨기 시작 시각이라 '들어온 시각'이 아님). V45 전에 있던 줄은 `added_at = first_seen_at`.
 - 정리: KST 하루 한 번 — 더는 아무도 등록하지 않은 대상의 글(그 대상의 일정 줄이 마지막으로 고쳐진 뒤 7일 유예, 일정 줄도 함께)·2년 지난 글. 제외 목록이 바뀌었을
   때(과정이 처음 깰 때 포함) 그 목록에 걸리는 매체의 글. 정리 문장은 10초 상한, 실패하면 실행 기록에 '정리 못 함'만 적고 수집은 이어 감.
 - 판정: 저장본·외부 질의가 일부 실패하면 받은 것은 넣고 `Partial(failed)`. 하루 예산으로 보내지 않은 질의는 출처의 끊김이 아님 — 보낸 요청이 모두 성공했으면 '정상',
@@ -235,7 +238,7 @@ SourceStatus = {
 
 | 경로 | 등급 | 내용 |
 |---|---|---|
-| `GET /api/search/watch` | 회원 | 내 관심 대상 `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting:boolean}` — `newCount` = 마지막으로 본 뒤 처음 받았고(`first_seen_at > last_seen_at`) 작성 시각(모르면 처음 받은 시각)이 `last_seen_at`의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(등록 직후 첫 수집의 2년치·등록 전 글이 '새 글'이 되지 않게, 늦게 잡힌 어제 기사는 셈). 회원에게는 운영자 전용 출처(`info`·`guru`·`wire`)에서 온 글을 세지 않음. `collecting` = 서버 정기 수집이 켜진 곳인지(수집기 `/live/search/excludes`의 `politeEnabled` — 10분 캐시, 모르면 null) |
+| `GET /api/search/watch` | 회원 | 내 관심 대상 `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting:boolean}` — `newCount` = 마지막으로 본 뒤 표에 들어왔고(`added_at > last_seen_at` — V45, QA-1012. 그 전에는 `first_seen_at`이라 늦게 들어온 저장본 글이 빠졌음) 작성 시각(모르면 처음 받은 시각)이 `last_seen_at`의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(등록 직후 첫 수집의 2년치·등록 전 글이 '새 글'이 되지 않게, 늦게 잡힌 어제 기사는 셈). 회원에게는 운영자 전용 출처(`info`·`guru`·`wire`)에서 온 글을 세지 않음. `collecting` = 서버 정기 수집이 켜진 곳인지(수집기 `/live/search/excludes`의 `politeEnabled` — 10분 캐시, 모르면 null) |
 | `POST /api/search/watch` | 회원(데모·`store_only` 403) | `{key}` → 백엔드가 수집기 `entity`로 이름·별칭·식별자를 풀어 저장(별칭은 대상의 것만, 최대 12개). 상한: 회원 10·운영자 50, 서버 전체 서로 다른 대표 키 100 — 넘으면 409(reason `user_limit`·`server_limit`). 이미 있으면(다른 키로 같은 대상을 보내도 대표 키로 찾아) 200(`created:false`). 찾지 못하면 409(`unresolved` — 아래 오류 없이 풀지 못함, `wikidata` 오류가 'Wikidata에 이 항목이 없음'(수집기 `WD_MISSING` — 다시 물어도 같음, 백엔드 시험이 대조)이면 그것도), 수집기에 닿지 못하면 503(reason 없음 — `topic:` 키는 풀기 없이 키의 글로 등록), 풀기가 일부 실패(`entity`·`wikidata`·`sec`·`dart_store` 오류)하면 — 그 실패로 대상을 풀지 못했어도(`wd:` 키의 Wikidata 거부·풀기 시간 상한 등 `entity:null`) — 503(`partial` — 저장하지 않음, 본문에 `failed:[{source, message}]` — 그 오류 키와 수집기 사유를 받은 순서대로, 사유가 문자열이 아니거나 비었거나 주소가 섞이면 `null`, 등록을 막지 않는 오류(`dart` 등)는 넣지 않음. `message`는 받지 못한 출처와 상관없이 같은 앞머리('대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함)')에 다시 해 볼 때를 붙임 — 시점을 약속하지 않고 '사유가 풀린 뒤'(시간 초과 같은 일시 실패는 1분쯤 뒤, 수집기가 거부(429·403)로 호출을 멈춘 출처는 멈춘 시간이 지난 뒤, 설정 문제는 고친 뒤), `dart_store`가 섞이면 저장본을 다시 읽을 수 있을 때까지 같다고 함(화면도 같은 글 — 화면 시험 `infoSearchWatchPartialParity`가 백엔드 상수와 대조). 화면은 `failed`를 속성 칸과 같은 출처 이름으로 '받지 못한 출처: Wikidata(거부됨 — … · 5분 동안 이 출처 호출을 멈춤), DART(DART 고유번호 저장본을 읽지 못함)'처럼 사유를 괄호에 묶고 출처를 쉼표로 이어 적고(사유 안의 '·'·'—'가 출처 사이 구분과 섞이지 않게), `failed`가 없으면 `message` 그대로) |
 | `DELETE /api/search/watch/{id}` | 회원(자기 것만) | 지움 |
 | `POST /api/search/watch/{id}/seen` | 회원(자기 것만) | `last_seen_at = now()` — 화면이 그 대상의 타임라인 결과를 받아 그렸을 때(받지 못했으면 보내지 않음) |
@@ -459,7 +462,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 ### 9-5. 알림함 연결
 - V38(`db/migrations/V38__search_watch_notify.sql`): `search_watches`에 `notify boolean NOT NULL DEFAULT false`, `notified_at timestamptz` — 백엔드 표(백엔드만 씀).
 - `PATCH /api/search/watch/{id}` `{notify: true|false}`(자기 줄만). 대상마다 켜고 기본은 꺼짐.
-- 백엔드 정기 작업(15분, `StoreReader.quietly`처럼 수집을 일으키지 않음): `notify`인 줄마다 새 글(6-4의 새 글 규칙) 가운데 `notified_at` 뒤에 처음 받았고 처음 받은 지 6시간 안인 글이 1건
+- 백엔드 정기 작업(15분, `StoreReader.quietly`처럼 수집을 일으키지 않음): `notify`인 줄마다 새 글(6-4의 새 글 규칙) 가운데 `notified_at` 뒤에 표에 들어왔고 들어온 지 6시간 안인(`added_at` — V45) 글이 1건
   이상이면 알림 사건 하나(종류 `SEARCH_WATCH`, 사건 키 = 줄 번호 + 이번 실행 시각, 제목 "관심 대상 '<이름>' 새 글 n건", 본문 = 최근 제목 3개, `payload.href` = 그 대상의 타임라인 주소)와
   알림함 배달 하나를 만들고 `notified_at`을 고칩니다. 텔레그램은 보내지 않음. 회원에게는 운영자 전용 출처의 글을 세지 않음.
 - 화면: 관심 대상 줄·대상 머리에 '알림' 켜기 단추(종 아이콘 + 글), 알림함의 그 줄을 누르면 그 대상으로.
