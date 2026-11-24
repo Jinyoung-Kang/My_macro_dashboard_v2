@@ -4,7 +4,6 @@ import com.macrodash.config.AppProperties;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -277,7 +276,6 @@ class CollectorClientUriTest {
     }
 
     @Test
-    @Disabled("QA-1033: 값 안의 중괄호를 URI 템플릿 변수로 읽어 요청이 나가지 않음")
     @DisplayName("QA-1033: 13F 기관 이름 검색 — '+'·'&'·'{'가 든 검색어도 한 번만 인코딩되어 그대로 도착한다")
     void sec13fSearchReservedCharactersArriveIntact() {
         client.sec13fSearch("C++ & {AT&T}");
@@ -287,7 +285,6 @@ class CollectorClientUriTest {
     }
 
     @Test
-    @Disabled("QA-1033: 값 안의 중괄호를 URI 템플릿 변수로 읽어 요청이 나가지 않음")
     @DisplayName("QA-1033: 종목 찾기 — 중괄호가 든 검색어도 그대로 도착한다")
     void liveSymbolsBracesArriveIntact() {
         client.liveSymbols("{x}");
@@ -297,7 +294,6 @@ class CollectorClientUriTest {
     }
 
     @Test
-    @Disabled("QA-1033: 값 안의 중괄호를 URI 템플릿 변수로 읽어 요청이 나가지 않음")
     @DisplayName("QA-1033: 13F 제출자 조회 — 값이 템플릿으로 읽히지 않고 그대로 도착한다")
     void sec13fFilerValueArrivesIntact() {
         client.sec13fFiler("{cik}");

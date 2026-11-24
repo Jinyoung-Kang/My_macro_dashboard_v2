@@ -254,11 +254,14 @@ public class CollectorClient {
                 .build(), "/live/news");
     }
 
-    /** 종목 찾기(수집기 /live/symbols — 네이버 자동완성 + Yahoo 검색, 1시간 캐시). */
+    /**
+     * 종목 찾기(수집기 /live/symbols — 네이버 자동완성 + Yahoo 검색, 1시간 캐시). 검색어는 URI 변수로 넘깁니다 — 값을 그대로 넣으면 그 안의
+     * 중괄호를 템플릿 변수로 읽어 요청이 나가지 않습니다(QA-1033).
+     */
     public Optional<JsonNode> liveSymbols(String q) {
         return get(uri -> uri.path("/live/symbols")
-                .queryParam("q", q)
-                .build(), "/live/symbols");
+                .queryParam("q", "{q}")
+                .build(Map.of("q", q)), "/live/symbols");
     }
 
     /**
@@ -409,14 +412,14 @@ public class CollectorClient {
 
     // -------------------------------------------------------------- 13F 즐겨찾기(ADR 0048)
 
-    /** 이름 → 13F-HR 제출 기관 후보(수집기 /sec13f/search — EDGAR 회사 검색 한 번). 닿지 못하면 empty. */
+    /** 이름 → 13F-HR 제출 기관 후보(수집기 /sec13f/search — EDGAR 회사 검색 한 번). 닿지 못하면 empty. 검색어는 URI 변수로(QA-1033). */
     public Optional<JsonNode> sec13fSearch(String q) {
-        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/search").queryParam("q", q).build(), "/sec13f/search");
+        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/search").queryParam("q", "{q}").build(Map.of("q", q)), "/sec13f/search");
     }
 
     /** CIK → SEC 등록 이름과 가장 최근 원본 13F-HR(수집기 /sec13f/filer — submissions 한 번). 닿지 못하면 empty. */
     public Optional<JsonNode> sec13fFiler(String cik) {
-        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/filer").queryParam("cik", cik).build(), "/sec13f/filer");
+        return getQuietly(secLookupClient, uri -> uri.path("/sec13f/filer").queryParam("cik", "{cik}").build(Map.of("cik", cik)), "/sec13f/filer");
     }
 
     /** 즐겨찾기 기관 하나의 13F 수집을 기다림(수집기 /sec13f/favorite/collect). 시간 상한을 넘기거나 닿지 못하면 empty — 수집기는 끝까지 돕니다. */
