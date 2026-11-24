@@ -110,6 +110,7 @@ printf 'ii \\tfake-ssl-lib\\t9.9.9-0fake1\\tfake-ssl\\n'
 printf 'ii \\tfake-shell\\t1:5.0-fake2\\tfake-shell\\n'
 printf 'rc \\tfake-removed\\t0.1-1\\tfake-removed\\n'
 printf 'ii \\tfake-nosrc\\t2.0-1\\t\\n'
+[ -z "${FAKE_DPKG_EXTRA:-}" ] || printf '%s\\n' "$FAKE_DPKG_EXTRA"
 """
 _FAKE_APT = """#!/usr/bin/env bash
 echo "apt $*" >> "$FAKE_LOG.host"

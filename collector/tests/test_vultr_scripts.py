@@ -1681,6 +1681,36 @@ def test_inventory는_서버에서_일곱_구역을_모아_수집기_검증을_�
     assert SECRET not in result.stdout + result.stderr
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1003 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1003_inventory는_보류했거나_설정이_덜_끝난_설치_패키지도_넘기고_지운_패키지는_뺀다(inv, fakes):
+    """dpkg 상태 약어의 첫 글자는 원하는 동작(i·h·r·p·u), 둘째 글자가 실제 설치 상태 — 파일이 디스크에 있는 상태(i·U·F·H·W·t)는 모두 넘긴다."""
+    extra = "\n".join([
+        "hi \tfake-held\t3.0.13-0fake3\tfake-held-src",          # apt-mark hold — 설치돼 있고 업데이트만 멈춤
+        "iU \tfake-unpacked\t8.5.0-2fake1\tfake-unpacked",       # 풀림(설정 전)
+        "iF \tfake-halfconf\t1.1-1\tfake-halfconf",              # 설정하다 멈춤
+        "iHR\tfake-halfinst\t1.2-1\tfake-halfinst",              # 반쯤 설치(다시 설치 필요 표시)
+        "iW \tfake-trigwait\t1.3-1\tfake-trigwait",              # 트리거 기다림
+        "it \tfake-trigpend\t1.4-1\t",                           # 트리거 대기(원본 없음 → 이름)
+        "ri \tfake-toremove\t1.5-1\tfake-toremove",              # 지우기로 표시했지만 아직 설치돼 있음
+        "rc \tfake-confonly\t0.2-1\tfake-confonly",              # 설정 파일만 남음
+        "pn \tfake-purged\t\tfake-purged",                        # 없음
+        "un \tfake-never\t\t",
+    ])
+
+    result = _inventory(inv, FAKE_DPKG_EXTRA=extra)
+
+    assert result.returncode == 0, result.stderr
+    components = set(_sent(inv).components)
+    present = {("fake-held", "3.0.13-0fake3", "fake-held-src"), ("fake-unpacked", "8.5.0-2fake1", "fake-unpacked"),
+               ("fake-halfconf", "1.1-1", "fake-halfconf"), ("fake-halfinst", "1.2-1", "fake-halfinst"),
+               ("fake-trigwait", "1.3-1", "fake-trigwait"), ("fake-trigpend", "1.4-1", "fake-trigpend"),
+               ("fake-toremove", "1.5-1", "fake-toremove")}
+    for section in ("host", "collector", "browser"):                # 호스트 줄과 컨테이너 줄(debian 구역 둘) 모두
+        assert {(section, "dpkg", *row) for row in present} <= components, section
+    assert not [c for c in components if c[2] in ("fake-confonly", "fake-purged", "fake-never", "fake-removed")], "디스크에 없는 패키지는 뺌"
+    assert all(entry["status"] == "ok" for entry in _sent(inv).sections.values())
+
+
 def test_inventory는_호스트_배포판_패키지_변경_기록의_CVE를_원본_버전마다_넘기고_실행_중인_커널은_kernel로_합친다(inv, fakes):
     result = _inventory(inv)
 
