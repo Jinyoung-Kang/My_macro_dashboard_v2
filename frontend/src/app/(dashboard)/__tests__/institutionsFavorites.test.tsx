@@ -228,3 +228,150 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
     await waitFor(() => expect(paths().filter((path) => path === endpoints.institution.institutions).length).toBe(before + 1));
   });
 });
+
+// QA-1031: 13F 즐겨찾기 편집의 상태 잔류 넷 — (가) 지운 기관이 고른 채 남음(그 기관의 포트폴리오 400은 '추적하지 않는 기관' 안내 없이 오류 상자),
+// (나) 지우기 실패의 사유가 열린 확인 창에 가려짐, (다) 찾기를 다시 할 때 앞 오류 문구·앞 후보·'즐겨찾기에 있음' 표지가 남음, (라) 저장 중 '취소'가 눌림.
+describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
+  const LIST_PATH = endpoints.institution.institutions;
+  const berkshireReads = () => paths().filter((path) => path === endpoints.institution.portfolio(BERKSHIRE, "8", "30")).length;
+  const confirmDialog = () => screen.findByRole("dialog", { name: "즐겨찾기에서 지울까요?" });
+
+  async function openEditorHere() {
+    fireEvent.click(await screen.findByRole("button", { name: "편집 13F 즐겨찾기" }));
+    return screen.findByRole("dialog", { name: "13F 즐겨찾기 편집" });
+  }
+
+  it.fails("가: 고른 즐겨찾기를 지우면 기본 기관으로 돌아가 그 포트폴리오를 읽는다", async () => {
+    api.apiDelete.mockImplementation(async () => {
+      reads[LIST_PATH] = { ...LIST, favorites: [] };
+      return { ok: true, message: "즐겨찾기에서 지웠습니다." };
+    });
+    renderAs(OWNER);
+    const favorites = await screen.findByRole("radiogroup", { name: "즐겨찾기 기관" });
+    fireEvent.click(within(favorites).getByRole("radio", { name: "가짜 운용 (Fake Capital)" }));
+    await screen.findByRole("heading", { level: 2, name: "가짜 운용 (Fake Capital)" });
+    const before = berkshireReads();
+
+    const dialog = await openEditorHere();
+    fireEvent.click(within(dialog).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" }));
+    fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "지우기" }));
+    await within(dialog).findByText("즐겨찾기에서 지웠습니다.");
+
+    await waitFor(() => expect(berkshireReads()).toBe(before + 1));
+    // 대화상자가 열려 있어 뒤 화면은 낭독기에서 숨습니다(hidden).
+    expect(await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (Fictional Berkshire)", hidden: true })).toBeTruthy();
+  });
+
+  it("가(대조): 고르지 않은 즐겨찾기를 지우면 보던 기관 그대로(포트폴리오를 다시 읽지 않음)", async () => {
+    api.apiDelete.mockImplementation(async () => {
+      reads[LIST_PATH] = { ...LIST, favorites: [] };
+      return { ok: true, message: "즐겨찾기에서 지웠습니다." };
+    });
+    renderAs(OWNER);
+    await screen.findByRole("heading", { level: 2, name: "가상 버크셔 (Fictional Berkshire)" });
+    const before = berkshireReads();
+    const dialog = await openEditorHere();
+    fireEvent.click(within(dialog).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" }));
+    fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "지우기" }));
+    await within(dialog).findByText("즐겨찾기에서 지웠습니다.");
+    await within(dialog).findByText("아직 없습니다.");
+    expect(berkshireReads()).toBe(before);
+    expect(paths()).not.toContain(endpoints.institution.portfolio(FAV, "8", "30"));
+  });
+
+  it.fails("가: 고른 기관의 포트폴리오가 400(추적하지 않는 기관)이면 오류 상자·다시 시도가 아니라 그 안내", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === endpoints.institution.portfolio(FAV, "8", "30")
+        ? Promise.reject(new api.ApiError("추적하지 않는 기관 CIK입니다 — /api/sec13f/institutions 목록의 cik를 쓰세요.", 400))
+        : path in reads ? Promise.resolve(reads[path]) : new Promise(() => {}));
+    renderAs(MEMBER);
+    const favorites = await screen.findByRole("radiogroup", { name: "즐겨찾기 기관" });
+    fireEvent.click(within(favorites).getByRole("radio", { name: "가짜 운용 (Fake Capital)" }));
+
+    expect(await screen.findByText(`이 대시보드가 추적하는 13F 기관이 아닙니다(CIK ${FAV}).`)).toBeTruthy();
+    expect(screen.queryByText(/\/api\/sec13f\/institutions/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+  });
+
+  it.fails("나: 지우기가 실패하면 확인 창을 닫아 대화상자 본문의 사유가 보인다", async () => {
+    api.apiDelete.mockRejectedValue(new api.ApiError("즐겨찾기를 지우지 못했습니다(가짜 500).", 500));
+    renderAs(OWNER);
+    const dialog = await openEditorHere();
+    fireEvent.click(within(dialog).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" }));
+    fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "지우기" }));
+
+    await waitFor(() => expect(api.apiDelete).toHaveBeenCalledWith(endpoints.institution.favorite(FAV)));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "즐겨찾기에서 지울까요?" })).toBeNull());
+    // 확인 창이 닫혀 편집 대화상자가 다시 낭독기에 보이고, 사유는 그 안에 있습니다.
+    const editor = screen.getByRole("dialog", { name: "13F 즐겨찾기 편집" });
+    expect(within(editor).getByText("즐겨찾기를 지우지 못했습니다(가짜 500).")).toBeTruthy();
+    // 줄은 그대로 남아 다시 지울 수 있습니다.
+    expect(within(editor).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" })).toBeTruthy();
+  });
+
+  it.fails("다: 찾기를 다시 하면 앞 오류 문구와 앞 후보를 함께 비운다", async () => {
+    renderAs(OWNER);
+    const dialog = await openEditorHere();
+    const input = within(dialog).getByLabelText("기관 이름(영문) 또는 CIK");
+    const find = () => fireEvent.click(within(dialog).getByRole("button", { name: "찾기" }));
+
+    fireEvent.change(input, { target: { value: "가" } });
+    find();
+    expect(await within(dialog).findByText(/기관 이름은 2~60자/)).toBeTruthy();
+
+    // 잘못된 이름 → CIK: 앞 오류 문구가 사라집니다.
+    fireEvent.change(input, { target: { value: "9900003" } });
+    find();
+    expect(await within(dialog).findByRole("list", { name: "찾은 기관" })).toBeTruthy();
+    expect(within(dialog).queryByText(/기관 이름은 2~60자/)).toBeNull();
+
+    // CIK → 잘못된 이름: 앞 후보가 사라집니다.
+    fireEvent.change(input, { target: { value: "가" } });
+    find();
+    expect(await within(dialog).findByText(/기관 이름은 2~60자/)).toBeTruthy();
+    expect(within(dialog).queryByRole("list", { name: "찾은 기관" })).toBeNull();
+    expect(api.apiGet).not.toHaveBeenCalled();
+  });
+
+  it.fails("다: 즐겨찾기를 지운 뒤 같은 후보에 '즐겨찾기에 있음' 대신 '고르기'가 나온다", async () => {
+    api.apiGet.mockResolvedValue({
+      ok: true, query: "fake",
+      candidates: [{ cik: FAV, name: "FAKE CAPITAL LLC", status: "favorite", latest13F: { filingDate: "2026-08-14", reportDate: "2026-06-30" }, checked: true }],
+    });
+    api.apiDelete.mockImplementation(async () => {
+      reads[LIST_PATH] = { ...LIST, favorites: [] };
+      return { ok: true, message: "즐겨찾기에서 지웠습니다." };
+    });
+    renderAs(OWNER);
+    const dialog = await openEditorHere();
+    fireEvent.change(within(dialog).getByLabelText("기관 이름(영문) 또는 CIK"), { target: { value: "fake" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "찾기" }));
+    const found = await within(dialog).findByRole("list", { name: "찾은 기관" });
+    expect(within(found).getByText("즐겨찾기에 있음")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" }));
+    fireEvent.click(within(await confirmDialog()).getByRole("button", { name: "지우기" }));
+    await within(dialog).findByText("아직 없습니다.");
+
+    const again = within(dialog).getByRole("list", { name: "찾은 기관" });
+    expect(within(again).queryByText("즐겨찾기에 있음")).toBeNull();
+    expect(within(again).getByRole("button", { name: "고르기 FAKE CAPITAL LLC" })).toBeTruthy();
+  });
+
+  it.fails("라: 표시 이름·설명을 저장하는 동안 '취소'는 눌리지 않는다", async () => {
+    api.apiPatch.mockImplementation(() => new Promise(() => {}));
+    renderAs(OWNER);
+    const dialog = await openEditorHere();
+    const current = within(dialog).getByRole("region", { name: "지금 즐겨찾기" });
+    fireEvent.click(within(current).getByRole("button", { name: "고치기 가짜 운용 (Fake Capital)" }));
+    const form = within(current).getByRole("form");
+    fireEvent.click(within(form).getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(api.apiPatch).toHaveBeenCalledTimes(1));
+
+    const cancel = within(form).getByRole("button", { name: "취소" });
+    expect(cancel.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(cancel);
+    expect(within(current).queryByRole("form")).not.toBeNull();
+  });
+});
+
