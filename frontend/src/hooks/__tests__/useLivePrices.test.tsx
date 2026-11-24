@@ -140,6 +140,38 @@ describe("useLivePrices", () => {
     expect(FakeEventSource.instances).toHaveLength(0);
   });
 
+  // QA-1029: 구독(종목 목록·enabled)이 바뀌어도 앞 구독에서 받은 값이 표시 없이 남아, 새 구독의 첫 응답 전에는 멈춘 값이 지금 값으로 읽혔습니다
+  // (장이 끝나 구독을 끈 장중 카드의 실시간 추정 등). 앞 구독의 종목을 missing으로 표시합니다 — 값은 남기고, 다시 받으면 빠집니다.
+  it.fails("QA-1029: 구독을 껐다 켜면 새 이벤트 전에는 앞 구독의 종목이 missing — 값은 남기고, 받으면 빠진다", () => {
+    const { result, rerender } = renderHook(({ enabled }) => useLivePrices(["US:AAPL"], 5, enabled), { initialProps: { enabled: true } });
+    act(() => FakeEventSource.instances[0].emit("prices", body({ "US:AAPL": AAPL })));
+    expect(result.current.missing).toEqual([]);
+
+    rerender({ enabled: false });
+    expect(result.current.missing).toEqual(["US:AAPL"]);
+    rerender({ enabled: true });
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(result.current.missing).toEqual(["US:AAPL"]);
+    expect(result.current.prices["US:AAPL"].price).toBe(337.2);
+
+    act(() => FakeEventSource.instances[1].emit("prices", body({ "US:AAPL": { ...AAPL, price: 338 } })));
+    expect(result.current.missing).toEqual([]);
+    expect(result.current.prices["US:AAPL"].price).toBe(338);
+  });
+
+  it.fails("QA-1029: 종목 목록이 바뀌면 앞 구독의 종목은 missing — 처음 구독(받은 값 없음)에는 표시할 것이 없다", () => {
+    const { result, rerender } = renderHook(({ items }) => useLivePrices(items, 5), { initialProps: { items: ["US:AAPL"] } });
+    expect(result.current.missing).toEqual([]);
+    act(() => FakeEventSource.instances[0].emit("prices", body({ "US:AAPL": AAPL })));
+
+    rerender({ items: ["US:MSFT"] });
+    expect(result.current.missing).toEqual(["US:AAPL"]);
+    act(() => FakeEventSource.instances[1].emit("prices", body({ "US:MSFT": { ...AAPL, code: "MSFT", price: 500 } })));
+    // 새 구독의 응답에 없는 앞 종목은 계속 빠진 것(mergeLivePrices — QA-184).
+    expect(result.current.missing).toEqual(["US:AAPL"]);
+    expect(result.current.prices["US:MSFT"].price).toBe(500);
+  });
+
   it("연결이 끊기면 다시 잇는 중이라고 적고 받은 가격은 남긴다", () => {
     const { result } = renderHook(() => useLivePrices(["US:AAPL"], 5));
     const source = FakeEventSource.instances[0];

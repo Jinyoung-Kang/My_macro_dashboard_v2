@@ -517,6 +517,26 @@ describe("QA-183 실시간 시세 연결이 닫히면 히어로의 실시간 추
     vi.unstubAllGlobals();
   });
 
+  // QA-1029: 실시간 응답에서 빠진 종목의 앞 값으로 히어로의 실시간 추정을 계속 냈습니다 — 빠진 종목은 서버 값으로 세고, 실시간으로 센 종목이
+  // 하나도 없으면 내지 않습니다(null — 히어로는 서버 지금 값).
+  it.fails("QA-1029 실시간 응답에서 보유 종목이 빠지면 그 멈춘 값으로 실시간 순자산을 내지 않는다", async () => {
+    api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
+    const onRealtime = vi.fn();
+    render(<LiveValuationCard bookCode="claude" onRealtime={onRealtime} />);
+    await settle();
+    const source = FakeEventSource.instances[0];
+    await act(async () => source.emit("prices", prices(430)));
+    expect(onRealtime).toHaveBeenLastCalledWith(expect.objectContaining({ code: "claude", nav: 53_000, priced: 1 }));
+
+    await act(async () => source.emit("prices", { available: true, prices: {
+      fetchedAt: "2026-10-30T14:59:10Z", items: {}, missing: ["US:AAA"], errors: { 네이버: "HTTP 500" },
+    } }));
+    expect(onRealtime).toHaveBeenLastCalledWith(null);
+
+    await act(async () => source.emit("prices", prices(432)));
+    expect(onRealtime).toHaveBeenLastCalledWith(expect.objectContaining({ code: "claude", nav: 53_200, priced: 1 }));
+  });
+
   // 배포 중 백엔드가 다시 뜨는 동안의 재연결은 502라 브라우저가 연결을 닫고 다시 잇지 않습니다. 그동안 히어로가 멈춘 가격의 '실시간 추정'을 서버 지금
   // 값보다 앞세웠습니다(재현 커밋에서는 it.fails). 닫힌 동안은 실시간 순자산을 내지 않고(null — 히어로는 서버 지금 값), 다시 받으면 되살립니다.
   it("QA-183 닫힌 동안은 실시간 순자산을 내지 않고(null), 다시 열어 받으면 되살린다", async () => {
