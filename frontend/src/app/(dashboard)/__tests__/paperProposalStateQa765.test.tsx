@@ -90,9 +90,9 @@ describe("QA-765 — 제안 검사 칸의 상태는 제안마다", () => {
 });
 
 // QA-1026: 승인·거절의 '보낸 제안 번호'와 '마지막 성공 결과'를 따로 쥐어, 제안 #5를 거절(성공)한 뒤 #6의 거절을 보내면 응답 전부터 #6 칸에 #5의
-// "거절했습니다"가 떴고, #6이 실패하면 오류와 함께 남았습니다(useAsyncAction은 실패하거나 진행 중이어도 앞 결과를 남김).
+// "거절했습니다"가 떴고, #6이 실패하면 오류와 함께 남았습니다(useAsyncAction은 실패하거나 진행 중이어도 앞 결과를 남김 — 재현 커밋에서는 it.fails).
 describe("QA-1026 — 다른 제안에서 받은 성공 결과는 지금 보낸 제안 아래에 보이지 않는다", () => {
-  it.fails("#5 거절 성공 뒤 #6 거절이 실패하면 #6 칸에는 오류만 — 보내는 동안에도 '거절했습니다'가 없다", async () => {
+  it("#5 거절 성공 뒤 #6 거절이 실패하면 #6 칸에는 오류만 — 보내는 동안에도 '거절했습니다'가 없다", async () => {
     let failSecond: (error: unknown) => void = () => {};
     api.apiPost.mockImplementation((path: string) =>
       path === "/api/paper/framework/proposals/5/reject"

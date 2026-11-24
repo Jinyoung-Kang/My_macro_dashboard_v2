@@ -30,10 +30,16 @@ export function IntradayPlansPanel({
   onChanged: () => void;
 }) {
   const korea = market === "KR";
+  // 성공 결과는 그것을 받은 계좌와 한 값으로 쥡니다 — 성공했을 때만 적고 새 요청을 시작할 때 비웁니다(QA-1026, 결정 로그의 수동 결정과 같은 방식).
+  const [planned, setPlanned] = useState<{ book: string; result: PaperRunIntradayResult } | null>(null);
   const request = useAsyncAction(
-    (code: string) => apiPost<PaperRunIntradayResult>(
-      korea ? endpoints.paper.market("KR").runIntraday : endpoints.paper.market("US").runIntraday, { book: code },
-    ),
+    async (code: string) => {
+      const result = await apiPost<PaperRunIntradayResult>(
+        korea ? endpoints.paper.market("KR").runIntraday : endpoints.paper.market("US").runIntraday, { book: code },
+      );
+      setPlanned({ book: code, result });
+      return result;
+    },
     "장중 판단을 예약하지 못했습니다.",
   );
   // 확인 상자는 그것을 연 계좌에 묶습니다 — 연 채로 계좌를 바꾸면 닫혀 보이고, 바꾼 계좌로 요청이 나가지 않습니다(QA-366, 같은 카드의
@@ -47,10 +53,11 @@ export function IntradayPlansPanel({
   const run = async () => {
     setConfirmingFor(null);
     setRequestedFor(book);
+    setPlanned(null);
     const ok = await request.run(book);
     if (ok) onChanged();
   };
-  const result = request.result && requestedFor === book ? runIntradayResultText(request.result, market) : null;
+  const result = planned !== null && planned.book === book ? runIntradayResultText(planned.result, market) : null;
   const error = request.error && requestedFor === book ? request.error : null;
 
   return (

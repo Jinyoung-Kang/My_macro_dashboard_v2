@@ -135,10 +135,17 @@ export function DecisionsSection({
   const code = resolveDecisionBook(picked, books);
   const list = useApi<PaperDecisionsResponse>(code ? endpoints.paper.decisions(code, RECENT_LIMIT) : null, 60_000);
 
+  // 성공 결과는 그것을 받은 계좌와 한 값으로 쥡니다 — 성공했을 때만 적고 새 실행을 시작할 때 비웁니다(QA-1026). useAsyncAction의 result는 다음 실행이
+  // 진행 중이거나 실패해도 앞 결과를 남겨, 규칙 계좌의 결과 글이 Claude 계좌의 실행 아래에 보였습니다.
+  const [ran, setRan] = useState<{ book: string; result: PaperRunDecisionResult } | null>(null);
   const run = useAsyncAction(
-    (book: string) => apiPost<PaperRunDecisionResult>(
-      korea ? endpoints.paper.market("KR").runDecision : endpoints.paper.runDecision, { book },
-    ),
+    async (book: string) => {
+      const result = await apiPost<PaperRunDecisionResult>(
+        korea ? endpoints.paper.market("KR").runDecision : endpoints.paper.runDecision, { book },
+      );
+      setRan({ book, result });
+      return result;
+    },
     "결정을 내지 못했습니다.",
   );
   const elapsed = useElapsedSeconds(run.busy);
@@ -214,7 +221,7 @@ export function DecisionsSection({
 
   const book = books.find((entry) => entry.code === code) ?? null;
   const blocked = korea ? krDecisionRunBlocked(book) : decisionRunBlocked(book);
-  const runView = run.result && ranFor === code ? runDecisionResultView(run.result) : null;
+  const runView = ran !== null && ran.book === code ? runDecisionResultView(ran.result) : null;
   const runError = run.error && ranFor === code ? run.error : null;
   const claude = book?.kind === "CLAUDE";
   const confirming = claude && confirmingFor === code;
@@ -226,6 +233,7 @@ export function DecisionsSection({
 
   const runNow = async () => {
     setRanFor(code);
+    setRan(null);
     // 끝나면 머리 동작으로 포커스를 되돌립니다 — 확인 상자(Claude 계좌)가 사라지거나, 실행 중 단추가 막혀(규칙 계좌 — 크롬은 막힌 단추의 포커스를 문서로
     // 놓음) 포커스를 잃었을 때만(QA-771).
     focusAfter.current = "action";

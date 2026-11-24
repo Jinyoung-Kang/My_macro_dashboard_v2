@@ -585,8 +585,8 @@ describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", (
   });
 
   // QA-1026: '실행한 계좌'와 '마지막 성공 결과'를 따로 쥐어, 규칙 계좌 실행(성공) 뒤 Claude 계좌의 실행을 보내면 응답 전부터 Claude 계좌 화면에
-  // 규칙 계좌의 결과 글이 떴습니다(실패하면 오류와 함께 남음).
-  it.fails("QA-1026: 규칙 계좌 실행 성공 뒤 Claude 계좌 실행을 보내는 동안·실패한 뒤 Claude 화면에 규칙 계좌의 결과 글이 없다", async () => {
+  // 규칙 계좌의 결과 글이 떴습니다(실패하면 오류와 함께 남음 — 재현 커밋에서는 it.fails).
+  it("QA-1026: 규칙 계좌 실행 성공 뒤 Claude 계좌 실행을 보내는 동안·실패한 뒤 Claude 화면에 규칙 계좌의 결과 글이 없다", async () => {
     const rulesResult = "2026-10-23 수동 결정 — 주문 없음 · 주문 0건 · 매도 신호 없음";
     let failClaude: (error: unknown) => void = () => {};
     api.apiPost.mockImplementation((_path: string, body: { book: string }) =>

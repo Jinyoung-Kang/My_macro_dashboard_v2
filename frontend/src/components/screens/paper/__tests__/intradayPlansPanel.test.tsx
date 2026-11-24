@@ -65,14 +65,14 @@ describe("장중 판단 패널의 확인 단계(QA-366)", () => {
   });
 });
 
-// QA-1026: '요청한 계좌'와 '마지막 성공 결과'를 따로 쥐어, 계좌1 예약(성공) 뒤 계좌2의 요청을 보내면 응답 전부터 계좌2 아래에 계좌1의 예약 글이 떴습니다.
+// QA-1026: '요청한 계좌'와 '마지막 성공 결과'를 따로 쥐어, 계좌1 예약(성공) 뒤 계좌2의 요청을 보내면 응답 전부터 계좌2 아래에 계좌1의 예약 글이 떴습니다(재현 커밋에서는 it.fails).
 describe("QA-1026 — 다른 계좌에서 받은 예약 결과는 지금 보낸 계좌 아래에 보이지 않는다", () => {
   beforeEach(() => {
     api.apiPost.mockReset();
   });
   afterEach(cleanup);
 
-  it.fails("계좌1 예약 성공 뒤 계좌2의 요청을 보내는 동안 계좌2 아래에 계좌1의 예약 글이 없다", async () => {
+  it("계좌1 예약 성공 뒤 계좌2의 요청을 보내는 동안 계좌2 아래에 계좌1의 예약 글이 없다", async () => {
     api.apiPost.mockImplementation((_path: string, body: { book: string }) =>
       body.book === "claude" ? Promise.resolve({ ok: true, planned: { slot: 1, atEt: "10:13", created: true } }) : new Promise(() => {}));
     const { rerender } = render(<IntradayPlansPanel intraday={STATUS} book="claude" onChanged={() => {}} />);

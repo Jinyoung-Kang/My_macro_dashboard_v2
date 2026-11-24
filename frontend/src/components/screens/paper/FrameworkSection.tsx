@@ -513,7 +513,8 @@ function OsSourceCard({
 type DecisionKind = "approve" | "reject";
 
 /**
- * 제안 승인·거절의 상태(작업대 P6 검토 — QA-766): 확인 단계를 연 제안(번호·종류), 보내는 중, 마지막으로 보낸 승인·거절의 제안 번호와 결과·오류. 제안 한 건
+ * 제안 승인·거절의 상태(작업대 P6 검토 — QA-766): 확인 단계를 연 제안(번호·종류), 보내는 중, 마지막으로 보낸 승인·거절의 제안 번호와 결과·오류
+ * (결과는 그 제안이 성공했을 때만 — 다른 제안에서 받은 앞 결과를 싣지 않음, QA-1026). 제안 한 건
  * (ProposalItem) 밖 — 제안 목록(FrameworkBody)과 요청 카드(OsSourceCard)가 하나씩 — 에 두어, 좁은 배치의 검사 대화상자가 닫혀 제안 칸이 빠져도 늦게 온 결과·
  * 오류를 버리지 않습니다(화면을 떠난 부품은 상태를 바꾸지 않음 — useAsyncAction). 결과·오류는 그 제안 칸에만 그립니다(번호로 가림).
  * 경로·본문·확인 글은 예전 그대로입니다(POST …/{id}/approve·reject, 본문 없음).
@@ -534,19 +535,36 @@ function useProposalDecision(onChanged: () => void): ProposalDecision {
   const [deciding, setDeciding] = useState<{ id: number; kind: DecisionKind } | null>(null);
   const [approveFor, setApproveFor] = useState<number | null>(null);
   const [rejectFor, setRejectFor] = useState<number | null>(null);
+  // 성공 결과는 그것을 받은 제안 번호와 한 값으로 쥡니다 — 성공했을 때만 적고, 같은 종류의 새 요청을 시작할 때 비웁니다(QA-1026). useAsyncAction의
+  // result는 다음 요청이 진행 중이거나 실패해도 앞 결과를 남겨, '보낸 제안 번호'와 따로 쥐면 #9의 "거절했습니다"가 #10 칸에 보였습니다.
+  const [approved, setApproved] = useState<{ id: number; result: PaperProposalApproveResult } | null>(null);
+  const [rejected, setRejected] = useState<{ id: number; result: PaperOkResult } | null>(null);
   const approve = useAsyncAction(
-    (id: number) => apiPost<PaperProposalApproveResult>(endpoints.paper.approveProposal(id)),
+    async (id: number) => {
+      const result = await apiPost<PaperProposalApproveResult>(endpoints.paper.approveProposal(id));
+      setApproved({ id, result });
+      return result;
+    },
     "승인하지 못했습니다.",
   );
   const reject = useAsyncAction(
-    (id: number) => apiPost<PaperOkResult>(endpoints.paper.rejectProposal(id)),
+    async (id: number) => {
+      const result = await apiPost<PaperOkResult>(endpoints.paper.rejectProposal(id));
+      setRejected({ id, result });
+      return result;
+    },
     "거절하지 못했습니다.",
   );
   const confirm = async () => {
     if (deciding === null) return;
     const action = deciding.kind === "approve" ? approve : reject;
-    if (deciding.kind === "approve") setApproveFor(deciding.id);
-    else setRejectFor(deciding.id);
+    if (deciding.kind === "approve") {
+      setApproveFor(deciding.id);
+      setApproved(null);
+    } else {
+      setRejectFor(deciding.id);
+      setRejected(null);
+    }
     const ok = await action.run(deciding.id);
     setDeciding(null);
     if (ok) onChanged();
@@ -559,8 +577,8 @@ function useProposalDecision(onChanged: () => void): ProposalDecision {
     confirm,
     approveFor,
     rejectFor,
-    approve: { result: approve.result, error: approve.error },
-    reject: { result: reject.result, error: reject.error },
+    approve: { result: approved !== null && approved.id === approveFor ? approved.result : null, error: approve.error },
+    reject: { result: rejected !== null && rejected.id === rejectFor ? rejected.result : null, error: reject.error },
   };
 }
 
