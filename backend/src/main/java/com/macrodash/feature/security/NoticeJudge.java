@@ -151,8 +151,9 @@ public final class NoticeJudge {
         List<String> notes = conditionNotes(notice.conditionNotes());
         // 참고 주소(URL)는 이름 맞춤에 쓰지 않습니다 — 커널 공지의 'git.kernel.org/…/vulns.git'이 Git 별칭에 맞던 것(QA-980).
         // 본문의 ※ 문장 가운데 영향 없음·Windows 전용 문장도 이름 맞춤에 쓰지 않습니다(덧붙임 2026-11-22).
-        String text = withoutExcludedNotes(
-                URL.matcher(notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText())).replaceAll(" "));
+        // 이름 맞춤에 쓸 글은 공지당 한 번만 정규화합니다(QA-1002 — 별칭마다 다시 하던 것).
+        ProductAliases.Haystack text = new ProductAliases.Haystack(withoutExcludedNotes(
+                URL.matcher(notice.title() + "\n" + (notice.bodyText() == null ? "" : notice.bodyText())).replaceAll(" ")));
 
         List<ProductVerdict> products = new ArrayList<>();
         List<Match> matches = new ArrayList<>();
@@ -166,7 +167,7 @@ public final class NoticeJudge {
             List<Match> found;
             if (!hit.isEmpty()) {
                 found = judgeRows(alias, hit, inventory);
-            } else if (alias.mentionedIn(text)) {
+            } else if (alias.mentioned(text)) {
                 found = judgeMention(alias, mentionReason(notice, tableRows), inventory);
             } else {
                 continue;

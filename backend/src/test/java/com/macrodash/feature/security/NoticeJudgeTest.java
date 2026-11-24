@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -182,7 +181,6 @@ class NoticeJudgeTest {
     // ---- 판정 시간(QA-1002) ----
 
     @Test
-    @Disabled("QA-1002 — 수정 커밋에서 표시를 뗀다")
     @DisplayName("QA-1002 본문에 끊기지 않는 긴 영숫자 덩어리(2만 자)가 있어도 판정이 곧 끝남 — 이름 맞춤이 덩어리 길이의 제곱으로 늘지 않음")
     void longUnbrokenChunkIsJudgedQuickly() {
         String chunk = "a-".repeat(10_000);

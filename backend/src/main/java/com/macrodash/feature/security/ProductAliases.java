@@ -29,6 +29,9 @@ import java.util.regex.Pattern;
  */
 public final class ProductAliases {
 
+    /** 이름 맞춤 정규식이 한 낱말(이름 덩어리)로 보는 최대 길이 — 제품·패키지 이름은 이보다 길지 않습니다(QA-1002). */
+    static final int TOKEN_MAX = 80;
+
     /** 구역 이름 — 버전 목록의 구역({@code env_inventory}의 구역 상태 키)이자 구성 요소의 {@code source}. */
     public static final String SECTION_HOST = "host";
     public static final String SECTION_POSTGRES = "postgres";
@@ -189,14 +192,16 @@ public final class ProductAliases {
          * (제외가 먼저 — 'Docker Desktop for Windows'에서 'Docker'만 남지 않게). {@code textMatch}가 꺼져 있으면 늘 아님.
          */
         public boolean mentionedIn(String text) {
-            if (!textMatch || text == null || text.isBlank()) {
+            return mentioned(new Haystack(text));
+        }
+
+        /** {@link #mentionedIn(String)}과 같되, 공지 한 건의 글을 별칭마다 다시 정규화하지 않게 미리 만든 것을 받습니다(QA-1002). */
+        public boolean mentioned(Haystack text) {
+            if (!textMatch || text.blank()) {
                 return false;
             }
-            String haystack = normalizeText(text);
-            if (exclude != null) {
-                haystack = exclude.matcher(haystack).replaceAll(" ");
-            }
-            haystack = WINDOWS_PHRASE.matcher(haystack).replaceAll(" ");
+            String haystack = exclude == null ? text.withoutWindows()
+                    : WINDOWS_PHRASE.matcher(exclude.matcher(text.normalized()).replaceAll(" ")).replaceAll(" ");
             for (ProductName n : names) {
                 if (n.pattern().matcher(haystack).find()) {
                     return true;
@@ -217,6 +222,36 @@ public final class ProductAliases {
         /** 공지 제품명의 제조사가 이 스택에 깔린 것과 다른지(둘 다 적혀 있을 때만). */
         public boolean vendorDiffers(ProductName name) {
             return vendor != null && name.vendor() != null && !vendor.equals(name.vendor());
+        }
+    }
+
+    /**
+     * 제목·본문 이름 맞춤에 쓸 글 — 공지 한 건에 한 번 만들어 별칭들이 함께 씁니다(QA-1002). 정규화한 글과, 제외 정규식이 없는 별칭들이 함께 쓰는
+     * 'Windows 전용 구절을 지운 글'(처음 쓸 때 한 번 계산)을 담습니다. 결과는 별칭마다 따로 계산하던 때와 글자까지 같습니다.
+     */
+    public static final class Haystack {
+        private final boolean blank;
+        private final String normalized;
+        private String withoutWindows;
+
+        public Haystack(String text) {
+            this.blank = text == null || text.isBlank();
+            this.normalized = blank ? "" : normalizeText(text);
+        }
+
+        boolean blank() {
+            return blank;
+        }
+
+        String normalized() {
+            return normalized;
+        }
+
+        String withoutWindows() {
+            if (withoutWindows == null) {
+                withoutWindows = WINDOWS_PHRASE.matcher(normalized).replaceAll(" ");
+            }
+            return withoutWindows;
         }
     }
 
@@ -265,9 +300,12 @@ public final class ProductAliases {
     /**
      * 제목·본문에서 지우는 Windows 전용 구절(QA-978) — {@code <이름> for Windows}(앞에 Microsoft가 붙은 꼴 포함)·{@code Microsoft OpenSSH}·
      * {@code Win32-OpenSSH}. 정기 업데이트 공지 본문의 'OpenSSH for Windows CVE-… Microsoft OpenSSH for Windows …' 줄이 서버의 OpenSSH에 맞지 않게.
+     * 이름 덩어리는 {@link #TOKEN_MAX}자까지만 봅니다(QA-1002 — 수량자에 끝이 없으면 본문의 끊기지 않는 긴 영숫자 덩어리(헥스 덤프·구분선)에서
+     * 시작 자리마다 덩어리 끝까지 갔다 되돌아와 판정 시간이 덩어리 길이의 제곱으로 늘었음. 제외 정규식의 {@code …-python}·{@code …-git}도 같음).
      */
     static final Pattern WINDOWS_PHRASE = Pattern.compile(
-            "(?:\\bMicrosoft\\s+)?[\\w.+-]+\\s+for\\s+Windows\\b|\\bMicrosoft\\s+OpenSSH\\b|\\bWin32-OpenSSH\\b", Pattern.CASE_INSENSITIVE);
+            "(?:\\bMicrosoft\\s+)?[\\w.+-]{1," + ProductAliases.TOKEN_MAX + "}\\s+for\\s+Windows\\b|\\bMicrosoft\\s+OpenSSH\\b|\\bWin32-OpenSSH\\b",
+            Pattern.CASE_INSENSITIVE);
 
     /** 표 행 제품명이 Windows 전용인지({@link #WINDOWS_PRODUCT}) — Linux 계열 이름이 함께 있으면 아님. */
     static boolean windowsOnlyProduct(String product) {
@@ -370,7 +408,7 @@ public final class ProductAliases {
             alias("python", "Python", Kind.UPSTREAM, Family.MINOR).sections(SECTION_COLLECTOR)
                     .component(ECO_RUNTIME, "python3?")
                     .name("\\bC?Python\\b")
-                    .exclude("Python\\s+(?:Requests|urllib3|lxml|Brotli|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]+-python\\b")
+                    .exclude("Python\\s+(?:Requests|urllib3|lxml|Brotli|패키지|라이브러리|모듈|package|library|module)|python-[\\w.-]+|[\\w.-]{1," + TOKEN_MAX + "}-python\\b")
                     .build(),
             alias("chrome", "Chrome", Kind.UPSTREAM, Family.SINGLE).sections(SECTION_BROWSER)
                     .component(ECO_RUNTIME, "(?:google-)?chrome")
@@ -435,7 +473,7 @@ public final class ProductAliases {
                     .component(ECO_DPKG, "git")
                     .name("\\bGit\\b")
                     .exclude("Git\\s*LFS|git-lfs|GitLab|GitHub|Gitea|Gitee|GitKraken|libgit2|Gitblit|GitOps|TortoiseGit|SmartGit|JGit|"
-                            + "Git\\s+Credential\\s+Manager|Git\\s+Extensions|GitPython|[\\w.]+-git\\b")
+                            + "Git\\s+Credential\\s+Manager|Git\\s+Extensions|GitPython|[\\w.]{1," + TOKEN_MAX + "}-git\\b")
                     .distroUnlessPpa().build(),
 
             // 백엔드 의존성(jar)
