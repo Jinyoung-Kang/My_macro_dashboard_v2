@@ -15,6 +15,7 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -110,6 +111,72 @@ class NoticeJudgeTest {
 
     private static ProductVerdict product(Verdict v, String aliasId) {
         return v.products().stream().filter(p -> p.aliasId().equals(aliasId)).findFirst().orElseThrow();
+    }
+
+    // ---- 별칭 표에 없는 설치 패키지(QA-1001) ----
+
+    @Nested
+    @DisplayName("QA-1001 별칭 표에 없는 설치 패키지 — 표 행 제품명이 구성 요소 이름과 통째로 같으면 확인 필요(이름만 맞음)")
+    class UnlistedComponents {
+
+        private final Component xz = pkg("host", "dpkg", "xz-utils", "95.6.1-1fake1", "xz-utils");
+        private final Component xzLib = pkg("collector", "dpkg", "libfakelzma5", "95.6.1-1", "xz-utils");
+
+        @Test
+        @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
+        @DisplayName("이름이 통째로 같으면(대소문자·빈칸·_·- 무시) 확인 필요 NAME_MATCH — 구성 요소마다 행에 매인 근거, 제품 id는 component:<종류>:<이름>")
+        void wholeNameIsCheck() {
+            Verdict v = judge(rows("XZ Utils|95.0 이상 95.6.2 미만|95.6.2"), inventory(PG, xz, xzLib));
+            assertThat(v.status()).isEqualTo(Status.CHECK);
+            assertThat(v.reasons()).containsExactly(Reason.NAME_MATCH);
+            assertThat(v.products()).singleElement().satisfies(p -> {
+                assertThat(p.aliasId()).isEqualTo("component:dpkg:xz-utils");
+                assertThat(p.label()).isEqualTo("xz-utils");
+                assertThat(p.status()).isEqualTo(Status.CHECK);
+            });
+            // 이름이 같은 패키지와, 원본 패키지 이름이 같은 패키지(다른 구역) — 버전은 견주지 않음.
+            assertThat(v.matches()).extracting(Match::component).containsExactly("xz-utils", "libfakelzma5");
+            assertThat(v.matches()).allSatisfy(m -> {
+                assertThat(m.aliasId()).isEqualTo("component:dpkg:xz-utils");
+                assertThat(m.rowIndex()).isEqualTo(0);
+                assertThat(m.status()).isEqualTo(Status.CHECK);
+                assertThat(m.reason()).isEqualTo(Reason.NAME_MATCH);
+            });
+        }
+
+        @Test
+        @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
+        @DisplayName("한 칸의 여러 제품은 조각마다 견주고, pypi·npm 이름도 같음 — 조건 문장이 있으면 '조건 문장 있음'이 붙음")
+        void piecesAndOtherEcosystems() {
+            Component multipart = comp("collector", "pypi", "python-multipart", "90.0.9");
+            Component scoped = comp("frontend", "npm", "@fake/pkg", "9.0.0");
+            assertThat(judge(rows("가짜 서버, XZ Utils|95.0 이상 95.6.2 미만|95.6.2"), inventory(xz)).status()).isEqualTo(Status.CHECK);
+            assertThat(judge(rows("Python_Multipart|90.0.0 이상 90.1.0 미만|90.1.0"), inventory(multipart)).products())
+                    .extracting(ProductVerdict::aliasId).containsExactly("component:pypi:python-multipart");
+            assertThat(judge(rows("@fake/pkg|9.0.0 이하|9.0.1"), inventory(scoped)).products())
+                    .extracting(ProductVerdict::aliasId).containsExactly("component:npm:@fake/pkg");
+
+            Verdict noted = NoticeJudge.judge(tableNotice("※ 가짜 기능을 켠 경우에만 영향"), rows("xz-utils|95.0 이상 95.6.2 미만|95.6.2"),
+                    inventory(xz));
+            assertThat(noted.status()).isEqualTo(Status.CHECK);
+            assertThat(noted.reasons()).containsExactlyInAnyOrder(Reason.NAME_MATCH, Reason.CONDITION_NOTE);
+        }
+
+        @Test
+        @DisplayName("부분 일치·접두 일치·정규화 3자 이하·버전 목록 없음은 견주지 않음(무관 그대로), 별칭이 맞은 제품명은 별칭 판정만")
+        void notMatched() {
+            Component go = pkg("host", "dpkg", "go", "9.99-1", "go");
+            Component ssl = pkg("host", "dpkg", "openssl", "9.9.9-1fake1", "openssl");
+            assertThat(judge(rows("XZ|95.0 이상 95.6.2 미만|95.6.2"), inventory(xz)).status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(rows("XZ Util|95.0 이상 95.6.2 미만|95.6.2"), inventory(xz)).status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(rows("XZ Utils 95|95.0 이상 95.6.2 미만|95.6.2"), inventory(xz)).status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(rows("Go|9.0 이상 9.99 미만|9.99"), inventory(go)).status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(rows("XZ Utils|95.0 이상 95.6.2 미만|95.6.2"), null).status()).isEqualTo(Status.UNRELATED);
+            assertThat(judge(rows("XZ Utils|95.0 이상 95.6.2 미만|95.6.2"), inventory(PG)).status()).isEqualTo(Status.UNRELATED);
+
+            Verdict aliased = judge(rows("OpenSSL|9.9.0 이상 9.9.20 미만|9.9.20"), inventory(ssl));
+            assertThat(aliased.products()).extracting(ProductVerdict::aliasId).containsExactly("openssl");
+        }
     }
 
     // ---- 네 판정 ----

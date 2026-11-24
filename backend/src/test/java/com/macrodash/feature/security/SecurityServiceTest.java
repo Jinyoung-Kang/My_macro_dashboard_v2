@@ -4,6 +4,7 @@ import com.macrodash.store.SecurityStore;
 import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -247,6 +248,35 @@ class SecurityServiceTest {
         assertThat((List<Map<String, Object>>) tableRows.get(1).get("aliases")).singleElement()
                 .satisfies(a -> assertThat(a).containsEntry("aliasId", "postgresql"));
         assertThat((List<?>) out.get("generalMatches")).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
+    @DisplayName("QA-1001 한 건 — 별칭 표에 없는 설치 패키지와 이름이 같은 행은 확인 필요(NAME_MATCH)이고, 근거·제품의 이름은 구성 요소 이름")
+    @SuppressWarnings("unchecked")
+    void detailUnlistedComponent() {
+        notices.add(notice(9101, "가짜 압축 도구 보안 업데이트 권고", "2026-11-20", "ok", "product_table", List.of(), "가짜 개요"));
+        rows.add(row(9101, 0, "CVE-2099-9101", "Fake Zip Utils", "95.0 이상 95.6 미만", "95.6"));
+        fakeInventory(store, COLLECTED);
+        when(store.components()).thenReturn(List.of(new SecurityStore.Component("host", "dpkg", "fake-zip-utils", "95.5-1fake1", "fake-zip-utils")));
+
+        Map<String, Object> listed = items(service.notices(null, null, null, null, null)).get(0);
+        assertThat(listed.get("verdict")).isEqualTo("check");
+        assertThat((List<Map<String, Object>>) listed.get("products")).singleElement().satisfies(p -> {
+            assertThat(p.get("aliasId")).isEqualTo("component:dpkg:fake-zip-utils");
+            assertThat(p.get("label")).isEqualTo("fake-zip-utils");
+        });
+
+        Map<String, Object> out = service.notice(9101);
+        Map<String, Object> row = ((List<Map<String, Object>>) out.get("rows")).get(0);
+        assertThat(row.get("status")).isEqualTo("check");
+        assertThat((List<String>) row.get("reasons")).containsExactly("NAME_MATCH");
+        assertThat((List<Map<String, Object>>) row.get("matches")).singleElement().satisfies(m -> {
+            assertThat(m.get("aliasId")).isEqualTo("component:dpkg:fake-zip-utils");
+            assertThat(m.get("label")).isEqualTo("fake-zip-utils");
+            assertThat(m.get("component")).isEqualTo("fake-zip-utils");
+            assertThat(m.get("installedVersion")).isEqualTo("95.5-1fake1");
+        });
     }
 
     @Test
