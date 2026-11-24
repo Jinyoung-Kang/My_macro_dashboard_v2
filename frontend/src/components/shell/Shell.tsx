@@ -10,7 +10,6 @@ import { navShownWidth } from "@/lib/navWidth";
 import type { SessionUser } from "@/lib/types";
 import { ReadModeProvider } from "./ReadMode";
 import { SideNav } from "./SideNav";
-import { SourceAlertBanner } from "./SourceAlertBanner";
 import { SubNav } from "./SubNav";
 import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
@@ -45,8 +44,8 @@ import { TopBar } from "./TopBar";
  * 마운트될 때 문서 루트에 세우는 단추 자리(--scroll-top-reserve, lg 이상은 --scroll-top-reserve-lg — 없으면 0px)를 세 단계 여백에 더합니다 — 단추가 아래
  * 여백 자리에서 위로 솟아 맨 아래까지 내려도 본문 마지막 글을 가렸습니다(QA-686).
  * 본문 열은 최대 1280px(max-w-7xl)로 가운데에 두고, 좌우 여백(16·24·32px)은 하위 메뉴 줄의 글과 같은 세로줄입니다.
- * 본문 맨 위에는 운영자에게만 수집 출처 끊김 안내 띠가 뜹니다(ADR 0035 — 끊긴 출처가 있을 때만, 닫을 수 있음). 홈('/')에서는 그리지 않습니다 —
- * 홈의 '알림·끊긴 출처' 패널이 같은 사건을 적어 겹치고, 응답 뒤 끼어든 띠가 홈 전체를 밀어 내렸습니다(QA-613, SourceAlertBanner).
+ * 수집 출처 끊김 안내(ADR 0035 — 운영자에게만, 끊긴 출처가 있을 때만, 닫을 수 있음, 홈 제외 — QA-613)는 본문 맨 위의 띠가 아니라 상단바 안의 경고 표시입니다
+ * (SourceAlertIndicator — 응답 뒤 끼어든 띠가 홈 밖 모든 화면의 본문을 밀었음, QA-994). 본문 맨 위에는 화면의 내용만 옵니다.
  */
 export function Shell({
   user,
@@ -91,7 +90,6 @@ export function Shell({
                 className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-[calc(1.5rem+var(--scroll-top-reserve-lg,0px))]"
               >
                 <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-                  {pathname !== "/" && <SourceAlertBanner user={user} />}
                   {children}
                 </div>
               </main>

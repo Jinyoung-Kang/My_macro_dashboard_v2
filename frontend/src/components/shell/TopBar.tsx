@@ -10,6 +10,7 @@ import { AccountMenu } from "./AccountMenu";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { RefreshButton } from "./RefreshButton";
 import { SearchCommand } from "./SearchCommand";
+import { SourceAlertIndicator } from "./SourceAlertIndicator";
 import { BellIcon } from "./icons";
 
 /** 앱 이름 전체 — 화면 읽기 프로그램이 모든 폭에서 읽는 글(보이는 글은 2xl 아래에서 'Dashboard'를 줄임). */
@@ -23,8 +24,8 @@ function bellLabel(unread: number | null | undefined): string {
 }
 
 /**
- * 상단바 — 앱 이름, 빵부스러기(넓은 화면만), 통합 검색 단추(⌘K — 명령 팔레트), 데이터 새로고침 아이콘 단추(운영자·넓은 화면만), 장 상태 칩 둘(MarketClock),
- * 알림 벨(/alerts, 읽지 않은 수 배지), 계정 메뉴(넓은 화면만).
+ * 상단바 — 앱 이름, 빵부스러기(넓은 화면만), 수집 끊김 경고(운영자·홈 밖·끊긴 출처가 있을 때만 — SourceAlertIndicator), 통합 검색 단추(⌘K — 명령 팔레트),
+ * 데이터 새로고침 아이콘 단추(운영자·넓은 화면만), 장 상태 칩 둘(MarketClock), 알림 벨(/alerts, 읽지 않은 수 배지), 계정 메뉴(넓은 화면만).
  * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 새로고침 · 장 상태 칩 · 벨 · 계정)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
  * (작업대 실행 명세 §5, ADR 0042 결정 5). 좁은 화면은 지금 구조 그대로 — 64px 줄(앱 이름·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
  * 앱 이름은 2xl(1536px) 아래에서 짧게('My Macro v2'), 2xl 이상에서 'My Macro Dashboard v2'로 보입니다(2026-11-16 결정 4 — 사용자 위임, 권장안). 예전에는
@@ -57,6 +58,9 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
       </span>
       {/* 빵부스러기가 자기 글 폭을 주장하고 남는 폭을 차지합니다(lg:flex-auto — 예전 빈칸 자리, 폭 배분은 Breadcrumbs). 좁은 화면에는 없습니다. */}
       <Breadcrumbs pathname={pathname} user={user} />
+      {/* 수집 끊김 경고(운영자·홈 밖·끊긴 출처가 있을 때만 — QA-994). 빵부스러기 바로 뒤라 넓은 화면은 빵부스러기가 자기 폭을 내주고 다른 항목은 움직이지
+          않습니다. 펼친 안내는 겹치는 판이라 본문을 밀지 않습니다(예전 본문 맨 위의 띠). */}
+      <SourceAlertIndicator pathname={pathname} user={user} />
       <SearchCommand user={user} />
       {/* 운영자의 데이터 새로고침 — 넓은 화면만, 결과 안내(role=status)가 단추 왼쪽에(좁은 화면은 더보기 '데이터 읽기'). */}
       <RefreshButton user={user} variant="icon" />

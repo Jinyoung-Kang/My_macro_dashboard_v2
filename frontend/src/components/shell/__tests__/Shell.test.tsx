@@ -694,10 +694,13 @@ describe("본문", () => {
       for (let index = 0; index < 5; index += 1) await Promise.resolve();
     });
     expect(screen.queryByTestId("source-alert-banner")).toBeNull();
+    expect(screen.queryByTestId("source-alert")).toBeNull();
     expect(sourceCalls()).toBe(0);
     cleanup();
 
     renderShell(LOCAL_OWNER, { path: "/macro" });
+    // 2026-11-24부터(QA-994) 띠가 아니라 상단바의 경고 표시 — 누르면 같은 문구가 펼쳐집니다.
+    fireEvent.click(await within(screen.getByRole("banner")).findByRole("button", { name: /수집 끊김 1건/ }));
     const banner = await screen.findByTestId("source-alert-banner");
     expect(within(banner).getByText(/수집 출처 1곳이 끊겼습니다: Wolf Street/)).toBeTruthy();
     expect(within(banner).getByRole("link", { name: "출처 상태 보기" }).getAttribute("href")).toBe("/info/status");
@@ -709,7 +712,7 @@ describe("QA-994: 수집 끊김 안내는 본문을 밀지 않는다", () => {
   // 셸이 띠를 본문(main) 맨 위에 그려, /api/info/sources 응답(약 100 ms) 뒤 끼어든 띠가 홈 밖 모든 화면의 본문 전체를 밀었습니다
   // (QA 모바일 Lighthouse CLS — 기관 0.161 → 띠 요청을 막으면 0.019, 모의매매 0.143 → 0.004, 정보 개요 0.569 → 0.253). 사용자 결정(2026-11-24 D-4):
   // 띠를 없애고 상단바 안의 경고 표시(아이콘과 건수)로 — 누르면 지금 문구·'출처 상태 보기'·닫기가 본문 위에 겹쳐 펼쳐짐. 닫기·다시 뜨는 규칙·운영자에게만·홈 제외는 그대로.
-  it.fails("끊긴 출처가 있으면 상단바(header)에 경고 표시(건수)가 생기고, 본문(main)에는 아무것도 끼어들지 않으며, 펼친 안내도 본문 밖에 겹친다", async () => {
+  it("끊긴 출처가 있으면 상단바(header)에 경고 표시(건수)가 생기고, 본문(main)에는 아무것도 끼어들지 않으며, 펼친 안내도 본문 밖에 겹친다", async () => {
     const sources = "/api/info/sources";
     const incident = {
       key: "info_blog_wolfstreet|blocked", task: "info_blog_wolfstreet", label: "Wolf Street", kind: "blocked",
