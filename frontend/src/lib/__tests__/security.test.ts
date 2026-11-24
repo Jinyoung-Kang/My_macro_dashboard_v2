@@ -229,8 +229,11 @@ describe("거르기", () => {
     expect(verdictFilterItems(null).every((item) => item.note === null)).toBe(true);
     const reasons = reasonFilterItems(response().reasonCounts);
     expect(reasons).toHaveLength(10);
-    expect(reasons.find((item) => item.key === "DISTRO_OPEN")).toEqual({ key: "DISTRO_OPEN", label: "배포판 미수정", note: null });
-    expect(reasons.find((item) => item.key === "CONDITION_NOTE")).toEqual({ key: "CONDITION_NOTE", label: "조건 문장 있음", note: "2건" });
+    expect(reasons.find((item) => item.key === "DISTRO_OPEN")).toEqual({ key: "DISTRO_OPEN", label: "배포판 미수정", note: null, noteSlot: "000건" });
+    expect(reasons.find((item) => item.key === "CONDITION_NOTE")).toEqual({ key: "CONDITION_NOTE", label: "조건 문장 있음", note: "2건", noteSlot: "000건" });
+    // QA-995: 건수 자리는 응답 전에도 세 자리 건수 폭(칩 폭이 응답 전후 같아 줄바꿈이 바뀌지 않음) — 사유 '전체'는 건수가 없어 자리도 없음.
+    expect(verdictFilterItems(null).every((item) => item.noteSlot === "000건")).toBe(true);
+    expect(reasons[0].noteSlot).toBeUndefined();
     expect(reasons.find((item) => item.key === "VENDOR_DIFFERS")?.note).toBeNull();
   });
 

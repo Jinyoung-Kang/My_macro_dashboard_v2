@@ -124,7 +124,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
 
   const links: DetailLink[] = [
     { label: "13F 포트폴리오(분기·비중 추이)", href: "/institutions" },
-    ...(entityLink ? [{ label: `${title} 정보 검색 대상 화면`, href: entityLink.href }] : []),
+    // 이름을 받기 전('CIK …')에는 응답 뒤 두 줄로 꺾이는 이름 줄의 높이를 미리 잡습니다(QA-995 — 넓은 화면에서 아래 두 칸이 18px 밀렸음).
+    ...(entityLink ? [{ label: `${title} 정보 검색 대상 화면`, href: entityLink.href, reserveTwoLines: !names && !portfolio.error }] : []),
   ];
   const sources = propertyItems([
     { label: "13F", value: "SEC EDGAR 13F(이 대시보드 저장본)", note: FILING_NOTE },
@@ -231,6 +232,15 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
                   </Panel>
                   {/* 상위 종목 분기별 비중 — 13F 화면과 같은 두 패널(값이 온 뒤에만 — 읽기 전·실패·저장본 없음은 위 평가액 패널과 대상 머리가 까닭을 적음). */}
                   {data?.available ? <WeightHistoryPanels history={data.weightHistory} title={title} /> : null}
+                  {/* 읽는 중에는 두 패널(히트맵·비중 추이)이 올 자리를 그 높이만큼 비워 둡니다 — 응답 뒤 두 패널이 끼어들어 아래 AI 요약이 화면 밖으로 밀렸음
+                      (QA-995, 데스크톱 CLS 0.08). 높이는 상위 30 종목·8분기로 QA에서 잰 값(폭마다 — 390 913·593 · sm 841·497 · md 693·497 · lg 849·525 ·
+                      xl 1280~1440 사이 859·515). 읽지 못했거나 저장본이 없으면 두지 않습니다. */}
+                  {!data && !portfolio.error ? (
+                    <>
+                      <div aria-hidden="true" className="h-[913px] rounded-card border border-border bg-surface sm:h-[841px] md:h-[693px] lg:h-[849px] xl:h-[859px]" />
+                      <div aria-hidden="true" className="h-[593px] rounded-card border border-border bg-surface sm:h-[497px] lg:h-[525px] xl:h-[515px]" />
+                    </>
+                  ) : null}
                   <AiSummaryCard
                     request={query ? { q: query, label: detailQuery(title) ?? undefined } : null}
                     idleText={idleText("요약하지 않습니다.")}

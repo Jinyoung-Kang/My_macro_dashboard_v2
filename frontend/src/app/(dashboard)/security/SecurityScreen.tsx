@@ -117,7 +117,9 @@ export function SecurityScreen() {
         <EmptyState message="보안 공지 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 보입니다." />
       ) : (
         <>
-          {base ? <StatusLines data={base} /> : null}
+          {/* 상태 줄은 응답 뒤에 생기는 긴 한 줄(수집 상태·받아 둔 공지 — 넓은 화면 두 줄, 좁은 화면 네 줄 안팎)이라, 읽는 중에는 그 높이의 빈 자리를 둡니다
+              (QA-995 — 응답 뒤 끼어든 줄이 탭과 목록을 밀었음). 글은 응답 뒤 그대로입니다. */}
+          {base ? <StatusLines data={base} /> : notices.error ? null : <div aria-hidden="true" className="h-20 md:h-10" />}
           <KpiStrip label="판정 요약" items={securityKpis(kpiSource, kpiPending)} />
           <Tabs label="보안 공지 보기" items={TABS} value={tab} onChange={setTab} idPrefix={tabsId} panelId={panelId} />
           <div role="tabpanel" id={panelId} aria-labelledby={tabId(tabsId, tab)} className="min-w-0">

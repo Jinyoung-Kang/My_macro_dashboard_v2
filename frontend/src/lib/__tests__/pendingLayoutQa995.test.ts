@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { reasonFilterItems, securityKpis, verdictFilterItems } from "../security";
 
 describe("QA-995: 응답 전 자리가 응답 뒤 꼴을 미리 잡는다", () => {
-  it.fails("보안 공지 판정·사유 칩은 건수를 받기 전에도 세 자리 건수 폭의 자리를 둔다(사유 '전체'는 건수가 없어 자리도 없음)", () => {
+  it("보안 공지 판정·사유 칩은 건수를 받기 전에도 세 자리 건수 폭의 자리를 둔다(사유 '전체'는 건수가 없어 자리도 없음)", () => {
     const verdicts = verdictFilterItems(null) as Array<{ noteSlot?: string }>;
     expect(verdicts.every((item) => item.noteSlot === "000건")).toBe(true);
     const reasons = reasonFilterItems(null) as Array<{ key: string; noteSlot?: string }>;
@@ -18,7 +18,7 @@ describe("QA-995: 응답 전 자리가 응답 뒤 꼴을 미리 잡는다", () =
     expect(reasons[0].noteSlot).toBeUndefined();
   });
 
-  it.fails("보안 공지 판정 요약은 읽는 중에도 버전 목록 타일에 보조 줄 하나의 자리를 둔다", () => {
+  it("보안 공지 판정 요약은 읽는 중에도 버전 목록 타일에 보조 줄 하나의 자리를 둔다", () => {
     const pending = securityKpis(null, true);
     expect(pending.find((item) => item.key === "inventory")?.pendingLines).toBe(1);
     expect(pending.filter((item) => item.key !== "inventory").every((item) => item.pendingLines === undefined)).toBe(true);

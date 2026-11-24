@@ -112,14 +112,17 @@ export function basisLabel(code: string | null | undefined): string | null {
 /** 판정 거르기의 키 — 전체는 'all'(인자 없음). */
 export const ALL = "all";
 
-export type FilterItem = { key: string; label: string; note: string | null };
+export type FilterItem = { key: string; label: string; note: string | null; noteSlot?: string };
+
+/** 건수 보조 글 자리의 견본 — 세 자리 건수까지 응답 전후 칩 폭이 같습니다(QA-995). */
+const COUNT_SLOT = "000건";
 
 /** 판정 거르기 줄 — 전체 + 판정 넷, 보조 글은 건수(검색어로 거른 뒤의 수 — counts). 건수를 모르면 보조 글 없음. */
 export function verdictFilterItems(counts: SecurityNoticesResponse["counts"]): FilterItem[] {
   const count = (value: number | undefined) => (counts && typeof value === "number" ? `${value}건` : null);
   return [
-    { key: ALL, label: "전체", note: count(counts?.total) },
-    ...VERDICT_ORDER.map((code) => ({ key: code, label: VERDICTS[code].label, note: count(counts?.[code]) })),
+    { key: ALL, label: "전체", note: count(counts?.total), noteSlot: COUNT_SLOT },
+    ...VERDICT_ORDER.map((code) => ({ key: code, label: VERDICTS[code].label, note: count(counts?.[code]), noteSlot: COUNT_SLOT })),
   ];
 }
 
@@ -129,7 +132,7 @@ export function reasonFilterItems(reasonCounts: SecurityNoticesResponse["reasonC
     { key: ALL, label: "전체", note: null },
     ...REASON_ORDER.map((code) => {
       const value = reasonCounts?.[code];
-      return { key: code, label: reasonLabel(code), note: typeof value === "number" ? `${value}건` : null };
+      return { key: code, label: reasonLabel(code), note: typeof value === "number" ? `${value}건` : null, noteSlot: COUNT_SLOT };
     }),
   ];
 }
@@ -287,6 +290,8 @@ export function securityKpis(data: SecurityNoticesResponse | null | undefined, p
     emptyReason: state?.kind === "missing" ? "버전 목록 없음" : null,
     status: state?.kind === "present" && state.stale ? { tone: "warn", text: "2일 넘게 오래됨" } : undefined,
     pending,
+    // 읽는 중에도 값이 온 뒤의 보조 줄(버전 목록 나이) 높이를 잡습니다 — 띠가 64px → 90px로 자라 아래 탭·목록을 밀었음(QA-995).
+    ...(pending ? { pendingLines: 1 } : {}),
   };
   return [count("affected"), count("check"), count("patched"), basis];
 }

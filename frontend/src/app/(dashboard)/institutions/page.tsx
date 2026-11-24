@@ -82,7 +82,16 @@ export default function InstitutionsPage() {
       <PageHeader
         title="기관 13F 포트폴리오 분석"
         description="SEC EDGAR 공식 공시 · 분기 공시, 공시 마감 45일 지연"
-        actions={<Freshness collectedAt={data?.collectedAtKst} ageSeconds={data?.ageSeconds} refreshError={refreshError} />}
+        // 첫 응답을 기다리는 동안은 수집 시각 줄과 같은 크기의 보이지 않는 자리(QA-995 — 좁은 화면에서 머리가 응답 뒤 24px 자라 조회 조건 칸을 밀었음,
+        // 기관 상세 QA-967과 같은 방법).
+        actions={
+          <Freshness
+            collectedAt={data?.collectedAtKst}
+            ageSeconds={data?.ageSeconds}
+            refreshError={refreshError}
+            pending={firstLoadPending({ data, loading, failedAt })}
+          />
+        }
       />
 
       <SplitPane

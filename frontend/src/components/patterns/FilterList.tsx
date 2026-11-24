@@ -5,8 +5,12 @@ import { useId, useRef, type JSX, type KeyboardEvent, type ReactNode } from "rea
 import { FOCUS_RING, SELECTED_BAR, SKELETON_BAR } from "@/components/ui/classes";
 import { CheckIcon } from "@/components/ui/icons";
 
-/** 거르기 목록 줄 하나 — `label`은 단추 이름 그대로, `note`는 보조 글(단추 설명 — 이름에 섞지 않음), `title`은 마우스 설명. */
-export type FilterListItem = { key: string; label: string; note?: string | null; title?: string };
+/**
+ * 거르기 목록 줄 하나 — `label`은 단추 이름 그대로, `note`는 보조 글(단추 설명 — 이름에 섞지 않음), `title`은 마우스 설명.
+ * `noteSlot`(선택)은 보조 글 자리의 폭을 잡는 견본 글 — 주면 보조 글이 아직 없을 때(응답 전)도, 있을 때도 그 글 폭만큼(더 길면 보조 글 폭) 자리를 둡니다.
+ * 건수처럼 응답 뒤에 붙는 보조 글이 단추를 넓혀 줄바꿈이 바뀌며 단추들이 옮겨 가던 밀림을 막습니다(QA-995 — 보안 공지 판정·사유 칩). 견본은 보이지 않고 읽히지 않습니다.
+ */
+export type FilterListItem = { key: string; label: string; note?: string | null; title?: string; noteSlot?: string };
 
 /**
  * 처음 읽는 동안의 자리 줄 하나(`pending.rows`) — 값이 온 뒤의 목록 꼴을 미리 그리는 데 씁니다. `tag`는 좁은 화면 태그 폭(px — 칸 폭에서 잘림), `tagLines`는 그 태그의
@@ -204,7 +208,15 @@ export function FilterList({
                   </span>
                 ) : null}
                 <span className="min-w-0 flex-1 break-keep wrap-anywhere">{item.label}</span>
-                {item.note ? (
+                {item.noteSlot ? (
+                  // 견본 글과 보조 글을 같은 칸에 겹쳐 둡니다 — 폭은 둘 중 넓은 쪽(견본은 invisible).
+                  <span aria-hidden="true" className="inline-grid shrink-0 text-xs font-normal tabular-nums text-text-3">
+                    <span className="invisible col-start-1 row-start-1">{item.noteSlot}</span>
+                    <span id={noteId} className="col-start-1 row-start-1">
+                      {item.note ?? ""}
+                    </span>
+                  </span>
+                ) : item.note ? (
                   <span id={noteId} aria-hidden="true" className="shrink-0 text-xs font-normal tabular-nums text-text-3">
                     {item.note}
                   </span>

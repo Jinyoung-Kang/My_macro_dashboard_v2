@@ -65,7 +65,13 @@ export function OverviewSection() {
             </p>
           )}
         </div>
-        {catalog.loading && !data && <Loading />}
+        {/* 읽는 중 자리는 타일 띠가 온 뒤의 높이만큼 잡습니다(QA-995 — 응답 뒤 띠가 '불러오는 중' 한 줄을 대신하며 아래 칸을 밀었음, 모바일 CLS 0.25).
+            분류 여섯 타일의 띠 높이를 QA에서 잰 값: 390 334px · sm 220 · lg 228(왼쪽 메뉴로 본문이 좁음) · xl 110. 글('불러오는 중…')은 그대로입니다. */}
+        {catalog.loading && !data && (
+          <div className="min-h-[334px] sm:min-h-[220px] lg:min-h-[228px] xl:min-h-[110px]">
+            <Loading />
+          </div>
+        )}
         {catalog.error && <ErrorState message={catalog.error} onRetry={catalog.reload} />}
         {data && <KpiStrip label="분류별 상태" items={tabTiles(data)} />}
       </div>

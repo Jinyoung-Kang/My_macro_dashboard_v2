@@ -275,7 +275,11 @@ function changeChipVisible(change: number | null | undefined, changePct: number 
 }
 
 /** 링크 목록 한 줄 — 바깥 주소면 새 창(ExternalAnchor — http(s)만), 아니면 이 앱 안 주소(next/link). */
-export type DetailLink = { label: string; href: string; external?: boolean };
+/**
+ * '연결' 칸의 링크 한 줄. `reserveTwoLines`(선택)는 응답 전 자리표시 글이라 짧은 줄(예: 이름을 받기 전의 'CIK …')이 응답 뒤 두 줄로 꺾일 때, 응답 전에도
+ * 두 줄 높이를 잡아 그 아래 칸이 밀리지 않게 합니다(QA-995 — 기관 상세 '<이름> 정보 검색 대상 화면'). 글은 그대로입니다.
+ */
+export type DetailLink = { label: string; href: string; external?: boolean; reserveTwoLines?: boolean };
 
 /**
  * 링크 목록 패널(상세 화면 오른쪽 '연결') — 따로 선 글 링크를 위에서 아래로. 누를 수 있는 것이라 강조 파랑(LINK_CLASSES — 좁은 화면 누르는 자리 44px,
@@ -287,7 +291,7 @@ export function LinkListPanel({ title, links }: { title: string; links: readonly
     <Panel title={title}>
       <ul className="flex flex-col lg:gap-1.5">
         {links.map((link) => (
-          <li key={`${link.href}:${link.label}`} className="min-w-0">
+          <li key={`${link.href}:${link.label}`} className={link.reserveTwoLines ? "min-h-10 min-w-0" : "min-w-0"}>
             {link.external ? (
               <ExternalAnchor href={link.href} className={`${LINK_CLASSES} break-keep text-sm wrap-anywhere`}>
                 {link.label}
