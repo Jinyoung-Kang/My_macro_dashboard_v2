@@ -132,15 +132,29 @@ public class InfoTranslator {
                               List<String> models) {
     }
 
-    /** 저장하지 않는 조각 하나의 결과 — 실패 사유(성공이면 null)·실패 종류·번역한 모델. */
-    private record UnsavedPart(String error, String errorKind, String model) {
+    /** 저장하지 않는 조각 하나의 결과 — 실패 사유(성공이면 null)·번역한 모델·모델에 요청이 하나라도 나갔는가. */
+    private record UnsavedPart(String error, String model, boolean sent) {
     }
 
-    /** 모델에 요청이 나가지 않은 실패 종류(키 없음·허용 목록 밖) — 하루 상한에 센 글자를 돌려줍니다(요약과 같은 기준). */
+    /**
+     * 모델에 요청이 나가지 않은 실패 종류(키 없음·허용 목록 밖). 부른 엔진이 모두 이 종류로 끝났을 때만 하루 상한에 센 글자를 돌려줍니다(요약과 같은
+     * 기준 — 마지막 엔진의 종류만 보면 Gemini에 보낸 뒤 Claude가 키 없음으로 끝난 호출도 '나가지 않음'이 됨, QA-1020).
+     */
     private static final java.util.Set<String> NOT_SENT_KINDS = java.util.Set.of("NO_KEY", "NOT_ALLOWED");
 
-    /** 모델 호출의 결과와 실제로 답한 모델. {@code value}는 응답을 읽어 얻은 번역(실패면 null). */
-    private record Called<T>(GeminiClient.Reply reply, String model, T value) {
+    /**
+     * 모델 호출의 결과와 실제로 답한 모델. {@code value}는 응답을 읽어 얻은 번역(실패면 null), {@code sent}는 이 호출에서 어느 엔진에든 요청이 하나라도
+     * 나갔는가(QA-1020).
+     */
+    private record Called<T>(GeminiClient.Reply reply, String model, T value, boolean sent) {
+        Called<T> sent(boolean flag) {
+            return new Called<>(reply, model, value, flag);
+        }
+    }
+
+    /** 엔진 하나의 응답 → 그 엔진에 요청이 나갔는가(성공이거나, 실패 종류가 {@link #NOT_SENT_KINDS} 밖). */
+    private static boolean wasSent(GeminiClient.Reply reply) {
+        return reply.ok() || reply.errorKind() == null || !NOT_SENT_KINDS.contains(reply.errorKind());
     }
 
     /** 조각 하나의 결과 — 실패 사유(성공이면 null)와 번역한 모델. */
@@ -249,6 +263,7 @@ public class InfoTranslator {
      */
     private <T> Called<T> call(String system, String user, Map<String, Object> schema, java.util.function.Function<String, T> reader) {
         String geminiError = null;
+        boolean sent = false;
         if (useGemini) {
             GeminiClient.Reply failure = null;
             String failedModel = geminiModel;
@@ -258,6 +273,7 @@ public class InfoTranslator {
                 if (first.reply().ok()) {
                     return first;
                 }
+                sent = first.sent();
                 failure = first.reply();
                 keyProblem = GEMINI_KEY_KINDS.contains(failure.errorKind());
                 if (keyProblem || GEMINI_REST_KINDS.contains(failure.errorKind())) {
@@ -270,6 +286,7 @@ public class InfoTranslator {
                 if (lower.reply().ok()) {
                     return lower;
                 }
+                sent = sent || lower.sent();
                 String lowerKind = lower.reply().errorKind();
                 if (GEMINI_KEY_KINDS.contains(lowerKind) || GEMINI_REST_KINDS.contains(lowerKind)) {
                     geminiLowerRestUntil = restUntil();
@@ -281,7 +298,7 @@ public class InfoTranslator {
                 geminiLowerRestUntil = geminiRestUntil;
             }
             if (!fallbackToClaude) {
-                return new Called<>(failure, failedModel, null);
+                return new Called<>(failure, failedModel, null, sent);
             }
             geminiError = failure == null ? "Gemini는 한도 초과 뒤 잠시 쉬는 중" : failure.error();
             log.info("Gemini 번역 실패({}) — Claude Haiku로 넘어갑니다", failure == null ? "쉬는 중" : failure.errorKind());
@@ -289,10 +306,10 @@ public class InfoTranslator {
         AiService.StructuredResult result = ai.structured(claudeModel, system, user, schema, effort, timeoutSeconds);
         Called<T> last = read(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), result.error()), claudeModel, reader);
         if (last.reply().ok() || geminiError == null) {
-            return last;
+            return last.sent(sent || last.sent());
         }
         return new Called<>(GeminiClient.Reply.failed(last.reply().errorKind(), "Gemini: " + geminiError + " / Claude: " + last.reply().error()),
-                claudeModel, null);
+                claudeModel, null, sent || last.sent());
     }
 
     /**
@@ -301,19 +318,19 @@ public class InfoTranslator {
      */
     private <T> Called<T> read(GeminiClient.Reply reply, String model, java.util.function.Function<String, T> reader) {
         if (!reply.ok()) {
-            return new Called<>(reply, model, null);
+            return new Called<>(reply, model, null, wasSent(reply));
         }
         try {
             T value = reader.apply(reply.text());
             if (value != null) {
-                return new Called<>(reply, model, value);
+                return new Called<>(reply, model, value, true);
             }
-            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답에 쓸 번역이 없습니다"), model, null);
+            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답에 쓸 번역이 없습니다"), model, null, true);
         } catch (RuntimeException e) {
             // 예외 종류만 남깁니다 — JSON 파서의 예외 글에는 읽지 못한 첫 토큰(번역한 글의 앞부분, 최대 수백 자)이 그대로 들어 있어, 저장하지 않는
             // 본문 번역(bodyUnsaved)의 글이 로그에 남을 수 있었습니다.
             log.warn("번역 응답을 읽지 못함({}): {}", model, e.getClass().getSimpleName());
-            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답을 읽지 못했습니다"), model, null);
+            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답을 읽지 못했습니다"), model, null, true);
         }
     }
 
@@ -510,7 +527,7 @@ public class InfoTranslator {
      * <ul>
      *   <li>메모리에 없는 조각만 번역합니다(셋까지 동시에). 일부 조각만 실패하면 번역된 조각은 메모리에 남아 다시 누르면 남은 조각만 번역합니다.</li>
      *   <li>하루 글자 상한은 {@link InfoAiBudget#reserve}로 셉니다(표에 남지 않는 몫 — 요약과 같음). 넘으면 부르지 않고 실패와 안내 글, 모델에 요청이
-     *       나가지 않은 조각(키 없음·허용 목록 밖)의 글자는 {@link InfoAiBudget#release}로 돌려줍니다.</li>
+     *       나가지 않은 조각(부른 엔진이 모두 키 없음·허용 목록 밖)의 글자는 {@link InfoAiBudget#release}로 돌려줍니다.</li>
      * </ul>
      */
     public UnsavedBody bodyUnsaved(String text) {
@@ -551,7 +568,7 @@ public class InfoTranslator {
                     UnsavedPart part = entry.getValue().get();
                     error = error == null ? part.error() : error;
                     usedModel = part.model() == null || part.error() != null ? usedModel : part.model();
-                    if (part.error() != null && NOT_SENT_KINDS.contains(part.errorKind())) {
+                    if (part.error() != null && !part.sent()) {
                         notSent += parts.get(entry.getKey()).length();
                     }
                 } catch (InterruptedException e) {
@@ -592,10 +609,10 @@ public class InfoTranslator {
         });
         GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
-            return new UnsavedPart(result.error(), result.errorKind(), called.model());
+            return new UnsavedPart(result.error(), called.model(), called.sent());
         }
         unsaved.put(key, called.value(), called.model());
-        return new UnsavedPart(null, null, called.model());
+        return new UnsavedPart(null, called.model(), true);
     }
 
     /** 시험용 — 메모리에 둔 저장하지 않는 번역 조각 수. */

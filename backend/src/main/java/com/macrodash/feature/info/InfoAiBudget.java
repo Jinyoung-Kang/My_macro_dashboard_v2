@@ -16,7 +16,8 @@ import java.time.LocalDate;
  * 함께 씁니다.
  *
  * <ul>
- *   <li>오늘 쓴 양 = 번역 표({@code info_translations})에 오늘 남은 원문 글자 수 + 표에 남지 않는 요약이 오늘 보낸 글자 수(이 프로세스 메모리).</li>
+ *   <li>오늘 쓴 양 = 번역 표({@code info_translations})에 오늘 남은 원문 글자 수 + 표에 남지 않는 몫(요약과 저장하지 않는 본문 번역 —
+ *       {@link InfoTranslator#bodyUnsaved})이 오늘 보낸 글자 수(이 프로세스 메모리).</li>
  *   <li>요약은 결과를 표에 두지 않습니다(6시간 메모리 캐시) — 그래서 보낸 글자 수를 여기서 셉니다. 재기동하면 요약 몫은 0부터입니다(번역 몫은 표라 그대로) —
  *       알고 남긴 한계(요약 한 번이 약 3만 자이고 6시간 캐시·한 번에 하나라, 재기동 한 번에 더 나갈 수 있는 양은 그날 요약이 쓴 양까지).</li>
  *   <li>두 방향 모두 이 셈을 씁니다 — 요약은 {@link #reserve}로, 번역({@link InfoTranslator})은 상한 검사와 정보 화면의 오늘 쓴 양에서
@@ -29,7 +30,7 @@ public class InfoAiBudget {
     private final TranslationStore store;
     private final long dailyChars;
     private final Clock clock;
-    /** 표에 남지 않는 사용량(요약)의 날과 글자 수 — {@code this}로 잠가 고칩니다. */
+    /** 표에 남지 않는 사용량(요약·저장하지 않는 본문 번역)의 날과 글자 수 — {@code this}로 잠가 고칩니다. */
     private LocalDate untrackedDay;
     private long untrackedChars;
 
