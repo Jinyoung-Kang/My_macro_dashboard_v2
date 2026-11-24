@@ -216,8 +216,8 @@ describe("QA-1008 쓰기 뒤의 공유 GET", () => {
     return gets;
   }
 
-  // 수정 전에는 쓰기 뒤의 다시 읽기가 쓰기 전에 나간 같은 GET의 약속을 그대로 받아(요청 1번) 쓰기 전 값이 화면에 남았다.
-  it.fails("쓰기가 끝난 뒤의 GET은 쓰기 전에 나간 같은 GET에 합류하지 않는다", async () => {
+  // 수정 전에는 쓰기 뒤의 다시 읽기가 쓰기 전에 나간 같은 GET의 약속을 그대로 받아(요청 1번) 쓰기 전 값이 화면에 남았다(재현 커밋에서는 it.fails).
+  it("쓰기가 끝난 뒤의 GET은 쓰기 전에 나간 같은 GET에 합류하지 않는다", async () => {
     const gets = stubFetch();
 
     const before = apiGetShared<{ mode: string }>("/api/qa1008/state");
@@ -232,7 +232,7 @@ describe("QA-1008 쓰기 뒤의 공유 GET", () => {
     await expect(after).resolves.toEqual({ mode: "LIVE" });
   });
 
-  it.fails("실패한 쓰기 뒤에도 새로 읽는다 — 서버가 처리했을 수 있다", async () => {
+  it("실패한 쓰기 뒤에도 새로 읽는다 — 서버가 처리했을 수 있다", async () => {
     const gets = stubFetch(500);
 
     const before = apiGetShared("/api/qa1008/list");

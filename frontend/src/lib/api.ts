@@ -86,10 +86,30 @@ export class NetworkError extends ApiError {
   }
 }
 
+/**
+ * 쓰기 차례 — GET이 아닌 요청이 끝날 때마다(성공·실패·시간 초과 모두 — 서버가 처리했을 수 있음) 1 올립니다. 공유 GET(apiGetShared)의 묶는 열쇠에
+ * 넣어, 쓰기 뒤에 시작한 GET이 쓰기 전에 나간 같은 GET에 합류하지 않게 합니다(QA-1008 — 합류하면 성공 뒤 다시 읽기가 쓰기 전 응답을 받아 옛 값이
+ * 화면에 남았습니다). 같은 차례 안의 동시 GET은 그대로 한 번만 나갑니다.
+ */
+let writeEpoch = 0;
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
   timeoutMs = 0,
+): Promise<T> {
+  const write = (init.method ?? "GET").toUpperCase() !== "GET";
+  try {
+    return await send<T>(path, init, timeoutMs);
+  } finally {
+    if (write) writeEpoch += 1;
+  }
+}
+
+async function send<T>(
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
 ): Promise<T> {
   // 시간 제한은 호출자의 signal과 별개의 컨트롤러로 겁니다. 호출자가 취소한 것
   // (화면 이동 등 — 조용히 무시해야 함)과 시간 초과(오류로 보여야 함)를 구분하려고요.
@@ -180,19 +200,22 @@ export function apiGet<T>(path: string, signal?: AbortSignal, timeoutMs = 0): Pr
   return request<T>(path, { method: "GET", signal }, timeoutMs);
 }
 
+/** 묶는 열쇠 = `쓰기 차례|시간 한도|경로` — 경로에 '|'가 있어도 앞의 두 칸만 떼어 냅니다. */
 const sharedGet = createSharedFetcher<unknown>((key) => {
-  const separator = key.indexOf("|");
-  return apiGet(key.slice(separator + 1), undefined, Number(key.slice(0, separator)));
+  const first = key.indexOf("|");
+  const second = key.indexOf("|", first + 1);
+  return apiGet(key.slice(second + 1), undefined, Number(key.slice(first + 1, second)));
 });
 
 /**
- * 진행 중인 같은 GET이 있으면 그 결과를 함께 씁니다(lib/sharedRequest 설명 참고).
+ * 진행 중인 같은 GET이 있으면 그 결과를 함께 씁니다(lib/sharedRequest 설명 참고). 다만 그 GET이 나간 뒤 쓰기(GET이 아닌 요청)가 끝났으면 함께 쓰지
+ * 않고 새로 요청합니다(QA-1008 — 쓰기 전 응답일 수 있음). 앞 요청의 응답이 늦게 와도 받는 쪽(useApi)이 앞 읽기를 끊어 버립니다.
  *
  * 취소 신호를 받지 않습니다 — 요청은 다른 쪽을 위해 끝까지 갑니다. 받는 쪽이 자기
  * 취소 여부를 보고 결과를 버리세요(useApi가 그렇게 합니다).
  */
 export function apiGetShared<T>(path: string, timeoutMs = 0): Promise<T> {
-  return sharedGet(`${timeoutMs}|${path}`) as Promise<T>;
+  return sharedGet(`${writeEpoch}|${timeoutMs}|${path}`) as Promise<T>;
 }
 
 export function apiDelete<T>(path: string): Promise<T> {
