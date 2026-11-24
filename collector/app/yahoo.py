@@ -7,9 +7,10 @@ yfinance는 자기 curl_cffi 세션(프로세스에 하나 — ``yfinance.data.Y
 요청이 폴백마다 되풀이돼, 예산 15초인 호출이 130초(매크로 카드 4장은 400초) 걸렸고 태스크는 상한 뒤에도 좀비로 남았습니다.
 
 1) 예산 — 그 싱글턴의 세션 자리에 :class:`BudgetedSession`을 넣습니다(``yf.download``에는 :func:`session`을 넘겨야 그 자리가 유지됨).
-   요청마다 지금 태스크의 남은 시간(``http.time_left``)에서 ``http.RETRY_RESERVE_SECONDS``를 뺀 만큼으로 timeout을 줄이고, 그만큼(최소
-   ``http.MIN_REQUEST_TIMEOUT``)도 남지 않았으면 보내지 않고 바로 실패합니다(:class:`YahooBudgetExhausted`). 태스크 밖(/live/*·종목
-   상세 — 예산 없음)은 timeout을 줄이지 않습니다.
+   요청마다 지금 태스크의 남은 시간(``http.time_left``)에서 남김(``http.reserve_seconds`` — 태스크 ``RETRY_RESERVE_SECONDS``)을 뺀 만큼으로
+   timeout을 줄이고, 그만큼(최소 ``http.MIN_REQUEST_TIMEOUT``)도 남지 않았으면 보내지 않고 바로 실패합니다(:class:`YahooBudgetExhausted`).
+   화면이 열 때의 조회(/live/quote·/live/news — ``http.run_with_budget``, QA-993)도 같은 가드라 요청 하나 예산 안에서 같은 일을 하고(남김은 그 가드의
+   ``LIVE_RESERVE_SECONDS``), 가드가 없는 경로는 timeout을 줄이지 않습니다.
 2) 다운로드 스레드 — ``yf.download(threads=True)``는 multitasking 라이브러리로 종목마다 스레드를 따로 띄워, contextvars(태스크 예산)가
    넘어가지 않았습니다. 그 풀의 스레드 종류를 '만든 쪽의 contextvars를 복사해 그 안에서 도는 스레드'로 바꿉니다(순서대로 받게
    ``threads=False``로 바꾸면 종목 수만큼 느려져 쓰지 않음). 그 풀의 동시 실행 자리(프로세스에 하나 — cpu_count, 운영 서버 2자리)도
@@ -93,7 +94,7 @@ def _closed_message(left: float, head: str | None = None) -> str:
 
 
 def _budget_message(left: float) -> str:
-    return f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 Yahoo 요청을 보내지 않음"
+    return f"시간 예산이 {max(left, 0.0):.0f}초 남아 Yahoo 요청을 보내지 않음"
 
 
 def _closed_state() -> tuple[float, str] | None:
@@ -123,7 +124,7 @@ def closed_reason() -> str | None:
 def _budget_left_if_short() -> float | None:
     """지금 태스크의 예산이 요청 하나도 못 보낼 만큼이면 그 남은 초, 아니면(또는 태스크 밖이면) None."""
     left = http.time_left()
-    if left is not None and left - http.RETRY_RESERVE_SECONDS < http.MIN_REQUEST_TIMEOUT:
+    if left is not None and left - http.reserve_seconds() < http.MIN_REQUEST_TIMEOUT:
         return left
     return None
 
@@ -229,7 +230,7 @@ class BudgetedSession(curl_requests.Session):
         clamped = False
         left = http.time_left()
         if left is not None:
-            allowed = left - http.RETRY_RESERVE_SECONDS
+            allowed = left - http.reserve_seconds()
             if allowed < http.MIN_REQUEST_TIMEOUT:
                 raise YahooBudgetExhausted(_budget_message(left))
             kwargs["timeout"], clamped = _fit(kwargs.get("timeout", self.timeout), self.timeout, allowed)
@@ -269,7 +270,7 @@ class _ContextThread(threading.Thread):
 
 class _BudgetedSlots:
     """
-    multitasking 풀의 세마포어(``with pool:``)를 감쌉니다 — 태스크 안의 종목 스레드는 남은 예산(− RETRY_RESERVE_SECONDS)만큼만 자리를
+    multitasking 풀의 세마포어(``with pool:``)를 감쌉니다 — 태스크 안의 종목 스레드는 남은 예산(− 남김, ``http.reserve_seconds``)만큼만 자리를
     기다리고, 그래도 자리가 없으면 자리 없이 들어갑니다(모듈 설명 2). 태스크 밖(예산 없음)은 원래처럼 자리가 날 때까지 기다립니다.
     """
 
@@ -282,7 +283,7 @@ class _BudgetedSlots:
         if left is None:
             got = self._inner.acquire()
         else:
-            got = self._inner.acquire(timeout=max(0.0, left - http.RETRY_RESERVE_SECONDS))
+            got = self._inner.acquire(timeout=max(0.0, left - http.reserve_seconds()))
         stack = getattr(self._held, "stack", None)
         if stack is None:
             stack = self._held.stack = []

@@ -7,7 +7,7 @@ tests/test_live_budget.py
      timeout 10초로 출처 하나에 약 31초, 뉴스는 출처·질의가 둘이면 두 배였습니다.
   2. 예산 안에서는 다시 보내지 않아(다음 시도가 예산 안에 끝나지 않음) 먹통 출처에 보내는 요청이 늘지 않습니다.
   3. 출처가 여럿이면 예산을 앞에서부터 나눠 쓰고, 먼저 받은 것은 지금처럼 돌려줍니다(뉴스 — 네이버가 먹통이어도 구글 뉴스는 받음).
-  4. 공용 세션 밖의 호출(yfinance)은 within_budget으로 예산 안에서만 기다리고, 넘으면 BudgetExceeded('응답 없음').
+  4. yfinance(공용 세션 밖)도 app.yahoo의 예산 세션이 같은 가드를 봐 예산 안에서 보내고 끝납니다 — 남김은 화면 조회 값(0.5초)이라 10초 예산에서도 보냅니다.
   5. 출처가 바로 답하면 결과는 예산을 걸지 않았을 때와 같습니다.
 외부 네트워크에 나가지 않습니다 — 127.0.0.1에 띄운 먹통 서버와 응답 서버만 씁니다. 시험이 짧게 끝나게 예산·출처 timeout을 줄여 씁니다.
 """
@@ -20,11 +20,13 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 
 from app import http as app_http
 from app import main
 from app.services import detail
+from tests.test_yahoo_budget import blackhole  # noqa: F401 — 무응답 프록시 fixture(yfinance 설정·환경변수에 걸고 끝에 되돌림)
 
 BUDGET = 3.0          # 시험용 예산(초) — 운영은 app.http.LIVE_BUDGET_SECONDS(10초)
 SLACK = 1.5           # 예산 + 남김(0.5초) 위로 허용하는 여유(시험 기계의 흔들림)
@@ -119,7 +121,6 @@ def client(monkeypatch):
     return TestClient(main.app, raise_server_exceptions=False)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-993 재현 — 예산이 없어 공용 세션의 재시도 2회 × timeout만큼 붙잡힘(고친 뒤 뺌)")
 def test_QA993_국내_시세는_네이버가_먹통이어도_예산_안에_받지_못함으로_끝난다(client, hang, monkeypatch):
     monkeypatch.setattr(detail, "NAVER_API", hang.base + "/api")
     started = time.monotonic()
@@ -133,7 +134,6 @@ def test_QA993_국내_시세는_네이버가_먹통이어도_예산_안에_받�
     assert hang.accepted == 1, "예산 안에서는 다시 보내지 않음(먹통 출처에 요청이 늘지 않음)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-993 재현 — 예산이 없어 공용 세션의 재시도 2회 × timeout만큼 붙잡힘(고친 뒤 뺌)")
 def test_뉴스는_앞_출처가_먹통이어도_예산_안에_끝나고_뒤_출처에서_받은_것을_돌려준다(client, hang, answer, monkeypatch):
     monkeypatch.setattr(detail, "NAVER_API", hang.base + "/api")
     monkeypatch.setattr(detail, "GOOGLE_NEWS_RSS", answer + "/rss")
@@ -145,3 +145,47 @@ def test_뉴스는_앞_출처가_먹통이어도_예산_안에_끝나고_뒤_출
     assert took < BUDGET + SLACK, f"{took:.1f}초"
     assert len(body["items"]) == 1 and body["items"][0]["title"].startswith("가짜 기사"), "먼저(뒤 출처에서) 받은 것은 그대로"
     assert "네이버 증권" in body["errors"], "먹통 출처는 출처별 실패로 남음"
+
+
+def test_다음_장중_수급도_예산_안에_지금의_실패_꼴로_끝난다(client, hang, monkeypatch):
+    from app.services import krx
+    monkeypatch.setattr(krx, "DAUM_FUTURES_TIMES_URL", hang.base + "/api/investor/future/times")
+    started = time.monotonic()
+    res = client.get("/live/daum-intraday?minutes=30")
+    took = time.monotonic() - started
+
+    body = res.json()
+    assert body["available"] is False and body["error"]
+    assert took < BUDGET + SLACK, f"{took:.1f}초"
+
+
+def test_예산을_건_공용_세션_요청은_timeout을_남은_예산에_맞춰_줄이고_다시_보내지_않는다(hang):
+    started = time.monotonic()
+    with pytest.raises(requests.RequestException):
+        app_http.run_with_budget(2.0, lambda: app_http.get_session().get(hang.base + "/x", timeout=10))
+    assert time.monotonic() - started < 2.0 + SLACK
+    assert hang.accepted == 1
+
+
+def test_Yahoo_시세도_같은_예산_안에서_보내고_끝난다(blackhole):  # noqa: F811 — 가져온 fixture를 인자로 받음
+    """
+    yfinance는 공용 세션 밖이지만 app.yahoo의 예산 세션(QA-255)이 같은 가드를 봅니다. 화면 조회의 남김(0.5초)을 써야 합니다 — 태스크 남김(10초)을 쓰면
+    10초 예산에서는 Yahoo에 아예 보내지 않고 늘 '받지 못함'이 됩니다(고치는 중에 QA에서 본 회귀).
+    """
+    started = time.monotonic()
+    result = app_http.run_with_budget(BUDGET, lambda: detail.quote("us", "NVDA"))
+    elapsed = time.monotonic() - started
+
+    assert blackhole.accepted > 0, "예산 안이면 Yahoo로 보냄(먹통 프록시가 받음)"
+    assert elapsed < BUDGET + SLACK, f"{elapsed:.1f}초"
+    assert result["price"] is None and result["error"]
+
+
+def test_출처가_바로_답하면_예산을_건_결과는_걸지_않은_결과와_같다(answer, monkeypatch):
+    monkeypatch.setattr(detail, "NAVER_API", answer + "/api")
+    plain = detail.quote("kr", "005930")
+    detail.reset_cache()
+    budgeted = app_http.run_with_budget(BUDGET, lambda: detail.quote("kr", "005930"))
+    plain.pop("fetchedAt")
+    budgeted.pop("fetchedAt")
+    assert budgeted == plain

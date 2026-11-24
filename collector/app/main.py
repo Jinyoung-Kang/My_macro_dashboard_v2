@@ -38,7 +38,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import catalog, krcalendar, logredact, settings, store, tasks, verification, webguard
+from . import catalog, http, krcalendar, logredact, settings, store, tasks, verification, webguard
 from .tasks import filings as filings_tasks
 from .services import (
     detail as detail_service,
@@ -695,9 +695,13 @@ def live_quote(
     code: str = Query(...),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """검색 상세 화면의 시세·핵심 지표·개요(미국·해외 Yahoo, 국내 네이버 — services/detail.py). 저장하지 않고 5분 캐시."""
+    """
+    검색 상세 화면의 시세·핵심 지표·개요(미국·해외 Yahoo, 국내 네이버 — services/detail.py). 저장하지 않고 5분 캐시.
+    출처가 응답하지 않아도 요청 하나에 http.LIVE_BUDGET_SECONDS 안에 '받지 못함'으로 끝납니다(QA-993).
+    """
     _check_token(x_service_token)
-    return detail_service.quote(*_detail_target(market, code))
+    target = _detail_target(market, code)
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: detail_service.quote(*target))
 
 
 @app.get("/live/prices")
@@ -730,7 +734,8 @@ def live_news(
         target_market, target_code = ((market or "").strip().lower() or None), None
     else:
         raise HTTPException(status_code=400, detail="code나 q 중 하나가 있어야 합니다.")
-    return detail_service.news(target_market, target_code, query)
+    # 출처가 여럿이어도 요청 하나에 http.LIVE_BUDGET_SECONDS — 앞 출처가 쓴 만큼 뒤 출처의 몫이 줄고, 먼저 받은 것은 그대로 돌려줍니다(QA-993).
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: detail_service.news(target_market, target_code, query))
 
 
 @app.get("/live/symbols")
@@ -877,9 +882,9 @@ def live_daum_intraday(
     minutes: int = Query(30, ge=5, le=180),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """장중 선물 수급 가속도. 1분 단위로 변하므로 저장하지 않습니다."""
+    """장중 선물 수급 가속도. 1분 단위로 변하므로 저장하지 않습니다. 다음이 응답하지 않아도 http.LIVE_BUDGET_SECONDS 안에 끝납니다(QA-993)."""
     _check_token(x_service_token)
-    return krx_service.collect_daum_intraday_acceleration(minutes)
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: krx_service.collect_daum_intraday_acceleration(minutes))
 
 
 # ==============================================================================

@@ -13,6 +13,8 @@ TCP/TLS 핸드셰이크를 매번 반복하고, 레이트리밋 대응(재시도
   3) 일시 오류만 다시 보냄 — 연결 오류·읽기 시간 초과·5xx·408. 그 밖의 4xx는 다시 보내지 않습니다(429는 1의 래치). 태스크
      안에서는 그 태스크의 시간 상한(TASK_DEADLINE_SECONDS)에 맞춰 요청 timeout을 줄이고, 다음 시도가 상한 안에 끝나지 않으면 더
      보내지 않습니다. 태스크가 안에서 연 스레드 풀은 :func:`bind_guard`로 묶어야 1·3이 그 태스크에 적히고 예산을 봅니다.
+     화면이 열 때 외부를 부르는 조회(/live/quote·/live/news·/live/daum-intraday)도 같은 가드로 요청 하나에 LIVE_BUDGET_SECONDS(10초)를 겁니다
+     (:func:`run_with_budget`, QA-993 — yfinance는 app.yahoo의 예산 세션이 같은 가드를 봄).
 증권사 Open API 세션(get_api_session)과 공공 API 세션(publicapi)은 이 층을 거치지 않습니다 — 부르는 쪽이 401·403·429를
 직접 다루고, 공공데이터포털의 403은 차단이 아니라 서비스별 키 승인 문제라 호스트를 닫으면 다른 서비스까지 막힙니다.
 """
@@ -164,6 +166,10 @@ TRANSIENT_STATUSES = (408, 500, 502, 503, 504)
 RETRY_RESERVE_SECONDS = 10.0
 # 예산이 거의 없을 때도 요청 timeout을 이보다 짧게 줄이지는 않습니다(0이나 음수 timeout은 requests가 받지 않음).
 MIN_REQUEST_TIMEOUT = 1.0
+# 화면이 열 때 외부를 부르는 조회(/live/quote·/live/news·/live/daum-intraday)의 요청 하나 전체 예산과, 그 안에서 남겨 둘 시간(QA-993 — 사용자 결정 D-3).
+# 태스크와 달리 끝난 뒤 저장·실행 기록이 없어 남김을 짧게 둡니다 — 출처가 응답하지 않아도 예산 + 남김 안에 '받지 못함'으로 끝납니다.
+LIVE_BUDGET_SECONDS = 10.0
+LIVE_RESERVE_SECONDS = 0.5
 
 
 # ==============================================================================
@@ -235,10 +241,13 @@ class TaskGuard:
     스레드의 거부는 사유 문자열의 표지(REJECTED_MARK)로만 판정되고, 그 재시도는 세션의 고정 횟수만 따릅니다.
     """
 
-    __slots__ = ("deadline", "_rejected", "_lock")
+    __slots__ = ("deadline", "reserve", "_rejected", "_lock")
 
-    def __init__(self, deadline: float | None = None) -> None:
+    def __init__(self, deadline: float | None = None, reserve: float | None = None) -> None:
         self.deadline = deadline
+        # 요청이 끝난 뒤에 남겨 둘 시간 — 없으면(태스크) 저장·실행 기록 몫 RETRY_RESERVE_SECONDS, 화면 조회(run_with_budget)는 LIVE_RESERVE_SECONDS.
+        # 태스크 값은 쓸 때 읽습니다(reserve_seconds — 시험이 그 상수를 바꿔 끼움).
+        self.reserve = reserve
         self._rejected: dict[str, str] = {}
         self._lock = threading.Lock()
 
@@ -289,9 +298,28 @@ def bind_guard(fn: Callable[..., _T]) -> Callable[..., _T]:
 
 
 def time_left() -> float | None:
-    """지금 도는 태스크의 남은 시간(초). 태스크 밖(/live/* 요청 경로, bind_guard로 묶지 않은 스레드)이면 None."""
+    """지금 도는 태스크(또는 :func:`run_with_budget`로 예산을 건 화면 조회)의 남은 시간(초). 가드가 없으면(bind_guard로 묶지 않은 스레드 등) None."""
     guard = _task_guard.get()
     return guard.time_left() if guard is not None else None
+
+
+def reserve_seconds() -> float:
+    """
+    지금 가드가 요청 뒤에 남길 시간 — 태스크(또는 가드 없음)는 RETRY_RESERVE_SECONDS, :func:`run_with_budget`의 화면 조회는 LIVE_RESERVE_SECONDS.
+    공용 세션의 예산 층과 yfinance의 예산 세션(app.yahoo — QA-255)이 함께 봅니다.
+    """
+    guard = _task_guard.get()
+    return RETRY_RESERVE_SECONDS if guard is None or guard.reserve is None else guard.reserve
+
+
+def run_with_budget(seconds: float, fn: Callable[[], _T]) -> _T:
+    """
+    화면 조회 하나에 시간 예산을 걸고 ``fn``을 부릅니다(QA-993) — 태스크와 같은 가드(:class:`TaskGuard`, 남김 LIVE_RESERVE_SECONDS)라 공용 세션의 요청 timeout이
+    남은 예산에 맞춰 줄고, 다음 시도가 예산 안에 끝나지 않으면 다시 보내지 않습니다(그래서 요청은 늘지 않음). 래치·호스트 간격은 그대로입니다.
+    yfinance도 같은 가드를 봅니다(app.yahoo의 예산 세션 — QA-255). 출처가 여럿이면 앞 출처가 쓴 만큼 뒤 출처의 몫이 줄어듭니다.
+    """
+    return run_guarded(TaskGuard(deadline=_now() + seconds, reserve=LIVE_RESERVE_SECONDS), fn)
+
 
 
 # 테스트가 시계·잠을 바꿔 끼우는 자리입니다(SEC 토큰 버킷은 이것을 쓰지 않습니다 — 동작 그대로).
@@ -498,7 +526,7 @@ class _BudgetRetry(Retry):
             except Exception:  # noqa: BLE001 — 읽을 수 없는 Retry-After는 urllib3가 다시 보낼 때 따로 다룹니다
                 pass
         attempt = _attempt_seconds.get() or 0.0
-        if left - wait - attempt < RETRY_RESERVE_SECONDS:
+        if left - wait - attempt < reserve_seconds():
             reason = error or ResponseError(f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 다시 보내지 않음")
             raise MaxRetryError(_pool, url, reason) from reason
         return retry
@@ -524,7 +552,7 @@ def _fit_timeout(timeout, left: float):
         connect = read = timeout
     else:
         return timeout, None
-    allowed = max(left - RETRY_RESERVE_SECONDS, MIN_REQUEST_TIMEOUT)
+    allowed = max(left - reserve_seconds(), MIN_REQUEST_TIMEOUT)
     connect = allowed if connect is None else float(connect)
     read = allowed if read is None else float(read)
     total = connect + read

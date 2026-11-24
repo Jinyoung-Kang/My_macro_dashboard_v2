@@ -127,4 +127,10 @@ class CollectorClientSearchLogTest {
     void suggestReadTimeoutIsShort() {
         assertThat(CollectorClient.SEARCH_SUGGEST_READ_TIMEOUT).isEqualTo(Duration.ofSeconds(10));
     }
+
+    @Test
+    @DisplayName("QA-993: 화면이 열 때 외부를 부르는 조회(시세·뉴스·KRX 장중)는 수집기 예산 10초 + 여유 5초만 기다린다 — 일반 호출의 90초가 아니다")
+    void liveFetchReadTimeoutIsBudgetPlusMargin() {
+        assertThat(CollectorClient.LIVE_FETCH_READ_TIMEOUT).isEqualTo(Duration.ofSeconds(15));
+    }
 }

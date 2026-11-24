@@ -66,12 +66,20 @@ public class CollectorClient {
      */
     static final Duration FAVORITE_COLLECT_READ_TIMEOUT = Duration.ofSeconds(65);
 
+    /**
+     * 화면이 열 때 수집기가 외부를 부르는 조회 셋({@link #liveQuote}·{@link #liveNews}·{@link #daumIntraday})의 읽기 타임아웃(QA-993) — 수집기가 요청 하나에
+     * 10초 예산(collector {@code app.http.LIVE_BUDGET_SECONDS} — 사용자 결정 D-3)을 걸고 그 안에 '받지 못함'으로 답하므로 예산 + 여유 5초. 일반 호출의 90초를
+     * 쓰면 수집기가 예산을 지키지 못하는 일(배포 차이 등)에 요청 스레드가 그만큼 묶입니다.
+     */
+    static final Duration LIVE_FETCH_READ_TIMEOUT = Duration.ofSeconds(15);
+
     private final RestClient client;
     private final RestClient controlClient;
     private final RestClient secLookupClient;
     private final RestClient favoriteCollectClient;
     private final RestClient accountClient;
     private final RestClient suggestClient;
+    private final RestClient liveFetchClient;
     private final AppProperties properties;
 
     public CollectorClient(AppProperties properties) {
@@ -80,6 +88,7 @@ public class CollectorClient {
         this.controlClient = build(properties, CONTROL_READ_TIMEOUT);
         this.accountClient = build(properties, ACCOUNT_READ_TIMEOUT);
         this.suggestClient = build(properties, SEARCH_SUGGEST_READ_TIMEOUT);
+        this.liveFetchClient = build(properties, LIVE_FETCH_READ_TIMEOUT);
         this.secLookupClient = build(properties, SEC13F_LOOKUP_READ_TIMEOUT);
         this.favoriteCollectClient = build(properties, FAVORITE_COLLECT_READ_TIMEOUT);
     }
@@ -225,17 +234,20 @@ public class CollectorClient {
                 .build(symbol), "/live/ticker");
     }
 
-    /** 검색 상세 화면의 시세·핵심 지표·개요(수집기 /live/quote — 미국·해외 Yahoo, 국내 네이버, 5분 캐시). */
+    /** 검색 상세 화면의 시세·핵심 지표·개요(수집기 /live/quote — 미국·해외 Yahoo, 국내 네이버, 5분 캐시). 읽기 한도 {@link #LIVE_FETCH_READ_TIMEOUT}. */
     public Optional<JsonNode> liveQuote(String market, String code) {
-        return get(uri -> uri.path("/live/quote")
+        return get(liveFetchClient, uri -> uri.path("/live/quote")
                 .queryParam("market", market)
                 .queryParam("code", code)
                 .build(), "/live/quote");
     }
 
-    /** 검색 상세 화면의 주요 뉴스(수집기 /live/news — 종목 뉴스 Yahoo·네이버 + 검색어 구글 뉴스 RSS, 15분 캐시). 빈 값은 보내지 않습니다. */
+    /**
+     * 검색 상세 화면의 주요 뉴스(수집기 /live/news — 종목 뉴스 Yahoo·네이버 + 검색어 구글 뉴스 RSS, 15분 캐시). 빈 값은 보내지 않습니다.
+     * 읽기 한도 {@link #LIVE_FETCH_READ_TIMEOUT}.
+     */
     public Optional<JsonNode> liveNews(String market, String code, String q) {
-        return get(uri -> uri.path("/live/news")
+        return get(liveFetchClient, uri -> uri.path("/live/news")
                 .queryParamIfPresent("market", Optional.ofNullable(market))
                 .queryParamIfPresent("code", Optional.ofNullable(code))
                 .queryParamIfPresent("q", Optional.ofNullable(q))
@@ -259,8 +271,9 @@ public class CollectorClient {
                 .build(items), "/live/prices");
     }
 
+    /** KRX 장중 선물 수급 가속도(수집기 /live/daum-intraday — 다음 금융, 저장하지 않음). 읽기 한도 {@link #LIVE_FETCH_READ_TIMEOUT}. */
     public Optional<JsonNode> daumIntraday(int minutes) {
-        return get(uri -> uri.path("/live/daum-intraday")
+        return get(liveFetchClient, uri -> uri.path("/live/daum-intraday")
                 .queryParam("minutes", minutes)
                 .build(), "/live/daum-intraday");
     }
