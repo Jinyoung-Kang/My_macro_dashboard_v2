@@ -242,3 +242,14 @@
   - 알림(해당만)은 늘지 않습니다. 확인 필요 건수가 늘 수 있습니다. 버전 목록이 없으면 견주지 않습니다(모든 공지가 확인 필요가 되지 않게).
   - 배포 전 대조: QA 씨앗(`scripts/qa/security-seed.sql` + `security-inventory.tsv`)의 다섯 공지는 판정이 그대로였고(바뀐 공지 0), 기존 시험 고정 자료에서 기대가 바뀐 시험도 없었습니다.
   - 지키는 방법(시험): `NoticeJudgeTest.UnlistedComponents`, `SecurityServiceTest.detailUnlistedComponent`.
+- **QA-998 실행 중인 커널은 그 커널 패키지의 원본 이름으로 추적기에 물음**: 실행 중인 커널(런타임 `kernel`)은 늘 원본 패키지 `linux`로 추적기에 물었습니다.
+  서버가 HWE·클라우드 커널(원본 `linux-hwe-6.x`·`linux-aws` 등)로 돌 때 추적기가 `linux`(GA 커널)를 '영향 없음'으로 적으면 그 커널만 영향받는 CVE의 공지가
+  무관(근거 TRACKER)이 됐습니다. 이제 `uname -r`에 맞는 커널 패키지(원본이 `linux`인 것이 있으면 그것 — 전과 같음, 없으면 `linux-modules-`·`linux-image-unsigned-`·
+  `linux-image-`·`linux-headers-` + `uname -r` 가운데 원본이 서명·메타·제한 모듈 묶음(`linux-signed…`·`linux-meta…`·`linux-restricted…`)이 아닌 첫 것)의
+  **실제 원본 이름**으로 묻고 그 패키지의 판을 설치 판으로 씁니다(`NoticeJudge.runningKernelSource`).
+  - 그 원본의 추적기 결과가 아직 없으면 '묻지 않음'(확인 필요 `DISTRO_NO_PENDING`)이고, 알림 작업이 그 열쇠를 물어볼 것에 올려 수집기가 다음 실행에서 묻습니다
+    (수집기는 CVE마다 받아 온 응답에서 그 패키지 이름을 찾으므로 고칠 것이 없음).
+  - 커널 패키지를 찾지 못하면(서명 이미지뿐인 목록 등) 전처럼 `linux`로 묻되, 그 '영향 없음'은 무관으로 내리지 않습니다(확인 필요). 고침·열림은 전과 같습니다.
+    계획은 '찾지 못하면 추적기 자리를 비움'이었는데, 그러면 지금 근거로 보이는 열림(`DISTRO_OPEN`)·고침 표시까지 사라져 이 범위로 좁혔습니다.
+  - GA 커널 서버(원본 `linux`)는 변화가 없습니다.
+  - 지키는 방법(시험): `NoticeJudgeTest.Trackers.runningKernelOtherSource`(대조: 원본이 `linux`면 무관 그대로), 기존 `runningKernel`.

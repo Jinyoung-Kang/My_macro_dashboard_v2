@@ -48,8 +48,9 @@ import java.util.regex.Pattern;
  *       덮임이 있으면 패치됨(추적기를 썼으면 {@code TRACKER}, 아니면 {@link Basis#CHANGELOG}), 모두 영향 없음이면 무관({@code TRACKER}),
  *       그 밖은 열림이 있으면 {@code DISTRO_OPEN}, 없으면 {@code DISTRO_NO_PENDING}. CVE를 읽지 못한 행이 있으면 변경 기록·추적기를 쓰지 않고
  *       {@code DISTRO_NO_PENDING}. 실행 중인 것만 보는 별칭({@link ProductAliases.Alias#runningOnly()} — 커널)은 런타임 구성 요소가 있으면
- *       그것만 변경 기록·추적기로 판정하고(추적기 패키지는 {@code linux}, 설치 판은 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인
- *       dpkg 패키지의 판) 패키지 줄은 보류(해당)에만 씁니다. 공지의 버전 표와 비교하지 않습니다.</li>
+ *       그것만 변경 기록·추적기로 판정하고(추적기 패키지는 실행 중인 커널 패키지의 원본 — 이름이 {@code -<uname -r>}로 끝나는 dpkg 패키지의 원본이
+ *       {@code linux}면 그것, 아니면 모듈·이미지 패키지의 원본({@code linux-hwe-6.x} 등), 설치 판은 그 패키지의 판. 찾지 못하면 {@code linux}로
+ *       묻되 '영향 없음'을 무관으로 내리지 않음 — QA-998) 패키지 줄은 보류(해당)에만 씁니다. 공지의 버전 표와 비교하지 않습니다.</li>
  *   <li>PPA 판 규칙({@link ProductAliases.Alias#distroUnlessPpa()} — Git, QA-979): 상류 번호 별칭의 dpkg 구성 요소는 판이 PPA면 그 상류 판으로
  *       아래 상류 번호 판정을, 배포판 판이면 위 배포판 패키지 판정을 받습니다.</li>
  *   <li>상류 번호({@link Kind#UPSTREAM}): 행마다 — 제조사가 다르면 {@code VENDOR_DIFFERS}, 영향 칸을 못 읽으면 {@code PARSE_FAILED},
@@ -479,9 +480,15 @@ public final class NoticeJudge {
                     }
                 }
                 case NOT_AFFECTED -> {
-                    notAffected++;
-                    byTracker++;
-                    verdict = Status.UNRELATED;
+                    if (t.sourceKnown()) {
+                        notAffected++;
+                        byTracker++;
+                        verdict = Status.UNRELATED;
+                    } else {
+                        // 실행 중인 커널의 원본 패키지를 모름 — linux(GA 커널)의 '영향 없음'이 이 커널의 답인지 알 수 없음(QA-998).
+                        unknown++;
+                        verdict = Status.CHECK;
+                    }
                 }
                 case OPEN -> {
                     open++;
@@ -516,13 +523,24 @@ public final class NoticeJudge {
     /**
      * 추적기에 물을 자리 — 배포판·스위트(그 구역의 os)·원본 패키지와 견줄 설치 판.
      *
-     * @param installed 견줄 설치 판(실행 중인 커널은 그 판의 {@code linux} 원본 dpkg 패키지 판, 찾지 못하면 {@code null} — 고친 판과 견줄 수 없음)
+     * @param installed   견줄 설치 판(실행 중인 커널은 그 판의 커널 원본 dpkg 패키지 판, 찾지 못하면 {@code null} — 고친 판과 견줄 수 없음)
+     * @param sourceKnown 물을 원본 패키지가 이 구성 요소의 것임을 아는지 — 실행 중인 커널의 패키지를 찾지 못해 {@code linux}로 어림한 자리만
+     *                    {@code false}(그때 추적기의 '영향 없음'은 무관으로 내리지 않음 — QA-998)
      */
-    private record TrackerTarget(String distro, String suite, String pkg, DistroVersion.Scheme scheme, String installed) {
+    private record TrackerTarget(String distro, String suite, String pkg, DistroVersion.Scheme scheme, String installed,
+                                 boolean sourceKnown) {
     }
 
-    /** 추적기에 묻는 실행 중인 커널의 원본 패키지 이름(Ubuntu·Debian 추적기의 커널 항목). */
+    /** 추적기에 묻는 실행 중인 커널의 원본 패키지 이름(Ubuntu·Debian 추적기의 GA 커널 항목). */
     static final String KERNEL_SOURCE = "linux";
+    /**
+     * 실행 중인 커널의 원본을 정하는 dpkg 패키지 이름의 머리(앞에서부터) — {@code <머리><uname -r>}. 모듈·서명 전 이미지·이미지·헤더 순서입니다
+     * (Ubuntu의 이미지 패키지는 원본이 서명 패키지({@code linux-signed…})라 모듈이 먼저).
+     */
+    private static final List<String> KERNEL_PACKAGE_PREFIXES = List.of("linux-modules-", "linux-image-unsigned-", "linux-image-",
+            "linux-headers-");
+    /** 커널 원본이 아닌 원본 패키지 — 서명·메타·제한 모듈 묶음(추적기는 이 이름으로 CVE를 적지 않음). */
+    private static final Pattern NOT_KERNEL_SOURCE = Pattern.compile("linux-(?:signed|meta|restricted)(?:-.*)?");
 
     /**
      * 그 구성 요소를 추적기에 물을 수 있으면 그 자리 — 구역의 os를 알고 배포판이 ubuntu·debian·alpine이며, 구성 요소의 종류가 그 배포판의 것
@@ -541,12 +559,21 @@ public final class NoticeJudge {
         }
         String pkg;
         String installed;
+        boolean sourceKnown = true;
         if (ProductAliases.ECO_RUNTIME.equals(c.ecosystem())) {
             if (scheme.get() != DistroVersion.Scheme.DPKG || !"kernel".equals(c.name())) {
                 return Optional.empty();
             }
-            pkg = KERNEL_SOURCE;
-            installed = runningKernelPackage(c, inventory).orElse(null);
+            // 실행 중인 커널의 실제 원본 패키지로 묻습니다(QA-998) — HWE·클라우드 커널(linux-hwe-6.x·linux-aws 등)에 linux(GA 커널)의 결과를 쓰지 않게.
+            Optional<Component> own = runningKernelSource(c, inventory);
+            if (own.isPresent()) {
+                pkg = own.get().sourcePackageName().orElseThrow();
+                installed = own.get().version();
+            } else {
+                pkg = KERNEL_SOURCE;
+                installed = null;
+                sourceKnown = false;
+            }
         } else {
             String eco = scheme.get() == DistroVersion.Scheme.DPKG ? ProductAliases.ECO_DPKG : ProductAliases.ECO_APK;
             if (!eco.equals(c.ecosystem())) {
@@ -558,22 +585,43 @@ public final class NoticeJudge {
         if (!EnvInventory.PACKAGE.matcher(pkg).matches()) {
             return Optional.empty();
         }
-        return Optional.of(new TrackerTarget(distro.get(), suite.get(), pkg, scheme.get(), installed));
+        return Optional.of(new TrackerTarget(distro.get(), suite.get(), pkg, scheme.get(), installed, sourceKnown));
     }
 
-    /** 실행 중인 커널({@code uname -r})의 패키지 판 — 같은 구역의 dpkg 구성 요소 가운데 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인 것. */
-    static Optional<String> runningKernelPackage(Component kernel, EnvInventory inventory) {
+    /**
+     * 실행 중인 커널({@code uname -r})의 원본을 정하는 dpkg 패키지 — 같은 구역에서 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인 것이
+     * 있으면 그것(전과 같음), 없으면 커널 패키지({@link #KERNEL_PACKAGE_PREFIXES} + {@code uname -r}) 가운데 원본이 서명·메타·제한 모듈 묶음이
+     * 아닌 첫 것(그 원본 이름이 추적기에 물을 패키지). 찾지 못하면 빈 값.
+     */
+    static Optional<Component> runningKernelSource(Component kernel, EnvInventory inventory) {
         if (kernel.version().isBlank()) {
             return Optional.empty();
         }
         String suffix = "-" + kernel.version();
+        List<Component> packages = new ArrayList<>();
         for (Component c : inventory.components()) {
             if (kernel.source().equals(c.source()) && ProductAliases.ECO_DPKG.equals(c.ecosystem()) && c.name().endsWith(suffix)
-                    && c.sourcePackageName().filter(KERNEL_SOURCE::equals).isPresent()) {
-                return Optional.of(c.version());
+                    && c.sourcePackageName().isPresent()) {
+                if (KERNEL_SOURCE.equals(c.sourcePackageName().get())) {
+                    return Optional.of(c);
+                }
+                packages.add(c);
+            }
+        }
+        for (String prefix : KERNEL_PACKAGE_PREFIXES) {
+            for (Component c : packages) {
+                if (c.name().equals(prefix + kernel.version()) && !NOT_KERNEL_SOURCE.matcher(c.sourcePackageName().get()).matches()) {
+                    return Optional.of(c);
+                }
             }
         }
         return Optional.empty();
+    }
+
+    /** 실행 중인 커널({@code uname -r})의 패키지 판 — 같은 구역의 dpkg 구성 요소 가운데 이름이 {@code -<uname -r>}로 끝나고 원본이 {@code linux}인 것. */
+    static Optional<String> runningKernelPackage(Component kernel, EnvInventory inventory) {
+        return runningKernelSource(kernel, inventory).filter(c -> KERNEL_SOURCE.equals(c.sourcePackageName().orElse(null)))
+                .map(Component::version);
     }
 
     private static boolean pendingSecurity(Component c, EnvInventory inventory) {

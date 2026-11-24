@@ -145,7 +145,8 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
      *
      * @param distro 배포판(ubuntu·debian·alpine — 그 구역의 os-release ID)
      * @param suite  스위트(Ubuntu·Debian은 코드명, Alpine은 {@code v} + 앞 두 마디)
-     * @param pkg    물은 원본 패키지(dpkg {@code source:Package}·apk {@code o:}, 실행 중인 커널은 {@code linux})
+     * @param pkg    물은 원본 패키지(dpkg {@code source:Package}·apk {@code o:}, 실행 중인 커널은 그 커널 패키지의 원본 — {@code linux}·
+     *               {@code linux-hwe-6.x} 등, QA-998)
      * @param cves   CVE마다 상태(공지 표의 그 제품 행 순서)
      */
     public record Tracker(String distro, String suite, String pkg, List<TrackerCve> cves) {

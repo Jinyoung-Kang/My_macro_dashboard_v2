@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -1119,13 +1118,12 @@ class NoticeJudgeTest {
             assertThat(unknown.reasons()).containsExactly(Reason.DISTRO_NO_PENDING);
             assertThat(unknown.matches()).singleElement().satisfies(m -> assertThat(m.tracker().cves()).singleElement()
                     .satisfies(c -> assertThat(c.status()).isEqualTo(TrackerStatus.FIXED)));
-            // 열림·영향 없음은 설치 판 없이도 씀.
+            // 열림은 설치 판 없이도 씀. 영향 없음은 실행 커널의 원본이 그 패키지일 때만 씀(QA-998 — 아래 runningKernelOtherSource).
             Verdict open = judge(kernelRows, withTracker(noModules, "ubuntu", SUITE, "linux", "CVE-2099-7777", TrackerStatus.OPEN, null));
             assertThat(open.reasons()).containsExactly(Reason.DISTRO_OPEN);
         }
 
         @Test
-        @Disabled("QA-998 — 수정 커밋에서 표시를 뗀다")
         @DisplayName("QA-998 실행 중인 커널의 원본 패키지가 linux가 아니면(HWE·클라우드 커널) 그 원본 이름으로 묻고, 추적기의 linux '영향 없음'으로 무관이 되지 않음")
         void runningKernelOtherSource() {
             Component running = comp("host", "runtime", "kernel", "9.11.0-29-fake");
