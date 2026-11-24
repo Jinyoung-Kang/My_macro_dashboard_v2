@@ -37,6 +37,7 @@ import {
   sideLabel,
   STOP_GUIDE,
   stopOnlyText,
+  stopsPendingFirst,
   stopsWaitingText,
   symbolText,
   targetClock,
@@ -580,7 +581,7 @@ function StartedBody({
                 </Button>
               </div>
             )}
-            <IsaStopInstructionsTable rows={stops} onConfirm={(row) => onConfirmStops([row])} onSkip={onSkipStop} disabled={busy} />
+            <IsaStopInstructionsTable rows={stopsPendingFirst(stops)} onConfirm={(row) => onConfirmStops([row])} onSkip={onSkipStop} disabled={busy} />
             <p className="text-xs leading-relaxed text-text-3">{STOP_GUIDE}</p>
           </div>
         </Card>

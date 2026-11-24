@@ -274,7 +274,10 @@ const stopColumns = (
 /** 한 쪽의 줄 수 — 장중 스탑 매도 지시·매매 내역을 한 화면에 늘어놓지 않고 5줄씩(사용자 요청 2026-11-24). */
 export const ISA_PAGE_SIZE = 5;
 
-/** 장중 스탑 매도 지시(최근 30 — ADR 0033, 5줄씩 쪽 넘김) — 줄의 '확인'으로 잔고에 반영하고, 매매하지 않았으면 '건너뜀'(QA-990). */
+/**
+ * 장중 스탑 매도 지시(최근 30 — ADR 0033, 5줄씩 쪽 넘김) — 줄의 '확인'으로 잔고에 반영하고, 매매하지 않았으면 '건너뜀'(QA-990).
+ * 줄 차례는 부르는 쪽이 정합니다 — 대기 중인 줄이 첫 쪽에 오게(lib/isa stopsPendingFirst, QA-1027).
+ */
 export function IsaStopInstructionsTable({
   rows,
   onConfirm,

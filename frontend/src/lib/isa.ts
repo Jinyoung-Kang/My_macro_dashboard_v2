@@ -372,6 +372,15 @@ export function canConfirm(item: Pick<IsaInstructionItem, "status">): boolean {
   return item.status === "PLANNED";
 }
 
+/**
+ * 장중 스탑 지시 표의 줄 차례 — 대기 중(확인·건너뜀을 기다리는) 줄 먼저, 나머지는 받은 차례(서버가 번호 내림차순으로 줌) 그대로(QA-1027).
+ * 표는 5줄씩 쪽을 나눠, 오래된 대기 줄이 닫힌 줄 뒤(2쪽 이후)로 밀리면 지시 카드가 "아래에서 누르세요"라고 하는데 첫 쪽에 누를 줄이 없었습니다 —
+ * 그동안 다음 세션 지시도 만들어지지 않습니다(QA-990). 대기 줄끼리·닫힌 줄끼리의 차례는 바꾸지 않습니다.
+ */
+export function stopsPendingFirst<T extends Pick<IsaStopInstruction, "status">>(rows: readonly T[]): T[] {
+  return [...rows.filter((row) => canConfirm(row)), ...rows.filter((row) => !canConfirm(row))];
+}
+
 /** 장 중반·마감 전 확인 알림 안내(지시 표 아래). */
 export const MIDDAY_GUIDE =
   "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다. 그날 정규장 절반(보통 12:15)과 마감 30분 전(보통 15:00)까지 확인하지 않은 지시는 텔레그램으로 한 번씩 더 알립니다. 체결 값이 다르면 매매 내역의 '고치기'로 고치고, 잘못 눌렀으면 매매 내역에서 되돌리세요.";

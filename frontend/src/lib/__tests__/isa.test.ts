@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  stopsPendingFirst,
   buildApplyRequest,
   buildDirectTradeRequest,
   buildEditTradeRequest,
@@ -669,3 +670,19 @@ describe("매매 고치기의 시각(2026-11-24)", () => {
   });
 });
 
+
+describe("QA-1027 스탑 지시 표의 줄 차례", () => {
+  it("대기 중인 줄 먼저, 나머지는 받은 차례 그대로 — 대기 줄끼리의 차례도 그대로이고 받은 배열은 고치지 않는다", () => {
+    const rows = [
+      { id: 306, status: "CONFIRMED" }, { id: 305, status: "PLANNED" }, { id: 304, status: "SKIPPED" },
+      { id: 303, status: "CONFIRMED" }, { id: 300, status: "PLANNED" },
+    ];
+    const before = rows.map((row) => row.id);
+    expect(stopsPendingFirst(rows).map((row) => row.id)).toEqual([305, 300, 306, 304, 303]);
+    expect(rows.map((row) => row.id)).toEqual(before);
+    expect(stopsPendingFirst([])).toEqual([]);
+    // 모두 대기 중이거나 모두 닫혔으면 받은 차례 그대로.
+    expect(stopsPendingFirst([{ id: 1, status: "PLANNED" }, { id: 2, status: "PLANNED" }]).map((row) => row.id)).toEqual([1, 2]);
+    expect(stopsPendingFirst([{ id: 2, status: "CONFIRMED" }, { id: 1, status: "SKIPPED" }]).map((row) => row.id)).toEqual([2, 1]);
+  });
+});
