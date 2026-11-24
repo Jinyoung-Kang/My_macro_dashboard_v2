@@ -3,7 +3,7 @@
  *
  * 서버는 세션 없는 `POST /api/auth/logout`에 401을 줍니다(공개 경로가 아님). 수정 전에는 그 401도 다른 실패와 같은 "로그아웃 실패" 글만 남기고 로그인
  * 화면으로 가지 않았고, 수동 태스크 실행(useTaskRunner)은 401을 받아도 세션 만료를 알리지 않았습니다(useApi·useAsyncAction만 알림 — QA-044).
- * 로그인 모드(QA 스택 등)에서만 해당합니다.
+ * 로그인 모드(QA 스택 등)에서만 해당합니다. 'QA-1028:' 두 시험은 재현 커밋에서 it.fails였습니다.
  */
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
@@ -37,7 +37,7 @@ describe("useLogout", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it.fails("QA-1028: 세션이 이미 끝났으면(401) 실패 글 없이 로그인 화면으로 보낸다", async () => {
+  it("QA-1028: 세션이 이미 끝났으면(401) 실패 글 없이 로그인 화면으로 보낸다", async () => {
     vi.spyOn(auth, "logout").mockRejectedValue(new UnauthorizedError());
     const { result } = renderHook(() => useLogout());
 
@@ -64,7 +64,7 @@ describe("useTaskRunner", () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
       new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })));
 
-  it.fails("QA-1028: 실행 요청이 401이면 세션 만료로 알린다 — 레이아웃이 로그인으로 보낸다", async () => {
+  it("QA-1028: 실행 요청이 401이면 세션 만료로 알린다 — 레이아웃이 로그인으로 보낸다", async () => {
     stubStatus(401, { message: "로그인이 필요합니다." });
     const { result } = renderHook(() => ({ runner: useTaskRunner(() => {}), signal: useRefreshSignal() }), { wrapper });
 

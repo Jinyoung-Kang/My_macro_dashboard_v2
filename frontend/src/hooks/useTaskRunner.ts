@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { errorMessage, useMountedRef } from "@/hooks/useAsyncAction";
-import { apiGet, apiPost } from "@/lib/api";
+import { useRefreshSignal } from "@/hooks/useRefreshSignal";
+import { apiGet, apiPost, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { taskDoneMessage, waitForTaskRun, type TaskRunRow, type TaskTone } from "@/lib/taskRun";
 
@@ -26,6 +27,7 @@ export function useTaskRunner(onFinished: () => void) {
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<TaskMessageTone>("progress");
   const mounted = useMountedRef();
+  const { notifyUnauthorized } = useRefreshSignal();
 
   const runTask = async (taskName: string) => {
     setRunning(taskName);
@@ -51,6 +53,8 @@ export function useTaskRunner(onFinished: () => void) {
       // 개별 태스크 실행도 화면 전체를 갱신합니다. 이 태스크가 바꾼 스냅샷을 다른 메뉴도 보고 있을 수 있습니다.
       onFinished();
     } catch (err) {
+      // 세션이 끝났으면 화면 읽기(useApi)·단추 동작(useAsyncAction)과 같이 로그인 화면으로 보내게 알립니다(QA-1028 — 예전에는 글만 남음).
+      if (err instanceof UnauthorizedError) notifyUnauthorized();
       if (mounted.current) {
         setMessage(errorMessage(err, "실행에 실패했습니다."));
         setMessageTone("danger");

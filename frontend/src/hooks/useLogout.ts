@@ -6,6 +6,7 @@ import { auth } from "@/lib/api";
 
 /**
  * 로그아웃 — 세션을 끝내고 로그인 화면으로 보냅니다. 실패하면 삼키지 않고 글로 돌려줍니다(QA-051 — 삼키면 단추가 아무 반응 없이 끝나고 세션은 그대로).
+ * 다만 401(세션이 이미 끝남 — 12시간 만료·다른 탭에서 로그아웃)은 끝낼 세션이 없으니 성공과 같이 로그인 화면으로 보냅니다(QA-1028).
  * 더보기의 계정 영역(AccountBox)과 넓은 화면 상단바의 계정 메뉴(AccountMenu)가 같이 씁니다.
  */
 export function useLogout(): { logout: () => Promise<void>; error: string | null } {
@@ -18,6 +19,11 @@ export function useLogout(): { logout: () => Promise<void>; error: string | null
       await auth.logout();
       router.push("/login");
     } catch (err) {
+      // 401은 상태 칸으로 읽습니다(lib/api UnauthorizedError의 status — useApi의 errorStatus와 같은 방식, 클래스에 묶지 않음).
+      if (typeof err === "object" && err !== null && (err as { status?: unknown }).status === 401) {
+        router.push("/login");
+        return;
+      }
       // 짧은 결과 낱말 먼저(새로고침 실패 안내와 같은 꼴) — 넓은 화면 상단바 한 줄에서는 결과 낱말까지가 이 글의 하한입니다(FailureNotice, QA-547).
       setError(`로그아웃 실패 — ${err instanceof Error ? err.message : "다시 시도하세요"}`);
     }
