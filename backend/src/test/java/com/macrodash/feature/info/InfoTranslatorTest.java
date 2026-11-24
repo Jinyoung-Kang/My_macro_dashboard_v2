@@ -3,6 +3,7 @@ package com.macrodash.feature.info;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -157,6 +158,105 @@ class InfoTranslatorTest {
         verify(ai, never()).structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt());
         verify(gemini, never()).structured(anyString(), anyString(), anyString(), any(), anyInt());
         assertThat(shared.status()).containsEntry("usedCharsToday", 90L).containsEntry("dailyChars", 100L);
+    }
+
+    /** 하루 상한을 직접 들여다보는 번역기(엔진 claude) — 번역 표의 오늘 글자 수는 {@code store.put}이 넣은 원문 글자 수의 합. */
+    private InfoTranslator budgeted(InfoAiBudget budget, Clock clock) {
+        java.util.concurrent.atomic.AtomicLong stored = new java.util.concurrent.atomic.AtomicLong();
+        when(store.charsSince(any())).thenAnswer(call -> stored.get());
+        doAnswer(call -> {
+            if (saved.putIfAbsent(call.getArgument(0), call.getArgument(3)) == null) {
+                stored.addAndGet(call.<Integer>getArgument(2));
+            }
+            return null;
+        }).when(store).put(anyString(), anyString(), anyInt(), anyString(), anyString());
+        return new InfoTranslator(ai, gemini, store, budget, new ObjectMapper(), "claude", MODEL, GEMINI, LOWER, "low", 30, 20, clock);
+    }
+
+    @Test
+    @Disabled("QA-1021: 상한 검사와 세기가 따로라 함께 온 요청이 모두 검사를 지남")
+    @DisplayName("QA-1021: 상한 직전에 본문 번역 둘이 함께 오면 둘째는 BUDGET — 앞 호출이 끝나기 전에도 센다")
+    void concurrentBodiesShareTheBudget() throws Exception {
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        String one = "The first synthetic article says invented revenue rose.";
+        String two = "A second synthetic article says made-up margins fell.";
+        InfoAiBudget budget = new InfoAiBudget(store, one.length() + 10, clock);
+        InfoTranslator tight = budgeted(budget, clock);
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenAnswer(call -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            }
+            return ok("{\"ko\":\"번역\"}");
+        });
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<InfoTranslator.Body> first = pool.submit(() -> tight.body(one));
+            assertThat(entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+            InfoTranslator.Body second = tight.body(two);
+
+            assertThat(second.ok()).as("앞 호출이 엔진에 붙잡힌 동안 온 둘째").isFalse();
+            assertThat(second.error()).contains("오늘 번역량 상한");
+            assertThat(calls.get()).isEqualTo(1);
+            release.countDown();
+            assertThat(first.get(10, java.util.concurrent.TimeUnit.SECONDS).ok()).isTrue();
+            assertThat(budget.usedToday()).as("성공한 번역은 표가 셈 — 두 번 세지 않음").isEqualTo(one.length());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @Disabled("QA-1021: 모델을 불렀지만 표에 남지 않은 호출(형식 밖 응답·실패)을 상한에 세지 않음")
+    @DisplayName("QA-1021: 보냈지만 저장하지 못한 번역은 오늘 쓴 양에 남고, 요청이 나가지 않았으면(키 없음) 남지 않는다 — 제목·본문 모두")
+    void failedCallsCountTowardTheBudget() {
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        InfoAiBudget budget = new InfoAiBudget(store, 1_000_000, clock);
+        InfoTranslator counted = budgeted(budget, clock);
+        String text = "The Committee decided to maintain the target range.";
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(ok("형식 밖 응답"));
+        assertThat(counted.body(text).ok()).isFalse();
+        assertThat(budget.usedToday()).as("형식 밖 응답 — 보낸 글자").isEqualTo(text.length());
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(failed("RATE_LIMIT"));
+        assertThat(counted.titles(List.of("Fed holds rates")).errorKind()).isEqualTo("RATE_LIMIT");
+        assertThat(budget.usedToday()).as("실패한 제목 호출도").isEqualTo(text.length() + "Fed holds rates".length());
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(failed("NO_KEY"));
+        assertThat(counted.titles(List.of("Oil jumps")).errorKind()).isEqualTo("NO_KEY");
+        assertThat(counted.body("Another synthetic paragraph for the key check.").ok()).isFalse();
+        long before = text.length() + "Fed holds rates".length();
+        assertThat(budget.usedToday()).as("요청이 나가지 않음 — 돌려줌").isEqualTo(before);
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"금값 상승\"}]}"));
+        assertThat(counted.titles(List.of("Gold rises", "Yields slip")).ok()).isTrue();
+        assertThat(budget.usedToday()).as("응답에서 빠져 저장되지 않은 제목은 보낸 몫으로 남음(저장된 제목은 표가 셈)")
+                .isEqualTo(before + "Gold rises".length() + "Yields slip".length());
+    }
+
+    @Test
+    @DisplayName("QA-1021: 성공해 번역 표에 남은 글자는 표가 센다 — 오늘 쓴 양에 두 번 들지 않음(제목·본문)")
+    void storedTranslationsAreCountedOnce() {
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        InfoAiBudget budget = new InfoAiBudget(store, 1_000_000, clock);
+        InfoTranslator counted = budgeted(budget, clock);
+        String text = "The Committee decided to maintain the target range.";
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(ok("{\"ko\":\"번역\"}"));
+        assertThat(counted.body(text).ok()).isTrue();
+        assertThat(budget.usedToday()).isEqualTo(text.length());
+
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"연준, 금리 동결\"},{\"n\":2,\"ko\":\"유가 급등\"}]}"));
+        assertThat(counted.titles(List.of("Fed holds rates", "Oil jumps")).ok()).isTrue();
+        assertThat(budget.usedToday()).isEqualTo(text.length() + "Fed holds rates".length() + "Oil jumps".length());
     }
 
     @Test
