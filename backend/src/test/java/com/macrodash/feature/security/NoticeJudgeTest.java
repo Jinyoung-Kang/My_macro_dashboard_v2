@@ -15,10 +15,12 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
  * 공지 판정(ADR 0046 결정 6·9) — 네 판정·여덟 사유·최댓값·계열 규칙·※·제조사·배포판·버전 목록 없음.
@@ -174,6 +177,21 @@ class NoticeJudgeTest {
             Verdict aliased = judge(rows("OpenSSL|9.9.0 이상 9.9.20 미만|9.9.20"), inventory(ssl));
             assertThat(aliased.products()).extracting(ProductVerdict::aliasId).containsExactly("openssl");
         }
+    }
+
+    // ---- 판정 시간(QA-1002) ----
+
+    @Test
+    @Disabled("QA-1002 — 수정 커밋에서 표시를 뗀다")
+    @DisplayName("QA-1002 본문에 끊기지 않는 긴 영숫자 덩어리(2만 자)가 있어도 판정이 곧 끝남 — 이름 맞춤이 덩어리 길이의 제곱으로 늘지 않음")
+    void longUnbrokenChunkIsJudgedQuickly() {
+        String chunk = "a-".repeat(10_000);
+        SecurityNotice notice = new SecurityNotice(1L, "가짜 공지", Template.NO_TABLE, List.of(),
+                "가짜 개요 OpenSSH for Windows 가짜 줄 " + chunk + "-python 가짜 PostgreSQL 취약점");
+        Verdict v = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> NoticeJudge.judge(notice, List.of(), inventory(PG)));
+        // 결과는 그대로 — Windows 전용 구절의 OpenSSH와 '…-python' 꼬리는 맞지 않고, PostgreSQL만 본문 이름 맞춤.
+        assertThat(v.status()).isEqualTo(Status.CHECK);
+        assertThat(v.products()).extracting(ProductVerdict::aliasId).containsExactly("postgresql");
     }
 
     // ---- 네 판정 ----
