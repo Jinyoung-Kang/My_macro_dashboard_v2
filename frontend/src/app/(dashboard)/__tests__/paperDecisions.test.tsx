@@ -11,7 +11,7 @@
  *  - 개요의 신호 기관 카드는 그룹 A·그룹 B 목록과 신호 풀(그룹 배지·순위·기관 가중)
  *  - 게이트 카드는 "참고 — 구속하지 않음"
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -582,6 +582,37 @@ describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", (
     expect(run.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText(/Claude를 지금 부를까요/)).toBeNull();
     expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
+  // QA-1026: '실행한 계좌'와 '마지막 성공 결과'를 따로 쥐어, 규칙 계좌 실행(성공) 뒤 Claude 계좌의 실행을 보내면 응답 전부터 Claude 계좌 화면에
+  // 규칙 계좌의 결과 글이 떴습니다(실패하면 오류와 함께 남음).
+  it.fails("QA-1026: 규칙 계좌 실행 성공 뒤 Claude 계좌 실행을 보내는 동안·실패한 뒤 Claude 화면에 규칙 계좌의 결과 글이 없다", async () => {
+    const rulesResult = "2026-10-23 수동 결정 — 주문 없음 · 주문 0건 · 매도 신호 없음";
+    let failClaude: (error: unknown) => void = () => {};
+    api.apiPost.mockImplementation((_path: string, body: { book: string }) =>
+      body.book === "rules"
+        ? Promise.resolve({ ok: true, decision: decision(9, { kind: "MANUAL", status: "NO_TRADE", orderCount: 0, summary: "매도 신호 없음" }) })
+        : new Promise((_resolve, reject) => {
+          failClaude = reject;
+        }));
+    await openDecisionsTab();
+    await decisionLine("2026-10-23", "초기 결정");
+    fireEvent.click(screen.getByRole("button", { name: "지금 결정 실행" }));
+    expect(await screen.findByText(rulesResult)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude" } });
+    await waitFor(() => expect(screen.queryByText(rulesResult)).toBeNull());
+    fireEvent.click(await screen.findByRole("button", { name: "지금 결정 실행" }));
+    fireEvent.click(await screen.findByRole("button", { name: "결정 실행 확인" }));
+    // 보내는 동안 — 머리 동작과 확인 상자의 단추가 함께 '결정 중…'.
+    expect((await screen.findAllByRole("button", { name: /결정 중… \d+초/ })).length).toBeGreaterThan(0);
+    expect(api.apiPost).toHaveBeenLastCalledWith("/api/paper/run/decision", { book: "claude" });
+    // 응답 전 — 규칙 계좌의 결과가 Claude 계좌 화면에 보이면 안 됩니다.
+    expect(screen.queryByText(rulesResult)).toBeNull();
+
+    await act(async () => failClaude(new Error("오늘 수동 결정 한도를 다 썼습니다.")));
+    expect(await screen.findByText("오늘 수동 결정 한도를 다 썼습니다.")).toBeTruthy();
+    expect(screen.queryByText(rulesResult)).toBeNull();
   });
 
   it("주간 복기 보기에서는 머리에 계좌 고르기·결정 동작이 없다(복기는 계좌를 고르지 않음)", async () => {

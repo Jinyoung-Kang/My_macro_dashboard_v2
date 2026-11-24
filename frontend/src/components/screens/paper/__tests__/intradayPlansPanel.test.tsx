@@ -65,6 +65,32 @@ describe("장중 판단 패널의 확인 단계(QA-366)", () => {
   });
 });
 
+// QA-1026: '요청한 계좌'와 '마지막 성공 결과'를 따로 쥐어, 계좌1 예약(성공) 뒤 계좌2의 요청을 보내면 응답 전부터 계좌2 아래에 계좌1의 예약 글이 떴습니다.
+describe("QA-1026 — 다른 계좌에서 받은 예약 결과는 지금 보낸 계좌 아래에 보이지 않는다", () => {
+  beforeEach(() => {
+    api.apiPost.mockReset();
+  });
+  afterEach(cleanup);
+
+  it.fails("계좌1 예약 성공 뒤 계좌2의 요청을 보내는 동안 계좌2 아래에 계좌1의 예약 글이 없다", async () => {
+    api.apiPost.mockImplementation((_path: string, body: { book: string }) =>
+      body.book === "claude" ? Promise.resolve({ ok: true, planned: { slot: 1, atEt: "10:13", created: true } }) : new Promise(() => {}));
+    const { rerender } = render(<IntradayPlansPanel intraday={STATUS} book="claude" onChanged={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "지금 장중 판단 요청" }));
+    fireEvent.click(screen.getByRole("button", { name: "요청 확인" }));
+    expect(await screen.findByText(/1번째 장중 판단을 10:13 ET로 예약했습니다/)).not.toBeNull();
+
+    rerender(<IntradayPlansPanel intraday={STATUS} book="claude2" onChanged={() => {}} />);
+    expect(screen.queryByText(/장중 판단을 10:13 ET로 예약했습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "지금 장중 판단 요청" }));
+    fireEvent.click(screen.getByRole("button", { name: "요청 확인" }));
+    expect(api.apiPost.mock.calls.at(-1)?.[1]).toEqual({ book: "claude2" });
+    expect(await screen.findByRole("button", { name: "예약 중…" })).not.toBeNull();
+
+    expect(screen.queryByText(/장중 판단을 10:13 ET로 예약했습니다/)).toBeNull();
+  });
+});
+
 describe("장중 판단 패널의 계획 줄", () => {
   afterEach(cleanup);
 

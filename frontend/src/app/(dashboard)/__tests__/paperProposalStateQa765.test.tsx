@@ -6,7 +6,7 @@
  * 누르면 POST …/approve가 나갔습니다(검토 재현 — 654b3aa3). 개편 전에는 제안마다 `key={proposal.id}`로 따로 그려 상태가 섞이지 않았습니다.
  * 값은 모두 합성 값입니다.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -86,5 +86,44 @@ describe("QA-765 — 제안 검사 칸의 상태는 제안마다", () => {
     expect(within(second).queryByText(/이 제안\(#6\)을 승인할까요/)).toBeNull();
     expect((within(second).getByRole("button", { name: "제안 #6 승인" }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.apiPost).not.toHaveBeenCalled();
+  });
+});
+
+// QA-1026: 승인·거절의 '보낸 제안 번호'와 '마지막 성공 결과'를 따로 쥐어, 제안 #5를 거절(성공)한 뒤 #6의 거절을 보내면 응답 전부터 #6 칸에 #5의
+// "거절했습니다"가 떴고, #6이 실패하면 오류와 함께 남았습니다(useAsyncAction은 실패하거나 진행 중이어도 앞 결과를 남김).
+describe("QA-1026 — 다른 제안에서 받은 성공 결과는 지금 보낸 제안 아래에 보이지 않는다", () => {
+  it.fails("#5 거절 성공 뒤 #6 거절이 실패하면 #6 칸에는 오류만 — 보내는 동안에도 '거절했습니다'가 없다", async () => {
+    let failSecond: (error: unknown) => void = () => {};
+    api.apiPost.mockImplementation((path: string) =>
+      path === "/api/paper/framework/proposals/5/reject"
+        ? Promise.resolve({ ok: true })
+        : new Promise((_resolve, reject) => {
+          failSecond = reject;
+        }));
+    render(<FrameworkSection />);
+    const list = await screen.findByRole("list", { name: "제안 목록" });
+
+    fireEvent.click(within(list).getByRole("button", { name: /^#5 / }));
+    const first = await screen.findByRole("region", { name: "제안 목록 — 제안 #5" });
+    fireEvent.click(within(first).getByRole("button", { name: "제안 #5 거절" }));
+    fireEvent.click(within(first).getByRole("button", { name: "거절 확인" }));
+    expect(await within(first).findByText("거절했습니다 — 판은 그대로입니다.")).toBeTruthy();
+
+    fireEvent.click(within(list).getByRole("button", { name: /^#6 / }));
+    const second = await screen.findByRole("region", { name: "제안 목록 — 제안 #6" });
+    fireEvent.click(within(second).getByRole("button", { name: "제안 #6 거절" }));
+    fireEvent.click(within(second).getByRole("button", { name: "거절 확인" }));
+    expect(api.apiPost).toHaveBeenLastCalledWith("/api/paper/framework/proposals/6/reject");
+    // 응답 전 — #5의 결과가 #6 칸에 보이면 안 됩니다.
+    expect(within(second).queryByText(/거절했습니다/)).toBeNull();
+
+    await act(async () => failSecond(new Error("이미 결정된 제안입니다.")));
+    expect(await within(second).findByText("이미 결정된 제안입니다.")).toBeTruthy();
+    expect(within(second).queryByText(/거절했습니다/)).toBeNull();
+
+    // 대조: #5로 돌아가면 #5의 결과는 #5 칸에 그대로(마지막 성공 결과).
+    fireEvent.click(within(list).getByRole("button", { name: /^#5 / }));
+    const back = await screen.findByRole("region", { name: "제안 목록 — 제안 #5" });
+    expect(within(back).queryByText("이미 결정된 제안입니다.")).toBeNull();
   });
 });
