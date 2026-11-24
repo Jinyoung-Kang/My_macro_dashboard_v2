@@ -23,18 +23,21 @@ export function FavoritesEditDialog({
   defaultCiks,
   editor,
   trigger,
+  onRemoved,
 }: {
   favorites: readonly InstitutionFavoriteEntry[];
   /** 기본 12곳의 CIK — CIK로 넣은 줄이 이미 기본 목록인지 알림. */
   defaultCiks: readonly string[];
   editor: Sec13fFavoritesEditor;
   trigger: ReactElement;
+  /** 즐겨찾기를 지우는 데 성공하면 그 CIK로 부릅니다 — 화면이 지운 기관을 고른 채 두지 않게(QA-1031). */
+  onRemoved?: (cik: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen} title="13F 즐겨찾기 편집" size="lg" trigger={trigger}
       description="기본 12곳 밖의 13F 보고 기관을 더하고 지웁니다. 더한 기관은 13F 포트폴리오·기관 상세에 보이고, 모의 매매·AI 리포트에는 쓰지 않습니다.">
-      {open && <EditorBody favorites={favorites} defaultCiks={defaultCiks} editor={editor} />}
+      {open && <EditorBody favorites={favorites} defaultCiks={defaultCiks} editor={editor} onRemoved={onRemoved} />}
     </Dialog>
   );
 }
@@ -43,10 +46,12 @@ function EditorBody({
   favorites,
   defaultCiks,
   editor,
+  onRemoved,
 }: {
   favorites: readonly InstitutionFavoriteEntry[];
   defaultCiks: readonly string[];
   editor: Sec13fFavoritesEditor;
+  onRemoved?: (cik: string) => void;
 }) {
   const queryId = useId();
   const [query, setQuery] = useState("");
@@ -86,6 +91,9 @@ function EditorBody({
     event.preventDefault();
     if (editor.busy) return;
     setPicked(null);
+    // 찾기를 다시 하면 앞 결과(오류 문구·후보)를 함께 비웁니다 — CIK 갈래가 앞 오류 문구를, 잘못된 입력 갈래가 앞 후보를 남겼습니다(QA-1031).
+    editor.setMessage(null);
+    setCandidates(null);
     const kind = favoriteQueryKind(query);
     if (kind.kind === "cik") {
       setCandidates([{ cik: kind.cik, name: null, status: statusOf(kind.cik, favorites, defaultCiks) }]);
@@ -137,7 +145,10 @@ function EditorBody({
           <p className="text-sm text-text-2">13F-HR을 낸 기관 가운데 이 이름으로 시작하는 곳이 없습니다. 영문 이름 앞부분이나 CIK로 찾으세요.</p>
         ) : (
           <ul aria-label="찾은 기관" className="flex min-w-0 flex-col divide-y divide-border rounded-control border border-border">
-            {candidates.map((candidate) => (
+            {candidates.map((candidate) => {
+              // 표지는 그릴 때 지금 목록으로 다시 봅니다 — 찾은 뒤 즐겨찾기를 지워도 '즐겨찾기에 있음'이 남아 다시 고를 수 없었습니다(QA-1031).
+              const status = candidate.status === "default" ? "default" : statusOf(candidate.cik, favorites, defaultCiks);
+              return (
               <li key={candidate.cik} className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
                 <span className="flex min-w-0 flex-col">
                   <span className="break-keep font-medium text-text wrap-anywhere">{candidate.name ?? `CIK ${candidate.cik}`}</span>
@@ -146,8 +157,8 @@ function EditorBody({
                     {candidate.checked === undefined ? null : ` · ${latestText(candidate)}`}
                   </span>
                 </span>
-                {candidate.status ? (
-                  <Tag>{candidate.status === "default" ? "기본 12곳" : "즐겨찾기에 있음"}</Tag>
+                {status ? (
+                  <Tag>{status === "default" ? "기본 12곳" : "즐겨찾기에 있음"}</Tag>
                 ) : candidate.checked === true && !candidate.latest13F ? (
                   // 최근 공시 목록에 원본 13F-HR이 없으면 더해도 서버가 거절하므로 고르기를 두지 않습니다(QA-986).
                   <Tag>13F-HR 없음</Tag>
@@ -157,7 +168,8 @@ function EditorBody({
                   </Button>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )
       ) : null}
@@ -242,7 +254,8 @@ function EditorBody({
                       <Button type="submit" variant="primary" size="sm" busy={editor.busy}>
                         저장
                       </Button>
-                      <Button size="sm" onClick={() => closeEditing(favorite.cik)}>
+                      {/* 저장하는 동안에는 막습니다(다른 단추와 같은 규칙) — 취소하면 칸이 닫혀 저장 결과를 볼 자리가 사라졌습니다(QA-1031). */}
+                      <Button size="sm" onClick={() => closeEditing(favorite.cik)} busy={editor.busy}>
                         취소
                       </Button>
                     </span>
@@ -264,9 +277,12 @@ function EditorBody({
         busy={editor.busy}
         onConfirm={async () => {
           if (!removing) return;
-          const ok = await editor.remove(removing.cik);
+          const cik = removing.cik;
+          const ok = await editor.remove(cik);
+          // 성공·실패 모두 확인 창을 닫습니다 — 실패 사유는 아래 대화상자 본문(상태 줄)에 있어, 창이 열린 채면 가려졌습니다(QA-1031).
+          setRemoving(null);
           if (ok) {
-            setRemoving(null);
+            onRemoved?.(cik);
             // 지운 줄의 단추가 사라져 포커스가 몸통으로 떨어지지 않게 찾기 칸으로(확인 창이 닫힌 뒤).
             requestAnimationFrame(() => queryRef.current?.focus());
           }

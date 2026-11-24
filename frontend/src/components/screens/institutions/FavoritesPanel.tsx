@@ -21,6 +21,7 @@ export function FavoritesPanel({
   selected,
   onSelect,
   reload,
+  onRemoved,
 }: {
   favorites: readonly InstitutionFavoriteEntry[];
   defaultCiks: readonly string[];
@@ -28,6 +29,8 @@ export function FavoritesPanel({
   selected: string;
   onSelect: (cik: string) => void;
   reload: () => Promise<void> | void;
+  /** 편집 대화상자에서 즐겨찾기를 지우면 그 CIK로 부릅니다(QA-1031 — 지운 기관을 고르고 있었으면 화면이 기본 기관으로 되돌림). */
+  onRemoved?: (cik: string) => void;
 }) {
   const user = useSessionUser();
   const owner = isOwner(user);
@@ -46,6 +49,7 @@ export function FavoritesPanel({
             favorites={sorted}
             defaultCiks={defaultCiks}
             editor={editor}
+            onRemoved={onRemoved}
             trigger={
               <Button size="sm">
                 편집 <span className="sr-only">13F 즐겨찾기</span>

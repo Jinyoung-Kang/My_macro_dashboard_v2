@@ -4,6 +4,7 @@ import Link from "@/components/ui/IntentLink";
 import { useState } from "react";
 import { FilterList, type FilterListPendingRow, KpiStrip, Skeleton, SplitPane } from "@/components/patterns";
 import {
+  Banner,
   Callout,
   EmptyState,
   ErrorState,
@@ -34,6 +35,9 @@ import { PortfolioHoldingsPanel } from "@/components/screens/institutions/Portfo
 import { WeightHistoryPanels } from "@/components/screens/institutions/WeightHistoryPanels";
 import { FavoritesPanel } from "@/components/screens/institutions/FavoritesPanel";
 
+/** 처음 고르는 기관 — 버크셔 해서웨이(기본 12곳의 하나). 고른 즐겨찾기를 지우면 이 기관으로 되돌립니다(QA-1031). */
+const DEFAULT_CIK = "0001067983";
+
 /**
  * 기관 13F 포트폴리오 분석.
  *
@@ -42,11 +46,11 @@ import { FavoritesPanel } from "@/components/screens/institutions/FavoritesPanel
  */
 export default function InstitutionsPage() {
   const institutions = useApi<InstitutionsResponse>(endpoints.institution.institutions);
-  const [cik, setCik] = useState("0001067983");   // 버크셔 해서웨이
+  const [cik, setCik] = useState(DEFAULT_CIK);
   const [quarters, setQuarters] = useState("8");
   const [topN, setTopN] = useState("30");
 
-  const { data, loading, error, reload, refreshError, failedAt } = useApi<PortfolioResponse>(
+  const { data, loading, error, errorStatus, reload, refreshError, failedAt } = useApi<PortfolioResponse>(
     endpoints.institution.portfolio(cik, quarters, topN),
   );
   // 매크로 화면이 이미 수집하는 원/달러를 그대로 씁니다. 여기서 따로 받아 오면
@@ -76,6 +80,9 @@ export default function InstitutionsPage() {
   const kpis = portfolioKpis(data?.available ? data : null, usdKrw, PORTFOLIO_SOURCE);
   // 포트폴리오를 처음 읽는 동안(값도 앞선 실패도 없음)은 값 꼴의 KPI 자리, 실패 뒤 다시 읽는 동안은 '불러오는 중' 한 줄(QA-655와 같은 규칙).
   const portfolioFirstLoad = firstLoadPending({ data, loading, failedAt });
+  // 추적하지 않는 CIK(백엔드 400 — 지워진 즐겨찾기 등)는 다시 해도 같아, 오류 상자·다시 시도 대신 기관 상세의 안내(InstitutionDetailScreen
+  // UntrackedNotice — QA-584)와 같은 글을 그립니다(QA-1031).
+  const untracked = !data && errorStatus === 400;
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -148,6 +155,9 @@ export default function InstitutionsPage() {
                 selected={cik}
                 onSelect={setCik}
                 reload={institutions.reload}
+                onRemoved={(removed) => {
+                  if (removed === cik) setCik(DEFAULT_CIK);
+                }}
               />
             ) : null}
           </>
@@ -174,7 +184,14 @@ export default function InstitutionsPage() {
             ) : (
               <Loading label="13F 공시를 불러오는 중…" />
             ))}
-          {error && <ErrorState message={error} onRetry={reload} />}
+          {error &&
+            (untracked ? (
+              <Banner tone="info">
+                <p className="break-keep">이 대시보드가 추적하는 13F 기관이 아닙니다(CIK {cik}).</p>
+              </Banner>
+            ) : (
+              <ErrorState message={error} onRetry={reload} />
+            ))}
           {data && !data.available && (
             <Callout tone="warn">{data.error ?? data.message ?? "13F 데이터가 없습니다. 수집기의 weekly 작업을 실행하세요."}</Callout>
           )}

@@ -231,6 +231,7 @@ describe("13F 즐겨찾기 편집(운영자)", () => {
 
 // QA-1031: 13F 즐겨찾기 편집의 상태 잔류 넷 — (가) 지운 기관이 고른 채 남음(그 기관의 포트폴리오 400은 '추적하지 않는 기관' 안내 없이 오류 상자),
 // (나) 지우기 실패의 사유가 열린 확인 창에 가려짐, (다) 찾기를 다시 할 때 앞 오류 문구·앞 후보·'즐겨찾기에 있음' 표지가 남음, (라) 저장 중 '취소'가 눌림.
+// '가(대조)'를 뺀 여섯 시험은 재현 커밋에서 it.fails였습니다.
 describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
   const LIST_PATH = endpoints.institution.institutions;
   const berkshireReads = () => paths().filter((path) => path === endpoints.institution.portfolio(BERKSHIRE, "8", "30")).length;
@@ -241,7 +242,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     return screen.findByRole("dialog", { name: "13F 즐겨찾기 편집" });
   }
 
-  it.fails("가: 고른 즐겨찾기를 지우면 기본 기관으로 돌아가 그 포트폴리오를 읽는다", async () => {
+  it("가: 고른 즐겨찾기를 지우면 기본 기관으로 돌아가 그 포트폴리오를 읽는다", async () => {
     api.apiDelete.mockImplementation(async () => {
       reads[LIST_PATH] = { ...LIST, favorites: [] };
       return { ok: true, message: "즐겨찾기에서 지웠습니다." };
@@ -279,7 +280,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     expect(paths()).not.toContain(endpoints.institution.portfolio(FAV, "8", "30"));
   });
 
-  it.fails("가: 고른 기관의 포트폴리오가 400(추적하지 않는 기관)이면 오류 상자·다시 시도가 아니라 그 안내", async () => {
+  it("가: 고른 기관의 포트폴리오가 400(추적하지 않는 기관)이면 오류 상자·다시 시도가 아니라 그 안내", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path === endpoints.institution.portfolio(FAV, "8", "30")
         ? Promise.reject(new api.ApiError("추적하지 않는 기관 CIK입니다 — /api/sec13f/institutions 목록의 cik를 쓰세요.", 400))
@@ -293,7 +294,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
   });
 
-  it.fails("나: 지우기가 실패하면 확인 창을 닫아 대화상자 본문의 사유가 보인다", async () => {
+  it("나: 지우기가 실패하면 확인 창을 닫아 대화상자 본문의 사유가 보인다", async () => {
     api.apiDelete.mockRejectedValue(new api.ApiError("즐겨찾기를 지우지 못했습니다(가짜 500).", 500));
     renderAs(OWNER);
     const dialog = await openEditorHere();
@@ -309,7 +310,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     expect(within(editor).getByRole("button", { name: "지우기 가짜 운용 (Fake Capital)" })).toBeTruthy();
   });
 
-  it.fails("다: 찾기를 다시 하면 앞 오류 문구와 앞 후보를 함께 비운다", async () => {
+  it("다: 찾기를 다시 하면 앞 오류 문구와 앞 후보를 함께 비운다", async () => {
     renderAs(OWNER);
     const dialog = await openEditorHere();
     const input = within(dialog).getByLabelText("기관 이름(영문) 또는 CIK");
@@ -333,7 +334,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     expect(api.apiGet).not.toHaveBeenCalled();
   });
 
-  it.fails("다: 즐겨찾기를 지운 뒤 같은 후보에 '즐겨찾기에 있음' 대신 '고르기'가 나온다", async () => {
+  it("다: 즐겨찾기를 지운 뒤 같은 후보에 '즐겨찾기에 있음' 대신 '고르기'가 나온다", async () => {
     api.apiGet.mockResolvedValue({
       ok: true, query: "fake",
       candidates: [{ cik: FAV, name: "FAKE CAPITAL LLC", status: "favorite", latest13F: { filingDate: "2026-08-14", reportDate: "2026-06-30" }, checked: true }],
@@ -358,7 +359,7 @@ describe("QA-1031 13F 즐겨찾기 편집의 상태 잔류", () => {
     expect(within(again).getByRole("button", { name: "고르기 FAKE CAPITAL LLC" })).toBeTruthy();
   });
 
-  it.fails("라: 표시 이름·설명을 저장하는 동안 '취소'는 눌리지 않는다", async () => {
+  it("라: 표시 이름·설명을 저장하는 동안 '취소'는 눌리지 않는다", async () => {
     api.apiPatch.mockImplementation(() => new Promise(() => {}));
     renderAs(OWNER);
     const dialog = await openEditorHere();
