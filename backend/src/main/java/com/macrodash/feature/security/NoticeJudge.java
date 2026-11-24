@@ -21,8 +21,10 @@ import com.macrodash.feature.security.VersionOrder.Version;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Locale;
 import java.util.Set;
@@ -58,7 +60,10 @@ import java.util.regex.Pattern;
  *       ({@code CONDITION_NOTE})을 붙이고, 패치됨은 확인 필요로 내립니다(결정 9의 1). 다만 패치됨 근거가 모두 배포판 근거(변경 기록·추적기)면
  *       내리지 않습니다(덧붙임 2026-11-22).</li>
  * </ol>
- * 공지 판정은 제품 판정의 최댓값(해당 &gt; 확인 필요 &gt; 패치됨 &gt; 무관)이고, 맞는 제품이 없으면 무관입니다.
+ * 별칭 표에 없는 설치 패키지(QA-1001): 어느 별칭에도 맞지 않은 표 행 제품명이 버전 목록의 구성 요소 이름·원본 패키지 이름과 통째로 같으면
+ * 그 구성 요소는 확인 필요({@code NAME_MATCH}, 제품 id {@code component:<종류>:<이름>})입니다({@link #unlistedComponents}).
+ *
+ * <p>공지 판정은 제품 판정의 최댓값(해당 &gt; 확인 필요 &gt; 패치됨 &gt; 무관)이고, 맞는 제품이 없으면 무관입니다.
  * 모르는 것(해석 실패·버전 목록 없음·계열 밖)은 패치됨·무관으로 두지 않습니다.
  */
 public final class NoticeJudge {
@@ -165,8 +170,11 @@ public final class NoticeJudge {
             } else {
                 continue;
             }
-            products.add(productVerdict(alias, found, notes));
+            products.add(productVerdict(alias.id(), alias.label(), found, notes));
             matches.addAll(found);
+        }
+        if (inventory != null && !tableRows.isEmpty()) {
+            unlistedComponents(tableRows, inventory, aliases, notes, products, matches);
         }
 
         Status status = Status.UNRELATED;
@@ -214,7 +222,84 @@ public final class NoticeJudge {
         return Reason.NO_VERSION_TABLE;
     }
 
-    private static ProductVerdict productVerdict(Alias alias, List<Match> found, List<String> notes) {
+    /** 별칭 표에 없는 설치 패키지의 제품 id 머리 — {@code component:<종류>:<이름>}(QA-1001). */
+    static final String COMPONENT_ID_PREFIX = "component:";
+    /** 이름 견주기에 쓰는 정규화한 이름의 최소 길이 — 그보다 짧은 흔한 낱말({@code go}·{@code git})은 견주지 않습니다. */
+    private static final int NAME_KEY_MIN = 4;
+
+    /**
+     * 별칭 표에 없는 설치 패키지(QA-1001) — 어느 별칭에도 맞지 않은 표 행 제품명(칸 전체와 조각 — {@link ProductAliases#productPieces})이
+     * 버전 목록의 구성 요소 이름이나 원본 패키지 이름과 정규화({@link #nameKey})해 통째로 같으면, 그 구성 요소를 확인 필요({@code NAME_MATCH})로
+     * 올립니다. 부분·접두 일치는 쓰지 않고 버전도 견주지 않습니다(이름이 같다는 사실만 — 사람이 확인). 제품은 종류·이름마다 하나이고
+     * 근거는 행 × 구성 요소마다입니다. 별칭 표가 37개뿐이라 그 밖의 설치 패키지 공지가 흔적 없이 무관이 되던 것을 막습니다.
+     */
+    private static void unlistedComponents(List<Row> rows, EnvInventory inventory, ProductAliases aliases, List<String> notes,
+                                           List<ProductVerdict> products, List<Match> matches) {
+        Map<String, Set<Row>> wanted = new LinkedHashMap<>();
+        for (Row row : rows) {
+            if (row.product() == null || row.product().isBlank()) {
+                continue;
+            }
+            Set<String> texts = new LinkedHashSet<>(ProductAliases.productPieces(row.product()));
+            texts.add(ProductAliases.normalizeText(row.product()));
+            for (String text : texts) {
+                String key = nameKey(text);
+                if (key.length() >= NAME_KEY_MIN && aliases.forProduct(text).isEmpty()) {
+                    wanted.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(row);
+                }
+            }
+        }
+        if (wanted.isEmpty()) {
+            return;
+        }
+        Map<String, List<Match>> found = new LinkedHashMap<>();
+        Map<String, String> labels = new LinkedHashMap<>();
+        for (Component c : inventory.components()) {
+            String label = c.name();
+            Set<Row> hit = wanted.get(nameKey(label));
+            if (hit == null && c.sourcePackageName().isPresent()) {
+                label = c.sourcePackageName().get();
+                hit = wanted.get(nameKey(label));
+            }
+            if (hit == null) {
+                continue;
+            }
+            String id = COMPONENT_ID_PREFIX + c.ecosystem() + ":" + label;
+            labels.putIfAbsent(id, label);
+            List<Match> out = found.computeIfAbsent(id, k -> new ArrayList<>());
+            for (Row row : hit) {
+                out.add(new Match(id, row.index(), row.cve(), row.product(), c.source(), c.name(), c.version(), Status.CHECK,
+                        Reason.NAME_MATCH, false, null));
+            }
+        }
+        found.forEach((id, out) -> {
+            products.add(productVerdict(id, labels.get(id), out, notes));
+            matches.addAll(out);
+        });
+    }
+
+    /** 이름 견주기 열쇠 — 소문자로, 빈칸·{@code _}·{@code -}를 뺀 것({@code XZ Utils} = {@code xz-utils}). */
+    static String nameKey(String name) {
+        StringBuilder out = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char ch = name.charAt(i);
+            if (ch != '_' && ch != '-' && ch != '\u00A0' && !Character.isWhitespace(ch)) {
+                out.append(Character.toLowerCase(ch));
+            }
+        }
+        return out.toString();
+    }
+
+    /** 별칭 표에 없는 설치 패키지의 제품 id({@code component:<종류>:<이름>})면 그 이름(화면·응답의 제품 이름), 별칭 id면 빈 값. */
+    public static Optional<String> componentLabel(String aliasId) {
+        if (aliasId == null || !aliasId.startsWith(COMPONENT_ID_PREFIX)) {
+            return Optional.empty();
+        }
+        int at = aliasId.indexOf(':', COMPONENT_ID_PREFIX.length());
+        return at < 0 || at + 1 >= aliasId.length() ? Optional.empty() : Optional.of(aliasId.substring(at + 1));
+    }
+
+    private static ProductVerdict productVerdict(String id, String label, List<Match> found, List<String> notes) {
         Status status = Status.UNRELATED;
         for (Match m : found) {
             if (!m.otherFamily()) {
@@ -233,7 +318,7 @@ public final class NoticeJudge {
             }
             reasons.add(Reason.CONDITION_NOTE);
         }
-        return new ProductVerdict(alias.id(), alias.label(), status, reasons);
+        return new ProductVerdict(id, label, status, reasons);
     }
 
     /**

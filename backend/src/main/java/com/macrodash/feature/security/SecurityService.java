@@ -570,7 +570,8 @@ public class SecurityService {
     private Map<String, Object> matchJson(Match m) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("aliasId", m.aliasId());
-        out.put("label", aliases.byId(m.aliasId()).map(Alias::label).orElse(null));
+        // 별칭 표에 없는 설치 패키지(QA-1001 — id가 component:<종류>:<이름>)는 구성 요소 이름이 제품 이름입니다.
+        out.put("label", aliases.byId(m.aliasId()).map(Alias::label).or(() -> NoticeJudge.componentLabel(m.aliasId())).orElse(null));
         out.put("rowIndex", m.rowIndex());
         out.put("cve", m.cve());
         out.put("rowProduct", m.rowProduct());

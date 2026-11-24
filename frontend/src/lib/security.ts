@@ -71,7 +71,8 @@ const REASONS: Record<string, ReasonText> = {
   NO_VERSION_TABLE: { label: "버전 표 없음", description: "버전 표가 없는 공지의 제목·본문에 이 스택의 제품 이름이 나옵니다." },
   NAME_MATCH: {
     label: "이름만 맞음",
-    description: "표에는 없고 제목·본문에만 나오거나, 설치 버전을 공지의 번호와 견줄 수 없는 제품입니다.",
+    description:
+      "표에는 없고 제목·본문에만 나오거나, 설치 버전을 공지의 번호와 견줄 수 없는 제품이거나, 판정 표에 없는 설치 패키지와 공지 표의 제품명이 같은 경우입니다(버전은 견주지 않음).",
   },
   VENDOR_DIFFERS: {
     label: "제조사 다름",

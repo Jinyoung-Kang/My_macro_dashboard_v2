@@ -15,7 +15,6 @@ import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
 import com.macrodash.feature.security.Verdict.TrackerCve;
 import com.macrodash.feature.security.Verdict.TrackerStatus;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -123,7 +122,6 @@ class NoticeJudgeTest {
         private final Component xzLib = pkg("collector", "dpkg", "libfakelzma5", "95.6.1-1", "xz-utils");
 
         @Test
-        @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
         @DisplayName("이름이 통째로 같으면(대소문자·빈칸·_·- 무시) 확인 필요 NAME_MATCH — 구성 요소마다 행에 매인 근거, 제품 id는 component:<종류>:<이름>")
         void wholeNameIsCheck() {
             Verdict v = judge(rows("XZ Utils|95.0 이상 95.6.2 미만|95.6.2"), inventory(PG, xz, xzLib));
@@ -145,7 +143,6 @@ class NoticeJudgeTest {
         }
 
         @Test
-        @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
         @DisplayName("한 칸의 여러 제품은 조각마다 견주고, pypi·npm 이름도 같음 — 조건 문장이 있으면 '조건 문장 있음'이 붙음")
         void piecesAndOtherEcosystems() {
             Component multipart = comp("collector", "pypi", "python-multipart", "90.0.9");

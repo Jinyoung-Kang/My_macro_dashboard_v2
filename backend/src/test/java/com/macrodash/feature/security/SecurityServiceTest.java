@@ -4,7 +4,6 @@ import com.macrodash.store.SecurityStore;
 import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -251,7 +250,6 @@ class SecurityServiceTest {
     }
 
     @Test
-    @Disabled("QA-1001 — 수정 커밋에서 표시를 뗀다")
     @DisplayName("QA-1001 한 건 — 별칭 표에 없는 설치 패키지와 이름이 같은 행은 확인 필요(NAME_MATCH)이고, 근거·제품의 이름은 구성 요소 이름")
     @SuppressWarnings("unchecked")
     void detailUnlistedComponent() {

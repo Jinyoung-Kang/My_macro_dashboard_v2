@@ -14,7 +14,8 @@ import java.util.Set;
  * @param status         공지 판정 = 제품 판정의 최댓값(해당 &gt; 확인 필요 &gt; 패치됨 &gt; 무관). 맞는 제품이 없으면 무관
  * @param reasons        공지 판정과 같은 판정을 받은 제품들의 사유 합. 확인 필요면 왜 모르는지, 해당이면 {@link Reason#CONDITION_NOTE}가
  *                       '조건 문장 있음' 표시입니다
- * @param products       별칭 표의 제품마다 판정(공지 표의 행이나 본문에 나온 제품만, 별칭 표 순서)
+ * @param products       별칭 표의 제품마다 판정(공지 표의 행이나 본문에 나온 제품만, 별칭 표 순서), 그 뒤에 별칭 표에 없는 설치 패키지 가운데
+ *                       표 행의 제품명과 이름이 같은 것(QA-1001 — id {@code component:<종류>:<이름>}, 확인 필요)
  * @param matches        행·구성 요소 단위 근거(제품 순서 → 구성 요소 → 표 행 순서)
  * @param conditionNotes 판정에 쓴 표 밖 {@code ※} 조건 문장(관용 문장을 뺀 것)
  */
@@ -84,7 +85,10 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
         CONDITION_NOTE,
         /** 버전 표가 없는 공지의 제목·본문에 별칭이 나옴. */
         NO_VERSION_TABLE,
-        /** 이름만 맞음 — 표에는 없고 제목·본문에만 나오거나(상세 전 포함), 설치 버전을 공지의 번호와 견줄 수 없는 제품. */
+        /**
+         * 이름만 맞음 — 표에는 없고 제목·본문에만 나오거나(상세 전 포함), 설치 버전을 공지의 번호와 견줄 수 없는 제품이거나, 별칭 표에 없는 설치
+         * 패키지와 표 행의 제품명이 통째로 같음(QA-1001 — 버전은 견주지 않음).
+         */
         NAME_MATCH,
         /** 제조사가 다름(Oracle Java SE 공지와 Temurin 등) — 번호가 구간 안이어도 확인 필요. */
         VENDOR_DIFFERS,
@@ -167,7 +171,7 @@ public record Verdict(Status status, Set<Reason> reasons, List<ProductVerdict> p
     /**
      * 제품(별칭) 하나의 판정.
      *
-     * @param aliasId 별칭 id({@link ProductAliases.Alias#id()})
+     * @param aliasId 별칭 id({@link ProductAliases.Alias#id()}) — 별칭 표에 없는 설치 패키지면 {@code component:<종류>:<이름>}(QA-1001)
      * @param label   화면·알림에 쓰는 제품 이름
      * @param status  이 제품의 판정
      * @param reasons 이 판정의 사유(확인 필요의 사유, 해당이면 '조건 문장 있음')
