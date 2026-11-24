@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1079,5 +1080,25 @@ class ManualAccountServiceDbTest {
         assertThat(same.at()).isEqualTo(sell.at());
         assertThat(same.gross()).isEqualByComparingTo("24000");
         assertThat(cash()).isEqualByComparingTo(cashBefore);
+    }
+
+    @Test
+    @Disabled("QA-1025: 거절 글의 예시(2026-11-20 10:15)가 파서가 받지 않는 형식")
+    @DisplayName("QA-1025: 못 읽는 시각의 거절 글에 든 예시를 그대로 넣으면 받아들여진다")
+    void tradeTimeRefusalExampleIsAccepted() {
+        startSynthetic();
+        long first = instruction(A, "SELL", 2);
+        apply(filled(first, null, "2", "24000", "3"));
+        Trade sell = onlyTrade();
+        clock.set(kst("2026-11-20T12:00"));                        // 예시 시각이 지금보다 앞이 되게
+        String[] message = new String[1];
+        assertThatThrownBy(() -> service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("24000"), d("3"), "어제 오후")))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> message[0] = e.getMessage());
+        java.util.regex.Matcher example = java.util.regex.Pattern.compile("예: ([^,)]+)").matcher(message[0]);
+        assertThat(example.find()).as(message[0]).isTrue();
+
+        service.editTrade(sell.id(), new ManualAccountService.EditTradeRequest(d("2"), d("24000"), d("3"), example.group(1)));
+
+        assertThat(store.trade(sell.id()).orElseThrow().at()).isEqualTo(kst("2026-11-20T10:15"));
     }
 }
