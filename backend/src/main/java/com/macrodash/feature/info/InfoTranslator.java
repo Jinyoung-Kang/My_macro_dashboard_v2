@@ -157,8 +157,8 @@ public class InfoTranslator {
         return reply.ok() || reply.errorKind() == null || !NOT_SENT_KINDS.contains(reply.errorKind());
     }
 
-    /** 조각 하나의 결과 — 실패 사유(성공이면 null)와 번역한 모델. */
-    private record Part(String error, String model) {
+    /** 조각 하나의 결과 — 실패 사유(성공이면 null)·번역한 모델·모델에 요청이 하나라도 나갔는가. */
+    private record Part(String error, String model, boolean sent) {
     }
 
     /** 그 Gemini 모델이 이 사유로 실패하면 한동안 그 모델을 건너뜁니다(무료 한도·없는 모델·받지 않는 요청은 바로 다시 불러도 같음 — 400은 QA-405). */
@@ -422,7 +422,7 @@ public class InfoTranslator {
             return new Titles(out, null, null, false, null);
         }
         int chars = missing.stream().mapToInt(String::length).sum();
-        String over = overBudget(chars);
+        String over = reserveSaved(chars);
         if (over != null) {
             return new Titles(out, "BUDGET", over, false, null);
         }
@@ -434,10 +434,14 @@ public class InfoTranslator {
                 text -> readTitles(text, missing));
         GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
+            if (!called.sent()) {
+                budget.release(chars);      // 요청이 나가지 않음(키 없음·허용 목록 밖) — 센 글자를 돌려줌
+            }
             return new Titles(out, result.errorKind(), result.error(), true, called.model());
         }
         called.value().forEach((title, ko) -> {
             store.put(TranslationStore.id(TranslationStore.TITLE, title), TranslationStore.TITLE, title.length(), ko, called.model());
+            budget.release(title.length());     // 표에 남은 글자는 표가 셈 — 응답에서 빠진 제목의 몫은 보낸 양으로 남김(QA-1021)
             out.put(title, ko);
         });
         return new Titles(out, null, null, true, called.model());
@@ -483,7 +487,7 @@ public class InfoTranslator {
         boolean cached = missing.isEmpty();
         String usedModel = null;
         if (!cached) {
-            String over = overBudget(missing.stream().mapToInt(i -> parts.get(i).length()).sum());
+            String over = reserveSaved(missing.stream().mapToInt(i -> parts.get(i).length()).sum());
             if (over != null) {
                 return new Body(false, null, false, false, truncated, over, null);
             }
@@ -498,6 +502,10 @@ public class InfoTranslator {
                     Part part = entry.getValue().get();
                     error = error == null ? part.error() : error;
                     usedModel = part.model() == null ? usedModel : part.model();
+                    if (part.error() == null || !part.sent()) {
+                        // 표에 남은 조각은 표가 세고, 요청이 나가지 않은 조각은 쓰지 않은 것 — 둘 다 돌려줌. 보냈지만 남지 않은 조각만 센 채로 둠(QA-1021).
+                        budget.release(parts.get(entry.getKey()).length());
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     error = "번역이 중단됐습니다";
@@ -660,24 +668,22 @@ public class InfoTranslator {
         });
         GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
-            return new Part(result.error(), called.model());
+            return new Part(result.error(), called.model(), called.sent());
         }
         store.put(TranslationStore.id(TranslationStore.BODY, part), TranslationStore.BODY, part.length(), called.value(), called.model());
-        return new Part(null, called.model());
+        return new Part(null, called.model(), true);
     }
 
     /**
-     * 오늘(KST) 쓴 글자 수(번역 표 + 정보 검색 AI 요약 — {@link InfoAiBudget#usedToday()})에 {@code chars}를 더하면 하루 상한을 넘는가 → 넘으면 안내 글,
-     * 아니면 null.
+     * 저장하는 번역이 {@code chars}자를 보내려 합니다 — 오늘(KST) 쓴 글자 수(번역 표 + 표에 남지 않는 몫, {@link InfoAiBudget#usedToday()})에 더해 하루
+     * 상한을 넘으면 안내 글을 돌려주고 세지 않으며, 아니면 null을 돌려주고 바로 셉니다({@link InfoAiBudget#reserve} — 검사와 세기를 한 번에, QA-1021:
+     * 예전에는 검사만 해 함께 온 요청이 모두 지났고, 모델을 불렀지만 표에 남지 않은 호출을 세지 않았습니다). 부른 쪽이 결과에 따라 돌려줍니다 —
+     * 표에 남은 글자(표가 셈)와 요청이 나가지 않은 글자.
      */
-    private String overBudget(int chars) {
-        long used = budget.usedToday();
+    private String reserveSaved(int chars) {
         long dailyChars = budget.dailyChars();
-        if (used + chars > dailyChars) {
-            return "오늘 번역량 상한(원문 %,d자 — 정보 검색 AI 요약과 함께 셈)에 닿아 번역하지 않았습니다(오늘 %,d자 씀) — 내일 다시 됩니다"
-                    .formatted(dailyChars, used);
-        }
-        return null;
+        return budget.reserve(chars, used -> "오늘 번역량 상한(원문 %,d자 — 정보 검색 AI 요약과 함께 셈)에 닿아 번역하지 않았습니다(오늘 %,d자 씀) — 내일 다시 됩니다"
+                .formatted(dailyChars, used));
     }
 
     /**

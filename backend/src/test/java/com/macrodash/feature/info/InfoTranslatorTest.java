@@ -3,7 +3,6 @@ package com.macrodash.feature.info;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -174,7 +173,6 @@ class InfoTranslatorTest {
     }
 
     @Test
-    @Disabled("QA-1021: 상한 검사와 세기가 따로라 함께 온 요청이 모두 검사를 지남")
     @DisplayName("QA-1021: 상한 직전에 본문 번역 둘이 함께 오면 둘째는 BUDGET — 앞 호출이 끝나기 전에도 센다")
     void concurrentBodiesShareTheBudget() throws Exception {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
@@ -212,7 +210,6 @@ class InfoTranslatorTest {
     }
 
     @Test
-    @Disabled("QA-1021: 모델을 불렀지만 표에 남지 않은 호출(형식 밖 응답·실패)을 상한에 세지 않음")
     @DisplayName("QA-1021: 보냈지만 저장하지 못한 번역은 오늘 쓴 양에 남고, 요청이 나가지 않았으면(키 없음) 남지 않는다 — 제목·본문 모두")
     void failedCallsCountTowardTheBudget() {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
