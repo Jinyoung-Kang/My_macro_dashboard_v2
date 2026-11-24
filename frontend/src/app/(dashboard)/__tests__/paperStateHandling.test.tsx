@@ -729,6 +729,46 @@ describe("책 버튼", () => {
     expect(screen.queryByText(/시작 전인 계좌는 다음 단계의 초기 결정으로 시작합니다/)).toBeNull();
   });
 
+  // QA-1010: 탭 단추로 들어오면 계좌를 고른 적이 없어 '처음으로 시작한 계좌'를 봅니다. 그 계좌를 초기화하면 시작 전이 되어, 뒤따른 개요 다시 읽기에서
+  // 기본 계좌가 다음 시작한 계좌로 넘어갔습니다 — 머리의 계좌 고르기·표·머리 동작이 조작 없이 다른 계좌로 바뀌고 결과 안내도 사라졌습니다.
+  it.fails("QA-1010: 고르지 않은 기본 계좌를 초기화해도 보던 계좌에 머물고 결과 안내가 보인다", async () => {
+    const started = (code: string) => {
+      const entry = INITIALIZED.books.find((candidate) => candidate.code === code)!;
+      return { ...entry, status: "ACTIVE", startedOn: "2026-10-23", cash: 50.12, nav: 100050.12, equityValue: 100000, exposurePct: 99.95, returnPct: 0.05, positions: 1, staleCount: 0, stats: STATS };
+    };
+    const before = { ...INITIALIZED, books: [started("rules"), started("claude"), INITIALIZED.books[2], INITIALIZED.books[3]] };
+    const cleared = { ...before.books[0], status: "NOT_STARTED", startedOn: null };
+    const after = { ...before, books: [cleared, ...before.books.slice(1)] };
+    let resetDone = false;
+    reads["/api/paper/overview"] = () => Promise.resolve(resetDone ? after : before);
+    for (const code of ["rules", "claude"]) {
+      reads[`/api/paper/books/${code}/positions`] = () => Promise.resolve({
+        available: true, book: code === "rules" && resetDone ? cleared : before.books.find((entry) => entry.code === code), cash: 50.12, lockouts: [], positions: [],
+      });
+      reads[`/api/paper/books/${code}/orders`] = () => Promise.resolve({ available: true, orders: [] });
+      reads[`/api/paper/books/${code}/fills`] = () => Promise.resolve({ available: true, fills: [] });
+    }
+    api.apiPost.mockImplementation(() => {
+      resetDone = true;
+      return Promise.resolve({ ok: true, book: cleared, backfilled: false, skippedReason: null });
+    });
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+    // 고른 적 없이 처음으로 시작한 계좌(규칙 계좌)를 봅니다.
+    await waitFor(() => expect((screen.getByLabelText("계좌 고르기") as HTMLSelectElement).value).toBe("rules"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "계좌 초기화" }));
+    fireEvent.change(within(screen.getByRole("dialog")).getByRole("textbox"), { target: { value: "rules" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "초기화 확인" }));
+    expect(api.apiPost).toHaveBeenCalledWith("/api/paper/books/rules/reset", { confirm: "rules" });
+
+    // 초기화 뒤 개요를 다시 읽어 규칙 계좌가 시작 전이 된 것이 화면에 온 뒤에도(계좌 고르기의 상태 글) 보던 계좌 그대로.
+    await waitFor(() => expect(within(screen.getByLabelText("계좌 고르기")).getByRole("option", { name: /규칙 계좌 · 시작 전/ })).toBeTruthy());
+    expect((screen.getByLabelText("계좌 고르기") as HTMLSelectElement).value).toBe("rules");
+    expect(screen.getByText(/규칙 계좌를 초기화했습니다 — 지금 시작 전/)).toBeTruthy();
+    expect(api.apiGetShared.mock.calls.some(([path]) => String(path).startsWith("/api/paper/books/claude/"))).toBe(false);
+  });
+
   it("운용 중인 책은 '일시정지', 시작 전인 책은 버튼 없이 안내", async () => {
     api.apiPost.mockResolvedValue({ ok: true, book: { ...INITIALIZED.books[2], status: "PAUSED" }, cancelledOrders: 2 });
     render(<PaperPage />);
