@@ -40,6 +40,9 @@ export function NoticeSummary({ nttId }: { nttId: string }) {
   if (firstLoadPending(read)) return <Skeleton lines={5} label="공지를 불러오는 중" />;
   if (read.error) return <ErrorState message={read.error} onRetry={read.reload} />;
   const data = read.data;
+  // 읽기가 실패한 뒤 다시 읽는 동안('다시 시도') — useApi가 error를 비우고 failedAt을 남겨 위 두 갈래에 걸리지 않습니다. 빈 칸 대신 오류 상자와
+  // 비슷한 높이의 읽는 중 표시(QA-1030 — 같은 응답을 읽는 상세 화면 NoticeScreen과 같은 처리, 큰 자리표시는 처음 읽을 때만 — QA-655).
+  if (!data && read.loading) return <Skeleton lines={2} label="공지를 불러오는 중" />;
   if (!data) return null;
   const { notice } = data;
   const view = environmentLines(data);

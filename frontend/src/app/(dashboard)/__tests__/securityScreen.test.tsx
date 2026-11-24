@@ -303,8 +303,8 @@ describe("보안 공지 — 요약 칸", () => {
   });
 
   // QA-1030: useApi는 다시 읽을 때 error를 비우고 failedAt을 남깁니다 — 처음 읽기 아님(큰 자리표시 없음)·오류 없음·값 없음이라 요약 칸이 아무것도
-  // 그리지 않았습니다(같은 응답을 읽는 상세 화면 NoticeScreen은 이 경우를 읽는 중으로 그림).
-  it.fails("QA-1030: 요약 칸 읽기가 실패한 뒤 '다시 시도'를 누르면 읽는 동안 빈 칸이 아니라 읽는 중 표시", async () => {
+  // 그리지 않았습니다(같은 응답을 읽는 상세 화면 NoticeScreen은 이 경우를 읽는 중으로 그림 — 재현 커밋에서는 it.fails).
+  it("QA-1030: 요약 칸 읽기가 실패한 뒤 '다시 시도'를 누르면 읽는 동안 빈 칸이 아니라 읽는 중 표시", async () => {
     let attempts = 0;
     api.apiGetShared.mockImplementation((path: string) => {
       if (path === endpoints.security.notice(900001)) {
