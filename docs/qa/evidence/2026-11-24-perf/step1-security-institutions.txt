@@ -1,0 +1,30 @@
+# 단계 1 — 작업 A(QA-991 보안 공지 판정 기억)·B(QA-992 저장본 머리) 전후 (2026-11-24 17:58~18:05 KST, 실행 세션)
+# 같은 QA 스택·같은 DB(perf-seed.py 씨앗)·로그인 없는 모드. '고치기 전'은 같은 QA에 main@6479ea4e 백엔드 이미지를 잠깐 다시 띄워 잼(그 뒤 고친 이미지로 되돌림).
+# curl 단발(127.0.0.1:18082, 초), 부하 평균 1 아래에서.
+
+== /api/security/notices ==
+고치기 전(16회, 매번 다시 판정)         0.769 0.604 0.590 0.599 0.665 0.585 0.576 0.582 0.574 0.614 0.586 0.602 0.599 0.582 0.571 0.580   중앙값 0.587
+고친 뒤 — 입력 그대로(둘째부터)          0.0051 0.0054 0.0051 0.0052 0.0052 0.0053                                                     → 기준 30 ms 이하 충족
+고친 뒤 — 입력이 바뀐 뒤 첫 호출(10회)   0.670 0.582 0.584 0.626 0.582 0.575 0.582 0.569 0.590 0.585                                   중앙값 0.584 → 고치기 전(0.587) 이하
+  (입력 바꾸기: UPDATE security_notices SET updated_at = now() WHERE ntt_id = 910001 — 수집기의 고침과 같은 꼴, 1.5초 뒤 호출)
+백엔드가 막 떠서 처음 부른 값: 0.79·0.86초(JIT 전)
+
+== /api/sec13f/institutions ==
+고치기 전(6회)                          0.115 0.102 0.096 0.098 0.093 0.092
+고친 뒤(둘째부터)                        0.0064 0.0060 0.0058 0.0061 0.0058 0.0060                                                    → 기준 10 ms 이하 충족
+고친 뒤 — 저장본 하나 다시 수집된 뒤 첫 호출 0.024(그 이름만 기준일을 다시 읽음) → 0.0071 0.0067
+
+== 응답 동일(고치기 전 QA 응답을 저장해 두고 고친 뒤와 대조 — 시각 칸 checkedAt·ageSeconds만 뺌) ==
+15/15 같음: /api/security/notices(기본·verdict=affected·verdict=check&reason=DISTRO_NO_PENDING·q=OpenSSL·q=cve-2099·page=3&size=10·
+  verdict=unrelated&size=100·reason=CONDITION_NOTE), /api/security/notices/{900001·900005·910003·910050·910099}, /api/security/inventory, /api/sec13f/institutions
+
+== A1 나눠 재기(고치기 전 코드, QA DB, 이 PC JDK 25 — QA 백엔드 jar의 클래스로 임시 프로그램, 커밋하지 않음) ==
+공지·표 행 읽기 20~27 ms(연결 새로 맺기 포함) · 버전 목록 읽기 43~53 ms(같음) · 조립(toInventory) 2~5 ms · 판정 550~620 ms
+sql-replay로 본 실제 앱의 DB 시간은 12~16 ms(연결 풀) — 시간의 대부분이 판정.
+판정 안(JFR 실행 표본 1,465개): 꼭대기 프레임의 약 80%가 java.util.regex(별칭 이름 찾기 — ProductAliases$Alias.mentionedIn·normalizeText·matchProduct 등).
+판이 바뀐 직후 첫 계산이 QA에서 1초 아래(0.58초)라 지시문의 '첫 계산 1초 넘으면 원인을 줄임'에 걸리지 않아 판정 규칙·정규식은 그대로 둠.
+
+== 같은 꼴의 다른 질의(작업 B의 확인) ==
+StoreRepository.readSnapshotFirstQuarters — 즐겨찾기 기관 상세(InstitutionHistory)가 q30 앞 8분기를 DB에서 잘라 받음(본문 자체를 씀)
+StoreRepository.readQuarterHoldings — 모의 매매 규칙 계좌·패킷(RuleBookService·PacketBuilder)이 보유 열을 펼쳐 받음(본문 자체를 씀, 모의 매매 코드)
+→ 둘 다 '칸 하나를 꺼내려고 전체를 푸는' 문제가 아니어서 고치지 않음.
