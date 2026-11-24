@@ -2,6 +2,8 @@
 # scripts/qa/lighthouse.sh — Lighthouse 13.6.0(성능·접근성·모범 사례)을 화면마다 N번 돌려 중앙값을 냅니다 (QA 스택, 로컬 Chrome).
 # 사용: bash scripts/qa/lighthouse.sh [출력폴더=/tmp/lighthouse-qa] [N=3]
 #       PAGES="/ /macro" FORMS="mobile" bash scripts/qa/lighthouse.sh …   (화면·폼팩터를 좁힐 때)
+#       BLOCK='*/api/info/sources*' bash scripts/qa/lighthouse.sh …           (그 주소 무늬의 요청을 막음 — 쉼표로 여럿, Lighthouse --blocked-url-patterns.
+#                                                                          출처 경고 띠 없는 상태를 잴 때 — 성능 개선 2차, 2026-11-24)
 # 출력: 폴더에 실행마다 JSON(<화면>-<폼팩터>-<회차>.json), 표준출력에 화면·폼팩터마다 N회 중앙값 한 줄 —
 #       성능·접근성·모범 사례 점수, FCP·LCP·TBT(ms), CLS, 스크립트 전송량(KB), RSC 미리 받기 수(?_rsc= 요청), 스크립트 수.
 # 로그인: 백엔드가 로그인 없는 모드(GET /api/auth/session의 noLogin — QA_NO_LOGIN=1)면 쿠키 없이, 아니면 .env.qa의 운영자 계정으로 로그인해 쿠키로.
@@ -15,6 +17,9 @@ env_value() { grep -s "^$1=" .env.qa | head -1 | cut -d= -f2-; }
 FRONT="http://localhost:$(env_value FRONTEND_PORT)"; BACK="http://127.0.0.1:$(env_value BACKEND_PORT)"
 PAGES="${PAGES:-/ /macro /institutions /paper/us /paper/kr /info/overview /s/us/NVDA}"
 FORMS="${FORMS:-desktop mobile}"
+BLOCKED=()
+IFS=',' read -r -a _patterns <<< "${BLOCK:-}"
+for _p in ${_patterns[@]+"${_patterns[@]}"}; do [ -n "$_p" ] && BLOCKED+=("--blocked-url-patterns=$_p"); done
 if [ -z "${CHROME_PATH:-}" ] && [ -x /usr/bin/google-chrome ]; then export CHROME_PATH=/usr/bin/google-chrome; fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/lhwork.XXXXXX")"; JAR="$WORK/cookie"
 trap 'cd /; rm -rf "$WORK"' EXIT
@@ -32,7 +37,7 @@ if [ -z "$NO_LOGIN" ]; then
 fi
 
 cd "$WORK"
-echo "# $(TZ=Asia/Seoul date '+%F %T') KST lighthouse 13.6.0 N=$N $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) $([ -n "$NO_LOGIN" ] && echo 로그인없음)"
+echo "# $(TZ=Asia/Seoul date '+%F %T') KST lighthouse 13.6.0 N=$N $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) $([ -n "$NO_LOGIN" ] && echo 로그인없음)$([ -n "${BLOCK:-}" ] && echo " 막음=$BLOCK")"
 printf '%-16s %-8s %4s %4s %4s %7s %7s %7s %6s %6s %4s %4s\n' 페이지 폼팩터 성능 접근 모범 'FCP' 'LCP' 'TBT' CLS 'JS(KB)' RSC JS수
 for page in $PAGES; do
   for form in $FORMS; do
@@ -43,7 +48,7 @@ for page in $PAGES; do
       f="$OUT/$name-$form-$i.json"
       npx --yes lighthouse@13.6.0 "$FRONT$page" --quiet --chrome-flags="--headless=new --no-sandbox" \
         --only-categories=performance,accessibility,best-practices --output=json --output-path="$f" \
-        ${HEADERS[@]+"${HEADERS[@]}"} ${extra[@]+"${extra[@]}"} >/dev/null 2>&1 && files+=("$f")
+        ${HEADERS[@]+"${HEADERS[@]}"} ${extra[@]+"${extra[@]}"} ${BLOCKED[@]+"${BLOCKED[@]}"} >/dev/null 2>&1 && files+=("$f")
     done
     [ "${#files[@]}" -gt 0 ] || { printf '%-16s %-8s 실패\n' "$page" "$form"; continue; }
     python3 - "$page" "$form" "${files[@]}" <<'PY'

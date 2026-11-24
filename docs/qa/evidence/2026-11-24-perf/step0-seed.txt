@@ -1,0 +1,42 @@
+# 단계 0 — 운영 규모 합성 씨앗을 넣은 QA에서 다시 잰 값 (2026-11-24 17:30~17:45 KST, 실행 세션)
+# QA 스택(이 PC WSL2, 로그인 없는 모드, 외부 차단 프록시 block, 출처 사건 1건) — 백엔드는 계획 세션이 배포본 main@119cfa4f로 다시 빌드한 것 그대로.
+# 씨앗: scripts/qa/security-seed.sql → scripts/qa/perf-seed.py sql → perf-seed.py inventory(app.inventory). 기준선 make test가 같은 PC에서 돌던 중(부하 평균 약 2).
+
+== 씨앗 뒤 QA 표 크기 (운영 2026-11-24 통계 표와 견줌) ==
+표                          QA(씨앗 뒤)      운영
+security_notices            140행 216 kB     135행 222 kB
+security_notice_rows        2,202            1,999
+env_components              1,706            1,712
+env_changelog_cves          11,151           11,340
+distro_cve_status           13               9
+sec13f_favorites            12               12
+즐겨찾기 저장본(q8·q30)      24개 14 MB       24개(운영 13F 저장본 전체 66개 29 MB)
+
+== 단발 6회 (curl, 127.0.0.1:18082, 초) ==
+/api/security/notices       0.565 0.561 0.555 0.557 0.550 0.568     (씨앗 전 0.043 — 계획 세션)
+/api/sec13f/institutions    0.121 0.088 0.095 0.092 0.090 0.103     (즐겨찾기 없음 0.003 — 계획 세션)
+/api/security/inventory     0.008 0.005 0.005 0.005 0.005 0.006     (운영 15~19 ms, 왕복 약 8 ms 포함)
+/api/security/notices/910003 0.025 0.021 0.020 0.020 0.020 0.018
+
+== sql-replay.sh (문장 수 · 문장 시간 합) ==
+/api/security/notices       1회 29문장 15.7 ms / 응답 0.563초 · 2회 28문장 12.1 ms / 0.588초   → 시간 대부분이 백엔드 안(구성 조립·판정)
+/api/sec13f/institutions    1회 40문장 119.5 ms / 0.124초 · 2회 39문장 88.4 ms / 0.093초     → DB가 대부분(저장본 머리 질의)
+
+== 저장본 머리 질의 (psql \timing, QA) ==
+즐겨찾기 24개 이름: name·collected_at·첫 분기 기준일 35.0 ms / name·collected_at만 0.5 ms
+13F 저장본 52개(16 MB) 전체: 기준일까지 103~119 ms
+
+== 운영과의 차이 ==
+- 기관 목록: QA 88~121 ms ≈ 운영 110~119 ms(재현).
+- 보안 공지 목록: QA 0.55~0.64초 < 운영 1.65~1.75초. 매번 다시 판정하는 꼴은 같음(재현). 크기 차이의 근거(추정): 같은 서비스의 가벼운 경로
+  /api/security/inventory가 QA 5 ms·운영 약 7~11 ms(왕복 빼고)로 운영이 1.5~2배 느리고, 운영 공지는 실제 제품·버전 글이라 맞는 별칭·배포판 행이
+  합성 씨앗(맞는 줄 약 35%)보다 많을 수 있음. 받아들임 기준(둘째 호출부터 30 ms 이하)은 이 차이와 무관하게 잴 수 있어 그대로 진행.
+
+== 모바일 CLS — page-apis.js 고친 뒤(mobile 390, 감속 없음) vs Lighthouse 모바일(계획 세션 표) ==
+화면                띠 있음 page-apis / LH    띠 막음 page-apis / LH
+/institutions       0.153 / 0.161              0.012 / 0.019
+/paper/us           0.084 / 0.143              0.004 / 0.004
+/info/overview      0.354 / 0.569              0.207 / 0.253
+- 예전 판이 모바일에서 0만 낸 원인: 모바일 에뮬레이션에서 크롬이 첫 약 32 ms에 입력이 있었다고 표시(lastInputTime)해 모든 이동이 hadRecentInput=true.
+  도구는 입력을 보내지 않으므로 그 표시를 무시하고 더함(표시된 수는 inputFlagged로 따로).
+- lighthouse.sh BLOCK 확인(/institutions 모바일 1회): 막지 않음 CLS 0.161 · 막음 0.019 — 계획 세션 값과 같음.
