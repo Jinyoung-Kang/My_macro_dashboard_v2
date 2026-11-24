@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -236,6 +237,28 @@ class KrStopFillStepTest {
         assertThat(record(id).path(KrIntradayFill.REASONS)).extracting(JsonNode::asString).containsExactly(KrIntradayFill.NO_R1);
         assertThat(record(id).path(KrIntradayFill.RAW_PRICE).isNull()).isTrue();
         assertThat(record(id).path("note").asString()).contains("TOSS_1M_NEXT");
+    }
+
+    @Test
+    @Disabled("QA-1019: 같은 오류가 이어지면 주기(20초)마다 작업 기록이 쌓임")
+    @DisplayName("QA-1019: 같은 오류가 이어지면 작업 기록은 처음 한 번만 — 오류 글이 바뀌거나 오류가 사라졌다 다시 나면 다시 남김")
+    void repeatedErrorIsRecordedOnce() {
+        stop(A, "2026-11-17T13:10:42");
+        when(marketData.stopWatch(true)).thenThrow(new IllegalStateException("감시 저장본 읽기 실패"));
+
+        for (int i = 0; i < 3; i++) {
+            clock.now = kst("2026-11-17T13:15:20").plusSeconds(20L * i);
+            assertThat(step.run(KrPaperMarket.INSTANCE).error()).as("결과에는 주기마다 오류가 실림").contains("감시 저장본 읽기 실패");
+        }
+        assertThat(store.recentJobRuns(10)).as("같은 오류 세 주기 — 기록 한 건").singleElement()
+                .satisfies(r -> assertThat(r.outcome()).isEqualTo("ERROR"));
+
+        org.mockito.Mockito.reset(marketData);
+        when(marketData.stopWatch(true)).thenThrow(new IllegalStateException("다른 오류"));
+        clock.now = kst("2026-11-17T13:16:20");
+        step.run(KrPaperMarket.INSTANCE);
+        step.run(KrPaperMarket.INSTANCE);
+        assertThat(store.recentJobRuns(10)).as("오류 글이 바뀌면 한 번 더").hasSize(2);
     }
 
     @Test
