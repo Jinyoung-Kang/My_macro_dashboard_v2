@@ -49,7 +49,7 @@ from datetime import date, datetime, time as clock_time, timedelta, timezone
 from .. import catalog, krcalendar, store
 from ..services import toss as toss_service
 
-from .base import KST, EmptyResult, previous_payload
+from .base import KST, EmptyResult, Idle, previous_payload
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ def task_kr_paper_timed() -> str:
             if (code, session) not in due:
                 due.append((code, session))
     if not due:
-        raise EmptyResult("받을 시각 지정 주문 1분봉 없음 — 기존 저장본 유지")
+        raise Idle("받을 시각 지정 주문 1분봉 없음 — 할 일 없음(저장본 그대로)")
 
     fetched_at = now.astimezone(timezone.utc).isoformat()
     budget = [KR_TIMED_CALL_BUDGET]

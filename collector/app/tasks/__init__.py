@@ -24,6 +24,8 @@ app/tasks/ — 수집 작업 정의(패키지).
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
   합니다. 이것을 성공으로 보고하면 "✓ 0/10 수집" 같은 모순된 로그가 남고
   운영자가 장애를 알아채지 못합니다.
+- 다만 할 일이 없는 실행(받을 것이 없음·아직 때가 아님 — 외부를 부르지 않음)은 실패가 아니므로 Idle(EmptyResult의 하위 종류)로
+  끝내 정상(ok)으로 적고 까닭은 상세 글에 남깁니다(QA-996 — 상태 화면에 늘 경고로 떴음). 받으려다 못 받은 것은 EmptyResult 그대로.
 - 빈 결과로 **기존 저장본을 덮어쓰지 않습니다.** 네트워크 일시 장애로 어제
   받아 둔 데이터를 날리면 안 됩니다.
 - 추정치(isEstimated=true)는 **누적 테이블에 넣지 않습니다.** 한 번 섞이면
@@ -53,6 +55,7 @@ from .base import (  # noqa: F401
     RADAR_COMBINATIONS,
     DAUM_TREND_LOOKBACK,
     EmptyResult,
+    Idle,
     _reason_suffix,
     Task,
 )

@@ -571,7 +571,6 @@ def test_collect는_session_군을_받고_status_주기에_session이_있다(mon
     assert intervals["session"] == 300 and set(intervals) == {"fast", "slow", "weekly", "session"}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-996 재현 — 할 일이 없는 실행이 실패(empty)로 집계돼 상태 화면에 경고로 남음(고친 뒤 뺌)")
 def test_QA996_할_일_없는_실행은_정상으로_집계하고_상세_글은_남긴다(store):
     """
     QA-996: kr_paper_timed(받을 시각 지정 주문 1분봉이 없음)·us_consensus_release(일정을 처음 정함 — 외부 호출 0회)는 할 일이 없는 실행인데
@@ -589,3 +588,24 @@ def test_QA996_할_일_없는_실행은_정상으로_집계하고_상세_글은_
     assert "받을 시각 지정 주문 1분봉 없음" in detail_timed
     assert (ok_release, summary["us_consensus_release"]["status"]) == (True, "ok")
     assert "외부 호출 0회" in detail_release
+
+
+def test_QA996_Idle은_EmptyResult의_하위_종류이고_출처_거부를_만났으면_오류로_남긴다(store):
+    """할 일 없음(Idle)은 '저장본을 덮지 않고 끝냄' 뜻 그대로(EmptyResult를 잡는 코드도 잡음) — 실행기만 ok로 적는다. 거부 표지가 있으면 할 일이 있었던 것."""
+    assert issubclass(tasks.Idle, tasks.EmptyResult)
+
+    def idle():
+        raise tasks.Idle("받을 것 없음 — 외부 호출 0회")
+
+    ok, detail = tasks.run_task(tasks.Task("idle_task", "slow", idle, ""))
+    assert (ok, detail) == (True, "받을 것 없음 — 외부 호출 0회")
+    assert {row["task"]: row for row in store.read_task_summary()}["idle_task"]["status"] == "ok"
+
+    from app import http
+
+    def rejected():
+        raise tasks.Idle(f"{http.REJECTED_MARK} — example.invalid HTTP 403")
+
+    ok, _ = tasks.run_task(tasks.Task("idle_rejected", "slow", rejected, ""))
+    assert ok is False
+    assert {row["task"]: row for row in store.read_task_summary()}["idle_rejected"]["status"] == "error"

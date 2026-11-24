@@ -42,7 +42,7 @@ from ..fetch import state as polite_state
 from ..services import us_consensus as consensus_service
 from . import flex, polite
 from . import us_consensus as daily
-from .base import EmptyResult, previous_payload
+from .base import EmptyResult, Idle, previous_payload
 
 TASK_NAME = "us_consensus_release"
 SCHEDULE_ITEM = "next"
@@ -213,9 +213,9 @@ def task_us_consensus_release() -> str:
                                                                                 previous_payload(catalog.SNAP_US_CONSENSUS)),
                           _state({}, ""))
         flex.set_due(TASK_NAME, SCHEDULE_ITEM, first)
-        raise EmptyResult(f"일정 처음 정함 — 다음 {kst.stamp(first)} · 외부 호출 0회")
+        raise Idle(f"일정 처음 정함 — 다음 {kst.stamp(first)} · 외부 호출 0회")
     if when > now:
-        raise EmptyResult(f"다음 {kst.stamp(when)} — 아직 때가 아님 · 외부 호출 0회")
+        raise Idle(f"다음 {kst.stamp(when)} — 아직 때가 아님 · 외부 호출 0회")
 
     et_day = now.astimezone(NEW_YORK).date()
     today = et_day.isoformat()
@@ -223,7 +223,7 @@ def task_us_consensus_release() -> str:
     if not consensus:
         next_at = _next_plan(now)
         flex.set_due(TASK_NAME, SCHEDULE_ITEM, next_at)
-        raise EmptyResult(f"컨센서스 저장본이 아직 없음(하루 1회 태스크가 먼저 채움) — 묻지 않음 · 다음 {kst.stamp(next_at)} · 외부 호출 0회")
+        raise Idle(f"컨센서스 저장본이 아직 없음(하루 1회 태스크가 먼저 채움) — 묻지 않음 · 다음 {kst.stamp(next_at)} · 외부 호출 0회")
     run_state = _state(consensus, today)
     slots = release_slots(et_day, consensus)
     # 지금 다룰 시각: 발표가 지났고(2분 이상) 아직 시도 횟수가 남은 시각 — 같은 실행에서 함께(요청 1회).
@@ -234,7 +234,7 @@ def task_us_consensus_release() -> str:
         next_at = _next_due(now, et_day, slots, run_state)
         flex.set_due(TASK_NAME, SCHEDULE_ITEM, next_at)
         listed = ", ".join(f"{key}({'·'.join(names)})" for key, names in slots.items()) or "없음"
-        raise EmptyResult(f"오늘(동부 {today}) 패킷 발표 시각: {listed} · 다음 {kst.stamp(next_at)} · 외부 호출 0회")
+        raise Idle(f"오늘(동부 {today}) 패킷 발표 시각: {listed} · 다음 {kst.stamp(next_at)} · 외부 호출 0회")
     if run_state["nasdaqRequests"] >= NASDAQ_DAILY_CAP:
         next_at = _next_plan(now)
         flex.set_due(TASK_NAME, SCHEDULE_ITEM, next_at)

@@ -122,6 +122,9 @@ ALL_TASKS = (..., Task("my_thing", "slow", task_my_thing, "설명"),)
 
 `store.py`의 기대 목록(`expected`)에도 추가하면 `make status`에 나타납니다.
 
+받아 보려 했는데 쓸 것이 없으면 `EmptyResult`(실패로 집계 — 상태 화면 경고)이고, **할 일이 없어 외부를 부르지 않은 실행**(받을 것이 없음·아직 때가
+아님)은 `Idle`(`EmptyResult`의 하위 종류)로 끝냅니다 — 실행 기록은 정상(ok)이고 까닭은 상세 글로 남습니다(QA-996 — 할 일 없는 실행이 경고로 늘 떴음).
+
 Yahoo(yfinance)를 늘 부르는 태스크는 `Task(..., yahoo=True)`로 표시합니다 — 따로 둔 작업 스레드에서 돌아, Yahoo가 응답하지 않을 때
 다른 태스크의 작업 스레드를 차지하지 않습니다(QA-255). `yf.download`에는 `session=yahoo.session()`을 넘깁니다(넘기지 않으면 yfinance가
 태스크 예산을 보는 세션을 새 기본 세션으로 바꿈). 두 규약은 `collector/tests/test_yahoo_budget.py`가 확인합니다.

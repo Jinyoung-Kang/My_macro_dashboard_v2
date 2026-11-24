@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from .. import http, store
 
 from . import flex, polite
-from .base import EmptyResult, Task
+from .base import EmptyResult, Idle, Task
 from .registry import ALL_TASKS, TASKS_BY_NAME
 
 logger = logging.getLogger(__name__)
@@ -253,6 +253,12 @@ def _execute_task(task: Task, run_id: int | None, entry: "_InFlight | None" = No
                     entry.overdue = True
             future.add_done_callback(
                 lambda done, name=task.name, t0=started: _finish_overdue(name, entry, t0, done))
+    except Idle as exc:
+        # 할 일이 없는 실행(QA-996) — 정상으로 적고 그 까닭을 상세 글로(저장본은 그대로). 출처 거부를 만났다면 할 일이 있었던 것이라 아래와 같게.
+        if guard.rejected or http.REJECTED_MARK in str(exc):
+            status, ok, detail = "error", False, _rejected_detail(guard.rejected, str(exc))
+        else:
+            detail = str(exc)
     except EmptyResult as exc:
         rejected = guard.rejected
         # 거부는 기록(이 작업 스레드와 http.bind_guard로 묶은 풀에서 난 것)이나 사유 문자열의 표지(묶지 않은 스레드에서 난 것)로
