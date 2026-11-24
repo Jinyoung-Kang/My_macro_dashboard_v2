@@ -1,0 +1,26 @@
+# 단계 2 — 작업 C(QA-993 화면 조회의 외부 대기 예산 10초) 전후 (2026-11-24 18:06~18:27 KST, 실행 세션)
+# QA 스택(로그인 없는 모드). 고치기 전 = 계획 세션이 띄운 배포본 수집기(main@119cfa4f 꼴) + 단계 1 백엔드, 고친 뒤 = 0e6133ee의 수집기·백엔드.
+# scripts/qa/hang-test.sh(프록시 hang — 연결을 받고 응답하지 않음, 끝나면 block으로 되돌림), curl 단발.
+
+== hang: 걸린 시간(초) ==
+경로                                         고치기 전    고친 뒤    기준(예산 10 + 2)
+/api/detail/news?q=NVIDIA                    62.10        7.14       충족
+/api/detail/news?market=us&code=NVDA         55.03        10.01      충족
+/api/detail/news?market=us&code=MSFT         —            10.01      충족(고치기 전은 계획 세션 53.8초)
+/api/detail/news?market=kr&code=005930       31.04        4.76       충족
+/api/detail/quote?market=us&code=NVDA        (래치)       9.51       충족(계획 세션 고치기 전 30.0초 — 이번 고치기 전 측정은 Yahoo 래치가 닫혀 바로 끝남)
+/api/detail/quote?market=us&code=AAPL        —            9.51       충족
+/api/detail/quote?market=kr&code=005930      31.03        4.76       충족
+/api/krx/intraday?minutes=30                 31.03        4.76       충족
+/api/search/resolve?q=NVIDIA                 15.06        15.07      ADR 0041 설계 값(대상 풀기·resolve의 Wikidata 단계 15초) — 그대로
+- 4.76초는 출처 하나의 첫 시도가 남은 예산(10 − 0.5)을 연결·읽기에 반씩 나눠 받은 연결 timeout(4.75초)에 끝난 것(QA 프록시의 CONNECT가 응답하지 않음), 다시 보내지 않음.
+- 고치는 중에 본 회귀(고쳐서 커밋에 합침): app.yahoo의 예산 세션이 남김을 태스크 값(10초)으로 써서 10초 예산의 화면 조회에서 Yahoo에 아예 보내지 않았음
+  (오류 'YahooBudgetExhausted: 태스크 시간 예산이 10초 남아 Yahoo 요청을 보내지 않음'). 남김을 가드의 값(http.reserve_seconds)으로 읽게 고침 — 시험 test_Yahoo_시세도_같은_예산_안에서_보내고_끝난다.
+
+== block(차단 — 바로 끊김): 응답이 고치기 전과 같은가 (fetchedAt·checkedAt만 뺌) ==
+7/7 같음 — 상세 뉴스 셋·상세 시세 둘·KRX 장중·검색 resolve. 미국 두 경로는 Yahoo 무응답 래치가 같은 상태(닫힘)일 때 견줌(래치의 남은 초 숫자만 다름).
+걸린 시간: 고치기 전 1.0~2.0초(공용 세션 재시도 2회의 대기) → 고친 뒤 0.01~0.31초(예산 안에서는 다시 보내지 않음).
+
+== 정상 응답 ==
+QA는 외부가 막혀 있어 수집기 시험(test_live_budget.py — 127.0.0.1 응답 서버)으로 봄: 출처가 바로 답하면 예산을 건 결과 = 걸지 않은 결과.
+운영 확인은 배포 뒤 이 경로들을 두 번씩 불러 정상 응답인지(읽기만).
