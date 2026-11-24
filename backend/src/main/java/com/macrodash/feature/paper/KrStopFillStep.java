@@ -54,7 +54,8 @@ import java.util.TreeSet;
  *       책마다 한 트랜잭션으로 그 주문이 아직 대기이고 근거가 비었으며 보유 수량이 그대로인지만 다시 읽어, 바뀌었으면 버리고 아니면 씁니다(ON은 그 책의 대기 주문
  *       번호와 마지막 처리 저장본도 — 저장본은 그 책 판정 입력보다 먼저 읽은 값이라 잠금 밖 판정 중에 끼어든 밤 장부 처리도 버림) — 실제 매매의 선점이
  *       같은 잠금을 기다리므로 잠금을 쥔 시간을 줄이고 작업 기록에 남깁니다({@code lockMillis}).</li>
- *   <li><b>작업 기록</b>: {@code kr.}{@value #JOB} — 근거를 남겼거나 대조했거나 알림·오류가 있을 때만(20초마다 쌓이지 않음).</li>
+ *   <li><b>작업 기록</b>: {@code kr.}{@value #JOB} — 근거를 남겼거나 대조했거나 알림·오류가 있을 때만. 오류만 있는 주기는 직전 주기의 오류 글과 다를 때만
+ *       남깁니다(같은 오류가 이어져도 20초마다 쌓이지 않음 — QA-1019).</li>
  * </ul>
  *
  * <p>테이블은 백엔드 표({@code paper_orders} 근거)만 쓰고, 수집기 저장본·금융위 표는 {@link StoreReader#quietly}로 읽기만 합니다(ADR 0008). 날짜는 그 실행
@@ -84,6 +85,8 @@ final class KrStopFillStep {
     private final Map<Long, String> onDeferred = new java.util.concurrent.ConcurrentHashMap<>();
     /** ON 사후 점검 — 밤 사다리가 기다림이던 주문(다음 세션 관측치가 오면 '밤이 체결하지 않음'으로 셈). */
     private final Set<Long> nightWaiting = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** 직전 주기의 오류 글(없었으면 null) — 오류만 있는 주기의 같은 글을 작업 기록에 되풀이해 남기지 않게(QA-1019). 재기동하면 비어 한 번 더 남김. */
+    private volatile String lastRecordedError;
 
     /**
      * 한 주기의 결과.
@@ -164,7 +167,12 @@ final class KrStopFillStep {
         Long held = lockMillis[0] < 0 ? null : lockMillis[0];
         Outcome outcome = new Outcome(skipped, List.copyOf(recorded), List.copyOf(deferred), List.copyOf(checks), List.copyOf(alerts), held,
                 error);
-        if (!recorded.isEmpty() || !deferred.isEmpty() || !checks.isEmpty() || !alerts.isEmpty() || error != null) {
+        boolean worked = !recorded.isEmpty() || !deferred.isEmpty() || !checks.isEmpty() || !alerts.isEmpty();
+        // 오류만 있는 주기는 직전에 남긴 오류 글과 다를 때만 남깁니다(QA-1019) — 같은 예외가 이어지면 20초마다 쌓여 그 작업의 보존 200건을
+        // 약 67분에 채우고 ON 판의 미룬 사유(작업 기록에만 있음)를 밀어냅니다. 오류가 사라지면 비워, 다시 나면 다시 남깁니다.
+        boolean repeated = !worked && error != null && error.equals(lastRecordedError);
+        lastRecordedError = error;
+        if ((worked || error != null) && !repeated) {
             if (!alerts.isEmpty()) {
                 log.warn("한국 장중 스탑 체결 대조 운영 알림: {}", alerts);
             }

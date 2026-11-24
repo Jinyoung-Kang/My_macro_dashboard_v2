@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -240,7 +239,6 @@ class KrStopFillStepTest {
     }
 
     @Test
-    @Disabled("QA-1019: 같은 오류가 이어지면 주기(20초)마다 작업 기록이 쌓임")
     @DisplayName("QA-1019: 같은 오류가 이어지면 작업 기록은 처음 한 번만 — 오류 글이 바뀌거나 오류가 사라졌다 다시 나면 다시 남김")
     void repeatedErrorIsRecordedOnce() {
         stop(A, "2026-11-17T13:10:42");
@@ -253,12 +251,17 @@ class KrStopFillStepTest {
         assertThat(store.recentJobRuns(10)).as("같은 오류 세 주기 — 기록 한 건").singleElement()
                 .satisfies(r -> assertThat(r.outcome()).isEqualTo("ERROR"));
 
-        org.mockito.Mockito.reset(marketData);
-        when(marketData.stopWatch(true)).thenThrow(new IllegalStateException("다른 오류"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("다른 오류")).when(marketData).stopWatch(true);
         clock.now = kst("2026-11-17T13:16:20");
         step.run(KrPaperMarket.INSTANCE);
         step.run(KrPaperMarket.INSTANCE);
         assertThat(store.recentJobRuns(10)).as("오류 글이 바뀌면 한 번 더").hasSize(2);
+
+        org.mockito.Mockito.doReturn(Optional.empty()).when(marketData).stopWatch(true);
+        assertThat(step.run(KrPaperMarket.INSTANCE).error()).as("오류 없는 주기").isNull();
+        org.mockito.Mockito.doThrow(new IllegalStateException("다른 오류")).when(marketData).stopWatch(true);
+        step.run(KrPaperMarket.INSTANCE);
+        assertThat(store.recentJobRuns(10)).as("사라졌다 다시 난 같은 오류는 다시 남김").hasSize(3);
     }
 
     @Test
