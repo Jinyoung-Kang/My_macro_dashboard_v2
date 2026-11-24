@@ -1,0 +1,464 @@
+# 성능 재측정 원자료 (2026-11-24 16:41~17:16 KST, 계획 세션) — 배포본 main@119cfa4f
+
+조건
+- QA 스택(이 PC WSL2, AMD Ryzen 9 7940HS 12스레드·23 GiB, compose 프로젝트 my_macrodash_v2_qa, 로그인 없는 모드, 외부 호출 차단 프록시)을
+  main@119cfa4f로 다시 빌드해 잼. 시작할 때 Docker 재시작 여파로 QA postgres·프록시가 꺼져 있어 그 둘만 다시 만듦(볼륨·자료 그대로).
+- QA DB 596 MB: observations 798,213행, timeseries 1,520,827행, collector_task_runs 39,202행, snapshots 101, paper_orders 33, paper_decisions 15,
+  보안 공지는 QA 씨앗(scripts/qa/security-seed.sql) 몇 건, 13F 즐겨찾기 0건. 그래서 운영에서만 느린 경로(보안 공지·기관 목록)는 QA 값에 나타나지 않는다.
+- 운영 서버(Vultr, main@119cfa4f — 2026-11-24 16:37 KST 배포)는 읽기만: (가) 이 PC에서 화면이 부르는 조회 API를 경로마다 2~3번, 한 번에 하나씩 부름(응답은 버림,
+  실제 계좌 경로 /api/brokerage/account·/api/manual/isa·/api/realtrade/* 는 부르지 않음), (나) DB는 통계 표와 표 크기만 읽음. 값에는 왕복 약 8 ms가 들어 있다.
+- 운영에는 느린 질의·응답 시간 기록이 없다(pg_stat_statements 없음, log_min_duration_statement = -1, caddy 접근 기록 설정 없음).
+- 도구: scripts/bench-api.sh, scripts/qa/k6/core-get.sh, scripts/qa/lighthouse.sh(3회 중앙값), 그리고 저장소에 없는 임시 스크립트 셋 —
+  화면 58개(scripts/qa/ui-audit-routes.txt)를 열어 /api/ 요청·CLS·LCP를 모으는 것(ui-audit.js의 Chrome·CDP 도우미 사용, 감속 없음),
+  QA postgres에 문장 기록을 잠깐 켜고 경로마다 두 번 불러 문장 수를 세는 것, QA 프록시를 hang으로 바꿔 경로마다 한 번 부르는 것.
+- 측정하며 바꾼 QA 설정(문장 기록·프록시 모드)은 되돌림. 저장소·운영 서버 설정은 바꾸지 않음.
+
+========================================================================
+1. 단발 API (QA, scripts/bench-api.sh — 첫 호출 / 7회 중앙값 / 최대 ms)
+========================================================================
+# 로그인 없는 모드 — 쿠키 없이 부릅니다
+# 2026-11-24 16:44:18 KST N=7
+endpoint                                                                       첫(ms) 중앙 최대    bytes  code
+/api/macro/overview                                                               195     31    447    11872   200
+/api/macro/risk                                                                    31     13     18     1231   200
+/api/macro/advanced                                                                25     23     25     1642   200
+/api/macro/fx?ids=usdkrw,dxy,eurusd,usdjpy&period=5y&mode=index                    27     14     16    17672   200
+/api/macro/spread?longId=DGS10&shortId=DGS2                                        16     15     24     4349   200
+/api/liquidity?years=3                                                             22      6      7     9711   200
+/api/sector/rotation?period=1M                                                     30     11     23     3661   200
+/api/sector/momentum                                                               10      9     12     2860   200
+/api/sec13f/institutions                                                           10      3      4     1117   200
+/api/guru/profiles                                                                515      3      4     2178   200
+/api/guru/similarity                                                              238      3      5     3234   200
+/api/guru/risk?cik=0001067983&benchmark=SPY&years=1                               161      3      5     2177   200
+/api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1                            104      3      3     1577   200
+/api/cot/extremes?name=Gold&percentile=95&lookbackWeeks=52                          5      3      3      119   200
+/api/krx/futures?days=60                                                            8      4      4     2209   200
+/api/krx/investor-trend                                                             7      3      3     1291   200
+/api/radar/ranking                                                                 14      5      9     1527   200
+/api/radar/consensus                                                                9      5      6     1728   200
+/api/kr/investor-flows                                                             14      5      6     2562   200
+/api/kr/stock-flows?codes=005930,000660                                            17      5      5     1101   200
+/api/analytics/regime?years=5                                                      23      4      4     2652   200
+/api/analytics/correlation?x=fred:DGS10&y=fred:DGS2&window=60&years=3&mode=change     15     12     17    14814   200
+/api/status                                                                       248     13     19     5734   200
+/api/status/issues                                                                 59     12     14     2605   200
+/api/snapshot/text                                                                157      3      5     6059   200
+/api/alerts/unread-count                                                            9      3      6       12   200
+/api/paper/overview?market=US                                                      75     26     32     3639   200
+/api/paper/overview?market=KR                                                      14      9     11     2380   200
+/api/paper/status?market=US                                                        65     34     38     3032   200
+/api/paper/status?market=KR                                                        32     14     15     1326   200
+/api/detail/quote?market=us&code=AAPL                                               7      4      4      497   200
+
+========================================================================
+2. 혼합 부하 (QA, scripts/qa/k6/core-get.sh — 11경로, 동시 1·5·20·50명 각 60초)
+========================================================================
+# 2026-11-24 17:10:11 KST core-get.js 119cfa4f
+vu1: 전체 p50 4.7 p95 22.0 p99 25.8 max 2017.0ms · 98.0 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 1.3 p95 1.9 p99 3.4
+   home_issues          p50 9.8 p95 12.6 p99 14.9
+   home_unread          p50 1.0 p95 1.5 p99 2.0
+   macro_overview       p50 13.0 p95 15.9 p99 17.5
+   paper_overview_us    p50 14.1 p95 18.0 p99 21.0
+   paper_overview_kr    p50 4.6 p95 6.9 p99 8.5
+   paper_status_us      p50 22.2 p95 27.6 p99 31.8
+   paper_status_kr      p50 7.7 p95 10.2 p99 12.8
+   sec13f_institutions  p50 1.1 p95 1.6 p99 2.1
+   detail_quote_us      p50 2.1 p95 3.0 p99 4.7
+   live_prices          p50 2.1 p95 3.2 p99 1009.0
+   자원 vu1 my_macrodash_v2_qa-backend-1 cpu_avg=48% cpu_max=80% mem_max=466.0MiB
+   자원 vu1 my_macrodash_v2_qa-collector-1 cpu_avg=6% cpu_max=14% mem_max=211.1MiB
+   자원 vu1 my_macrodash_v2_qa-postgres-1 cpu_avg=21% cpu_max=33% mem_max=428.0MiB
+vu5: 전체 p50 5.1 p95 25.5 p99 30.6 max 2015.2ms · 427.3 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 1.2 p95 2.7 p99 4.0
+   home_issues          p50 12.5 p95 16.5 p99 19.6
+   home_unread          p50 0.9 p95 2.0 p99 3.5
+   macro_overview       p50 15.0 p95 18.5 p99 21.3
+   paper_overview_us    p50 17.0 p95 21.1 p99 23.2
+   paper_overview_kr    p50 4.9 p95 8.0 p99 9.7
+   paper_status_us      p50 25.7 p95 31.7 p99 36.2
+   paper_status_kr      p50 8.7 p95 12.2 p99 14.5
+   sec13f_institutions  p50 1.0 p95 1.7 p99 3.5
+   detail_quote_us      p50 2.2 p95 4.1 p99 5.4
+   live_prices          p50 2.3 p95 4.9 p99 1003.8
+   자원 vu5 my_macrodash_v2_qa-backend-1 cpu_avg=215% cpu_max=344% mem_max=480.8MiB
+   자원 vu5 my_macrodash_v2_qa-collector-1 cpu_avg=24% cpu_max=35% mem_max=211.5MiB
+   자원 vu5 my_macrodash_v2_qa-postgres-1 cpu_avg=107% cpu_max=148% mem_max=431.8MiB
+vu20: 전체 p50 15.0 p95 73.1 p99 119.1 max 2021.7ms · 649.7 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 2.9 p95 11.3 p99 15.7
+   home_issues          p50 37.3 p95 69.9 p99 97.3
+   home_unread          p50 2.1 p95 10.3 p99 14.3
+   macro_overview       p50 37.5 p95 62.0 p99 78.8
+   paper_overview_us    p50 39.0 p95 65.4 p99 82.6
+   paper_overview_kr    p50 13.2 p95 30.0 p99 41.4
+   paper_status_us      p50 67.0 p95 105.0 p99 130.0
+   paper_status_kr      p50 22.3 p95 44.3 p99 57.7
+   sec13f_institutions  p50 2.3 p95 10.1 p99 14.6
+   detail_quote_us      p50 8.7 p95 17.5 p99 24.2
+   live_prices          p50 9.8 p95 865.5 p99 1013.0
+   자원 vu20 my_macrodash_v2_qa-backend-1 cpu_avg=433% cpu_max=543% mem_max=593.8MiB
+   자원 vu20 my_macrodash_v2_qa-collector-1 cpu_avg=45% cpu_max=68% mem_max=212.1MiB
+   자원 vu20 my_macrodash_v2_qa-postgres-1 cpu_avg=194% cpu_max=240% mem_max=445.9MiB
+vu50: 전체 p50 47.8 p95 256.7 p99 643.1 max 2025.5ms · 581.1 req/s · 실패율 0.00% · 429 0 · 그밖 오류 0
+   home_regime          p50 13.1 p95 40.5 p99 67.1
+   home_issues          p50 64.4 p95 171.3 p99 378.2
+   home_unread          p50 11.2 p95 37.7 p99 60.6
+   macro_overview       p50 92.1 p95 197.3 p99 278.0
+   paper_overview_us    p50 130.3 p95 258.1 p99 330.3
+   paper_overview_kr    p50 58.2 p95 126.8 p99 225.0
+   paper_status_us      p50 202.9 p95 362.3 p99 434.5
+   paper_status_kr      p50 109.9 p95 222.9 p99 311.9
+   sec13f_institutions  p50 11.5 p95 39.8 p99 78.2
+   detail_quote_us      p50 18.2 p95 55.6 p99 262.5
+   live_prices          p50 21.8 p95 887.8 p99 1588.5
+   자원 vu50 my_macrodash_v2_qa-backend-1 cpu_avg=398% cpu_max=490% mem_max=648.1MiB
+   자원 vu50 my_macrodash_v2_qa-collector-1 cpu_avg=43% cpu_max=67% mem_max=213.2MiB
+   자원 vu50 my_macrodash_v2_qa-postgres-1 cpu_avg=160% cpu_max=201% mem_max=445.8MiB
+
+2026-11-22 단계 1 뒤 값: 동시 50명 581건/초. 2026-11-22 고치기 전 기준선: 180.3건/초.
+
+========================================================================
+3. Lighthouse 13.6.0 일곱 화면 (QA, 3회 중앙값 — 모바일은 느린 4G·CPU 4배 감속의 모의값)
+========================================================================
+# 2026-11-24 16:49:55 KST lighthouse 13.6.0 N=3 119cfa4f 로그인없음
+페이지        폼팩터 성능 접근 모범     FCP     LCP     TBT    CLS JS(KB)  RSC JS수
+/                desktop    99  100  100     247     850       0  0.035    343    0   21   (n=3, 성능 99~99)
+/                mobile     84  100  100     906    4011     193  0.031    343    0   21   (n=3, 성능 84~85)
+/macro           desktop    99  100  100     247     999      31  0.035    415    0   22   (n=3, 성능 99~99)
+/macro           mobile     66  100  100     906    4845     676  0.032    415    0   22   (n=3, 성능 65~66)
+/institutions    desktop    99  100  100     247     971      15  0.035    432    0   23   (n=3, 성능 99~99)
+/institutions    mobile     69  100  100     906    4579     343  0.161    432    0   23   (n=3, 성능 69~70)
+/paper/us        desktop    96  100  100     247    1145      25  0.093    608    0   25   (n=3, 성능 96~96)
+/paper/us        mobile     63  100  100     907    5531     455  0.143    608    0   25   (n=3, 성능 62~63)
+/paper/kr        desktop    96  100  100     247     989       3  0.109    608    0   25   (n=3, 성능 95~96)
+/paper/kr        mobile     72  100  100     907    5120     214  0.143    608    0   25   (n=3, 성능 72~73)
+/info/overview   desktop    98  100  100     246     744       0  0.084    285    0   21   (n=3, 성능 98~99)
+/info/overview   mobile     67  100  100     906    3673     114  0.569    285    0   21   (n=3, 성능 67~67)
+/s/us/NVDA       desktop    98  100  100     248     935       0  0.067    419    0   22   (n=3, 성능 98~98)
+/s/us/NVDA       mobile     73  100  100     906    4368     177  0.197    419    0   22   (n=3, 성능 73~73)
+
+2026-11-22 단계 3 끝(0513d871)의 같은 표: docs/qa/evidence/2026-11-22-perf/step3-macro.txt 4절 — 일곱 화면 모두 성능 ±1점·CLS 같음.
+
+출처 경고 띠의 요청(/api/info/sources)을 막고 모바일로 한 번씩(--blocked-url-patterns) — 띠가 없을 때의 값
+  /institutions    성능  75  CLS 0.019  LCP  4628  TBT  370  | 남은 밀림: 0.019 main#main > div.mx-auto > div.flex > div.flex
+  /paper/us        성능  67  CLS 0.004  LCP  5680  TBT  470  | 남은 밀림: 0.004 div.flex > header.flex > div.flex > div.flex
+  /info/overview   성능  77  CLS 0.253  LCP  3516  TBT  107  | 남은 밀림: 0.165 div.mx-auto > div.space-y-6 > div.space-y-6 > div.grid; 0.087 div.mx-auto > div.space-y-6 > div.space-y-6 > div.grid
+  /s/us/NVDA       성능  79  CLS 0.114  LCP  4369  TBT  169  | 남은 밀림: 0.114 main#main > div.mx-auto > div.flex > div.flex; 0.028 main#main > div.mx-auto > div.flex > div.flex
+  /macro           성능  64  CLS 0.000  LCP  4678  TBT  799  | 남은 밀림: 
+  (띠가 있을 때 모바일 CLS: 기관 0.161, 모의매매(미국) 0.143, 정보 개요 0.569, 종목 0.197, 매크로 0.032)
+
+========================================================================
+4. 화면 58개 기록 (QA, 감속 없음 — 데스크톱 1440폭 / 모바일 390폭)
+========================================================================
+화면                                             CLS 데스크톱    띠 없음   LCP d/m ms   긴작업 d   DOM  API  RSC  JS KB
+/                                                 0.006   0.007    272/248        26   697   10    0    343
+/macro                                            0.034   0.000    284/168       130  2492   13    0    415
+/liquidity                                        0.103   0.002    200/180        37   624    6    0    387
+/sector                                           0.034   0.000    184/152         2  1617    6    0    395
+/correlation                                      0.097   0.008    248/232        55  2121    6    0    387
+/cot                                              0.265   0.019    168/144         6   901    8    0    390
+/regime                                           0.034   0.000    156/128         0  1654    7    0    278
+/markets/i/us10y                                  0.035   0.031    324/132         0   480    7    0    483
+/s/us/NVDA                                        0.067   0.073    140/124         0   384    9    0    419
+/s/kr/005930                                      0.121   0.090   3136/3124        0   395    8    0    419
+/institutions                                     0.034   0.000    124/168        20  1652    7    0    432
+/institutions/0001608046                          0.201   0.170    112/176        16  1729    7    0    427
+/consensus                                        0.034   0.000    144/116         0  1184    8    0    397
+/style                                            0.034   0.000    112/88          0  1259    8    0    398
+/scorecard                                        0.096   0.005    120/104         0   643    6    0    389
+/paper/us                                         0.009   0.001    256/192        39  1631    7    0    607
+/paper/us/selection                               0.008   0.000    228/188         0  2341    6    0    607
+/paper/us/holdings                                0.008   0.000    124/96          0  1548    9    0    607
+/paper/us/decisions                               0.008   0.000    140/124         0   453    6    0    607
+/paper/us/framework                               0.008   0.000    212/96          0   694   12    0    607
+/paper/us/notes                                   0.012   0.005    152/124         0   297    7    0    607
+/paper/us/settings                                0.008   0.000    216/200         7  3230    7    0    607
+/paper/us/real                                    0.033   0.000    136/128         0   264    6    0    607
+/paper/kr                                         0.105   0.001    124/116         0   455    7    0    607
+/paper/kr/selection                               0.014   0.000    140/160         0   252    7    0    607
+/paper/kr/holdings                                0.053   0.002    128/116         0   249    6    0    607
+/paper/kr/decisions                               0.053   0.002    128/96          0   249    7    0    607
+/paper/kr/framework                               0.010   0.000    164/100         0   711   13    0    607
+/paper/kr/notes                                   0.010   0.002    136/116         0   291    8    0    607
+/paper/kr/settings                                0.018   0.000    140/144        15  1851    8    0    607
+/paper/kr/real                                    0.075   0.035    176/140         0   353    8    0    607
+/paper/kr/isa                                     0.022   0.002    124/120         0   269    7    0    607
+/search                                           0.035   0.004    100/80          0   241    6    0    307
+/search?q=NVDA                                    0.012   0.000     84/76          0   227    6    0    307
+/search?e=us:NVDA&tab=timeline&range=30d          0.154   0.050   1376/100         0   836    7    0    307
+/info/overview                                    0.071   0.027    120/112         0   418    7    0    285
+/info/news                                        0.016   0.000    120/112         0   672    6    0    285
+/info/kr                                          0.034   0.000    112/152         0   603    7    0    285
+/info/global                                      0.021   0.008    116/80          0   560    5    0    285
+/info/filings                                     0.038   0.006    104/96          0   444    5    0    285
+/info/paper                                       0.044   0.007    108/92          0   567    5    0    285
+/info/status                                      0.044   0.008    144/104         0   599    5    0    285
+/info/mechanism                                   0.034   0.000    128/112         0   781    5    0    285
+/more                                             0.034   0.000    112/92          0   471    4    0    257
+/alerts                                           0.000   0.000    108/88          0   386    7    0    276
+/ai/report                                        0.275   0.221    108/100         0   331    7    0    272
+/status                                           0.000   0.000    192/144         0  3344    6    0    273
+/connections                                      0.124   0.032    112/108         0   457    5    0    263
+/security                                         0.344   0.351    140/100         0   504    5    0    280
+/security/900001                                  0.129   0.002    116/112         0   428    5    0    268
+/admin/users                                      0.000   0.000    116/100         0   405    6    0    264
+/account                                          0.000   0.000     96/96          0   312    5    0    262
+/radar                                            0.087   0.056    252/204        90  3545   11    0    399
+/krx                                              0.000   0.000    188/164        22   961    9    0    392
+/signup                                           0.000   0.000     36/40          0    47    0    0    174
+/reset                                            0.000   0.000     32/24          0    39    0    0    174
+/verify                                           0.002   0.002     92/60          0    41    2    0    168
+/privacy                                          0.000   0.000     36/28          0    47    0    0    156
+
+모바일 폭의 CLS는 이 임시 도구에서 거의 0으로만 나와(두 화면 제외) 믿지 않음 — 모바일 CLS는 3절의 Lighthouse 값을 볼 것.
+
+띠 없이도 데스크톱 CLS가 0.05 이상인 화면의 밀림(때 ms · 크기 · 밀린 요소)
+  /security                                  0.351  89ms 0.349 div#_r_l_-panel.min-w-0,section.@container.min-w-0
+  /ai/report                                 0.221  95ms 0.221 section.rounded-card.border
+  /institutions/0001608046                   0.170  170ms 0.17 section.rounded-card.border,section.rounded-card.border
+  /s/kr/005930                               0.090  1110ms 0.055 div.flex.min-w-0,div.flex.min-w-0 | 94ms 0.022 section.rounded-card.border
+  /s/us/NVDA                                 0.073  113ms 0.051 div.flex.min-w-0,div.flex.min-w-0 | 100ms 0.022 section.rounded-card.border
+  /radar                                     0.056  187ms 0.056 section.rounded-card.border,label.flex.min-w-0
+
+LCP가 1초 넘는 화면: /s/kr/005930 3,136 ms(LCP 요소 = '네이버: ProxyError' 안내 — 외부 차단), /search?e=us:NVDA… 1,376 ms(LCP 요소 = '받지 못한 출처' 안내).
+
+화면이 부르는 고유 API 요청 110개(GET 108). 한 화면이 같은 API를 두 번 부르는 경우: /account의 /api/auth/session 하나.
+가장 많은 화면이 부르는 API: /api/info/sources · /api/calendar/kr-holidays · /api/auth/session · /api/alerts/unread-count (각 54화면, QA 중앙 3~5 ms), /api/paper/overview(18화면).
+QA에서 중앙값 40 ms 이상인 API(브라우저 기준, 외부 차단 = 즉시 502):
+     2666 ms  GET /api/search/feed?e=us%3ANVDA&tab=timeline
+     2021 ms  GET /api/detail/news?q=%EB%AF%B8%EA%B5%AD%EC%B1%84%2010%EB%85%84%EB%AC%BC%20%EC%88%98%EC%9D%B5%EB%A5%A0
+     2017 ms  GET /api/detail/news?q=National%20Pension%20Service
+     1335 ms  GET /api/search/entity?e=us%3ANVDA
+     1327 ms  GET /api/search/resolve?q=NVDA
+     1040 ms  GET /api/detail/news?market=us&code=NVDA
+     1014 ms  GET /api/detail/news?market=kr&code=005930
+     1013 ms  GET /api/krx/intraday?minutes=30
+     1012 ms  GET /api/detail/quote?market=kr&code=005930
+      149 ms  GET /api/snapshot/text
+       54 ms  GET /api/realtrade/status?market=KR
+       54 ms  GET /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1
+       49 ms  GET /api/sec13f/consensus?minHolders=2&topN=40
+       49 ms  GET /api/guru/similarity
+       48 ms  GET /api/kr/stock-flows?codes=001450%2C003160%2C003490%2C005935%2C006360%2C006400%2C007810%2C010140%2C01
+       47 ms  GET /api/paper/status
+       44 ms  GET /api/macro/overview?live=true
+
+========================================================================
+5. 운영 서버 단발 응답 시간 (전체 시간 ms, 왕복 약 8 ms 포함 — 경로마다 2~3번의 '첫 번째 / 나머지 중앙값')
+========================================================================
+    중앙      첫   gzip B  경로
+  1716   1622     1322  /api/security/notices?page=1&size=20
+   292   1429   376791  /api/search/feed?e=us%3ANVDA&tab=timeline
+   197    147      483  /api/krx/intraday?minutes=30
+   139    433     9173  /api/guru/similarity
+   110    168     5882  /api/macro/ticker?symbol=%5ETNX&period=1y
+   108    125     1958  /api/sec13f/institutions
+   104    390    10411  /api/macro/ticker?symbol=005930.KS&period=1y
+   102    175    11633  /api/macro/ticker?symbol=NVDA&period=1y
+    76   3093     3550  /api/guru/profiles
+    70     74    91338  /api/paper/framework
+    60     57     3056  /api/paper/status
+    56     64     4284  /api/paper/overview
+    54     59     5058  /api/paper/overview?market=KR
+    54     53     6507  /api/kr/stock-flows?codes=001450%2C003160%2C003490%2C005935%2C006360%2C006400%2C007810%2C010140%2C011070
+    38     31    11926  /api/macro/overview?live=true
+    38     45   111854  /api/paper/notes?includeExpired=false
+    34     34     1691  /api/macro/advanced
+    34     37    11926  /api/macro/overview
+    29     40    23370  /api/paper/track-record
+    26     31    39674  /api/paper/framework/proposals
+    26   1265     3301  /api/detail/news?market=us&code=NVDA
+    23     30     3651  /api/sector/rotation?period=1M
+    22    261     1719  /api/radar/history?market=KOSPI&investor=%EC%99%B8%EA%B5%AD%EC%9D%B8&tradeType=%EC%88%9C%EB%A7%A4%EC%88%
+    22    416     6695  /api/info/catalog
+    22     94    15543  /api/analytics/correlation?x=liquidity%3Anet&y=etf%3AQQQ&window=60&years=3&mode=change
+    22     22     4907  /api/paper/status?market=KR
+    20     28     6941  /api/status
+    20     24     5488  /api/search/recent
+    18     37     1709  /api/search/watch
+    18     31      999  /api/status/issues
+    18     29     8387  /api/info/krx?market=KOSPI&investor=%EC%99%B8%EA%B5%AD%EC%9D%B8&tradeType=%EC%88%9C%EB%A7%A4%EC%88%98
+    18     22     1220  /api/macro/risk
+    16   3227      985  /api/search/resolve?q=NVDA
+    16     20    11200  /api/macro/fred/T10Y3M?years=10
+    16     18      887  /api/paper/decisions?book=rules&limit=50
+    16     15     6352  /api/paper/framework/versions/1
+    15     21     2789  /api/info/mechanism
+    14     33     1452  /api/cot/extremes?name=S%26P%20500%20E-Mini&percentile=95&lookbackWeeks=52
+    14     21     9971  /api/liquidity?years=3
+    14     14     4067  /api/paper/framework/versions/0
+    13     25     7793  /api/cot/asset?name=S%26P%20500%20E-Mini
+    13     16     3520  /api/info/items?kind=blog&page=1&size=10
+전체 97경로: 중앙값의 중앙 11.5 ms, 50 ms 이상 14, 100 ms 이상 8, 300 ms 이상 1. 200이 아닌 응답 0.
+
+같은 경로를 여섯 번 연달아(첫 바이트까지 ms) — 캐시가 듣는지
+  /api/security/notices?page=1&size=20      1745 1717 1713 1654 1712 1683   <- 매번 느림
+  /api/security/inventory                     19   17   16   17   15   16
+  /api/guru/similarity                       272    9    9    9   10    9   (응답 캐시가 들음)
+  /api/guru/profiles                          99    9    8    8    8    9   (응답 캐시가 들음, 앞선 측정의 첫 호출은 3,093)
+  /api/sec13f/institutions                   115  114  111  119  113  110   <- 매번
+  /api/macro/ticker?symbol=^TNX&period=1y    301  108  104  163   96   98   <- 매번(수집기 실시간 조회)
+  /api/krx/intraday?minutes=30               352   89  224  356  221  224   <- 매번(수집기 실시간 조회)
+  /api/paper/overview                         77   61   55   60   54   59
+  /api/paper/status                           49   48   42   42   48   42
+  /api/paper/framework                        50   47   49   51   51   50   (내려받기까지 66~69)
+  /api/search/feed?e=us:NVDA&tab=timeline    224  236  208  202  208  272   (내려받기까지 235~309, gzip 377 KB)
+응답 원본 크기: search/feed 1,501 KB(items 2,573건), paper/notes 320 KB, paper/framework 248 KB, paper/track-record 176 KB, paper/framework/proposals 120 KB,
+paper/overview 15 KB, paper/status 14 KB.
+
+========================================================================
+6. 운영 DB (읽기만 — 통계 표와 크기)
+========================================================================
+== 큰 표(추정 행 수·크기) ==
+observations|842414|500 MB
+timeseries|1532251|199 MB
+snapshots|129|49 MB
+collector_task_runs|65037|17 MB
+paper_decisions|229|12 MB
+search_watch_items|9428|5480 kB
+info_items|5216|5112 kB
+collector_runs|22817|4440 kB
+env_changelog_cves|11340|3088 kB
+paper_framework_versions|7|1336 kB
+paper_job_runs|960|888 kB
+paper_reviews|1|848 kB
+env_components|1712|592 kB
+paper_orders|223|432 kB
+security_notices|135|424 kB
+paper_framework_proposals|2|360 kB
+info_translations|839|360 kB
+security_notice_rows|1980|352 kB
+paper_track_record|78|304 kB
+paper_notes|20|288 kB
+paper_briefings|-1|248 kB
+paper_intraday_plans|113|184 kB
+== 보안 공지 ==
+notices|135|222 kB
+notice_rows|1999
+components|1712
+changelog_cves|11340
+tracker|9
+== 저장본 수와 큰 것 ==
+129|33 MB
+sec.13f.0000895421.q8|3754 kB
+sec.13f.0001423053.q8|2778 kB
+sec.13f.0002012383.q8|2493 kB
+sec.13f.0000923093.q30|2371 kB
+equity.price_history|2204 kB
+sec.13f.0000093751.q8|1895 kB
+sec.13f.0000102909.q8|1870 kB
+sec.13f.0000850529.q30|1618 kB
+sec.13f.0001179392.q8|1550 kB
+sec.13f.0001037389.q8|1491 kB
+sec.13f.0001350694.q30|1220 kB
+sec.13f.0001283718.q8|671 kB
+== 순차 훑기가 많은 표 ==
+timeseries|1647|919789213|67775975|1532263
+observations|150|84729692|913189|848895
+paper_job_runs|28350|22574839|30890|976
+paper_decisions|52177|10198883|94155|242
+paper_fills|52406|8038686|97372|184
+fetch_schedule|150108|7562981|18583|56
+collector_task_runs|143|7209548|88532|67730
+paper_nav_daily|46493|6870385|1244|190
+env_changelog_cves|548|6524823|2|11340
+paper_books|512314|5115676|0|0
+info_items|973|3039580|18316|5324
+paper_positions|67517|2844863|6367|34
+paper_intraday_plans|36601|2615421|28619|120
+paper_orders|13311|2506391|764535|227
+collector_runs|112|1778085|88575|23089
+stats_reset|
+
+20분 사이 늘어난 양: 16:54:18 → 17:14:15 KST (1198초, 화요일 한국 장 마감 뒤 — 이 사이 5절의 단발 측정 약 350건 포함. 실제 매매·계좌 표는 뺌)
+표                               순차 훑기       읽은 행     색인 훑기    넣음    고침
+paper_orders                       12       2724       999     0     0
+paper_settings                    998        998         0     0     0
+paper_books                       773       7730         0     0     0
+snapshots                           1        129       757     0    27
+observations                        0          0       546   378     0
+paper_fills                       164      30176       343     0     0
+fetch_schedule                    223      12488        20     0    16
+paper_book_state                  230       2300         0     0     0
+paper_positions                   130       4420         0     0     0
+paper_decisions                    94      22654        14     0     0
+search_watch_items                  1       9479       104   103     0
+collector_runs                      0          0        88    16    52
+paper_intraday_plans               27       3240        43     0     0
+paper_order_exec                    8        400        52     0     0
+paper_checkpoints                   0          0        49     0     0
+paper_job_runs                     27      26352         0     0     0
+전체: 커밋 7247 (분당 363), 읽은 행 282,743, 디스크 블록 읽기 134, 캐시 적중 102,562
+
+========================================================================
+7. SQL 문장 수 (QA — 백엔드를 다시 띄운 뒤 화면 GET 102경로를 두 번씩, postgres 문장 기록으로 셈)
+========================================================================
+   문장 처음    다시   DB ms 처음      다시    응답초 처음     다시  경로
+      48     2       17.8     0.1     0.118  0.003  /api/snapshot/text
+      36    36       11.2     1.5     0.074  0.032  /api/paper/overview
+      27    27        3.7     3.5     0.071  0.041  /api/paper/status
+      24    24        2.4     1.8     0.027  0.016  /api/paper/status?market=KR
+      20     2      202.1     0.1     0.514  0.004  /api/guru/profiles
+      19     4        0.7     0.1     0.012  0.004  /api/manual/isa
+      18     2        2.2     0.1     0.060  0.004  /api/sec13f/new-buys?minHolders=3
+      15     5        1.9     0.4     0.281  0.005  /api/guru/similarity
+      15     4        7.9     0.3     0.019  0.007  /api/kr/fundamentals?codes=001450%2C003160%2C003490%2C005935%2C006360%2C006400%2C007810%
+      15     8        0.6     0.1     0.026  0.008  /api/security/notices/900001
+      14     9       63.8     0.4     0.094  0.016  /api/info/catalog
+      14    10        0.5     0.1     0.045  0.010  /api/realtrade/status?market=KR
+      14     2        1.9     0.1     0.073  0.004  /api/sec13f/consensus?minHolders=2&topN=40
+      13     2        3.8     0.0     1.254  0.009  /api/search/feed?e=us%3ANVDA&tab=timeline
+      12    12        0.3     0.3     0.019  0.014  /api/paper/overview?market=KR
+      11     2       54.9     0.1     0.263  0.005  /api/analytics/regime/track-record?asset=SPY
+      11     6        1.0     0.4     0.014  0.008  /api/kr/market-totals?days=180
+      11     7        5.5     3.2     0.018  0.011  /api/macro/risk
+      11    11        0.2     0.2     0.016  0.009  /api/paper/books/rules/positions
+      10    10        3.4     3.1     0.024  0.018  /api/paper/track-record
+
+다시 불러도 문장 수가 많은 경로와 되풀이되는 꼴
+   36문장   1.5 ms  /api/paper/overview                          | [('SELECT book_code, cash, nav, equity_value, e', 8), ('SELECT book_code, ticker, qty, avg_cost, ope', 8)]
+   27문장   3.5 ms  /api/paper/status                            | [('SELECT id, book_code, as_of_trading_date, ki', 8), ('SELECT name, payload, kind, status, error, c', 4)]
+   24문장   1.8 ms  /api/paper/status?market=KR                  | [('SELECT name, payload, kind, status, error, c', 5), ('SELECT code, kind, label, initial_cash, star', 3)]
+   12문장   0.3 ms  /api/paper/overview?market=KR                | [('SELECT code, kind, label, initial_cash, star', 3), ('SELECT name, payload, kind, status, error, c', 2)]
+   11문장   0.2 ms  /api/paper/books/rules/positions             | [('SELECT book_code, cash, nav, equity_value, e', 2), ('SELECT book_code, ticker, qty, avg_cost, ope', 2)]
+   10문장   3.1 ms  /api/paper/track-record                      | [('SELECT version, body::text AS body, created_', 3), ('SELECT as_of_date, cik, window_years, metric', 2)]
+
+전체 102경로: 문장 수 합 처음 653 · 다시 417. 기록된 문장 1081개 중 1 ms 초과 71 · 10 ms 초과 8.
+가장 오래 걸린 문장
+     84.2 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+     51.1 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+     45.2 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+     40.7 ms  SELECT COUNT(*) AS n FROM observations
+     22.6 ms  SELECT COUNT(*) AS n FROM timeseries
+     22.6 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+     12.0 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+     11.1 ms  SELECT name, payload, kind, status, error, collected_at, pg_column_size(payload) AS bytes FROM snapshots WHERE name = $1
+
+========================================================================
+8. 외부 출처가 응답하지 않을 때 (QA 프록시 hang — 경로마다 한 번, 전체 시간)
+========================================================================
+   62.08초  /api/detail/news?q=National%20Pension%20Service
+   62.08초  /api/detail/news?q=%EB%AF%B8%EA%B5%AD%EC%B1%84%2010%EB%85%84%EB%AC%BC%20%EC%88%98%EC%9D%B5%EB%A5%A0
+   53.83초  /api/detail/news?market=us&code=NVDA
+   31.04초  /api/detail/news?market=kr&code=005930
+   31.04초  /api/krx/intraday?minutes=30
+   31.04초  /api/detail/quote?market=kr&code=005930
+   30.01초  /api/detail/quote?market=us&code=NVDA
+   17.65초  /api/search/feed?e=us%3ANVDA&tab=timeline
+   15.01초  /api/search/resolve?q=NVDA
+   15.01초  /api/search/entity?e=us%3ANVDA
+0.5초 미만 92개 / 전체 102개.  외부가 바로 끊길 때(block, 기본)는 /api/krx/intraday 1.01초만 0.3초를 넘음(브라우저 기준으로는 detail/news 1~2초, search 1.3~2.7초).
+
+========================================================================
+9. 원인으로 확인한 것
+========================================================================
+- 보안 공지 목록: SecurityService.notices가 요청마다 judgeAll(모든 공지 + 모든 표 행 + 서버 구성 전부를 다시 읽고 판정)을 돌림. 응답 캐시 없음.
+  운영 표 크기: security_notices 135행(222 kB), security_notice_rows 1,999, env_components 1,712, env_changelog_cves 11,340, distro_cve_status 9.
+  같은 judgeAll을 SecurityAlertJob이 15분마다 돌림. 1.7초 가운데 읽기·구성 조립·판정의 몫은 재지 않음(QA에 그 규모의 자료가 없음).
+- 기관 목록: Sec13FFavoriteService.listEntries → StoreRepository.readSnapshotHeads의 payload->'quarters'->0->>'reportDate'가 저장본 JSONB 전체를 풂.
+  QA 재현(13F 저장본 52개·16 MB): 그 칸을 꺼내면 100~114 ms, name·collected_at만 읽으면 0.35 ms. 운영은 즐겨찾기 12곳, 13F 저장본 66개·29 MB.
+- 외부 먹통: collector/app/services/detail.py가 공용 세션(get_session — 재시도 2회, backoff 0.5)으로 요청마다 timeout 10초를 줌 → 출처 하나에 약 31초,
+  뉴스는 출처·질의가 둘이면 62초. 백엔드 → 수집기 일반 호출의 읽기 상한은 90초(CollectorClient), 화면 요청에는 상한이 없음(lib/api.ts timeoutMs 0).
+- 레이아웃 밀림: components/shell/SourceAlertBanner가 /api/info/sources 응답 뒤(약 100 ms) 본문 위에 끼어들어 <main> 안 전체를 밂(홈은 QA-613으로 이미 뺌).
+  끊긴 출처 사건이 있을 때만 — QA는 외부 차단이라 늘 1건, 운영은 측정 시점에 0건.
