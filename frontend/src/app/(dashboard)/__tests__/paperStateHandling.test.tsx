@@ -730,8 +730,8 @@ describe("책 버튼", () => {
   });
 
   // QA-1010: 탭 단추로 들어오면 계좌를 고른 적이 없어 '처음으로 시작한 계좌'를 봅니다. 그 계좌를 초기화하면 시작 전이 되어, 뒤따른 개요 다시 읽기에서
-  // 기본 계좌가 다음 시작한 계좌로 넘어갔습니다 — 머리의 계좌 고르기·표·머리 동작이 조작 없이 다른 계좌로 바뀌고 결과 안내도 사라졌습니다.
-  it.fails("QA-1010: 고르지 않은 기본 계좌를 초기화해도 보던 계좌에 머물고 결과 안내가 보인다", async () => {
+  // 기본 계좌가 다음 시작한 계좌로 넘어갔습니다 — 머리의 계좌 고르기·표·머리 동작이 조작 없이 다른 계좌로 바뀌고 결과 안내도 사라졌습니다(재현 커밋에서는 it.fails).
+  it("QA-1010: 고르지 않은 기본 계좌를 초기화해도 보던 계좌에 머물고 결과 안내가 보인다", async () => {
     const started = (code: string) => {
       const entry = INITIALIZED.books.find((candidate) => candidate.code === code)!;
       return { ...entry, status: "ACTIVE", startedOn: "2026-10-23", cash: 50.12, nav: 100050.12, equityValue: 100000, exposurePct: 99.95, returnPct: 0.05, positions: 1, staleCount: 0, stats: STATS };
@@ -766,7 +766,8 @@ describe("책 버튼", () => {
     await waitFor(() => expect(within(screen.getByLabelText("계좌 고르기")).getByRole("option", { name: /규칙 계좌 · 시작 전/ })).toBeTruthy());
     expect((screen.getByLabelText("계좌 고르기") as HTMLSelectElement).value).toBe("rules");
     expect(screen.getByText(/규칙 계좌를 초기화했습니다 — 지금 시작 전/)).toBeTruthy();
-    expect(api.apiGetShared.mock.calls.some(([path]) => String(path).startsWith("/api/paper/books/claude/"))).toBe(false);
+    // 보유·체결 표가 Claude 계좌로 넘어가 그 계좌의 보유를 읽은 적이 없습니다(개요가 읽는 Claude 계좌의 다른 경로는 이 시험 밖).
+    expect(api.apiGetShared.mock.calls.map(([path]) => String(path)).filter((path) => path.startsWith("/api/paper/books/claude/positions"))).toEqual([]);
   });
 
   it("운용 중인 책은 '일시정지', 시작 전인 책은 버튼 없이 안내", async () => {

@@ -813,14 +813,19 @@ export function HoldingsSection({
   const toggleResult = toggle.result?.book?.code === code ? toggle.result : null;
   const resetResult = reset.result?.book?.code === code ? resetResultView(reset.result) : null;
 
+  // 요청을 보내기 전에 지금 보고 있는 계좌를 고른 계좌로 굳힙니다(QA-1010). 탭 단추로 들어오면 고른 값이 없어 기본 계좌('처음으로 시작한 계좌')를
+  // 보는데, 그 계좌를 초기화하면 시작 전이 되어 뒤따른 개요 다시 읽기에서 기본 계좌가 다음 계좌로 넘어갔습니다 — 계좌 고르기·표·머리 동작이 조작 없이
+  // 다른 계좌로 바뀌고 결과 안내(그 계좌를 볼 때만 그림)도 사라졌습니다. 굳힌 계좌는 시작 전이어도 목록에 있어 그대로 남습니다.
   const changeStatus = async () => {
     if (!action) return;
+    setPicked(code);
     statusFocus.current = true;
     if (await toggle.run(code, action.next)) reloadAll();
   };
   const runReset = async (typed: string) => {
     // confirm은 사람이 친 글자 그대로입니다(확인 창은 계좌 코드와 같을 때만 부름) — 서버가 계좌 코드와 같은지 다시 봅니다(아니면 400).
     // 계좌 코드를 대신 채워 보내면 서버 검사가 늘 통과해 두 번째 울타리가 되지 못합니다.
+    setPicked(code);
     const ok = await reset.run(code, typed);
     // 성공·실패 모두 창을 닫습니다 — 실패 사유(서버 400 문구)는 아래 경고로 남고, 다시 하려면 창을 열어 코드를 다시 칩니다.
     setConfirmingReset(false);
