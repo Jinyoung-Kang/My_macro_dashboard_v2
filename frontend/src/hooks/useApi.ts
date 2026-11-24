@@ -75,6 +75,7 @@ function errorStatusOf(error: unknown): number | null {
  * - 셸의 "데이터 수동 새로고침"(왼쪽 내비, 좁은 화면은 더보기)이 끝나면 공용 신호가 바뀌어 이 훅을 쓰는
  *   모든 화면이 스스로 다시 읽습니다.
  * - 401이면 `unauthorized`가 서고 `data`는 null이 됩니다.
+ * - `reload`는 경로가 바뀌면 새 함수입니다. 바뀌기 전에 잡아 둔 `reload`를 불러도 **지금 경로**를 다시 읽습니다(QA-1009).
  * - `options.timeoutMs`를 주면 그 시간 안에 응답이 없을 때 오류로 끝냅니다.
  *   주지 않으면 기다립니다(외부 API를 부르는 진단 화면은 오래 걸리는 게 정상).
  * - `options.followRefresh: false`면 수동 새로고침 신호에 반응하지 않습니다. 세션 확인이
@@ -92,8 +93,16 @@ export function useApi<T>(
   const [state, setState] = useState<State<T>>({ ...EMPTY_STATE, loading: Boolean(path) });
 
   const controllerRef = useRef<AbortController | null>(null);
+  // 지금 그리기의 경로와 load — 경로가 바뀌기 전에 잡아 둔 reload(옛 load)가 늦게 불려도 지금 경로를 읽게 합니다(QA-1009).
+  const currentPathRef = useRef(path);
+  const currentLoadRef = useRef<() => Promise<void>>(async () => {});
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<void> => {
+    if (currentPathRef.current !== path) {
+      // 옛 그리기의 load입니다(오래 걸리는 실행을 기다리는 동안 계좌·주를 바꾼 뒤 그 실행이 끝나 부른 reload). 그대로 읽으면 지금 경로의 진행 중
+      // 읽기를 끊고 옛 경로의 응답을 적어 지금 화면의 값이 비었습니다 — 아무것도 고치지 않고 지금 load를 대신 부릅니다.
+      return currentLoadRef.current();
+    }
     if (!path) {
       setState({ ...EMPTY_STATE });
       return;
@@ -133,6 +142,12 @@ export function useApi<T>(
     // 아래 effect가 다시 돌아 화면이 갱신됩니다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, refreshToken, timeoutMs, notifyUnauthorized]);
+
+  // 아래 '처음 읽기' effect보다 먼저 둡니다(effect는 적힌 차례로 돕니다) — 경로가 바뀐 그리기의 첫 load가 자기를 옛 것으로 보지 않게.
+  useEffect(() => {
+    currentPathRef.current = path;
+    currentLoadRef.current = load;
+  }, [path, load]);
 
   useEffect(() => {
     void load();

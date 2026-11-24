@@ -229,8 +229,8 @@ describe("useApi", () => {
   });
 
   // QA-1009: 오래 걸리는 실행(수동 결정·복기)을 기다리는 동안 계좌·주를 바꾸면, 실행이 끝날 때 옛 그리기에서 잡아 둔 reload가 불립니다.
-  // 수정 전에는 그 reload가 옛 경로를 읽어 dataPath를 옛 경로로 적었고, 지금 경로의 값이 null이 되어 패널이 비었습니다.
-  it.fails("QA-1009: 경로가 바뀌기 전에 잡아 둔 reload를 불러도 지금 경로의 값이 남고, 지금 경로를 다시 읽는다", async () => {
+  // 수정 전에는 그 reload가 옛 경로를 읽어 dataPath를 옛 경로로 적었고, 지금 경로의 값이 null이 되어 패널이 비었습니다(재현 커밋에서는 it.fails).
+  it("QA-1009: 경로가 바뀌기 전에 잡아 둔 reload를 불러도 지금 경로의 값이 남고, 지금 경로를 다시 읽는다", async () => {
     api.apiGetShared.mockImplementation((path: string) => Promise.resolve({ v: path }));
     const { result, rerender } = renderHook(({ path }) => useApi<{ v: string }>(path), {
       initialProps: { path: "/api/a" },
