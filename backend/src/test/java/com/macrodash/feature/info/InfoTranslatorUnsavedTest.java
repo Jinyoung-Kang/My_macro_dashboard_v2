@@ -3,6 +3,7 @@ package com.macrodash.feature.info;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -176,6 +177,25 @@ class InfoTranslatorUnsavedTest {
 
         assertThat(out.ok()).isFalse();
         assertThat(budget.usedToday()).isZero();
+    }
+
+    @Test
+    @Disabled("QA-1020: Gemini에 보낸 뒤 Claude가 NO_KEY면 '요청이 나가지 않음'으로 보고 센 글자를 돌려줌")
+    @DisplayName("QA-1020: Gemini에 요청이 나갔으면 마지막 엔진(Claude)이 키 없음으로 끝나도 센 글자를 돌려주지 않는다")
+    void keepsCountWhenGeminiWasCalled() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(GeminiClient.Reply.failed("OVERLOADED", "붐빔(503)"));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(failed("NO_KEY"));
+        budget = new InfoAiBudget(store, 1_000_000, clock);
+        InfoTranslator translator = new InfoTranslator(ai, gemini, store, budget, new ObjectMapper(), "auto", MODEL, "gemini-3.5-flash",
+                "gemini-3.5-flash-lite", "low", 30, 20, clock);
+
+        InfoTranslator.UnsavedBody out = translator.bodyUnsaved(ENGLISH);
+
+        assertThat(out.ok()).isFalse();
+        verify(gemini, times(2)).structured(anyString(), anyString(), anyString(), any(), anyInt());
+        assertThat(budget.usedToday()).as("Gemini에 보낸 글자는 오늘 쓴 양에 남음").isEqualTo(ENGLISH.length());
     }
 
     @Test
