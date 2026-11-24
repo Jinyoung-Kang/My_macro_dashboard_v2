@@ -731,6 +731,43 @@ def test_뉴스_탭에는_모은_글_가운데_수집_글을_섞지_않고_건�
         search.reset_cache()
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1011 재현 — 모은 글 읽기가 15분 캐시라 방금 들어온 줄이 결과에 없고, 읽은 시각(watchAsOf)도 싣지 않습니다")
+def test_QA1011_모은_글은_요청마다_지금의_표를_읽고_읽기_직전_시각을_싣는다(store, monkeypatch):
+    """
+    화면은 타임라인 결과를 그린 뒤 '봤음'을 보냅니다. 결과가 15분 전 캐시면 그 사이 정기 수집이 넣은 줄은 화면에 없는데도 본 것이 됩니다. 모은 글은
+    자기 DB 읽기라 캐시하지 않고, 결과에 표를 읽기 직전 시각(``watchAsOf``)을 실어 화면이 그 시각까지만 봤다고 적게 합니다. 모은 글 출처가 돌지
+    않았거나 읽지 못했으면 null.
+    """
+    from app.services import search
+
+    monkeypatch.setattr(requests.Session, "send", lambda *a, **k: (_ for _ in ()).throw(AssertionError("네트워크")))
+    search.reset_cache()
+    key = "topic:Synthetic Topic"
+    base = {"publisher": "Example", "publisher_domain": "example.org", "lang": "en", "summary": None, "first_seen_at": NOW,
+            "kind": "news", "source": "bing"}
+    store.insert_search_watch_items(key, [dict(base, item_id="b1", title="Synthetic Topic original", url="https://www.example.org/b1",
+                                               published_at=NOW - timedelta(hours=3))])
+    try:
+        before = datetime.now(timezone.utc).replace(microsecond=0)
+        first = search.feed(key, "timeline", owner=False, external=False)
+        assert [item["title"] for item in first["items"]] == ["Synthetic Topic original"]
+
+        store.insert_search_watch_items(key, [dict(base, item_id="b2", title="Synthetic Topic follow-up",
+                                                   url="https://www.example.org/b2", published_at=NOW - timedelta(hours=1))])
+        second = search.feed(key, "timeline", owner=False, external=False)
+        assert [item["title"] for item in second["items"]] == ["Synthetic Topic follow-up", "Synthetic Topic original"], \
+            "정기 수집이 방금 넣은 줄이 다음 요청에 보임(15분 캐시가 아님)"
+        assert {row["source"]: row["status"] for row in second["sources"]}["watch"] == "ok"
+        read_first, read_second = rules.parse_time(first["watchAsOf"]), rules.parse_time(second["watchAsOf"])
+        assert before <= read_first <= read_second <= datetime.now(timezone.utc), "표를 읽기 직전 시각(UTC ISO, 초 단위로 내림)"
+
+        assert search.feed(key, "posts", owner=True, external=False)["watchAsOf"] is None, "모은 글 출처가 돌지 않는 탭"
+        monkeypatch.setattr(search_store, "watch_items", lambda *a, **k: sources.Fetched(error="합성 실패"))
+        assert search.feed(key, "timeline", owner=False, external=False)["watchAsOf"] is None, "읽지 못했으면 본 것이 없음"
+    finally:
+        search.reset_cache()
+
+
 def test_타임라인에서_모은_글의_경유_주소_줄은_같은_기사의_원문_주소_줄에_밀린다(store, monkeypatch):
     from app.services import search
 

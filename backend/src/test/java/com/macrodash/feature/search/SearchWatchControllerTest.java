@@ -7,6 +7,7 @@ import com.macrodash.store.SearchExcludeStore;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.web.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -18,6 +19,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -97,6 +99,20 @@ class SearchWatchControllerTest {
         assertThat(call(post("/api/search/watch/" + id + "/seen"), MEMBER, 200).path("ok").asBoolean()).isTrue();
         assertThat(call(delete("/api/search/watch/" + id), MEMBER, 200).path("ok").asBoolean()).isTrue();
         assertThat(call(get("/api/search/watch"), MEMBER, 200).path("items").size()).isZero();
+    }
+
+    @Test
+    @Disabled("QA-1011 재현 — '봤음'을 서버의 지금으로 적어, 화면이 결과를 읽은 뒤 들어온(화면에 보이지 않은) 글이 새 글 수에서 사라짐")
+    @DisplayName("QA-1011: '봤음'의 asOf(화면이 모은 글을 읽은 시각)까지만 본 것으로 적는다 — 그 뒤에 들어온 글은 새 글로 남음")
+    void seenUpToWhatTheScreenRead() throws Exception {
+        Instant now = Instant.parse("2026-11-14T03:00:00Z");
+        long id = watches.seed(MEMBER.id(), "us:NVDA", now.minus(Duration.ofHours(5)));
+        watches.item("us:NVDA", "google_ko", now.minus(Duration.ofMinutes(5)));      // 화면이 읽은 뒤(10분 전) 정기 수집이 넣은 글
+
+        JsonNode seen = call(json(post("/api/search/watch/" + id + "/seen"), "{\"asOf\":\"2026-11-14T02:50:00+00:00\"}"), MEMBER, 200);
+
+        assertThat(seen.path("lastSeenAt").asString()).isEqualTo("2026-11-14T02:50:00+00:00");
+        assertThat(call(get("/api/search/watch"), MEMBER, 200).path("items").get(0).path("newCount").asInt()).isEqualTo(1);
     }
 
     @Test
