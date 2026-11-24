@@ -157,7 +157,6 @@ def test_여러_줄로_묶인_칸은_아래_줄에_같은_글자를_채운다():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1000 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1000_칸_안의_줄_경계는_줄바꿈으로_남는다():
     """한 칸에 줄마다 적힌 목록(br·p·div·li)은 줄 경계를 ``\\n``으로 남긴다 — 백엔드가 줄마다 구간·제품 조각으로 읽는다."""
     table = """<table class="s-table"><thead><tr><th>취약점</th><th>제품명</th><th>영향받는 버전</th><th>해결 버전</th></tr></thead>

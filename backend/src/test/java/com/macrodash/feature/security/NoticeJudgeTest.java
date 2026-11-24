@@ -124,6 +124,18 @@ class NoticeJudgeTest {
                 "PostgreSQL|15 이상 15.70 미만|15.70 이상");
 
         @Test
+        @DisplayName("QA-1000 해당 — 한 칸에 줄마다 적힌 구간(수집기가 줄 경계를 \\n으로 남김)도 읽음, 공백으로 합쳐진 옛 저장본은 형식 못 읽음")
+        void affectedByLineSeparatedRanges() {
+            Verdict v = judge(rows("PostgreSQL|16.0 이상 16.50 미만\n17.0 이상 17.30 미만|16.50\n17.30"), inventory(PG));
+            assertThat(v.status()).isEqualTo(Status.AFFECTED);
+            assertThat(v.reasons()).isEmpty();
+
+            Verdict joined = judge(rows("PostgreSQL|16.0 이상 16.50 미만 17.0 이상 17.30 미만|16.50 17.30"), inventory(PG));
+            assertThat(joined.status()).isEqualTo(Status.CHECK);
+            assertThat(joined.reasons()).containsExactly(Reason.PARSE_FAILED);
+        }
+
+        @Test
         @DisplayName("해당 — 설치 버전이 영향 구간 안. 다른 계열 행은 근거로만 남고 판정에 쓰지 않음")
         void affected() {
             Verdict v = judge(pgRows, inventory(PG));

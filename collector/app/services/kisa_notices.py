@@ -5,7 +5,8 @@ app/services/kisa_notices.py
 [목록] ``parse_list`` — 게시판 표(번호·제목·게시일 칸)의 줄마다 글 번호(nttId)·제목·게시일·번호 칸. 번호 칸이 '공지'인 줄은 고정 공지
   (``pinned``, 번호 없음). 같은 쪽에 같은 글이 고정 공지와 번호 줄로 함께 나오면 한 건으로 합칩니다. 글이 없는 쪽(칸 하나짜리 안내 줄)은 빈 목록.
 [상세] ``parse_detail`` — 제목·게시일, 본문의 틀(``product_table`` — 취약점·제품명·영향받는 버전·해결 버전 4열 표가 하나라도 있음 /
-  ``other_table`` — 다른 표만 / ``no_table``), 4열 표의 행(칸 글자 원문 그대로 — 여러 줄로 묶인 칸(rowspan)은 아래 줄에 같은 글자를 채움),
+  ``other_table`` — 다른 표만 / ``no_table``), 4열 표의 행(칸 글자 원문 그대로 — 여러 줄로 묶인 칸(rowspan)은 아래 줄에 같은 글자를 채움, 칸 안의 줄 경계
+  (``<br>``·``p``·``div``·``li``)는 ``\n``으로 남김 — 백엔드가 줄마다 구간·제품 조각으로 읽음, QA-1000),
   제품명 고유 값(처음 나온 순서), 표 밖의 '※' 문장, 4열 표를 뺀 본문 글자(다른 표의 글자는 남김).
   **버전 칸은 해석하지 않습니다** — 영향받는 버전·해결 버전의 해석과 판정은 백엔드가 읽을 때 합니다(ADR 0046 결정 5).
 
@@ -20,6 +21,7 @@ from datetime import date
 from urllib.parse import parse_qs, urlsplit
 
 from bs4 import BeautifulSoup
+from bs4.element import CData, NavigableString, Tag
 
 from .info_text import ShapeError, html_to_text
 
@@ -36,6 +38,9 @@ MAX_BODY_CHARS = 40_000
 
 _DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 _SPACES = re.compile(r"\s+")
+# 표 칸 안에서 줄을 나누는 태그(QA-1000) — 줄바꿈 태그와, 앞뒤로 줄이 끊기는 블록 요소.
+_CELL_BREAK = "br"
+_CELL_BLOCKS = frozenset({"p", "div", "li", "ul", "ol"})
 
 
 def list_url(page: int = 1) -> str:
@@ -81,6 +86,35 @@ class Detail:
 
 def _text(node) -> str:
     return _SPACES.sub(" ", node.get_text(" ", strip=True)).strip()
+
+
+def _cell_text(cell) -> str:
+    """
+    4열 표의 칸 글자 — ``_text``와 같되 칸 안의 줄 경계(``<br>``, ``p``·``div``·``li`` 같은 블록 요소)를 ``\\n``으로 남깁니다(QA-1000).
+
+    한 칸에 구간·제품이 줄마다 적힌 행(``16.0 이상 16.4 미만<br>17.0 이상 17.2 미만``)을 공백으로 이으면 백엔드가 구간을 읽지 못합니다.
+    줄 안에서는 ``_text``와 같이 글 조각을 빈칸 하나로 잇고(소스의 줄바꿈·연속 공백도 빈칸 하나), 빈 줄은 뺍니다.
+    """
+    lines: list[list[str]] = [[]]
+
+    def walk(node) -> None:
+        for child in node.children:
+            if isinstance(child, Tag):
+                if child.name == _CELL_BREAK:
+                    lines.append([])
+                elif child.name in _CELL_BLOCKS:
+                    lines.append([])
+                    walk(child)
+                    lines.append([])
+                else:
+                    walk(child)
+            elif type(child) in (NavigableString, CData):       # 주석·처리 지시문은 글자가 아님(get_text와 같음)
+                piece = _SPACES.sub(" ", str(child)).strip()
+                if piece:
+                    lines[-1].append(piece)
+
+    walk(cell)
+    return "\n".join(" ".join(line) for line in lines if line)
 
 
 def _date(text: str, what: str) -> date:
@@ -198,7 +232,7 @@ def _expand(rows, width: int) -> list[list[str]]:
                 position += 1
                 continue
             cell = queue.pop(0)
-            text = _text(cell)[:MAX_CELL_CHARS]
+            text = _cell_text(cell)[:MAX_CELL_CHARS]
             span_rows = _span(cell.get("rowspan"))
             for _ in range(_span(cell.get("colspan"))):
                 line.append(text)
