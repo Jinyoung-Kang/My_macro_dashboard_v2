@@ -223,15 +223,19 @@ export interface RealtimeNav {
  * 계좌의 순자산을 실시간 시세로 다시 셉니다(사용자 결정 2026-11-03 — 개요 '계좌 순자산'이 고른 주기로 움직임): 현금 + 보유 수량 × 가격(실시간 —
  * 프리장·애프터장이 열려 있으면 그 가격, 없으면 서버 장중 평가의 가격). 실시간 가격이 하나도 없거나, 현금·어느 보유의 가격도 모르면 null(지어내지
  * 않음). 장부의 확정 순자산과 별개인 표시 전용 추정입니다.
+ *
+ * @param missing 마지막 실시간 응답에 없던 종목('US:AAPL' — hooks/useLivePrices `missing`). 그 종목의 `realtime` 값은 멈춘 값이라 쓰지 않고 서버
+ *                장중 가격으로 세며, 실시간으로 센 종목 수(`priced`)에도 넣지 않습니다(QA-1029).
  */
 export function realtimeBookNav(book: PaperLiveBook | null | undefined, market: PaperMarketCode,
-  realtime: Readonly<Record<string, LivePrice>>): RealtimeNav | null {
+  realtime: Readonly<Record<string, LivePrice>>, missing: readonly string[] = []): RealtimeNav | null {
   if (!book || book.cash === null) return null;
   let nav = book.cash;
   let priced = 0;
   let at: string | null = null;
   for (const position of book.positions) {
-    const live = realtime[`${market}:${position.ticker.toUpperCase()}`];
+    const key = `${market}:${position.ticker.toUpperCase()}`;
+    const live = missing.includes(key) ? undefined : realtime[key];
     const shown = live && live.price > 0 ? liveShown(live) : null;
     const price = shown?.price ?? position.price;
     if (price === null || price === undefined) return null;

@@ -519,7 +519,7 @@ describe("QA-183 실시간 시세 연결이 닫히면 히어로의 실시간 추
 
   // QA-1029: 실시간 응답에서 빠진 종목의 앞 값으로 히어로의 실시간 추정을 계속 냈습니다 — 빠진 종목은 서버 값으로 세고, 실시간으로 센 종목이
   // 하나도 없으면 내지 않습니다(null — 히어로는 서버 지금 값).
-  it.fails("QA-1029 실시간 응답에서 보유 종목이 빠지면 그 멈춘 값으로 실시간 순자산을 내지 않는다", async () => {
+  it("QA-1029 실시간 응답에서 보유 종목이 빠지면 그 멈춘 값으로 실시간 순자산을 내지 않는다", async () => {
     api.apiGetShared.mockImplementation(() => Promise.resolve(live()));
     const onRealtime = vi.fn();
     render(<LiveValuationCard bookCode="claude" onRealtime={onRealtime} />);

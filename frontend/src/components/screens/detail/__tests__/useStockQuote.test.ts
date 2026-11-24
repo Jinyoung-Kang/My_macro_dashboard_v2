@@ -3,6 +3,7 @@
  *
  * 실시간 응답에서 빠진 종목(missing)과 연결이 닫힌 동안(disconnected)의 앞 값은 멈춘 값입니다(hooks/useLivePrices — QA-183·184). 수정 전에는 그 값을
  * 지금 가격·전일 대비로 그대로 썼습니다. 그때는 시세 응답(GET /api/detail/quote)의 값으로 돌아갑니다. 응답은 모두 합성 값입니다.
+ * 'QA-1029:' 두 시험은 재현 커밋에서 it.fails였습니다.
  */
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,13 +40,13 @@ describe("useStockQuote — 실시간 값이 지금 값일 때만", () => {
     expect(result.current.live).not.toBeNull();
   });
 
-  it.fails("QA-1029: 마지막 응답에서 빠진 종목(missing)의 앞 값은 쓰지 않는다 — 시세 응답의 값으로", () => {
+  it("QA-1029: 마지막 응답에서 빠진 종목(missing)의 앞 값은 쓰지 않는다 — 시세 응답의 값으로", () => {
     state.realtime = realtime({ missing: ["US:FAKE"] });
     const { result } = renderHook(() => useStockQuote("us", "FAKE"));
     expect(result.current).toMatchObject({ price: 100, change: 1, changePct: 1.01, live: null, shown: null });
   });
 
-  it.fails("QA-1029: 연결이 닫힌 동안(disconnected)의 앞 값도 쓰지 않는다", () => {
+  it("QA-1029: 연결이 닫힌 동안(disconnected)의 앞 값도 쓰지 않는다", () => {
     state.realtime = realtime({ disconnected: true });
     const { result } = renderHook(() => useStockQuote("us", "FAKE"));
     expect(result.current).toMatchObject({ price: 100, change: 1, changePct: 1.01, live: null, shown: null });

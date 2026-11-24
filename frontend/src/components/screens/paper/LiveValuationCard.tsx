@@ -108,14 +108,14 @@ export function LiveValuationCard({
   const extended = phase === "PRE" || phase === "AFTER";
   const realtime = useLivePrices(tickers, seconds, Boolean(data?.available) && (phase === "REGULAR" || extended));
   // 히어로의 실시간 순자산 — 종목 표와 같은 계좌(고른 계좌, 없으면 첫 계좌). 실시간 시세 연결이 닫혀 다시 열기를 기다리는 동안은 받은 가격이 멈춘
-  // 값이라 내지 않습니다(히어로는 서버 지금 값 — QA-183).
-  const { disconnected } = realtime;
+  // 값이라 내지 않습니다(히어로는 서버 지금 값 — QA-183). 마지막 응답에서 빠진 종목(missing)의 앞 값도 멈춘 값이라 서버 값으로 셉니다(QA-1029).
+  const { disconnected, missing } = realtime;
   useEffect(() => {
     if (!onRealtime) return;
     const books = data?.available ? data.books ?? [] : [];
     const book = books.find((entry) => entry.code === bookCode) ?? books[0] ?? null;
-    onRealtime(disconnected ? null : realtimeBookNav(book, market, realtime.prices));
-  }, [data, bookCode, market, realtime.prices, disconnected, onRealtime]);
+    onRealtime(disconnected ? null : realtimeBookNav(book, market, realtime.prices, missing));
+  }, [data, bookCode, market, realtime.prices, missing, disconnected, onRealtime]);
 
   useEffect(() => {
     if (revision === null) return;

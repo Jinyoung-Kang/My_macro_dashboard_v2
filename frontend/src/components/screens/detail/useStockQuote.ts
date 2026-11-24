@@ -11,7 +11,8 @@ import type { DetailMarket, DetailQuoteResponse, LivePrice } from "@/lib/types";
 
 /**
  * 종목 시세 한 벌 — 종목 상세 화면과 모의 매매의 종목 팝업 창이 함께 씁니다. 시세·지표·개요는 GET /api/detail/quote(5분 캐시), 가격·전일
- * 대비는 실시간 시세(ADR 0024 — 고른 주기마다 서버가 밀어 줌, 프리장·애프터장이 열려 있으면 그 가격)가 오면 그 값.
+ * 대비는 실시간 시세(ADR 0024 — 고른 주기마다 서버가 밀어 줌, 프리장·애프터장이 열려 있으면 그 가격)가 오면 그 값. 실시간 응답에서 이 종목이
+ * 빠졌거나 연결이 닫힌 동안은 앞 값을 쓰지 않고 시세 응답의 값으로 돌아갑니다(`live`·`shown`은 null — QA-1029).
  *
  * @param enabled false면 아무것도 읽지 않습니다(닫힌 팝업 창).
  */
@@ -21,7 +22,9 @@ export function useStockQuote(market: DetailMarket, code: string, enabled = true
   const [liveSeconds] = useLiveSeconds();
   const liveItems = useMemo(() => [liveKey(market === "kr" ? "KR" : "US", code)], [market, code]);
   const realtime = useLivePrices(liveItems, liveSeconds, enabled && Boolean(quoteState.data?.available));
-  const live: LivePrice | null = realtime.prices[liveItems[0]] ?? null;
+  // 마지막 응답에서 빠졌거나(missing) 연결이 닫힌 동안(disconnected)의 앞 값은 멈춘 값이라 지금 값으로 쓰지 않습니다 — 시세 응답의 값으로(QA-1029).
+  const stale = realtime.disconnected || realtime.missing.includes(liveItems[0]);
+  const live: LivePrice | null = stale ? null : realtime.prices[liveItems[0]] ?? null;
   const shown: LiveShown | null = live ? liveShown(live) : null;
   return {
     quoteState,

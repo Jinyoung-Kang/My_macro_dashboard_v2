@@ -181,11 +181,9 @@ describe("실시간 순자산(개요 히어로 — 사용자 결정 2026-11-03)"
 
   // QA-1029: 실시간 응답에서 빠진 종목의 앞 값(useLivePrices가 남김 — missing에만 표시)을 지금 값으로 세어 priced에도 넣었습니다(QA-184의 수정은
   // 매크로 카드에만 들어감). 빠진 종목은 서버 장중 가격으로 세고 실시간으로 센 종목 수에 넣지 않습니다.
-  it.fails("QA-1029: 실시간 응답에서 빠진 종목(missing)은 멈춘 값 — 서버 가격으로 세고 priced에 넣지 않는다", () => {
-    // 재현 커밋에서는 넷째 인자가 아직 없습니다(수정 커밋에서 바로 부르게 고침).
-    const navWith = realtimeBookNav as unknown as (
-      target: ReturnType<typeof book>, market: "US", prices: Record<string, LivePrice>, missing: readonly string[],
-    ) => ReturnType<typeof realtimeBookNav>;
+  it("QA-1029: 실시간 응답에서 빠진 종목(missing)은 멈춘 값 — 서버 가격으로 세고 priced에 넣지 않는다", () => {
+    // 재현 커밋에서는 넷째 인자가 없어 형 변환을 거쳐 불렀고 it.fails였습니다.
+    const navWith = realtimeBookNav;
     const prices = { "US:AAA": live("AAA", 430), "US:BBB": live("BBB", 250, { tradedAt: "2026-10-30T14:40:00Z" }) };
     // book(): 현금 10,000, AAA 100주(서버 420), BBB 200주(서버 240)
     const partial = navWith(book(), "US", prices, ["US:BBB"]);

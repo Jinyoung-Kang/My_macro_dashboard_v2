@@ -7,15 +7,15 @@ import type { LivePrice, LivePricesResponse } from "@/lib/types";
 import { useShownOnce } from "./useShownOnce";
 
 export interface LivePricesState {
-  /** 'US:AAPL' → 최근에 받은 가격(이번 구독에서 받은 것만 — 뒤 응답에서 빠져도 남김, 빠졌는지는 missing) */
+  /** 'US:AAPL' → 최근에 받은 가격(뒤 응답에서 빠지거나 구독이 바뀌어도 남김 — 지금 값이 아닌지는 missing) */
   prices: Readonly<Record<string, LivePrice>>;
   /** 마지막으로 받은 때(ms, 브라우저 시계) — 받은 적 없으면 null */
   receivedAt: number | null;
   /** 종목마다 마지막으로 받은 때(ms) — 그 종목이 든 응답의 시각(QA-184). 응답 하나의 시각을 모든 종목에 붙이지 않습니다. */
   receivedAtByKey: Readonly<Record<string, number>>;
   /**
-   * 마지막 응답에 없던 종목 — 받은 값이 있는데 빠진 것과 응답이 받지 못했다고 밝힌 것(받지 못한 응답이면 받은 종목 모두). 이 종목의 `prices` 값은
-   * 지금 값이 아닙니다(QA-184).
+   * 마지막 응답에 없던 종목 — 받은 값이 있는데 빠진 것과 응답이 받지 못했다고 밝힌 것(받지 못한 응답이면 받은 종목 모두). 구독(종목 목록·enabled)이
+   * 바뀐 뒤 첫 응답 전에는 앞 구독에서 받은 종목 모두(QA-1029). 이 종목의 `prices` 값은 지금 값이 아닙니다(QA-184).
    */
   missing: readonly string[];
   /** 받지 못한 이유 한 줄(연결 끊김·서버 응답 없음·출처 거부) — 하나도 받지 못했을 때만, 없으면 null */
@@ -103,6 +103,20 @@ export function useLivePrices(items: readonly string[], seconds: number, enabled
   // 닫힌 연결을 새로 여는 차례 — 올리면 아래 효과가 새 EventSource를 엽니다(QA-183). 기다린 횟수는 받으면 0(ref — 바꿔도 다시 열지 않음).
   const [reopen, setReopen] = useState(0);
   const closedCount = useRef(0);
+
+  // 구독(종목 목록·enabled)이 바뀌면 앞 구독에서 받은 종목을 missing으로 표시합니다(QA-1029) — 값은 남기되(줄 단위 표시가 씀), 새 구독의 첫 응답
+  // 전에는 지금 값으로 읽히지 않게(실시간 추정 순자산·종목 팝업·ISA 평가는 missing을 봄). 다시 받으면 mergeLivePrices가 missing에서 뺍니다.
+  // 아래 두 효과(한 번 읽기·SSE)보다 먼저 둡니다 — 처음 구독(받은 값 없음)에는 표시할 것이 없습니다.
+  const subscription = `${enabled ? "on" : "off"}|${key}`;
+  const subscribed = useRef(subscription);
+  useEffect(() => {
+    if (subscribed.current === subscription) return;
+    subscribed.current = subscription;
+    setState((previous) => {
+      const held = Object.keys(previous.prices);
+      return held.every((item) => previous.missing.includes(item)) ? previous : { ...previous, missing: held };
+    });
+  }, [subscription]);
 
   // 끄기(0) — 화면을 열 때 한 번. 의존성에 탭 보임(visible)을 두지 않습니다: 두면 숨길 때 숨은 탭에서, 돌아올 때 또 읽었습니다(QA-189).
   useEffect(() => {

@@ -142,7 +142,7 @@ describe("useLivePrices", () => {
 
   // QA-1029: 구독(종목 목록·enabled)이 바뀌어도 앞 구독에서 받은 값이 표시 없이 남아, 새 구독의 첫 응답 전에는 멈춘 값이 지금 값으로 읽혔습니다
   // (장이 끝나 구독을 끈 장중 카드의 실시간 추정 등). 앞 구독의 종목을 missing으로 표시합니다 — 값은 남기고, 다시 받으면 빠집니다.
-  it.fails("QA-1029: 구독을 껐다 켜면 새 이벤트 전에는 앞 구독의 종목이 missing — 값은 남기고, 받으면 빠진다", () => {
+  it("QA-1029: 구독을 껐다 켜면 새 이벤트 전에는 앞 구독의 종목이 missing — 값은 남기고, 받으면 빠진다", () => {
     const { result, rerender } = renderHook(({ enabled }) => useLivePrices(["US:AAPL"], 5, enabled), { initialProps: { enabled: true } });
     act(() => FakeEventSource.instances[0].emit("prices", body({ "US:AAPL": AAPL })));
     expect(result.current.missing).toEqual([]);
@@ -159,7 +159,7 @@ describe("useLivePrices", () => {
     expect(result.current.prices["US:AAPL"].price).toBe(338);
   });
 
-  it.fails("QA-1029: 종목 목록이 바뀌면 앞 구독의 종목은 missing — 처음 구독(받은 값 없음)에는 표시할 것이 없다", () => {
+  it("QA-1029: 종목 목록이 바뀌면 앞 구독의 종목은 missing — 처음 구독(받은 값 없음)에는 표시할 것이 없다", () => {
     const { result, rerender } = renderHook(({ items }) => useLivePrices(items, 5), { initialProps: { items: ["US:AAPL"] } });
     expect(result.current.missing).toEqual([]);
     act(() => FakeEventSource.instances[0].emit("prices", body({ "US:AAPL": AAPL })));
