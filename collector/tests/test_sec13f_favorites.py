@@ -103,6 +103,26 @@ def test_단건_수집은_후보_기본_즐겨찾기_밖_CIK를_모으지_않는
     assert store.read_snapshot(catalog.snap_sec_13f(cik, 8)) is None
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1014: 선행 CIK의 까닭이 지금 CIK와 같은 track_record라 부른 쪽이 가르지 못함")
+def test_QA1014_선행_CIK는_까닭이_따로이고_지금_CIK를_함께_준다(store, fake_sec):
+    asked, _responses = fake_sec
+    current = next(f["cik"] for f in indicators.TRACK_RECORD_FILERS if PREDECESSOR in (f.get("predecessors") or ()))
+    _favorite(store, PREDECESSOR, "OLD FILER")
+    out = filings.collect_favorite_13f(PREDECESSOR)
+    assert out["ok"] is False and out["refused"] == "track_record_predecessor" and out["currentCik"] == current
+    assert asked == []
+
+
+def test_QA1014_합산_자회사와_지금_후보_CIK의_까닭은_그대로다(store, fake_sec):
+    asked, _responses = fake_sec
+    merged = next(c for inst in indicators.INSTITUTIONS for c in (inst.get("merge_ciks") or ()))
+    _favorite(store, merged, "SUBSIDIARY")
+    assert filings.collect_favorite_13f(merged)["refused"] == "default"
+    candidate = filings.collect_favorite_13f(CANDIDATE)
+    assert candidate["refused"] == "track_record" and "currentCik" not in candidate
+    assert asked == []
+
+
 def test_빠진_저장본_목록에_즐겨찾기가_있다(store):
     _favorite(store, FAV, "FAKE ONE (Fake)")
     _favorite(store, CANDIDATE, "CANDIDATE")

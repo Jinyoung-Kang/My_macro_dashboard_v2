@@ -9,6 +9,7 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -178,6 +179,30 @@ class Sec13FFavoriteServiceTest {
         var result = service.add(OWNER, CIK, null, null);
         assertThat(result.status()).isEqualTo(422);
         assertThat(result.body().get("message").toString()).contains("HTTP 503");
+        assertThat(rows).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-1014: 수집기가 모으지 않는다고 답한 CIK를 '모았습니다'로 답하고 줄을 남김")
+    @DisplayName("QA-1014: 수집기가 모으지 않는 대상이라고 답하면(후보의 지금 CIK 말고) 줄을 지우고 409와 사유")
+    void refusedTargetsAreNotKept() {
+        when(collector.sec13fCollectFavorite(CIK)).thenReturn(json("{\"cik\":\"0009900001\",\"ok\":false,\"refused\":\"default\",\"error\":null}"));
+        var merged = service.add(OWNER, CIK, null, null);
+        assertThat(merged.status()).isEqualTo(409);
+        assertThat(merged.body().get("message")).isEqualTo("기본 기관에 합쳐 모으는 CIK라 따로 더할 수 없습니다.");
+        assertThat(rows).isEmpty();
+
+        when(collector.sec13fCollectFavorite(CIK)).thenReturn(json(
+                "{\"cik\":\"0009900001\",\"ok\":false,\"refused\":\"track_record_predecessor\",\"currentCik\":\"0009900777\",\"error\":null}"));
+        var predecessor = service.add(OWNER, CIK, null, null);
+        assertThat(predecessor.status()).isEqualTo(409);
+        assertThat(predecessor.body().get("message")).isEqualTo("이 CIK는 0009900777의 옛 제출자 번호입니다 — 그 CIK로 더하세요.");
+        assertThat(rows).isEmpty();
+
+        when(collector.sec13fCollectFavorite(CIK)).thenReturn(json("{\"cik\":\"0009900001\",\"ok\":false,\"refused\":\"not_favorite\",\"error\":null}"));
+        var other = service.add(OWNER, CIK, null, null);
+        assertThat(other.status()).isEqualTo(409);
+        assertThat(other.body().get("message")).isEqualTo("이 기관은 13F를 모으지 않는 대상입니다(not_favorite).");
         assertThat(rows).isEmpty();
     }
 
