@@ -228,6 +228,44 @@ describe("useApi", () => {
     expect(statusOf(result.current)).toBeNull();
   });
 
+  // QA-1009: 오래 걸리는 실행(수동 결정·복기)을 기다리는 동안 계좌·주를 바꾸면, 실행이 끝날 때 옛 그리기에서 잡아 둔 reload가 불립니다.
+  // 수정 전에는 그 reload가 옛 경로를 읽어 dataPath를 옛 경로로 적었고, 지금 경로의 값이 null이 되어 패널이 비었습니다.
+  it.fails("QA-1009: 경로가 바뀌기 전에 잡아 둔 reload를 불러도 지금 경로의 값이 남고, 지금 경로를 다시 읽는다", async () => {
+    api.apiGetShared.mockImplementation((path: string) => Promise.resolve({ v: path }));
+    const { result, rerender } = renderHook(({ path }) => useApi<{ v: string }>(path), {
+      initialProps: { path: "/api/a" },
+    });
+    await waitFor(() => expect(result.current.data).toEqual({ v: "/api/a" }));
+    const staleReload = result.current.reload;
+
+    rerender({ path: "/api/b" });
+    await waitFor(() => expect(result.current.data).toEqual({ v: "/api/b" }));
+    const callsBefore = api.apiGetShared.mock.calls.length;
+
+    await act(() => staleReload());
+
+    expect(result.current.data).toEqual({ v: "/api/b" });
+    expect(result.current.loading).toBe(false);
+    expect(api.apiGetShared.mock.calls.slice(callsBefore).map((call) => call[0])).toEqual(["/api/b"]);
+  });
+
+  it("QA-1009 대조: 같은 경로에서 잡아 둔 reload는 그 경로를 다시 읽고, 경로가 바뀌면 reload는 새 함수다", async () => {
+    api.apiGetShared.mockImplementation((path: string) => Promise.resolve({ v: path }));
+    const { result, rerender } = renderHook(({ path }) => useApi<{ v: string }>(path), {
+      initialProps: { path: "/api/a" },
+    });
+    await waitFor(() => expect(result.current.data).toEqual({ v: "/api/a" }));
+    const first = result.current.reload;
+
+    rerender({ path: "/api/a" });
+    expect(result.current.reload).toBe(first);
+    await act(() => first());
+    expect(api.apiGetShared.mock.calls.map((call) => call[0])).toEqual(["/api/a", "/api/a"]);
+
+    rerender({ path: "/api/b" });
+    expect(result.current.reload).not.toBe(first);
+  });
+
   it("401을 받으면 세션이 끊겼다고 알린다 — 레이아웃이 로그인으로 보낸다", async () => {
     api.apiGetShared.mockRejectedValue(new api.UnauthorizedError());
     const { result } = renderHook(() => useApi("/api/a"));
