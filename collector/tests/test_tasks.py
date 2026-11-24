@@ -569,3 +569,23 @@ def test_collect는_session_군을_받고_status_주기에_session이_있다(mon
     assert client.post("/collect?group=minute").status_code == 422
     intervals = client.get("/status").json()["intervals"]
     assert intervals["session"] == 300 and set(intervals) == {"fast", "slow", "weekly", "session"}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-996 재현 — 할 일이 없는 실행이 실패(empty)로 집계돼 상태 화면에 경고로 남음(고친 뒤 뺌)")
+def test_QA996_할_일_없는_실행은_정상으로_집계하고_상세_글은_남긴다(store):
+    """
+    QA-996: kr_paper_timed(받을 시각 지정 주문 1분봉이 없음)·us_consensus_release(일정을 처음 정함 — 외부 호출 0회)는 할 일이 없는 실행인데
+    EmptyResult로 올려 collector_task_runs에 'empty'로 남았고, 상태 화면의 '수집 오류·경고'에 늘 경고로 떴습니다(운영 7일 — kr_paper_timed 166회·
+    us_consensus_release 5회 모두). 할 일이 없으면 정상(ok)이고, 왜 할 일이 없었는지는 상세 글로 남아야 합니다.
+    """
+    from app.tasks.kr_paper_timed import task_kr_paper_timed
+    from app.tasks.us_release import task_us_consensus_release
+
+    ok_timed, detail_timed = tasks.run_task(tasks.Task("kr_paper_timed", "slow", task_kr_paper_timed, ""))
+    ok_release, detail_release = tasks.run_task(tasks.Task("us_consensus_release", "flex", task_us_consensus_release, ""))
+
+    summary = {row["task"]: row for row in store.read_task_summary()}
+    assert (ok_timed, summary["kr_paper_timed"]["status"]) == (True, "ok")
+    assert "받을 시각 지정 주문 1분봉 없음" in detail_timed
+    assert (ok_release, summary["us_consensus_release"]["status"]) == (True, "ok")
+    assert "외부 호출 0회" in detail_release
