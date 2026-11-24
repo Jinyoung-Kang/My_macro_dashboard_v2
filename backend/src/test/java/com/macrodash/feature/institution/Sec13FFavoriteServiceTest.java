@@ -9,7 +9,6 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -34,7 +33,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * 13F 즐겨찾기 더하기·지우기·검색(ADR 0048) — CIK 검사, 운영자만, 기본 12곳·중복·상한, SEC 확인(원본 13F-HR), 넣은 뒤 수집 네 갈래(저장본 있음·모음·
- * 시간 넘김·후보), 수집 실패면 넣지 않음, 쓰기 뒤 응답 캐시 비움. 수집기·표는 가짜입니다(CIK 99억대).
+ * 시간 넘김·후보), 수집 실패·모으지 않는 대상(QA-1014)이면 넣지 않음, 쓰기 뒤 응답 캐시 비움. 수집기·표는 가짜입니다(CIK 99억대).
  */
 class Sec13FFavoriteServiceTest {
 
@@ -183,7 +182,6 @@ class Sec13FFavoriteServiceTest {
     }
 
     @Test
-    @Disabled("QA-1014: 수집기가 모으지 않는다고 답한 CIK를 '모았습니다'로 답하고 줄을 남김")
     @DisplayName("QA-1014: 수집기가 모으지 않는 대상이라고 답하면(후보의 지금 CIK 말고) 줄을 지우고 409와 사유")
     void refusedTargetsAreNotKept() {
         when(collector.sec13fCollectFavorite(CIK)).thenReturn(json("{\"cik\":\"0009900001\",\"ok\":false,\"refused\":\"default\",\"error\":null}"));

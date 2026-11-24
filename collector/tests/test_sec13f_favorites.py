@@ -92,7 +92,7 @@ def test_단건_수집이_실패하면_저장본을_덮지_않는다(store, fake
     assert store.read_snapshot(catalog.snap_sec_13f(FAV, 8)).payload == kept
 
 
-@pytest.mark.parametrize("cik,reason", [(CANDIDATE, "track_record"), (PREDECESSOR, "track_record"),
+@pytest.mark.parametrize("cik,reason", [(CANDIDATE, "track_record"), (PREDECESSOR, "track_record_predecessor"),
                                         (indicators.INSTITUTIONS[0]["cik"], "default"), (FAV2, "not_favorite")])
 def test_단건_수집은_후보_기본_즐겨찾기_밖_CIK를_모으지_않는다(store, fake_sec, cik, reason):
     asked, _responses = fake_sec
@@ -103,7 +103,6 @@ def test_단건_수집은_후보_기본_즐겨찾기_밖_CIK를_모으지_않는
     assert store.read_snapshot(catalog.snap_sec_13f(cik, 8)) is None
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1014: 선행 CIK의 까닭이 지금 CIK와 같은 track_record라 부른 쪽이 가르지 못함")
 def test_QA1014_선행_CIK는_까닭이_따로이고_지금_CIK를_함께_준다(store, fake_sec):
     asked, _responses = fake_sec
     current = next(f["cik"] for f in indicators.TRACK_RECORD_FILERS if PREDECESSOR in (f.get("predecessors") or ()))

@@ -88,17 +88,22 @@ def task_sec_13f() -> str:
 
 def _not_favorite_targets() -> dict[str, str]:
     """
-    즐겨찾기로 모으지 않는 CIK → 까닭('default' — 기본 12곳과 그 합산 자회사, 'track_record' — 트랙레코드 후보와 선행 CIK).
+    즐겨찾기로 모으지 않는 CIK → 까닭('default' — 기본 12곳과 그 합산 자회사, 'track_record' — 트랙레코드 후보의 지금 CIK,
+    'track_record_predecessor' — 후보의 선행 CIK. 저장본은 지금 CIK 이름으로만 생기므로 부른 쪽이 갈라 답해야 합니다 — QA-1014).
     트랙레코드 후보는 q30만 있어야 합니다 — 모의 매매가 'q30이 없으면 q8'로 읽으므로 즐겨찾기가 q8을 만들면 그 길에 새 저장본이 낍니다(ADR 0048 불변식 2).
     """
-    reasons: dict[str, str] = {}
+    reasons: dict[str, str] = dict.fromkeys(_predecessor_current(), "track_record_predecessor")
     for filer in indicators.TRACK_RECORD_FILERS:
-        for cik in (filer["cik"], *(filer.get("predecessors") or ())):
-            reasons[cik] = "track_record"
+        reasons[filer["cik"]] = "track_record"
     for inst in indicators.INSTITUTIONS:
         for cik in (inst["cik"], *(inst.get("merge_ciks") or ())):
             reasons[cik] = "default"
     return reasons
+
+
+def _predecessor_current() -> dict[str, str]:
+    """트랙레코드 후보의 선행 CIK → 지금 CIK."""
+    return {old: filer["cik"] for filer in indicators.TRACK_RECORD_FILERS for old in (filer.get("predecessors") or ())}
 
 
 def favorite_targets() -> list[tuple[str, str, tuple[str, ...]]]:
@@ -111,6 +116,7 @@ def collect_favorite_13f(raw_cik: str) -> dict:
     """
     즐겨찾기 기관 하나의 q8 수집·저장(백엔드가 더하기 때 부름, 끝날 때까지 기다림) → {cik, ok, refused, error, quarters, latestReportDate}.
     즐겨찾기 표에 없는 CIK는 ``refused='not_favorite'``, 기본 12곳·트랙레코드 후보는 ``refused`` 까닭(모으지 않음 — ADR 0048 불변식 2).
+    후보의 선행 CIK(``track_record_predecessor``)는 지금 CIK를 ``currentCik``로 함께 싣습니다(QA-1014).
     실패하면 저장본을 덮지 않습니다(태스크와 같은 수집·저장 길 — QA-031).
     """
     cik = sec13f_lookup.normalize_cik(raw_cik)
@@ -119,6 +125,8 @@ def collect_favorite_13f(raw_cik: str) -> dict:
     refused = _not_favorite_targets().get(cik)
     if refused is None and cik not in {row["cik"] for row in store.sec13f_favorites()}:
         refused = "not_favorite"
+    if refused == "track_record_predecessor":
+        return {"cik": cik, "ok": False, "refused": refused, "error": None, "currentCik": _predecessor_current()[cik]}
     if refused is not None:
         return {"cik": cik, "ok": False, "refused": refused, "error": None}
     try:

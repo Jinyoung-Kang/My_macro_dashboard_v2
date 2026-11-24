@@ -227,6 +227,11 @@ public class Sec13FFavoriteService {
             } else if ("track_record".equals(Json.asText(collected.get(), "refused"))) {
                 collection = "waiting";
                 message = "즐겨찾기에 더했습니다. 모의 매매 트랙레코드 후보 기관이라 그 수집이 저장본을 만듭니다.";
+            } else if (Json.asText(collected.get(), "refused") != null) {
+                // 수집기가 모으지 않는 대상(기본 기관의 합산 자회사·후보의 옛 제출자 CIK 등)은 저장본이 영영 생기지 않습니다 — 줄을 남기지 않습니다(QA-1014).
+                favorites.delete(cik);
+                cache.clear();
+                return failure(409, refusedMessage(Json.asText(collected.get(), "refused"), Json.asText(collected.get(), "currentCik")));
             } else if (Json.asText(collected.get(), "error") != null && !Json.asText(collected.get(), "error").isBlank()) {
                 favorites.delete(cik);
                 cache.clear();
@@ -321,6 +326,17 @@ public class Sec13FFavoriteService {
             throw new InvalidRequestException(label + "은(는) 제어 글자 없이 " + max + "자까지입니다.");
         }
         return text;
+    }
+
+    /** 수집기의 '모으지 않음' 까닭 → 409 문구(QA-1014). */
+    private static String refusedMessage(String refused, String currentCik) {
+        if ("default".equals(refused)) {
+            return "기본 기관에 합쳐 모으는 CIK라 따로 더할 수 없습니다.";
+        }
+        if ("track_record_predecessor".equals(refused) && currentCik != null && !currentCik.isBlank()) {
+            return "이 CIK는 " + currentCik + "의 옛 제출자 번호입니다 — 그 CIK로 더하세요.";
+        }
+        return "이 기관은 13F를 모으지 않는 대상입니다(" + refused + ").";
     }
 
     private static Result failure(int status, String message) {

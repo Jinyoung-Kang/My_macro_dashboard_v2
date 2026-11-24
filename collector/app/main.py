@@ -563,7 +563,7 @@ def sec13f_filer(cik: str | None = Query(None), x_service_token: str | None = He
 def sec13f_favorite_collect(cik: str | None = Query(None), x_service_token: str | None = Header(default=None)) -> dict:
     """
     즐겨찾기 기관 하나의 13F(q8·q1)를 모아 저장하고 끝날 때까지 기다립니다 — 태스크 전체를 다시 돌리면 더할 때마다 SEC 요청이 열 배 넘게 듭니다.
-    기본 12곳·트랙레코드 후보(선행 CIK 포함)는 모으지 않고 ``refused``로 답합니다(ADR 0048 불변식 2 — q30 기관에 q8을 새로 만들지 않음).
+    기본 12곳·트랙레코드 후보(선행 CIK 포함)는 모으지 않고 ``refused``로 답합니다(ADR 0048 불변식 2 — q30 기관에 q8을 새로 만들지 않음, 선행 CIK는 까닭이 따로 — QA-1014).
     부른 쪽이 시간 상한으로 끊어도 이 호출은 끝까지 돌아 저장합니다.
     """
     _check_token(x_service_token)
