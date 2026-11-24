@@ -302,6 +302,30 @@ describe("보안 공지 — 요약 칸", () => {
     expect(reads900001()).toBe(before);
   });
 
+  // QA-1030: useApi는 다시 읽을 때 error를 비우고 failedAt을 남깁니다 — 처음 읽기 아님(큰 자리표시 없음)·오류 없음·값 없음이라 요약 칸이 아무것도
+  // 그리지 않았습니다(같은 응답을 읽는 상세 화면 NoticeScreen은 이 경우를 읽는 중으로 그림).
+  it.fails("QA-1030: 요약 칸 읽기가 실패한 뒤 '다시 시도'를 누르면 읽는 동안 빈 칸이 아니라 읽는 중 표시", async () => {
+    let attempts = 0;
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path === endpoints.security.notice(900001)) {
+        attempts += 1;
+        return attempts === 1 ? Promise.reject(Object.assign(new Error("공지를 읽지 못했습니다(가짜 500)"), { status: 500 })) : new Promise(() => {});
+      }
+      return path in reads ? Promise.resolve(reads[path]) : new Promise(() => {});
+    });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "[가짜] 합성 DB 보안 업데이트 권고" }));
+    const dialog = await screen.findByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
+    expect(await within(dialog).findByText("공지를 읽지 못했습니다(가짜 500)")).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다시 시도" }));
+    await settled();
+
+    expect(attempts).toBe(2);
+    expect(within(dialog).queryByText("공지를 읽지 못했습니다(가짜 500)")).toBeNull();
+    expect(within(dialog).getByRole("status", { name: "공지를 불러오는 중" })).toBeTruthy();
+  });
+
   it("새 사유 DISTRO_OPEN은 '배포판 미수정', 추적기 칸이 있으면 고친 판이 해결 판으로, 걸린 것이 없으면 그 사실 한 줄", async () => {
     reads[endpoints.security.notice(900003)] = {
       ...DETAIL_900001,
