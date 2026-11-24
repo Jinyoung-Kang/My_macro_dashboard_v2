@@ -157,6 +157,28 @@ def test_여러_줄로_묶인_칸은_아래_줄에_같은_글자를_채운다():
     )
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1000 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1000_칸_안의_줄_경계는_줄바꿈으로_남는다():
+    """한 칸에 줄마다 적힌 목록(br·p·div·li)은 줄 경계를 ``\\n``으로 남긴다 — 백엔드가 줄마다 구간·제품 조각으로 읽는다."""
+    table = """<table class="s-table"><thead><tr><th>취약점</th><th>제품명</th><th>영향받는 버전</th><th>해결 버전</th></tr></thead>
+      <tbody>
+        <tr><td>CVE-2099-0300<br>CVE-2099-0301</td><td>ExampleDB<br/>ExampleDB   Tools</td>
+            <td>16.0 이상 16.4 미만<br>17.0  이상
+                17.2 미만</td><td><p>16.4</p><p>17.2</p></td></tr>
+        <tr><td><ul><li>CVE-2099-0302</li><li>CVE-2099-0303</li></ul></td><td><div>ExampleWeb</div><div> </div><div>ExampleWeb Plus</div></td>
+            <td><span>2.0</span> <b>이상</b> 2.3 미만<br><br></td><td> 2.3 이상 </td></tr>
+      </tbody></table>"""
+
+    detail = kisa.parse_detail(_detail(table))
+
+    assert detail.rows == (
+        kisa.Row("CVE-2099-0300\nCVE-2099-0301", "ExampleDB\nExampleDB Tools",
+                 "16.0 이상 16.4 미만\n17.0 이상 17.2 미만", "16.4\n17.2"),
+        kisa.Row("CVE-2099-0302\nCVE-2099-0303", "ExampleWeb\nExampleWeb Plus", "2.0 이상 2.3 미만", "2.3 이상"),
+    ), "줄 안의 연속 공백·소스의 줄바꿈은 빈칸 하나, 빈 줄은 뺌"
+    assert detail.products == ("ExampleDB\nExampleDB Tools", "ExampleWeb\nExampleWeb Plus")
+
+
 def test_머리_칸의_빈칸이_달라도_thead가_없어도_4열_표로_읽는다():
     table = """<table><tr><th>취약점</th><th>제품 명</th><th>영향 받는 버전</th><th>해결버전</th></tr>
       <tr><td>CVE-2099-0200</td><td>ExampleCache</td><td>3.1.0 이하</td><td>3.1.1</td></tr></table>"""
