@@ -44,6 +44,8 @@ public class StoreRepository {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    /** 저장본 머리 기억 — 이름 → 그 수집 시각의 머리({@link #readSnapshotHeads}, QA-992). */
+    private final ConcurrentHashMap<String, SnapshotHead> snapshotHeads = new ConcurrentHashMap<>();
 
     public StoreRepository(JdbcTemplate jdbc, ObjectMapper mapper) {
         this.jdbc = jdbc;
@@ -122,19 +124,44 @@ public class StoreRepository {
 
     /**
      * 저장본 여러 개의 머리 — 이름마다 수집 시각과 첫 분기 보고 기준일({@code payload->'quarters'->0->>'reportDate'} — 13F 형식, 없으면 null).
-     * 본문을 백엔드로 가져오지 않고(캐시 없음) 있는 이름만 돌려줍니다. 13F 즐겨찾기 목록이 기관마다 저장본이 있는지와 최신 보고 기준일을 볼 때 씁니다.
+     * 본문을 백엔드로 가져오지 않고 있는 이름만 돌려줍니다. 13F 즐겨찾기 목록이 기관마다 저장본이 있는지와 최신 보고 기준일을 볼 때 씁니다.
+     *
+     * <p>기준일 한 칸을 꺼내려 해도 DB는 저장본 JSONB 전체(즐겨찾기 하나가 수 MB)를 풀어야 해서, 먼저 {@code name}·{@code collected_at}만 읽고
+     * 수집 시각이 기억과 다른 이름만 기준일을 다시 읽어 기억합니다(QA-992 — 운영 기관 목록 110~120 ms). 저장본 본문은 수집기가 새로 쓸 때마다 수집 시각도
+     * 새로 적으므로(수집기 {@code store.put_snapshot} — 본문만 고치는 {@code update_snapshot_payload}는 뉴스·상태 저장본만 씀) 수집 시각이 같으면 기준일도
+     * 같습니다. 기억은 이름마다 한 줄(머리 하나)이라 작고, 백엔드가 다시 뜨면 비어 처음 한 번 다시 읽습니다.
      */
     public Map<String, SnapshotHead> readSnapshotHeads(Collection<String> names) {
         if (names.isEmpty()) {
             return Map.of();
         }
-        Map<String, SnapshotHead> out = new java.util.LinkedHashMap<>();
-        jdbc.query("SELECT name, collected_at, payload->'quarters'->0->>'reportDate' AS report_date FROM snapshots WHERE name = ANY (?)",
-                (RowCallbackHandler) rs -> {
-                    out.put(rs.getString("name"), new SnapshotHead(toInstant(rs.getTimestamp("collected_at")), rs.getString("report_date")));
-                },
+        Map<String, Instant> collected = new LinkedHashMap<>();
+        jdbc.query("SELECT name, collected_at FROM snapshots WHERE name = ANY (?)",
+                (RowCallbackHandler) rs -> collected.put(rs.getString("name"), toInstant(rs.getTimestamp("collected_at"))),
                 (Object) names.toArray(String[]::new));
+        List<String> stale = collected.entrySet().stream()
+                .filter(e -> !sameCollected(snapshotHeads.get(e.getKey()), e.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
+        if (!stale.isEmpty()) {
+            jdbc.query("SELECT name, collected_at, payload->'quarters'->0->>'reportDate' AS report_date FROM snapshots WHERE name = ANY (?)",
+                    (RowCallbackHandler) rs -> snapshotHeads.put(rs.getString("name"),
+                            new SnapshotHead(toInstant(rs.getTimestamp("collected_at")), rs.getString("report_date"))),
+                    (Object) stale.toArray(String[]::new));
+        }
+        Map<String, SnapshotHead> out = new LinkedHashMap<>();
+        for (String name : collected.keySet()) {
+            SnapshotHead head = snapshotHeads.get(name);
+            if (head != null) {
+                out.put(name, head);
+            }
+        }
         return out;
+    }
+
+    /** 기억한 머리가 이 수집 시각의 것인가. */
+    private static boolean sameCollected(SnapshotHead head, Instant collectedAt) {
+        return head != null && java.util.Objects.equals(head.collectedAt(), collectedAt);
     }
 
     /** 저장본 머리({@link #readSnapshotHeads}) — 수집 시각과 첫 분기 보고 기준일(없으면 null). */
