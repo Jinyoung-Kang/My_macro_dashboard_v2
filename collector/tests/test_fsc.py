@@ -15,6 +15,8 @@ tests/test_fsc.py
   6. 이미 최신 기준일이 저장돼 있으면 호출 0회.
   7. 저장 첫 기준일 이전을 과거 쪽으로 메운다 — 따로 된 실행당 예산(90), 실패한 날에서 멈춤, 자료 없는 날은 건너뜀,
      보존 창(400일) 안까지, 다 메웠으면 호출 0회(v2 2단계 명세 §4-15 B2).
+  8. 새 기준일이 올라올 시각(다음 거래일 13시) 전의 '자료 없음'은 할 일 없는 실행(Idle — 정상), 시각이 지나서도 없거나 출처 오류면
+     수집 결과 없음(경고) — 주식시세·증권상품시세 두 태스크(QA-997).
 """
 from __future__ import annotations
 
@@ -738,16 +740,17 @@ def _frozen_at(year, month, day, hour, minute=17):
     return _Clock
 
 
-def _qa997_setup(monkeypatch, at, stored, error=None):
+def _qa997_setup(monkeypatch, at, stored, error=None, earliest=_BACKFILLED):
     """
     두 금융위 태스크를 at(KST)에, 저장된 마지막 기준일 stored로 놓고 출처는 '그날 자료 없음'(1쪽이 비고 totalCount 0 — 발표 전)으로 답하게
-    합니다. error를 주면 그 대신 출처 오류를 냅니다. 과거 쪽 메우기는 끝난 상태(_FakeStore의 첫 기준일 기본값)입니다.
+    합니다. error를 주면 그 대신 출처 오류를 냅니다. 과거 쪽 메우기는 기본이 끝난 상태(_FakeStore의 첫 기준일 기본값)이고, earliest를 주면
+    그 앞(보존 하한까지)을 묻습니다.
     """
     from app import krcalendar, tasks
 
     monkeypatch.setattr(tasks.korea_public, "datetime", _frozen_at(*at))
     monkeypatch.setattr(krcalendar, "_holidays", set(B2_HOLIDAYS_2026))
-    monkeypatch.setattr(tasks.korea_public, "store", _FakeStore(latest=stored))
+    monkeypatch.setattr(tasks.korea_public, "store", _FakeStore(latest=stored, earliest=earliest))
     calls: list[str] = []
 
     def fetch(bas_dt, budget):
@@ -774,7 +777,6 @@ def _qa997_run(store, name):
 FSC_TASKS = ["fsc_prices", "fsc_etf_prices"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-997 — 고치기 전: 발표 전 기다림이 수집 결과 없음(empty)으로 남아 경고로 뜸")
 @pytest.mark.parametrize("name", FSC_TASKS)
 @pytest.mark.parametrize("at, stored, waiting_for, published", [
     ((2026, 11, 24, 9), "2026-11-20", "2026-11-23", "2026-11-24 13시"),        # 화 오전 — 월요일 값은 오늘 13시 뒤
@@ -828,3 +830,34 @@ def test_QA997_빠진_날_가운데_올라올_시각이_지난_날이_있으면_
     assert (ok, status) == (False, "empty")
     assert calls == ["20261120", "20261123"], "오래된 날부터 둘 다 물음"
     assert "아직 발표 전" not in detail
+
+
+def test_QA997_과거_쪽이_자료_없는_날만_묻고_끝났으면_기다림이고_그_꼬리를_남긴다(monkeypatch):
+    """
+    보존 하한 바로 위의 달력이 모르는 휴장일을 실행마다 다시 묻는 것(_fsc_backfill 규칙)은 실패가 아닙니다 — 최신 쪽이 발표 전이면 기다림이고,
+    과거 쪽 꼬리는 상세 글에 그대로 남습니다. 2026-11-24의 보존 하한은 2025-10-20(400일 전)입니다.
+    """
+    from app import tasks
+
+    calls = _qa997_setup(monkeypatch, (2026, 11, 24, 9), "2026-11-20", earliest="2025-10-21")
+    with pytest.raises(tasks.Idle) as caught:
+        tasks.task_fsc_prices()
+
+    assert calls == ["20261123", "20251020"]
+    assert str(caught.value) == ("아직 발표 전 — 기준일 2026-11-23 값은 2026-11-24 13시 이후 (호출 1회) · 기존 저장본 유지"
+                                 " · 과거 쪽 0일 보충, 자료 없는 날 1일 건너뜀(2025-10-20), 보존 창 끝까지 메움 (호출 1회)")
+
+
+def test_QA997_과거_쪽이_시간_상한으로_멈췄으면_할_일이_남아_기다림이_아니다(monkeypatch):
+    """과거 쪽 메우기가 시간 상한(또는 예산)으로 다 묻지 못하고 멈췄으면 할 일이 남은 것 — 최신 쪽이 발표 전이어도 지금처럼 수집 결과 없음입니다."""
+    from app import tasks
+
+    calls = _qa997_setup(monkeypatch, (2026, 11, 24, 9), "2026-11-20", earliest="2025-10-23")
+    ticks = iter([0.0])
+    monkeypatch.setattr(tasks.korea_public, "_clock", lambda: next(ticks, tasks.FSC_BACKFILL_TIME_LIMIT_SECONDS))
+    with pytest.raises(tasks.EmptyResult) as caught:
+        tasks.task_fsc_prices()
+
+    assert not isinstance(caught.value, tasks.Idle)
+    assert calls == ["20261123"], "과거 쪽은 첫날 전에 시간 상한"
+    assert "새 기준일 데이터가 없습니다" in str(caught.value) and "남은 거래일 3일" in str(caught.value)

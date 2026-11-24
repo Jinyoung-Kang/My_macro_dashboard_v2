@@ -15,7 +15,7 @@ from ..services import (
     kasi as kasi_service,
 )
 
-from .base import EmptyResult, KST, RADAR_COMBINATIONS, _reason_suffix
+from .base import EmptyResult, Idle, KST, RADAR_COMBINATIONS, _reason_suffix
 from .kr_paper import KR_SCOPE_ETFS, kr_scope
 
 logger = logging.getLogger(__name__)
@@ -103,11 +103,37 @@ FSC_BACKFILL_CALL_BUDGET = 90
 # '시간 초과'로 기록되므로 그 전에 멈춥니다. 남는 300초는 진행 중인 하루치(쪽마다 timeout 30초 × 재시도 2회 + 백오프)의 여유입니다.
 # 정상이면 하루치(3쪽 + 저장)가 약 1초라([확인] 2026-10-22~26 실행 기록 0.96~1.09초) 90회가 이 안에 넉넉히 끝납니다.
 FSC_BACKFILL_TIME_LIMIT_SECONDS = 300.0
+# 금융위 시세(주식·ETF)가 올라오는 시각 — 기준일 다음 거래일의 이 시(KST). 출처 안내('기준일 다음 영업일 13시 이후 갱신')를 따릅니다.
+# 이 시각 전에 '그날 자료 없음'이면 기다리는 중이라 할 일 없는 실행(Idle — 정상)이고, 지나서도 없으면 늦은 것이라 수집 결과 없음(경고)입니다
+# (QA-997). [확인] 2026-11 운영 실행 기록 — 새 기준일은 평일 10:40~11:33 실행에서 들어옴.
+FSC_PUBLISH_HOUR = 13
 
 
 def _fsc_candidate_dates(today) -> list:
     """어제부터 거슬러 올라가며 거래일(평일·비공휴일)만. 오늘은 아직 발표 전이라 넣지 않습니다."""
     return krcalendar.previous_trading_days(today, FSC_LOOKBACK_DAYS)
+
+
+def _fsc_publish_at(day: date) -> datetime:
+    """기준일 day의 값이 올라오는 시각(KST) — day 다음 거래일 FSC_PUBLISH_HOUR시."""
+    cursor = day + timedelta(days=1)
+    while not krcalendar.is_trading_day(cursor):
+        cursor += timedelta(days=1)
+    return datetime(cursor.year, cursor.month, cursor.day, FSC_PUBLISH_HOUR, tzinfo=KST)
+
+
+def _fsc_waiting(pending: list[date], now: datetime) -> str | None:
+    """
+    받지 못한 기준일이 **모두** 아직 올라올 시각 전이면 기다리는 날의 안내(가장 오래된 날 기준), 하나라도 시각이 지났으면 None(QA-997).
+    출처가 그날들을 모두 정상으로 '자료 없음'이라 답했을 때만 부릅니다 — 오류·예산·시간 상한으로 다 묻지 못한 실행은 기다림이 아닙니다.
+    """
+    if not pending:
+        return None
+    publish = {day: _fsc_publish_at(day) for day in pending}
+    if any(now >= at for at in publish.values()):
+        return None
+    first = min(pending)
+    return f"아직 발표 전 — 기준일 {first.isoformat()} 값은 {publish[first]:%Y-%m-%d %H}시 이후"
 
 
 def _fsc_backfill_dates(earliest: date, floor: date) -> list:
@@ -136,9 +162,12 @@ def task_fsc_prices() -> str:
       - 종목별 값은 observations(종목코드 = entity)에 쌓습니다. 한 스냅샷에 3천 행을
         넣으면 화면 요청마다 그 전체를 읽어야 합니다. 인덱스로 필요한 종목만 읽습니다.
       - 400일이 지난 행은 정리합니다.
+      - 새 기준일이 아직 올라올 시각(다음 거래일 13시, _fsc_waiting) 전이라 출처가 '자료 없음'으로만 답했으면 할 일 없는 실행(Idle — 정상,
+        상세 글에 기다리는 기준일과 시각)입니다. 시각이 지났는데도 없거나 오류가 섞였으면 지금처럼 수집 결과 없음(EmptyResult)입니다(QA-997).
     """
     started = _clock()
-    today = datetime.now(KST).date()
+    now = datetime.now(KST)
+    today = now.date()
     floor = today - timedelta(days=FSC_RETENTION_DAYS)
     stored_latest = store.latest_observation_date(catalog.OBS_FSC_PRICE)
     budget = publicapi.CallBudget(FSC_CALL_BUDGET)
@@ -175,12 +204,16 @@ def task_fsc_prices() -> str:
             break
 
     # 과거 쪽은 최신 쪽이 시작점을 잡은 뒤(같은 실행 포함)에 봅니다 — 최신 기준일이 먼저 들어와야 하는 일(모의 매매 확정가)을 늦추지 않습니다.
-    back_written, back_reasons, back_note = _fsc_backfill(floor, started)
+    back_written, back_reasons, back_note, back_done = _fsc_backfill(floor, started)
     reasons += back_reasons
 
     if not written and not back_written:
         if not pending:
             return f"최신 상태 (기준일 {stored_latest}, 호출 {budget.used}회)" + back_note + _reason_suffix(reasons)
+        # 과거 쪽이 예산·시간 상한으로 다 묻지 못하고 멈췄으면 할 일이 남은 것이라 기다림이 아닙니다.
+        waiting = None if (reasons or not back_done) else _fsc_waiting(pending, now)
+        if waiting:
+            raise Idle(f"{waiting} (호출 {budget.used}회) · 기존 저장본 유지" + back_note)
         raise EmptyResult("새 기준일 데이터가 없습니다 — 기존 저장본 유지" + back_note + _reason_suffix(reasons))
 
     store.delete_observations_before(catalog.OBS_FSC_PRICE, floor.isoformat())
@@ -193,7 +226,7 @@ def task_fsc_prices() -> str:
     return f"{latest_date} {latest_rows}종목{days} (호출 {budget.used}회)" + back_note + _reason_suffix(reasons)
 
 
-def _fsc_backfill(floor: date, started: float) -> tuple[list[tuple[str, int]], list[str], str]:
+def _fsc_backfill(floor: date, started: float) -> tuple[list[tuple[str, int]], list[str], str, bool]:
     """
     저장 첫 기준일 **이전**의 거래일을 과거 쪽으로 메웁니다 — floor(보존 하한, 포함)까지, 실행당 FSC_BACKFILL_CALL_BUDGET 안에서.
 
@@ -208,14 +241,15 @@ def _fsc_backfill(floor: date, started: float) -> tuple[list[tuple[str, int]], l
       - 저장은 최신 쪽과 같은 하루치 트랜잭션이되 메타 스냅샷(latestBasDt = 최신 기준일)은 쓰지 않습니다.
       - 이미 저장된 날은 다시 받지 않습니다(저장 첫 기준일 앞만 봄) — 몇 번 돌아도 같은 저장본이 됩니다.
 
-    :returns: (저장한 (기준일, 행 수) — 최근 날부터, 실패 사유, 결과 문구 꼬리(없으면 ""))
+    :returns: (저장한 (기준일, 행 수) — 최근 날부터, 실패 사유, 결과 문구 꼬리(없으면 ""), 남은 날 없이 다 물었는가 —
+        실패·예산·시간 상한으로 멈췄으면 False. 할 일 없는 실행(QA-997)을 가를 때 씁니다)
     """
     earliest = store.earliest_observation_date(catalog.OBS_FSC_PRICE)
     if not earliest:
-        return [], [], ""   # 저장본이 없으면(최신 쪽도 시작점을 못 잡음) 거슬러 갈 기준이 없습니다
+        return [], [], "", True   # 저장본이 없으면(최신 쪽도 시작점을 못 잡음) 거슬러 갈 기준이 없습니다
     pending = _fsc_backfill_dates(date.fromisoformat(earliest), floor)
     if not pending:
-        return [], [], ""
+        return [], [], "", True
 
     budget = publicapi.CallBudget(FSC_BACKFILL_CALL_BUDGET)
     written: list[tuple[str, int]] = []
@@ -253,7 +287,7 @@ def _fsc_backfill(floor: date, started: float) -> tuple[list[tuple[str, int]], l
         parts.append(f"자료 없는 날 {len(empty)}일 건너뜀({', '.join(empty[:3])}{' 등' if len(empty) > 3 else ''})")
     parts.append(f"남은 거래일 {left}일" if left else "보존 창 끝까지 메움")
     note = f" · 과거 쪽 {', '.join(parts)} (호출 {budget.used}회{stop})"
-    return written, reasons, note
+    return written, reasons, note, left == 0
 
 
 def _put_fsc_day(obs_date: str, rows: list[dict], url: str | None) -> int:
@@ -310,9 +344,11 @@ def task_fsc_etf_prices() -> str:
       - 403 코드 30(서비스 미등록)이면 바로 멈추고 '활용신청 필요'로 남깁니다(EmptyResult — 기존 저장본 유지). 다른 날을 물어도
         같은 답이라 한도만 씁니다.
       - 하루치는 observations 한 번(ETF 코드 = entity, 한 문장이라 원자적)입니다. 400일(FSC_RETENTION_DAYS)이 지난 행은 정리합니다.
+      - 새 기준일이 아직 올라올 시각(다음 거래일 13시) 전이라 '자료 없음'으로만 답했으면 할 일 없는 실행(Idle — 정상)입니다(fsc_prices와 같음, QA-997).
     """
     started = _clock()
-    today = datetime.now(KST).date()
+    now = datetime.now(KST)
+    today = now.date()
     stored_latest = store.latest_observation_date(catalog.OBS_FSC_ETF_PRICE)
     pending = [d for d in _fsc_candidate_dates(today) if not stored_latest or d.isoformat() > stored_latest]
     if not pending:
@@ -352,6 +388,9 @@ def task_fsc_etf_prices() -> str:
             raise EmptyResult(f"{FSC_ETF_NOT_REGISTERED} ({not_registered})")
         reasons.append(not_registered)
     if not written:
+        waiting = None if (reasons or stop) else _fsc_waiting(pending, now)
+        if waiting:
+            raise Idle(f"{waiting} (호출 {budget.used}회) · 기존 저장본 유지")
         raise EmptyResult(f"새 기준일 데이터가 없습니다 — 기존 저장본 유지 (호출 {budget.used}회{stop})" + _reason_suffix(reasons))
 
     store.delete_observations_before(catalog.OBS_FSC_ETF_PRICE, (today - timedelta(days=FSC_RETENTION_DAYS)).isoformat())
