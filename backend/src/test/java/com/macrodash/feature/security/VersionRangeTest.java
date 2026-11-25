@@ -1,6 +1,7 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.VersionOrder.Version;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -215,5 +216,43 @@ class VersionRangeTest {
         assertThat(list.contains(v("30.2"))).isTrue();
         assertThat(list.contains(v("31.5"))).isFalse();
         assertThat(list.contains(v("32.1"))).isTrue();
+    }
+
+    // ---- 줄 경계가 구간 하나를 가른 칸(QA-1000 후속) ----
+
+    @Test
+    @DisplayName("QA-1000 후속 — 구간 하나가 줄바꿈으로 꺾인 칸('A 이상\\nB 미만')은 한 구간, 두 구간의 합이 아님")
+    @Disabled("QA-1000 후속 — 수정 전에는 실패")
+    void wrappedBetweenIsOneInterval() {
+        VersionRange r = range("16.0 이상\n16.4 미만");
+        assertThat(r.contains(v("16.2"))).isTrue();
+        assertThat(r.contains(v("15.0"))).isFalse();
+        assertThat(r.contains(v("18.0"))).isFalse();
+        // 꺾인 구간과 줄마다 적힌 구간이 섞여도 구간마다 따로
+        VersionRange two = range("16.0 이상\n16.4 미만\n17.0 이상 17.2 미만");
+        assertThat(two.intervals()).hasSize(2);
+        assertThat(two.contains(v("17.1"))).isTrue();
+        assertThat(two.contains(v("16.5"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("QA-1000 후속 — 혼자서는 읽히지 않는 줄('3.0.0 ~' · '이상')은 이웃 줄과 이어 읽음")
+    @Disabled("QA-1000 후속 — 수정 전에는 실패")
+    void wrappedFragmentJoinsNeighbour() {
+        VersionRange tilde = range("3.0.0 ~\n3.0.15");
+        assertThat(tilde.contains(v("3.0.7"))).isTrue();
+        assertThat(tilde.contains(v("3.0.16"))).isFalse();
+        assertThat(range("16.4\n이상").contains(v("16.5"))).isTrue();
+        assertThat(VersionRange.parseFixed("16.4\n이상").orElseThrow().minimums()).containsExactly(v("16.4"));
+    }
+
+    @Test
+    @DisplayName("QA-1000 후속 — 줄마다 온전한 구간·버전은 전처럼 따로(이어 읽지 않음)")
+    void wholeLinesStaySeparate() {
+        assertThat(range("16.0 이상 16.4 미만\n17.0 이상 17.2 미만").intervals()).hasSize(2);
+        assertThat(range("1.2.3\n1.2.4").intervals()).hasSize(2);
+        assertThat(range("17.0 이상\n16.4 미만").intervals()).hasSize(2);   // 아래 끝이 위 끝보다 큼 — 한 구간이 될 수 없음
+        assertThat(VersionRange.parseFixed("16.4\n17.2").orElseThrow().minimums()).containsExactly(v("16.4"), v("17.2"));
+        assertThat(VersionRange.parse("16.0 이상\n알 수 없는 글")).isEmpty();
     }
 }
