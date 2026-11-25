@@ -407,6 +407,21 @@ def test_메타데이터가_없으면_null():
     assert found.author is None and found.published_date is None and found.site_name is None
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1022 재현 — 디코딩이 UnicodeError(코덱 'undefined' 등)를 잡지 않아 본문을 읽을 수 있는 페이지가 '받는 중 오류'(transport)가 됩니다")
+def test_QA1022_쓸_수_없는_문자셋_이름은_다음_후보로_넘어간다():
+    """
+    ``charset=undefined``는 파이썬에 있는 코덱이지만 늘 UnicodeError(LookupError·UnicodeDecodeError가 아님)를 냅니다. 잡지 않으면 추출 밖으로
+    새어 작업이 '받는 중 오류'(60초 캐시, 다시 누를 때마다 하루 예산을 씀)로 끝납니다 — 다음 후보(meta·UTF-8)로 넘어가야 합니다.
+    """
+    text = "합성 글"
+    assert sa.decode(text.encode("utf-8"), "text/html; charset=undefined") == text
+    assert sa.decode(b'<meta charset="undefined">' + text.encode("utf-8"), None).endswith(text)
+    assert sa.decode(b'<meta charset="euc-kr">' + text.encode("euc-kr"), "text/html; charset=undefined").endswith(text), "머리글이 못 쓰면 meta"
+    body = (FIXTURES / "en_utf8.html").read_bytes()
+    plain = sa.extract(body, content_type="text/html; charset=utf-8")
+    assert sa.extract(body, content_type="text/html; charset=undefined").paragraphs == plain.paragraphs
+
+
 def test_문자셋은_응답_머리글을_먼저():
     text = "합성 글"
     assert sa.decode(text.encode("cp949"), "text/html; charset=EUC-KR") == text
