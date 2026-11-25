@@ -224,13 +224,14 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert result.returncode == 0, result.stderr
     calls = _docker_calls(fakes)
     builds = [c for c in calls if c.startswith("compose build")]
-    assert builds == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector",
-                      "compose build --pull browser"], \
-        "4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023), browser는 차단 통과 수집 계층의 브라우저 컨테이너(ADR 0026)"
+    assert builds[:3] == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"] \
+        and len(builds) == 4 and _CHROME_BUILD.fullmatch(builds[3]), \
+        ("4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023), browser는 차단 통과 수집 계층의 브라우저 컨테이너(ADR 0026 — "
+         "Chrome을 주에 한 번 새로 받게 ISO 주를 빌드 인자로, QA-1004)")
     assert not any(c.startswith("curl ") for c in tools._calls(fakes)), "CloudFront 대역을 받지 않습니다(공개 주소 없음)"
     assert not (server[0] / "deploy/vultr/trusted_proxies.caddy").exists()
     up = calls.index("compose up -d --no-build --wait --wait-timeout 300")
-    assert up > calls.index("compose build --pull browser")
+    assert up > calls.index(builds[3])
     schema = [i for i, c in enumerate(calls) if " exec -T collector " in f" {c} " and "init_schema" in c]
     assert len(schema) == 1 and schema[0] > up, "up -d 뒤 스키마 적용(QA-016)"
     assert calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy") > schema[0]
@@ -249,7 +250,6 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
 _CHROME_BUILD = re.compile(r"compose build --pull --build-arg CHROME_REFRESH=\d{4}-W\d{2} browser")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1004 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1004_브라우저_이미지의_Chrome_층은_빌드_인자가_바뀌면_다시_받는다():
     """Chrome 설치 층 앞의 ARG를 그 RUN이 참조해야 값이 바뀔 때 층 캐시가 깨진다(--pull은 FROM 이미지만 다시 봄)."""
     lines = (ROOT / "collector/sidecar/Dockerfile").read_text(encoding="utf-8").splitlines()
@@ -265,7 +265,6 @@ def test_QA_1004_브라우저_이미지의_Chrome_층은_빌드_인자가_바뀌
     assert pip < arg, "pip 층은 그 앞 — Chrome만 다시 받음"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1004 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1004_deploy는_browser_빌드에_ISO_주를_넘겨_주에_한_번_Chrome을_새로_받고_주기_값을_알린다(server, fakes):
     week = {datetime.now(timezone.utc).strftime("%G-W%V")}
     result = _deploy(server, fakes)

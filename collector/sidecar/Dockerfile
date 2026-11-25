@@ -14,8 +14,13 @@ WORKDIR /srv
 COPY sidecar/pinned.txt ./pinned.txt
 RUN pip install --no-cache-dir -r pinned.txt
 
-# Chrome 안정 채널과 의존 라이브러리 — 빌드 시점의 안정판을 받습니다(보안 패치를 받으려고 판을 고정하지 않음).
-RUN patchright install --with-deps chrome \
+# Chrome 안정 채널과 의존 라이브러리 — 이 층을 만들 때의 안정판을 받습니다(보안 패치를 받으려고 판을 고정하지 않음).
+# 층 캐시가 있으면 다시 받지 않습니다(--pull은 FROM 이미지만 다시 봄). 그래서 CHROME_REFRESH 값이 바뀔 때만 이 층을 새로 만듭니다 —
+# 서버 배포(scripts/vultr/deploy.sh)가 ISO 주(예: 2026-W48)를 넘겨 주에 한 번 새로 받고, 값이 비면(로컬·CI) 캐시를 그대로 씁니다(QA-1004).
+# ARG는 아래 RUN이 참조해야 캐시 열쇠에 들어갑니다. 급히 올릴 때: docker compose build --build-arg CHROME_REFRESH=<새 값> browser
+ARG CHROME_REFRESH=
+RUN echo "chrome refresh: ${CHROME_REFRESH}" \
+    && patchright install --with-deps chrome \
     && rm -rf /var/lib/apt/lists/*
 
 # root로 돌지 않습니다. 쓰는 곳은 프로필 볼륨(/profile)과 /tmp·홈뿐이고 코드는 읽기만 합니다.

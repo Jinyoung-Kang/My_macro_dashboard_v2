@@ -20,7 +20,7 @@
 #      장 시간 변경일(같은 psql 호출로 읽는 모의 설정 kr.calendar.openTimeOverrides의 오늘 값 — 예 수능 10:00~16:30)은 개장 −15분 ~
 #      마감 +5분, 그 설정을 읽지 못했거나 모양이 틀리면 보수 창(평일 08:45~16:35)으로 봅니다.
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector → browser(베이스 이미지 보안 패치까지 --pull). browser는 차단 통과 수집 계층의
-#      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널을 빌드 때 받음).
+#      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널은 주에 한 번, ISO 주가 바뀐 뒤 첫 배포에서 새로 받음: --build-arg CHROME_REFRESH, QA-1004).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
 #   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
 #   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile).
@@ -202,9 +202,16 @@ realtrade_guard() {
 realtrade_guard before-build
 
 # ---------------------------------------------------------------- 4) 빌드(하나씩)
+# browser 이미지의 Chrome 설치 층은 층 캐시가 있으면 다시 받지 않습니다(--pull은 FROM 이미지만 다시 봄 — 베이스 이미지나 pinned.txt가 바뀔 때만
+# 새로 받던 것, QA-1004). ISO 주를 빌드 인자로 넘겨 주가 바뀐 뒤 첫 배포에서 그 층을 새로 만듭니다(매번 새로 받으면 4 GB 서버의 배포가 느려짐).
+chrome_refresh="$(date -u +%G-W%V)"
 for service in backend frontend collector browser; do
     echo "빌드: $service"
-    docker compose build --pull "$service"
+    if [ "$service" = browser ]; then
+        docker compose build --pull --build-arg "CHROME_REFRESH=$chrome_refresh" "$service"
+    else
+        docker compose build --pull "$service"
+    fi
 done
 docker compose pull --quiet caddy postgres
 
@@ -280,6 +287,9 @@ echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
 bash scripts/vultr/backup-age.sh
 # 재부팅이 필요한지·Livepatch가 도는지(ADR 0023 개정 2026-11-12) — 판정은 make status·cron과 같은 reboot-check.sh. 요약이라 실패해도 배포를 실패로 만들지 않습니다.
 bash scripts/vultr/reboot-check.sh --summary || true
+# browser 이미지의 Chrome을 언제 것으로 받았는지 — 이 값(ISO 주)이 바뀐 뒤 첫 배포에서 새로 받습니다(QA-1004). Chrome 판 자체는 찍지 않습니다
+# (버전은 운영 DB에만 — ADR 0046, 화면 /security의 버전 목록에서 봄).
+echo "   browser 이미지: Chrome 새로 받기 주기 값 $chrome_refresh(이 값이 바뀐 뒤 첫 배포에서 Chrome 안정판을 새로 받음 — 판은 /security 버전 목록)"
 # 보안 공지(ADR 0046)의 버전 목록 — 새 이미지의 버전을 바로 넘깁니다(배포 출력·syslog에는 건수만, 버전은 운영 DB에만). 실패해도 배포를 실패로 만들지 않습니다.
 bash scripts/vultr/inventory.sh || true
 [ -z "$paper_off" ] ||
