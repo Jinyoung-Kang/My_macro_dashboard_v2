@@ -407,7 +407,6 @@ def test_메타데이터가_없으면_null():
     assert found.author is None and found.published_date is None and found.site_name is None
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1022 재현 — 디코딩이 UnicodeError(코덱 'undefined' 등)를 잡지 않아 본문을 읽을 수 있는 페이지가 '받는 중 오류'(transport)가 됩니다")
 def test_QA1022_쓸_수_없는_문자셋_이름은_다음_후보로_넘어간다():
     """
     ``charset=undefined``는 파이썬에 있는 코덱이지만 늘 UnicodeError(LookupError·UnicodeDecodeError가 아님)를 냅니다. 잡지 않으면 추출 밖으로

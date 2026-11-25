@@ -293,7 +293,9 @@ def decode(body: bytes, content_type: str | None = None) -> str:
         label = name.decode("ascii", "ignore") if isinstance(name, bytes) else name
         try:
             return body.decode(label)
-        except (LookupError, UnicodeDecodeError):
+        except (LookupError, UnicodeError, ValueError):
+            # 모르는 이름(LookupError)·그 문자셋으로 읽히지 않음(UnicodeDecodeError)뿐 아니라, 이름은 있지만 쓸 수 없는 코덱('undefined' —
+            # UnicodeError)·이름에 든 널 글자(ValueError)도 다음 후보로 넘깁니다(QA-1022 — 새어 나가면 '받는 중 오류'로 분류됨).
             continue
     try:
         return body.decode("utf-8")
