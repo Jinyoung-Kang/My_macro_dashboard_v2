@@ -667,6 +667,46 @@ def test_추적기가_거부하면_추적기_조회만_멈추고_보호나라_�
     assert store.source_state(task.TASK_NAME)["status"] == "ok", "출처 상태는 보호나라 것만"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1024 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1024_추적기_한_곳의_거부는_그_배포판만_건너뛰고_다른_추적기는_묻는다(store, board):
+    _want(store, "alpine", "v9.99", "fakessl", C1, minutes_ago=9)
+    _want(store, "alpine", "v9.98", "fakessl", C1, minutes_ago=8)          # 거부한 Alpine의 다음 스위트 — 묻지 않음
+    _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=5)
+    _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=4)
+    _want(store, "debian", "fakedeb", "fakessl", C1, minutes_ago=3)
+    board.override[dt.alpine_url("v9.99", "main")] = http.SourceRejected("secdb.alpinelinux.org", "HTTP 403")
+    board.override[dt.ubuntu_url(C1)] = (200, _ubuntu())
+    board.override[dt.debian_url(C1)] = (200, _debian())
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    assert board.trackers() == [dt.alpine_url("v9.99", "main"), dt.ubuntu_url(C1), dt.ubuntu_url(C2), dt.debian_url(C1)]
+    assert _statuses(store) == {
+        ("ubuntu", "fakecode", "fakessl", C1): ("fixed", "9.9.9-0fake1.1", "released"),
+        ("ubuntu", "fakecode", "fakessl", C2): ("unknown", None, "HTTP 404"),
+        ("debian", "fakedeb", "fakessl", C1): ("fixed", "2.0-1", "fixed (unstable)"),
+    }
+    assert "추적기 거부로 멈춤(Alpine)" in detail and "추적기 남음 2" in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "ok"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1024 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1024_거부한_배포판의_남은_요청은_요청_상한을_쓰지_않는다(store, board):
+    _want(store, "ubuntu", "fakecode", "fakessl", "CVE-2099-0100", minutes_ago=200)
+    for n in range(1, 25):
+        _want(store, "ubuntu" if n < 5 else "debian", "fakecode", "fakessl", f"CVE-2099-{n + 100:04d}", minutes_ago=100 - n)
+    board.override[dt.ubuntu_url("CVE-2099-0100")] = http.SourceRejected("ubuntu.com", "HTTP 429")
+    _due_now(board)
+
+    detail = task.task_kisa_security_notices()
+
+    asked = [url.rsplit("/", 1)[-1].removesuffix(".json") for url in board.trackers()]
+    assert asked == ["CVE-2099-0100"] + [f"CVE-2099-{n + 100:04d}" for n in range(5, 24)], \
+        "거부된 요청 하나 + Debian 19개(상한 20) — 건너뛴 Ubuntu 넷은 상한을 쓰지 않음"
+    assert "추적기 거부로 멈춤(Ubuntu)" in detail and "추적기 결과 19(" in detail
+
+
 def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과를_둔다(store, board):
     _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
     _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
