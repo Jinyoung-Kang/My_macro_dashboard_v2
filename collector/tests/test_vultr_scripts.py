@@ -1681,7 +1681,6 @@ def test_inventory는_서버에서_일곱_구역을_모아_수집기_검증을_�
     assert SECRET not in result.stdout + result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1003 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1003_inventory는_보류했거나_설정이_덜_끝난_설치_패키지도_넘기고_지운_패키지는_뺀다(inv, fakes):
     """dpkg 상태 약어의 첫 글자는 원하는 동작(i·h·r·p·u), 둘째 글자가 실제 설치 상태 — 파일이 디스크에 있는 상태(i·U·F·H·W·t)는 모두 넘긴다."""
     extra = "\n".join([

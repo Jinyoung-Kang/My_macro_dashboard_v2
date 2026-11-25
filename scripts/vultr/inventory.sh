@@ -4,7 +4,9 @@
 #
 # 모으는 구역(구역마다 실패를 따로 잡고 나머지는 보냄 — 구역 상태 ok·failed·skipped를 함께 넘김):
 #   host       서버에서만(.env의 COMPOSE_FILE에 compose.vultr.yml — reboot-check.sh와 같은 판별, 아니면 skipped):
-#              dpkg-query(설치된 패키지·원본 패키지), uname -r(커널), docker(서버 버전)·docker compose·tailscale 버전,
+#              dpkg-query(설치된 패키지·원본 패키지 — 상태 약어의 둘째 글자(실제 설치 상태)가 i·U·F·H·W·t인 것 전부: 보류(hold, 'hi')했거나
+#              설정이 덜 끝난 패키지도 디스크에 있으므로 넘김, 'rc'(설정 파일만)·'un'은 뺌 — QA-1003. 컨테이너의 dpkg 줄도 같음),
+#              uname -r(커널), docker(서버 버전)·docker compose·tailscale 버전,
 #              apt 보류 목록(apt list --upgradable — apt-get update는 하지 않고 목록을 마지막으로 받은 시각을 함께 넘김),
 #              배포판 패키지 변경 기록의 CVE 번호(ADR 0046 덧붙임 2026-11-21 — 설치된 패키지마다 /usr/share/doc/<패키지>/changelog.Debian.gz,
 #              원본 패키지·버전마다 겹침 없이. 실행 중인 커널은 이름이 '-<uname -r>'로 끝나는 패키지들의 것을 합쳐 'kernel'로. 외부 호출 없음)
@@ -66,7 +68,7 @@ pkgs() {
              /^P:/ { p = substr($0, 3) } /^V:/ { v = substr($0, 3) } /^o:/ { o = substr($0, 3) } /^$/ { out() } END { out() }' "$apk_db"
     elif command -v dpkg-query >/dev/null 2>&1; then
         list=$(dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${source:Package}\n') || return 1
-        printf '%s\n' "$list" | awk -F '\t' '$1 ~ /^ii/ { print "dpkg\t" $2 "\t" $3 "\t" ($4 == "" ? $2 : $4) }'
+        printf '%s\n' "$list" | awk -F '\t' '$1 ~ /^.[iUFHWt]/ { print "dpkg\t" $2 "\t" $3 "\t" ($4 == "" ? $2 : $4) }'
     else
         return 1
     fi
@@ -168,7 +170,7 @@ add_section() {
 host_lines() {
     local list v
     list="$(dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${source:Package}\n')" || return 11
-    awk -F '\t' '$1 ~ /^ii/ { print "dpkg\t" $2 "\t" $3 "\t" ($4 == "" ? $2 : $4) }' <<< "$list"
+    awk -F '\t' '$1 ~ /^.[iUFHWt]/ { print "dpkg\t" $2 "\t" $3 "\t" ($4 == "" ? $2 : $4) }' <<< "$list"
     v="$(uname -r)" || return 12
     printf 'runtime\tkernel\t%s\t-\n' "$v"
     v="$(docker version --format '{{.Server.Version}}')" || return 13
