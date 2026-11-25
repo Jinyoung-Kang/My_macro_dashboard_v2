@@ -1,7 +1,6 @@
 package com.macrodash.feature.security;
 
 import com.macrodash.feature.security.VersionOrder.Version;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -222,7 +221,6 @@ class VersionRangeTest {
 
     @Test
     @DisplayName("QA-1000 후속 — 구간 하나가 줄바꿈으로 꺾인 칸('A 이상\\nB 미만')은 한 구간, 두 구간의 합이 아님")
-    @Disabled("QA-1000 후속 — 수정 전에는 실패")
     void wrappedBetweenIsOneInterval() {
         VersionRange r = range("16.0 이상\n16.4 미만");
         assertThat(r.contains(v("16.2"))).isTrue();
@@ -237,7 +235,6 @@ class VersionRangeTest {
 
     @Test
     @DisplayName("QA-1000 후속 — 혼자서는 읽히지 않는 줄('3.0.0 ~' · '이상')은 이웃 줄과 이어 읽음")
-    @Disabled("QA-1000 후속 — 수정 전에는 실패")
     void wrappedFragmentJoinsNeighbour() {
         VersionRange tilde = range("3.0.0 ~\n3.0.15");
         assertThat(tilde.contains(v("3.0.7"))).isTrue();

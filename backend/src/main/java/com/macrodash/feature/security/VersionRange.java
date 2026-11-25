@@ -5,6 +5,7 @@ import com.macrodash.feature.security.VersionOrder.Version;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,6 +26,8 @@ import java.util.regex.Pattern;
  * {@code A-M5 초과}는 모두 {@code A 이상}과 같아, 꼬리를 떼고 아래 끝을 포함으로 읽습니다. 위 끝·단일 버전의 꼬리는 그대로 해석 실패입니다.
  * 알 수 없는 조각({@code 8u511b33}·{@code R34 이상 R36 이하}·제품명이 섞인 글·괄호 설명)이 하나라도 있으면 칸 전체가 해석 실패입니다
  * (빈 {@link Optional} — 판정은 확인 필요 {@code PARSE_FAILED}).
+ *
+ * <p>줄 경계가 조각 하나를 가른 칸은 이웃 줄과 이어 읽습니다({@link #unwrap} — QA-1000 후속).
  *
  * <p>해결 버전 칸은 조각마다 {@code V} 또는 {@code V 이상}이고, 칸 전체가 {@code -}·{@code 없음}·{@code 미정}·{@code 해당 없음}·{@code N/A}면
  * '해결 버전 없음'({@link Fixed#none()})입니다. 그 밖({@code Oracle 보안 패치 적용}·{@code 8u513 (1.8.0_513-b04)})은 해석 실패입니다.
@@ -168,7 +171,7 @@ public record VersionRange(List<Interval> intervals) {
 
     /** '영향받는 버전' 칸을 읽습니다. 알 수 없는 조각이 하나라도 있으면 빈 값. */
     public static Optional<VersionRange> parse(String cell) {
-        List<String> pieces = pieces(cell);
+        List<String> pieces = pieces(cell, VersionRange::readableInterval);
         if (pieces.isEmpty()) {
             return Optional.empty();
         }
@@ -198,7 +201,7 @@ public record VersionRange(List<Interval> intervals) {
         if (FIXED_NONE.matcher(whole).matches()) {
             return Optional.of(new Fixed(List.of()));
         }
-        List<String> pieces = pieces(cell);
+        List<String> pieces = pieces(cell, piece -> FIXED_PIECE.matcher(piece).matches());
         if (pieces.isEmpty()) {
             return Optional.empty();
         }
@@ -221,18 +224,72 @@ public record VersionRange(List<Interval> intervals) {
         return cell.replace(' ', ' ').replaceAll("[ \\t\\x0B\\f\\r]+", " ").strip();
     }
 
-    private static List<String> pieces(String cell) {
+    private static List<String> pieces(String cell, Predicate<String> readable) {
         if (cell == null) {
             return List.of();
         }
+        return split(unwrap(normalize(cell), readable));
+    }
+
+    private static List<String> split(String text) {
         List<String> out = new ArrayList<>();
-        for (String raw : SPLIT.split(normalize(cell))) {
+        for (String raw : SPLIT.split(text)) {
             String piece = TRAILING_WORD.matcher(raw.strip()).replaceFirst("").strip();
             if (!piece.isEmpty()) {
                 out.add(piece);
             }
         }
         return out;
+    }
+
+    /**
+     * 줄 경계가 조각 하나를 가른 칸을 다시 잇습니다(QA-1000 후속) — 수집기가 칸 안의 줄 경계를 남기므로, 구간 하나가 줄바꿈으로 꺾인 칸
+     * ({@code 16.0 이상\n16.4 미만}·{@code 3.0.0 ~\n3.0.15}·{@code 16.4\n이상})은 줄마다 나누면 두 구간의 합이 되거나 읽히지 않습니다.
+     * 앞 줄과 다음 줄을 빈칸으로 이은 글의 조각이 모두 읽히면 한 줄로 봅니다. 줄마다 온전한 구간·버전은 이으면 읽히지 않으므로
+     * ({@code A 이상 B 미만 C 이상 D 미만}·{@code 1.2.3 1.2.4}) 전처럼 따로 남습니다. 둘 다 혼자 읽히면서 이어도 읽히는 것은 아래 끝만 있는 줄 뒤에
+     * 위 끝만 있는 줄이 오는 꼴뿐이고(아래 끝이 위 끝보다 크면 이은 글이 읽히지 않아 따로), 그 합집합은 모든 버전이라 한 구간으로 읽는 쪽이 맞습니다.
+     */
+    private static String unwrap(String text, Predicate<String> readable) {
+        if (text.indexOf('\n') < 0) {
+            return text;
+        }
+        StringBuilder out = new StringBuilder();
+        String current = null;
+        for (String raw : text.split("\n")) {
+            String line = raw.strip();
+            if (line.isEmpty()) {
+                continue;
+            }
+            if (current == null) {
+                current = line;
+                continue;
+            }
+            String joined = current + " " + line;
+            if (allReadable(joined, readable)) {
+                current = joined;
+            } else {
+                out.append(current).append('\n');
+                current = line;
+            }
+        }
+        return current == null ? "" : out.append(current).toString();
+    }
+
+    private static boolean allReadable(String text, Predicate<String> readable) {
+        List<String> pieces = split(text);
+        if (pieces.isEmpty()) {
+            return false;
+        }
+        for (String piece : pieces) {
+            if (!readable.test(piece)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean readableInterval(String piece) {
+        return ALL.matcher(piece).matches() || interval(piece).isPresent();
     }
 
     private static Optional<Interval> interval(String piece) {
