@@ -67,7 +67,21 @@ jobs:
       - name: 취약점 점검 (pip-audit)
         working-directory: collector
         continue-on-error: true
-        run: pip install pip-audit==2.10.1 && pip-audit --disable-pip --no-deps -r constraints.txt -r sidecar/pinned.txt
+        # 결과를 실행 요약에도 남깁니다 — 이 단계는 실패해도 초록이라, 공시가 있거나 감사가 오류로 끝나도 요약에 없으면 보이지 않습니다(QA-1005).
+        run: |
+          pip install pip-audit==2.10.1
+          set +e
+          pip-audit --disable-pip --no-deps -r constraints.txt -r sidecar/pinned.txt > pip-audit.out 2>&1
+          rc=$?
+          cat pip-audit.out
+          {
+            echo "### 수집기 고정판 취약점 점검(pip-audit)"
+            echo "종료 코드: $rc"
+            echo '```'
+            tail -n 60 pip-audit.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: 스키마 적용 (번호 순서)
         env:
