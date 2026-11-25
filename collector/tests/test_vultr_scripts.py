@@ -508,6 +508,29 @@ def test_deploy는_실제_매매가_켜져_있고_한국_거래_창이면_빌드
     assert _dump_calls(calls) == []
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1015 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1015_deploy는_거래_창이면_코드를_받기_전에_멈춰_서버_폴더가_옛_main_그대로다(server, rt_fakes):
+    """가드보다 먼저 받으면 컨테이너는 옛 이미지인데 서버 폴더(수집기가 bind mount로 보는 db/migrations)만 새 main이 된다."""
+    here, seed = server
+    (seed / "db/migrations").mkdir(parents=True)
+    (seed / "db/migrations/V999__fake.sql").write_text("-- fake\n", encoding="utf-8")
+    tools._git(seed, "add", ".")
+    tools._git(seed, "commit", "-q", "-m", "new migration")
+    tools._git(seed, "push", "-q", "origin", "main")
+    before = tools._git(here, "rev-parse", "HEAD")
+    remote_before = tools._git(here, "rev-parse", "origin/main")
+
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 1000", FAKE_RT_OUT="1")
+
+    assert result.returncode != 0
+    assert tools._git(here, "rev-parse", "HEAD") == before, "병합하지 않음 — 서버 폴더는 돌고 있는 판 그대로"
+    assert tools._git(here, "rev-parse", "origin/main") == remote_before, "fetch도 하지 않음"
+    assert not (here / "db/migrations/V999__fake.sql").exists(), "옛 수집기가 다시 뜨며 적용할 새 마이그레이션이 폴더에 없음"
+    assert "코드를 받기 전에 멈췄습니다" in result.stderr and "REALTRADE_DEPLOY_OK=1" in result.stderr
+    assert "코드를 받습니다" not in result.stdout
+    assert _builds(_docker_calls(rt_fakes)) == []
+
+
 @pytest.mark.parametrize("now", ["1 0844", "2 1536", "3 0700", "5 1536", "6 0850", "7 1520", "3 2330"])
 def test_deploy는_실제_매매가_켜져_있어도_한국_거래_창_밖이면_알리고_진행한다(server, rt_fakes, now):
     result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1")
