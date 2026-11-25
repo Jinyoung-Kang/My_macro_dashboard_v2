@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -243,6 +244,39 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert len(inventory) == 1 and inventory[0] > calls.index("compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy")
     assert "  버전 목록: " in result.stdout, "배포 출력에 버전 목록 건수 한 줄(ADR 0046)"
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
+
+
+_CHROME_BUILD = re.compile(r"compose build --pull --build-arg CHROME_REFRESH=\d{4}-W\d{2} browser")
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1004 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1004_브라우저_이미지의_Chrome_층은_빌드_인자가_바뀌면_다시_받는다():
+    """Chrome 설치 층 앞의 ARG를 그 RUN이 참조해야 값이 바뀔 때 층 캐시가 깨진다(--pull은 FROM 이미지만 다시 봄)."""
+    lines = (ROOT / "collector/sidecar/Dockerfile").read_text(encoding="utf-8").splitlines()
+    arg = next((i for i, line in enumerate(lines) if re.fullmatch(r"ARG CHROME_REFRESH=?", line.strip())), None)
+    install = next(i for i, line in enumerate(lines) if "patchright install" in line and not line.lstrip().startswith("#"))
+    assert arg is not None, "Dockerfile에 ARG CHROME_REFRESH가 없음"
+    start = max(i for i in range(install + 1) if lines[i].startswith("RUN "))
+    run = " ".join(lines[start:install + 1])
+    assert arg < start, "ARG는 Chrome 설치 RUN보다 앞"
+    assert not [line for line in lines[arg + 1:start] if line.startswith(("RUN ", "COPY ", "FROM "))], "ARG 바로 다음 층이 Chrome 설치"
+    assert "${CHROME_REFRESH}" in run, "RUN이 값을 참조해야 캐시 열쇠에 들어감"
+    pip = next(i for i, line in enumerate(lines) if line.startswith("RUN pip install"))
+    assert pip < arg, "pip 층은 그 앞 — Chrome만 다시 받음"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1004 — 수정 커밋에서 표시를 뗀다")
+def test_QA_1004_deploy는_browser_빌드에_ISO_주를_넘겨_주에_한_번_Chrome을_새로_받고_주기_값을_알린다(server, fakes):
+    week = {datetime.now(timezone.utc).strftime("%G-W%V")}
+    result = _deploy(server, fakes)
+    week.add(datetime.now(timezone.utc).strftime("%G-W%V"))             # 주가 바뀌는 순간에 돌아도 둘 중 하나
+    assert result.returncode == 0, result.stderr
+    builds = [c for c in _docker_calls(fakes) if c.startswith("compose build")]
+    assert builds[:3] == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"], \
+        "다른 이미지에는 인자를 넘기지 않음"
+    assert len(builds) == 4 and _CHROME_BUILD.fullmatch(builds[3]), builds
+    assert builds[3].split("CHROME_REFRESH=")[1].split()[0] in week
+    assert any(f"Chrome 새로 받기 주기 값 {w}" in result.stdout for w in week), "끝 요약에 주기 값 한 줄(Chrome 판은 찍지 않음 — ADR 0046)"
 
 
 @pytest.mark.parametrize("line", ["FRONTEND_PORT=3002", "LOCAL_NO_LOGIN=true", "PUBLIC_URL=http://x",
