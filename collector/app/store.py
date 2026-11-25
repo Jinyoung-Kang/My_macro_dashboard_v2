@@ -2129,7 +2129,9 @@ _WATCH_ITEM_COLUMNS = ("item_id", "kind", "title", "url", "publisher", "publishe
 def insert_search_watch_items(entity_key: str, items: Iterable[dict]) -> int:
     """
     관심 대상의 글을 **넣기만** 합니다 — 같은 (대상, 글)이 이미 있으면 그대로(처음 받은 시각을 지킴). 넣은 행 수.
-    표에 넣은 시각(V45 ``added_at`` — 백엔드의 새 글 수·알림 기준)은 주지 않습니다(DB 기본값 = 넣는 순간, QA-1012).
+    표에 넣은 시각(V45 ``added_at`` — 백엔드의 새 글 수·알림 기준)은 주지 않으면 DB가 넣는 순간으로 채웁니다(QA-1012). 줄에 ``added_at``
+    (datetime)이 있으면 그 값 — 먼저 들어온 경유 주소 줄과 같은 기사의 원문 줄이 다시 '새로 들어온 글'이 되지 않게 그 줄의 값을 이어 줄 때만 씁니다
+    (QA-1013, tasks/search_watch._rows).
 
     :param items: {item_id, kind, title, url, publisher, publisher_domain, source, lang, summary, published_at(datetime|None),
         first_seen_at(datetime)} — 규칙(2년·중국어·매체 제외)은 부르는 쪽(tasks/search_watch)이 적용한 뒤입니다
@@ -2138,12 +2140,12 @@ def insert_search_watch_items(entity_key: str, items: Iterable[dict]) -> int:
     if not rows:
         return 0
     marks = ", ".join(["%s"] * (len(_WATCH_ITEM_COLUMNS) + 1))
-    sql = (f"INSERT INTO search_watch_items (entity_key, {', '.join(_WATCH_ITEM_COLUMNS)}) VALUES ({marks}) "
-           "ON CONFLICT (entity_key, item_id) DO NOTHING")
+    sql = (f"INSERT INTO search_watch_items (entity_key, {', '.join(_WATCH_ITEM_COLUMNS)}, added_at) "
+           f"VALUES ({marks}, COALESCE(%s::timestamptz, clock_timestamp())) ON CONFLICT (entity_key, item_id) DO NOTHING")
     inserted = 0
     with connection() as conn, conn.cursor() as cur:
         for item in rows:
-            cur.execute(sql, (entity_key, *(item.get(column) for column in _WATCH_ITEM_COLUMNS)))
+            cur.execute(sql, (entity_key, *(item.get(column) for column in _WATCH_ITEM_COLUMNS), item.get("added_at")))
             inserted += cur.rowcount or 0
     return inserted
 
@@ -2159,9 +2161,12 @@ def search_watch_items(entity_key: str, limit: int) -> list[dict]:
 
 
 def search_watch_item_titles(entity_key: str) -> list[dict]:
-    """그 대상의 모은 글의 (item_id, title, url) — 경유 주소(구글) 줄을 같은 제목의 글과 겹쳐 넣지 않으려고 씁니다."""
+    """
+    그 대상의 모은 글의 (item_id, title, url, added_at, first_seen_at) — 경유 주소(구글) 줄을 같은 제목의 글과 겹쳐 넣지 않고, 경유 줄이 먼저 들어온
+    기사의 원문 줄에 그 경유 줄의 넣은 시각·처음 받은 시각을 이어 주려고 씁니다(QA-1013).
+    """
     with connection() as conn:
-        return conn.execute("SELECT item_id, title, url FROM search_watch_items WHERE entity_key = %s",
+        return conn.execute("SELECT item_id, title, url, added_at, first_seen_at FROM search_watch_items WHERE entity_key = %s",
                             (entity_key,)).fetchall()
 
 

@@ -350,7 +350,6 @@ def test_QA1012_넣은_시각은_표에_넣는_순간이고_처음_받은_시각
         assert row["added_at"] - woke > timedelta(minutes=29)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1013 재현 — 구글 경유 줄이 먼저 들어온 기사가 다음 회차에 원문 주소 줄로 한 번 더 '새로 들어온 글'이 됩니다")
 def test_QA1013_구글_경유_줄이_먼저_들어온_기사의_원문_줄은_다시_새_글이_되지_않는다(store, world):
     """
     회차 N에 구글(경유 주소)만 준 기사를 회차 N+1에 Bing이 원문 주소로 주면 id가 달라 행이 하나 더 들어갑니다(화면은 합칠 때 경유 줄을 밂). 그 원문

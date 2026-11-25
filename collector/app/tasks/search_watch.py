@@ -44,7 +44,8 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
      Finviz > Bing > 구글 > SEC 회사별 목록 > EDGAR 전문 검색 > DART — 정보 검색과 같이 Finviz는 Yahoo 바로 뒤). 저장하는 글 id(:func:`stored_id`)는 원문 주소면 ``info_text.item_id``, 경유 주소(구글)면 그 기사 경로(``/rss/articles/<id>``,
      인자 없음)의 같은 해시, 주소가 없으면 전체 제목의 해시입니다 — 제목 앞 24자(계약 규칙 4 — 한 요청 안에서 출처끼리 겹친 줄을 가리는 임시 키)는
      2년 보관 키로 쓰지 않습니다(앞 24자가 같은 다른 기사를 막지 않게). 경유 주소 줄·주소 없는 줄은 같은 실행이나 그 대상의 저장본에 **전체 제목**이
-     같은 글이 있으면 넣지 않습니다. 이미 있는 (대상, 글)은 그대로 둡니다(처음 받은 시각을 지킴). 처음 받은 시각은 지금이고, 작성 시각이 없는 저장본
+     같은 글이 있으면 넣지 않습니다. 반대 차례(경유 주소 줄이 먼저 들어온 기사를 다음 회차에 원문 주소로 받음)는 행을 넣되 넣은 시각·처음 받은
+     시각을 그 경유 줄의 값으로 이어 줍니다 — 같은 기사가 새 글 수·알림에 한 번 더 들지 않게(QA-1013). 이미 있는 (대상, 글)은 그대로 둡니다(처음 받은 시각을 지킴). 처음 받은 시각은 지금이고, 작성 시각이 없는 저장본
      글(시각 칸 없는 피드·수집 글)은 그 글을 처음 받은 시각을 씁니다. 표에 넣은 시각(V45 ``added_at`` — 백엔드의 새 글 수·알림 기준)은 따로이고
      DB가 넣는 순간으로 채웁니다(QA-1012 — 처음 받은 시각은 '들어온 시각'이 아님).
 
@@ -411,11 +412,19 @@ def _merge(groups: list[list[dict]]) -> list[dict]:
 def _rows(entity_key: str, items: list[dict], now: datetime) -> list[dict]:
     """
     FeedItem(:func:`_merge`를 거친 — ``id``가 저장 id) → search_watch_items 행. 이미 있는 글은 빼고, 경유 주소·주소 없는 줄은 그 대상의 저장본에
-    전체 제목이 같은 글이 있으면 뺍니다.
+    전체 제목이 같은 글이 있으면 뺍니다. 원문 주소 줄은 전체 제목이 같은 경유 주소 줄이 저장본에 먼저 있으면 그 줄의 넣은 시각(``added_at``)을 이어받고
+    처음 받은 시각도 그보다 늦지 않게 둡니다(QA-1013 — 행은 넣되 '새로 들어온 글'이 아님. 경유 줄은 지우지 않음 — 화면이 합칠 때 밂).
     """
     existing = store.search_watch_item_titles(entity_key)
     known_ids = {row["item_id"] for row in existing}
     known_titles = {full_title(row["title"]) for row in existing}
+    relayed: dict[str, dict] = {}       # 전체 제목 → 그 제목의 경유 주소 줄 가운데 가장 먼저 들어온 것
+    for row in existing:
+        key = full_title(row["title"])
+        if not key or not rules.is_relay(row.get("url")) or row.get("added_at") is None:
+            continue
+        if key not in relayed or row["added_at"] < relayed[key]["added_at"]:
+            relayed[key] = row
     rows = []
     for item in items:
         if item["id"] in known_ids:
@@ -425,6 +434,10 @@ def _rows(entity_key: str, items: list[dict], now: datetime) -> list[dict]:
             continue
         moment = rules.parse_time(item.get("publishedAt"))
         fetched_basis = item.get("timeBasis") == "fetched"
+        first_seen = min(moment, now) if fetched_basis and moment is not None else now
+        earlier = relayed.get(title) if title and not _is_weak(item) else None
+        if earlier is not None and earlier.get("first_seen_at") is not None:
+            first_seen = min(first_seen, earlier["first_seen_at"])
         rows.append({
             "item_id": item["id"],
             "kind": item.get("kind") or "news",
@@ -437,7 +450,9 @@ def _rows(entity_key: str, items: list[dict], now: datetime) -> list[dict]:
             "summary": item.get("summary"),
             # 작성 시각이 없는 저장본 글은 그 글을 처음 받은 시각을 처음 받은 시각으로(작성 시각은 모름 — NULL).
             "published_at": None if fetched_basis else moment,
-            "first_seen_at": min(moment, now) if fetched_basis and moment is not None else now,
+            "first_seen_at": first_seen,
+            # 주지 않으면(None) DB가 넣는 순간으로 채움 — 먼저 들어온 경유 줄이 있을 때만 그 줄의 값.
+            "added_at": earlier["added_at"] if earlier is not None else None,
         })
         known_ids.add(item["id"])
         if title:
