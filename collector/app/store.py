@@ -2270,6 +2270,19 @@ def take_search_budget(host: str, purpose: str, day: date, limit: int) -> bool:
     return row is not None
 
 
+def delete_search_budgets_before(day: date) -> int:
+    """
+    예산 계수기(fetch_budgets — 용도 watch·search·article)에서 ``budget_day``가 ``day``보다 이른 줄을 지웁니다 → 지운 행 수(QA-1023).
+
+    날마다 다시 세는 계수기라 지난 날 줄은 쓰이지 않습니다(같은 호스트의 다음 요청이 1부터 다시 넣음). 지우지 않으면 본문을 읽은 매체 호스트가
+    기한 없이 남습니다(ADR 0043 — 열람을 저장하지 않음). 부르는 쪽(tasks/search_watch의 하루 한 번 정리)이 며칠 여유를 둔 날짜를 줍니다.
+    """
+    with connection() as conn:
+        _purge_timeout(conn)
+        cur = conn.execute("DELETE FROM fetch_budgets WHERE budget_day < %s", (day,))
+        return cur.rowcount or 0
+
+
 # ==============================================================================
 # 8. 내부 헬퍼
 # ==============================================================================

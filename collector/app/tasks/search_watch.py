@@ -51,7 +51,8 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
 
 [정리 — 깰 때 확인, 표 전체를 훑는 일은 드물게]
   - KST 하루 한 번(그날 첫 깨기): 더는 아무도 등록하지 않은 대상의 글 — 그 대상의 일정 줄이 마지막으로 고쳐진 뒤 7일이 지나면(다시 등록하면 남음)
-    글과 일정 줄을 지웁니다. 2년 지난 글(색인 search_watch_items_time).
+    글과 일정 줄을 지웁니다. 2년 지난 글(색인 search_watch_items_time). 예산 계수기(fetch_budgets — 관심 대상·즉석 검색·본문 보기)의 7일 넘게 지난
+    날 줄(QA-1023 — 날마다 다시 세어 쓰이지 않는 값, 본문을 읽은 매체 호스트가 기한 없이 남지 않게).
   - 제외 목록(처음 값 + 사용자가 더한 매체)이 바뀌었을 때(과정이 처음 깰 때 포함): 그 목록에 걸리는 매체의 글. 새로 넣는 글은 넣기 전에 이미 거릅니다.
   - 정리 문장에는 시간 상한(store.SEARCH_PURGE_TIMEOUT_MS)이 있고, 실패하면 실행 기록에 '정리 못 함'만 적고 수집은 이어 갑니다(다음 깨기에 다시).
 
@@ -105,6 +106,8 @@ _CIK = re.compile(r"^\d{10}\Z")
 _CORP_CODE = re.compile(r"^\d{8}\Z")
 REQUEST_SPACING_SECONDS = (2.0, 5.0)
 UNWATCHED_GRACE_DAYS = 7
+# 예산 계수기(fetch_budgets)의 지난 날 줄을 남겨 두는 날 수 — 그보다 오래된 줄은 하루 한 번 정리에서 지웁니다(QA-1023, 쓰이지 않는 값).
+BUDGET_KEEP_DAYS = 7
 # 새 대상을 더 시작하지 않는 경과 시간(초) — polite 상한(900초) 전에 멈춥니다. 남은 대상은 일정을 건드리지 않아 다음 깨기가 다시 고릅니다.
 TIME_LIMIT_SECONDS = 600.0
 SCHEDULE_PREFIX = flex.key(TASK_NAME, "")
@@ -473,6 +476,10 @@ def _purge(now: datetime, excludes: rules.Excludes) -> str:
             unwatched, schedule_rows = store.purge_unwatched_search_items(SCHEDULE_PREFIX, UNWATCHED_GRACE_DAYS,
                                                                           SCHEDULE_HASH_CHARS)
             old = store.delete_search_watch_items_before(rules.window_start(today))
+            # 지난 날의 예산 계수기 줄(용도 무관 — 날마다 다시 세어 쓰이지 않음). 실행 기록의 글은 그대로 두고 로그에만 남깁니다.
+            budgets = store.delete_search_budgets_before(today - timedelta(days=BUDGET_KEEP_DAYS))
+            if budgets:
+                logger.info("관심 대상 수집: 지난 날 예산 줄 %d건 정리", budgets)
             _maintenance["day"] = today
             if unwatched or schedule_rows:
                 parts.append(f"등록이 풀린 대상의 글 {unwatched}건(일정 {schedule_rows}줄)")

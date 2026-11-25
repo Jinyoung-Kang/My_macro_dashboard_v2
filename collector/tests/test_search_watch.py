@@ -633,7 +633,6 @@ def test_2년_지난_글과_제외_매체의_글은_깨날_때마다_지운다(s
     assert "2년 지난 글 1건" in detail and "제외 매체 글 1건" in detail and world.calls == []
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1023 재현 — 예산 표(fetch_budgets)의 지난 날 줄을 지우는 길이 없어 본문을 읽은 매체 호스트가 기한 없이 남습니다")
 def test_QA1023_지난_날의_예산_줄은_7일이_지나면_하루_한_번_정리에서_지운다(store, world):
     """날마다 다시 세는 계수기라 지난 날 줄은 쓰이지 않습니다. KST 오늘에서 7일 넘게 지난 줄만 지우고(용도 무관), 7일 안·오늘 줄은 그대로."""
     today = rules.kst_today(NOW)
