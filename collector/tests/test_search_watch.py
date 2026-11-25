@@ -633,6 +633,27 @@ def test_2년_지난_글과_제외_매체의_글은_깨날_때마다_지운다(s
     assert "2년 지난 글 1건" in detail and "제외 매체 글 1건" in detail and world.calls == []
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1023 재현 — 예산 표(fetch_budgets)의 지난 날 줄을 지우는 길이 없어 본문을 읽은 매체 호스트가 기한 없이 남습니다")
+def test_QA1023_지난_날의_예산_줄은_7일이_지나면_하루_한_번_정리에서_지운다(store, world):
+    """날마다 다시 세는 계수기라 지난 날 줄은 쓰이지 않습니다. KST 오늘에서 7일 넘게 지난 줄만 지우고(용도 무관), 7일 안·오늘 줄은 그대로."""
+    today = rules.kst_today(NOW)
+    rows = [("old.example.com", "article", today - timedelta(days=8), 3), ("old.example.com", "search", today - timedelta(days=30), 1),
+            ("edge.example.com", "article", today - timedelta(days=7), 2), ("news.google.com", "watch", today, 5),
+            ("today.example.com", "article", today, 1)]
+    with store.connection() as conn:
+        for host, purpose, day, used in rows:
+            conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES (%s, %s, %s, %s)",
+                         (host, purpose, day, used))
+
+    task.task_search_watch()
+
+    with store.connection() as conn:
+        left = {(row["host"], row["purpose"]): row["budget_used"] for row in conn.execute(
+            "SELECT host, purpose, budget_used FROM fetch_budgets").fetchall()}
+    assert left == {("edge.example.com", "article"): 2, ("news.google.com", "watch"): 5, ("today.example.com", "article"): 1}
+    assert store.take_search_budget("old.example.com", "article", today, 20) is True, "지운 호스트는 다음 요청에 1부터"
+
+
 def test_정리는_KST_하루_한_번이고_제외_매체_정리는_목록이_바뀔_때만(store, world, monkeypatch):
     calls: list[str] = []
     for name in ("purge_unwatched_search_items", "delete_search_watch_items_before", "search_watch_item_publishers"):
