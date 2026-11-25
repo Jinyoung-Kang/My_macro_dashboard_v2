@@ -103,11 +103,14 @@ export function useInfoSearchWatch(enabled: boolean) {
     [runNotify],
   );
 
-  /** 그 대상을 지금 봤다고 적고(새 글 수 0) 목록을 다시 읽습니다. 실패해도 화면을 막지 않습니다 — 새 글 수가 늦게 줄 뿐입니다. */
+  /**
+   * 그 대상을 봤다고 적고 목록을 다시 읽습니다. asOf(그린 타임라인 결과의 watchAsOf — 서버가 모은 글을 읽은 시각)가 있으면 그때까지만 본 것으로 적어,
+   * 그 뒤에 들어온 글은 새 글로 남습니다(QA-1011). 없으면 본문 없이(지금까지 — 새 글 수 0). 실패해도 화면을 막지 않습니다 — 새 글 수가 늦게 줄 뿐입니다.
+   */
   const seen = useCallback(
-    async (id: number) => {
+    async (id: number, asOf?: string | null) => {
       try {
-        await apiPost(endpoints.search.watchSeen(id));
+        await (asOf ? apiPost(endpoints.search.watchSeen(id), { asOf }) : apiPost(endpoints.search.watchSeen(id)));
         await reloadAfterWrite();
       } catch (failure: unknown) {
         if (failure instanceof UnauthorizedError) notifyUnauthorized();

@@ -350,7 +350,8 @@ def test_두_번째_부름은_캐시_실패는_그대로_error(monkeypatch):
     search.feed("us:SCHP", "news", owner=True, external=True)
     first_calls = list(stubs.calls)
     out = search.feed("us:SCHP", "news", owner=True, external=True)
-    assert stubs.calls == first_calls, "15분 안에는 다시 부르지 않음(실패한 Yahoo는 60초)"
+    assert stubs.calls == first_calls + ["watch"], \
+        "15분 안에는 다시 부르지 않음(실패한 Yahoo는 60초) — 관심 대상이 모은 글만 요청마다 표를 다시 읽음(QA-1011, 자기 DB 읽기)"
     assert _row(out, "google_ko")["status"] == "cached" and _row(out, "google_ko")["count"] == 1
     assert _row(out, "yahoo")["status"] == "error"
 
@@ -635,7 +636,8 @@ def test_지금_새로_받기는_출처_캐시를_건너뛰고_새_결과로_캐
     assert len(stubs.calls) == 2 * len(first), "출처마다 다시 부름(저장본 포함)"
     assert _row(out, "google_ko")["status"] == "ok" and "합성칩, 새 소식" in [item["title"] for item in out["items"]]
     again = search.feed("us:SCHP", "news", owner=False, external=True)
-    assert len(stubs.calls) == 2 * len(first) and _row(again, "google_ko")["status"] == "cached"
+    # 캐시된 출처는 다시 부르지 않음 — 관심 대상이 모은 글만 요청마다 표를 다시 읽음(QA-1011).
+    assert stubs.calls[2 * len(first):] == ["watch"] and _row(again, "google_ko")["status"] == "cached"
     assert "합성칩, 새 소식" in [item["title"] for item in again["items"]], "새로 받은 결과가 캐시에 남음"
 
 

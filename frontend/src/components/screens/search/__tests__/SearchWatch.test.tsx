@@ -334,7 +334,7 @@ describe("봤음(새 글 수 지우기)", () => {
     expect(postCalls().filter(([path]) => path === endpoints.search.watchSeen(7))).toHaveLength(1);
   });
 
-  it.fails("QA-1011: 타임라인 결과의 watchAsOf(서버가 모은 글을 읽은 시각)를 '봤음' 본문에 싣는다 — 그 뒤에 들어온 글이 새 글에서 사라지지 않게", async () => {
+  it("QA-1011: 타임라인 결과의 watchAsOf(서버가 모은 글을 읽은 시각)를 '봤음' 본문에 싣는다 — 그 뒤에 들어온 글이 새 글에서 사라지지 않게", async () => {
     reads[endpoints.search.feed("us:NVDA", "timeline")] = feed({ watchAsOf: "2026-11-14T00:59:58+00:00" });
     reads[endpoints.search.watch] = watchList([WATCH_NVDA]);
     renderScreen(MEMBER, "/search?e=us:NVDA");

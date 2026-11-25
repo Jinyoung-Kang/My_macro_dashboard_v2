@@ -102,8 +102,13 @@ export function EntityView({
   }, [known, current, tab, onTab]);
 
   // 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음' — 이 화면에서 대상마다 한 번(목록을 다시 읽어도 또 보내지 않음).
+  // 그 결과의 watchAsOf(서버가 모은 글을 읽은 시각)까지만 봤다고 적습니다 — 결과를 읽은 뒤 들어온 글이 새 글에서 사라지지 않게(QA-1011).
   const [timelineShown, setTimelineShown] = useState(false);
-  const markTimelineShown = useCallback(() => setTimelineShown(true), []);
+  const [timelineAsOf, setTimelineAsOf] = useState<string | null>(null);
+  const markTimelineShown = useCallback((watchAsOf: string | null) => {
+    setTimelineShown(true);
+    setTimelineAsOf(watchAsOf);
+  }, []);
   const watchItems = watch.data?.available ? (watch.data.items ?? []) : [];
   const watched = findWatch(watchItems, entityKey, entity);
   const watchedId = watched?.id ?? null;
@@ -114,8 +119,8 @@ export function EntityView({
   useEffect(() => {
     if (current !== "timeline" || !timelineShown || watchedId === null || seenSent.current.has(watchedId)) return;
     seenSent.current.add(watchedId);
-    void seen(watchedId);
-  }, [current, timelineShown, watchedId, seen]);
+    void seen(watchedId, timelineAsOf);
+  }, [current, timelineShown, timelineAsOf, watchedId, seen]);
 
   const watchPane = <WatchPane watch={watch} demo={demo} currentKey={watchKeyOf(entityKey, entity)} collapsible onOpen={onOpen} />;
   // 별칭 편집(관심 대상일 때만) — 결과 탭은 저장한 뒤 그 결과를 다시 부르고, 보유·연결 탭은 별칭을 쓰지 않아 목록만 다시 읽습니다.

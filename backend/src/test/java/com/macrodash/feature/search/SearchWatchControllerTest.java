@@ -7,7 +7,6 @@ import com.macrodash.store.SearchExcludeStore;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.web.ApiExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -102,7 +101,6 @@ class SearchWatchControllerTest {
     }
 
     @Test
-    @Disabled("QA-1011 재현 — '봤음'을 서버의 지금으로 적어, 화면이 결과를 읽은 뒤 들어온(화면에 보이지 않은) 글이 새 글 수에서 사라짐")
     @DisplayName("QA-1011: '봤음'의 asOf(화면이 모은 글을 읽은 시각)까지만 본 것으로 적는다 — 그 뒤에 들어온 글은 새 글로 남음")
     void seenUpToWhatTheScreenRead() throws Exception {
         Instant now = Instant.parse("2026-11-14T03:00:00Z");

@@ -684,6 +684,32 @@ class SearchWatchServiceTest {
         assertThat(watches.rows).extracting(SearchWatchStore.Watch::id).containsExactly(theirs);
     }
 
+    @Test
+    @DisplayName("QA-1011: '봤음'은 asOf까지만 — 지금보다 뒤면 지금, 이미 적힌 시각보다 앞이면 그대로, 읽히지 않으면 400이고 바꾸지 않는다. 없으면 지금(예전 화면)")
+    void seenAsOfIsClampedAndNeverMovesBack() {
+        long id = watches.seed(MEMBER.id(), "us:NVDA", NOW.minus(Duration.ofHours(5)));
+        watches.item("us:NVDA", "google_ko", NOW.minus(Duration.ofMinutes(5)));
+
+        SearchWatchService.Result read = service.seen(MEMBER, id, "2026-11-14T02:50:00Z");
+        assertThat(read.status()).isEqualTo(200);
+        assertThat(read.body()).containsEntry("lastSeenAt", "2026-11-14T02:50:00+00:00");
+        assertThat(items(service.list(MEMBER)).get(0)).as("화면이 읽은 뒤 들어온 글은 새 글로 남음").containsEntry("newCount", 1);
+
+        assertThat(service.seen(MEMBER, id, "2026-11-14T01:00:00+00:00").body()).as("이미 적힌 시각보다 앞 — 그대로")
+                .containsEntry("lastSeenAt", "2026-11-14T02:50:00+00:00");
+        for (String bad : new String[]{"어제", "", "2026-11-14", "1763089200"}) {
+            assertThatThrownBy(() -> service.seen(MEMBER, id, bad)).as(bad).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThat(watches.rows.get(0).lastSeenAt()).isEqualTo(Instant.parse("2026-11-14T02:50:00Z"));
+        assertThat(service.seen(DEMO, id, "어제").status()).as("데모는 본문 검사 전에 403").isEqualTo(403);
+
+        assertThat(service.seen(MEMBER, id, "2026-11-14T12:30:00+09:00").body()).as("지금(03:00Z)보다 뒤 — 지금으로")
+                .containsEntry("lastSeenAt", "2026-11-14T03:00:00+00:00");
+        assertThat(items(service.list(MEMBER)).get(0)).containsEntry("newCount", 0);
+        clock.advance(Duration.ofMinutes(1));
+        assertThat(service.seen(MEMBER, id, null).body()).as("asOf 없음 — 지금").containsEntry("lastSeenAt", "2026-11-14T03:01:00+00:00");
+    }
+
     // ------------------------------------------------------------------ 매체 제외 목록
 
     @Test
@@ -1137,9 +1163,12 @@ class SearchWatchServiceTest {
             for (int i = 0; i < rows.size(); i++) {
                 Watch row = rows.get(i);
                 if (row.id() == id && row.userId() == userId) {
+                    // 저장소와 같은 규칙 — 뒤로 돌리지 않고 적힌 값을 돌려줍니다.
+                    Instant before = row.lastSeenAt() == null ? row.createdAt() : row.lastSeenAt();
+                    Instant kept = before != null && before.isAfter(at) ? before : at;
                     rows.set(i, new Watch(row.id(), row.userId(), row.entityKey(), row.kind(), row.name(), row.aliases(), row.ids(),
-                            row.createdAt(), at, row.notifyEnabled(), row.notifiedAt()));
-                    return Optional.of(at);
+                            row.createdAt(), kept, row.notifyEnabled(), row.notifiedAt()));
+                    return Optional.of(kept);
                 }
             }
             return Optional.empty();

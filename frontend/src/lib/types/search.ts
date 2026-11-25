@@ -243,6 +243,11 @@ export type SearchFeedResponse = SearchRelay & {
   pending?: boolean;
   fetchedAt?: string | null;
   /**
+   * 서버가 관심 대상이 모은 글을 읽기 직전 시각(ISO — 모은 글 출처가 돌지 않았거나 읽지 못했으면 null, 예전 서버는 칸이 없음). 화면은 타임라인을 그린 뒤
+   * '봤음'에 이 값을 실어, 그 뒤에 들어온(화면에 없는) 글이 새 글 수에서 사라지지 않게 합니다(QA-1011, 계약 §6-4).
+   */
+  watchAsOf?: string | null;
+  /**
    * '지금 새로 받기'(refresh=1) 응답에 서버가 붙이는 한 줄 — 사용자당 10분 상한에 걸려 캐시를 그대로 줬을 때 등(계약 §6-4 '상태 글').
    * 없으면 화면은 받은 시각만 적습니다.
    */

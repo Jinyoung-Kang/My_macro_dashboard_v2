@@ -140,8 +140,11 @@ export function FeedPanel({
   onRange: (range: SearchRange) => void;
   /** 왼쪽 칸 맨 위(관심 대상 목록). */
   aside?: ReactNode;
-  /** 결과(available:true)를 받아 그렸을 때 — 관심 대상의 '봤음'을 실패·받는 중에는 보내지 않게(EntityView). */
-  onShown?: () => void;
+  /**
+   * 결과(available:true)를 받아 그렸을 때 — 관심 대상의 '봤음'을 실패·받는 중에는 보내지 않게(EntityView). 인자는 그 결과의 watchAsOf
+   * (서버가 모은 글을 읽은 시각 — 없으면 null, QA-1011).
+   */
+  onShown?: (watchAsOf: string | null) => void;
   /** 속성 칸의 별칭 편집(관심 대상일 때 — EntityView). 인자는 이 결과를 다시 부르는 함수(저장한 뒤). */
   aliasEditor?: ((reloadFeed: () => void) => ReactNode) | null;
 }) {
@@ -153,9 +156,10 @@ export function FeedPanel({
   const today = now ? kstToday(now.getTime()) : null;
   const data = feed.data;
   const loaded = data?.available === true;
+  const watchAsOf = loaded ? (data?.watchAsOf ?? null) : null;
   useEffect(() => {
-    if (loaded) onShown?.();
-  }, [loaded, onShown]);
+    if (loaded) onShown?.(watchAsOf);
+  }, [loaded, onShown, watchAsOf]);
   const [filters, setFilters] = useState<FeedFilters>(NO_FILTERS);
   /** 목록에서 고른 줄의 key(결과 줄은 id, 묶음 줄은 'cluster:' + 묶음 id). */
   const [selectedKey, setSelectedKey] = useState<string | null>(null);

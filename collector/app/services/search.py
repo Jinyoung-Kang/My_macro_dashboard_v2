@@ -407,6 +407,7 @@ class _Spec:
     run: Callable[[], sources.Fetched] | None = None
     status: str | None = None           # 부르지 않는 줄의 상태(owner_only·skipped·later)
     message: str | None = None
+    read_at: datetime | None = None     # 모은 글(watch)만 — 표를 읽기 직전 시각(읽은 뒤에 적음, QA-1011)
 
 
 def _status_row(source: str, status: str, count: int, dropped: dict | None, message: str | None, *,
@@ -434,16 +435,24 @@ def _watch_spec(entity_key: str, *, owner: bool, refresh: bool, kinds: tuple[str
     관심 대상이 모은 글(대표 키) — 운영자 전용 출처에서 온 줄은 운영자에게만(캐시 키에 owner). ``kinds``가 있으면 그 종류의 줄만(계약 §7-6 — 뉴스 탭
     ``WATCH_KINDS["news"]``·공시 탭 ``filing``·주제의 타임라인, None = 전부). 글(``post``)이 섞이지 않는 탭에서는 수집 글·거장 견해에서 온 줄을
     뺍니다(그 글은 글 탭의 것 — 계약 §3-4).
+
+    출처 캐시(15분)를 거치지 않고 요청마다 표를 읽습니다(QA-1011 — 자기 DB 읽기, 문장 상한 3초). 화면은 타임라인을 그린 뒤 '봤음'을 보내는데, 캐시된
+    결과면 그 사이 정기 수집이 넣은 줄이 화면에 없는 채로 본 것이 됩니다. 그래서 ``refresh``는 여기서 뜻이 없고(시그니처만 그대로), 표를 읽기 직전
+    시각을 ``read_at``에 남겨 :func:`feed`가 ``watchAsOf``로 싣습니다.
     """
+    spec = _Spec("watch")
+
     def run() -> sources.Fetched:
-        result = sources.cached(("watch", entity_key, owner, kinds),
-                                lambda: search_store.watch_items(entity_key, owner=owner, kinds=kinds),
-                                external=True, refresh=refresh)
+        moment = datetime.now(timezone.utc)
+        result = search_store.watch_items(entity_key, owner=owner, kinds=kinds)
+        if not result.error:
+            spec.read_at = moment
         if kinds is None or "post" in kinds:
             return result
         return dataclasses.replace(result, items=[item for item in result.items if item.get("source") not in POST_SOURCES])
 
-    return _Spec("watch", run=run)
+    spec.run = run
+    return spec
 
 
 def _timeline_watch_kinds(target: dict | None) -> tuple[str, ...] | None:
@@ -770,8 +779,20 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         "pending": any(row["status"] == "pending" for row in rows),
         # 이 요청이 Finviz를 새로 줄에 넣었는지 — 백엔드가 사용자 빈도를 세고 화면에는 넘기지 않음(계약 §8-5).
         "finvizQueued": finviz_queued,
+        # 모은 글 표를 읽기 직전 시각(QA-1011, 계약 §6-4) — 화면이 '봤음'에 실어 그 뒤에 들어온 줄이 새 글에서 사라지지 않게. 모은 글 출처가 돌지
+        # 않았거나 읽지 못했으면(시간 초과 포함) null.
+        "watchAsOf": _watch_as_of(specs, fetched),
         "fetchedAt": rules.utc_iso(now),
     }
+
+
+def _watch_as_of(specs: list[_Spec], fetched: dict[str, sources.Fetched]) -> str | None:
+    """이 응답에 실린 모은 글을 표에서 읽기 직전 시각(UTC ISO — 초 아래는 버려 실제 읽은 때보다 늦지 않음). 싣지 못했으면 None."""
+    result = fetched.get("watch")
+    if result is None or result.error:
+        return None
+    moment = next((spec.read_at for spec in specs if spec.source == "watch" and spec.read_at is not None), None)
+    return rules.utc_iso(moment.replace(microsecond=0)) if moment is not None else None
 
 
 def _merge_order(groups: dict[str, list[dict]]) -> list[list[dict]]:

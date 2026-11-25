@@ -23,7 +23,7 @@ import java.util.Map;
  *  POST   /api/search/watch               등록 {key} (데모 403, 상한 409)
  *  DELETE /api/search/watch/{id}          지우기(자기 것만 — 남의 것 404)
  *  PATCH  /api/search/watch/{id}          별칭·새 글 알림 바꾸기 {aliases?, notify?} (자기 것만, 데모·store_only 403)
- *  POST   /api/search/watch/{id}/seen     지금 봤음(새 글 수 0)
+ *  POST   /api/search/watch/{id}/seen     봤음 {asOf?} — asOf(결과의 watchAsOf)까지, 없으면 지금(새 글 수 0)
  *  GET    /api/search/excludes            매체 제외 목록(처음 값 + 운영자가 더한 줄)
  *  POST   /api/search/excludes            (운영자) 더하기 {kind, value, note}
  *  DELETE /api/search/excludes/{id}       (운영자) 지우기
@@ -45,6 +45,10 @@ public class SearchWatchController {
     }
 
     public record ExcludeRequest(String kind, String value, String note) {
+    }
+
+    /** '봤음'의 선택 본문 — {@code asOf}는 화면이 그린 타임라인 결과의 {@code watchAsOf}(ISO 시각, 없어도 됨). */
+    public record SeenRequest(String asOf) {
     }
 
     @GetMapping("/watch")
@@ -71,8 +75,10 @@ public class SearchWatchController {
     }
 
     @PostMapping("/watch/{id}/seen")
-    public ResponseEntity<Map<String, Object>> seen(@PathVariable long id, HttpServletRequest request) {
-        return respond(watches.seen(CurrentUser.of(request), id));
+    public ResponseEntity<Map<String, Object>> seen(@PathVariable long id, @RequestBody(required = false) SeenRequest body,
+                                                    HttpServletRequest request) {
+        // 본문이 없으면 지금까지 본 것으로 적습니다(asOf를 보내지 않는 예전 화면과 같음).
+        return respond(watches.seen(CurrentUser.of(request), id, body == null ? null : body.asOf()));
     }
 
     @GetMapping("/excludes")

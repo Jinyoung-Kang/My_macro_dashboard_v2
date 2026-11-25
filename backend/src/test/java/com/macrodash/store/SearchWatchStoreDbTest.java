@@ -151,6 +151,18 @@ class SearchWatchStoreDbTest {
     }
 
     @Test
+    @DisplayName("QA-1011: '봤음'은 뒤로 돌리지 않는다 — 적힌 시각보다 앞선 값을 보내면 그대로 두고 적힌 값을 돌려준다")
+    void markSeenNeverMovesBack() {
+        SearchWatchStore.Watch mine = store.insert(alice, MARK + "back", "topic", "back", List.of("back"), null, AT);
+
+        assertThat(store.markSeen(mine.id(), alice, AT.plusSeconds(600))).contains(AT.plusSeconds(600));
+        assertThat(store.markSeen(mine.id(), alice, AT.plusSeconds(60))).as("앞선 값 — 그대로").contains(AT.plusSeconds(600));
+        assertThat(store.markSeen(mine.id(), alice, AT.minusSeconds(60))).as("등록 시각보다 앞선 값도").contains(AT.plusSeconds(600));
+        assertThat(store.find(alice, MARK + "back").orElseThrow().lastSeenAt()).isEqualTo(AT.plusSeconds(600));
+        assertThat(store.markSeen(mine.id(), alice, AT.plusSeconds(900))).contains(AT.plusSeconds(900));
+    }
+
+    @Test
     @DisplayName("새 글 수 — 마지막으로 본 뒤 처음 받은 글만, 숨길 출처를 주면 그 출처는 세지 않는다. 글이 없는 대상은 0")
     void newCounts() {
         SearchWatchStore.Watch nvda = store.insert(alice, MARK + "n", "topic", "n", List.of("n"), null, AT);

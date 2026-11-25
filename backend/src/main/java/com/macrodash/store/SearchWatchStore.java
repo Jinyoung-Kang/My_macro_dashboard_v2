@@ -247,10 +247,14 @@ public class SearchWatchStore {
         return jdbc.update("DELETE FROM search_watches WHERE id = ? AND user_id = ?", id, userId);
     }
 
-    /** 내 줄의 '마지막으로 본 시각'을 {@code at}으로 — 바꾼 시각(남의 줄·없는 줄은 빈 값). */
+    /**
+     * 내 줄의 '마지막으로 본 시각'을 {@code at}으로 — 적힌 시각(남의 줄·없는 줄은 빈 값). 뒤로 돌리지 않습니다: {@code at}이 지금 적힌 값보다 앞이면
+     * 그대로 두고 그 값을 돌려줍니다(QA-1011 — 화면이 예전에 읽은 결과의 시각을 늦게 보내도 이미 본 글이 다시 새 글이 되지 않게).
+     */
     public Optional<Instant> markSeen(long id, long userId, Instant at) {
-        int changed = jdbc.update("UPDATE search_watches SET last_seen_at = ? WHERE id = ? AND user_id = ?", Timestamp.from(at), id, userId);
-        return changed == 1 ? Optional.of(at) : Optional.empty();
+        return jdbc.query("UPDATE search_watches SET last_seen_at = GREATEST(COALESCE(last_seen_at, created_at), ?) "
+                        + "WHERE id = ? AND user_id = ? RETURNING last_seen_at",
+                (rs, rowNum) -> UserStore.instant(rs.getTimestamp("last_seen_at")), Timestamp.from(at), id, userId).stream().findFirst();
     }
 
     /**

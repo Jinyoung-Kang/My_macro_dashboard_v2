@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -294,13 +295,36 @@ public class SearchWatchService {
 
     /** 그 대상을 지금 봤다고 적음({@code last_seen_at = 지금}) — 새 글 수가 0이 됩니다. 남의 줄·없는 줄은 404. */
     public Result seen(CurrentUser user, long id) {
+        return seen(user, id, null);
+    }
+
+    /**
+     * 그 대상을 {@code asOf}까지 봤다고 적음(QA-1011, 계약 §6-4) — {@code asOf}는 화면이 그린 타임라인 결과의 {@code watchAsOf}(수집기가 모은 글 표를 읽기
+     * 직전 시각, ISO)입니다. 적는 값은 {@code min(지금, asOf)}이고 없으면(null) 지금 — 결과를 읽은 뒤 '봤음'이 닿기 전에 정기 수집이 넣은(화면에 보이지 않은)
+     * 글이 새 글 수·알림에서 사라지지 않게 합니다. 이미 적힌 시각보다 앞이면 그대로 둡니다({@link SearchWatchStore#markSeen}). 응답의 {@code lastSeenAt}은
+     * 적힌 값. 데모는 403(본문 검사 전), 읽히지 않는 {@code asOf}는 400, 표가 없으면 503, 남의 줄·없는 줄은 404.
+     *
+     * @throws InvalidRequestException {@code asOf}가 ISO 시각이 아님(400)
+     */
+    public Result seen(CurrentUser user, long id, String asOf) {
         if (user == null || user.demo()) {
             return failure(403, null, "데모 열람에서는 관심 대상을 바꿀 수 없습니다.");
+        }
+        Instant now = clock.instant();
+        Instant upTo = now;
+        if (asOf != null) {
+            Instant read;
+            try {
+                read = OffsetDateTime.parse(asOf.strip()).toInstant();
+            } catch (DateTimeParseException e) {
+                throw new InvalidRequestException("asOf는 ISO 시각(예: 2026-11-25T01:02:03+00:00)입니다.");
+            }
+            upTo = read.isBefore(now) ? read : now;
         }
         if (!watches.ready()) {
             return failure(503, null, NOT_READY);
         }
-        Optional<Instant> at = watches.markSeen(id, user.id(), clock.instant());
+        Optional<Instant> at = watches.markSeen(id, user.id(), upTo);
         if (at.isEmpty()) {
             return failure(404, null, "없는 관심 대상입니다.");
         }
