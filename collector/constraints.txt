@@ -6,13 +6,14 @@
 # 2026-11-17: trafilatura 2.3.1(정보 검색 본문 보기, ADR 0043)과 그것만 끌어오는 간접 의존성만 손으로 더함 — trafilatura 2.3.1이 나올 때(2026-10-06)의 판에
 #             맞춰 그 뒤 2주 안에 나온 판(courlan 1.5.0·dateparser 1.5.x·regex 2026.11.x)은 쓰지 않음. 다른 고정은 그대로.
 # 2026-11-26: opentelemetry-api 1.45.2(GHSA-mf5v-w3w3-f6cg)만 손으로 올림 — sidecar/pinned.txt와 같은 판(tests/test_requirements_pins.py가 대조).
+# 2026-11-26: certifi 2026.11.20만 손으로 올림(인증서 묶음 갱신, 다른 고정은 그대로).
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 APScheduler==3.11.3
 babel==2.18.0
 beautifulsoup4==4.15.0
-certifi==2026.10.18
+certifi==2026.11.20
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
