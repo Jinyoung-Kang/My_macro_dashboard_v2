@@ -39,7 +39,7 @@ from . import search_store
 
 logger = logging.getLogger(__name__)
 
-REF_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+REF_PATTERN = re.compile(r"^[0-9a-f]{32}\Z")     # `$`는 끝의 줄바꿈 앞에서도 맞음(QA-1007)
 KINDS = ("news", "headline")              # 꼬리표를 다는 줄의 종류(기사·글) — 공시·리서치·거장 견해·속보는 없음
 REF_TTL = 86_400.0                        # 기억표 — 결과로 내준 뒤 24시간
 REF_LIMIT = 10_000

@@ -101,8 +101,8 @@ FINVIZ_HOST = search_finviz.HOST                # finviz.com — Finviz 종목 �
 DAILY_BUDGETS = {GOOGLE_HOST: 600, BING_HOST: 600, SEC_DATA_HOST: 600, EFTS_HOST: 300, DART_HOST: 600,
                  FINVIZ_HOST: search_finviz.WATCH_BUDGET}
 FTS_KINDS = ("person", "institution")           # EDGAR 이름 전문 검색을 묻는 대상 종류
-_CIK = re.compile(r"^\d{10}$")
-_CORP_CODE = re.compile(r"^\d{8}$")
+_CIK = re.compile(r"^\d{10}\Z")
+_CORP_CODE = re.compile(r"^\d{8}\Z")
 REQUEST_SPACING_SECONDS = (2.0, 5.0)
 UNWATCHED_GRACE_DAYS = 7
 # 새 대상을 더 시작하지 않는 경과 시간(초) — polite 상한(900초) 전에 멈춥니다. 남은 대상은 일정을 건드리지 않아 다음 깨기가 다시 고릅니다.

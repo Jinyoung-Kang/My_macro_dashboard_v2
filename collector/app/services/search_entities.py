@@ -44,8 +44,8 @@ LOCAL_EMPTY_TTL = 60.0
 SEC_TTL = 86_400.0
 SEC_FAILURE_TTL = 60.0
 SUGGEST_LIMIT = 12
-US_TICKER = re.compile(r"^[A-Z0-9.\-]{1,15}$")
-KR_CODE = re.compile(r"^\d{6}$")
+US_TICKER = re.compile(r"^[A-Z0-9.\-]{1,15}\Z")
+KR_CODE = re.compile(r"^\d{6}\Z")
 
 # 13F 기관의 운용자 — 기관 소개(indicators.INSTITUTIONS의 desc)에 이름이 적힌 사람만. (한국어, 영어)
 MANAGERS: dict[str, tuple[tuple[str, str], ...]] = {

@@ -224,7 +224,6 @@ def test_틀린_입력은_400이고_서비스를_부르지_않는다(client, mon
     assert client.get(path).status_code == 400
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1007 재현")
 @pytest.mark.parametrize("path", [
     "/live/search/entity?e=kr:005930%0A", "/live/search/entity?e=us:NVDA%0A", "/live/search/entity?e=cik:0001045810%0A",
     "/live/search/feed?e=wd:Q42%0A&tab=news", "/live/search/article?ref=" + "0" * 32 + "%0A",
@@ -238,7 +237,6 @@ def test_QA1007_끝에_줄바꿈이_붙은_키와_꼬리표는_400이고_서비�
     assert client.get(path).status_code == 400
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1007 재현")
 def test_QA1007_식별자_모양_검사는_글_전체가_맞을_때만_통과한다():
     """`$`는 끝의 줄바꿈 앞에서도 맞습니다 — 대상 키·꼬리표·식별자 검사는 글 전체(\\Z)를 봅니다."""
     from app.services import search_article

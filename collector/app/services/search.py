@@ -101,8 +101,8 @@ FTS_KINDS = ("institution", "person")                   # EDGAR 이름 전문 �
 # 관심 대상이 모은 글에서 탭마다 섞는 종류(계약 §7-6). 뉴스 탭의 'wire'는 운영자에게만 남는 속보(§3-4 — 단계 3과 같음).
 WATCH_KINDS = {"news": ("news", "headline", "wire"), "filings": ("filing",)}
 TOPIC_TIMELINE_KINDS = ("news", "headline", "wire", "post", "opinion")   # 주제의 타임라인 — 공시·리서치 줄 없음
-_CIK = re.compile(r"^\d{10}$")
-_CORP_CODE = re.compile(r"^\d{8}$")
+_CIK = re.compile(r"^\d{10}\Z")
+_CORP_CODE = re.compile(r"^\d{8}\Z")
 OWNER_SOURCES = ("wire", "info", "guru")
 POST_SOURCES = ("info", "guru")    # 글 탭의 출처 — 모은 글에서 이 출처로 표시되는 줄은 뉴스 탭에 넣지 않음
 RECENT_FEEDS = 30               # 첫 화면 — 새 피드 묶음 최근 건수
@@ -112,11 +112,12 @@ ALIAS_MAX_CHARS = 60            # 검색식에 쓰는 별칭 하나의 글자 �
 ALIASES_PARAM_MAX_CHARS = 8_192  # 인자 글 전체의 상한 — JSON을 읽기 전에 자름(등록 때 저장한 100자 별칭 12개를 \uXXXX로 적어도 넉넉함)
 _ALIASES_ERROR = f"aliases는 문자열 JSON 배열입니다(최대 {ALIASES_MAX}개)."
 
+# 끝은 `$`가 아니라 `\Z` — `$`는 끝의 줄바꿈 앞에서도 맞아 'kr:005930\n' 같은 키가 통과합니다(QA-1007).
 _KEY_PATTERNS = {
-    "us": re.compile(r"^[A-Z0-9.\-]{1,15}$"),
-    "kr": re.compile(r"^\d{6}$"),
-    "cik": re.compile(r"^\d{10}$"),
-    "wd": re.compile(r"^Q[1-9]\d{0,11}$"),
+    "us": re.compile(r"^[A-Z0-9.\-]{1,15}\Z"),
+    "kr": re.compile(r"^\d{6}\Z"),
+    "cik": re.compile(r"^\d{10}\Z"),
+    "wd": re.compile(r"^Q[1-9]\d{0,11}\Z"),
 }
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # 별칭(계약 §9-4)의 제어 글자 — 백엔드 SearchWatchService·화면 infoSearch와 같은 범위(C1 U+0080~U+009F까지).
