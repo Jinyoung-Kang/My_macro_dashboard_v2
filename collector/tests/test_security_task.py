@@ -706,6 +706,57 @@ def test_QA_1024_거부한_배포판의_남은_요청은_요청_상한을_쓰지
     assert "추적기 거부로 멈춤(Ubuntu)" in detail and "추적기 결과 19(" in detail
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1024 (나) — 수정 커밋에서 표시를 뗀다")
+def test_QA_1024_쓰지_못한_조회도_시도_시각을_남겨_다음_실행에서_뒤로_간다(store, board):
+    """늘 틀이 다른 CVE 21개가 '결과 없음'으로 남아 요청 상한 20의 앞자리를 실행마다 차지하면 그 뒤의 정상 CVE는 영영 묻지 않는다."""
+    bad = [f"CVE-2099-{n:04d}" for n in range(201, 222)]
+    good = "CVE-2099-0300"
+    for index, cve in enumerate(bad):
+        _want(store, "ubuntu", "fakecode", "fakessl", cve, minutes_ago=100 - index)
+        board.override[dt.ubuntu_url(cve)] = (200, _ubuntu(cve="CVE-2099-0999"))
+    _want(store, "ubuntu", "fakecode", "fakessl", good, minutes_ago=1)
+    board.override[dt.ubuntu_url(good)] = (200, _ubuntu(cve=good))
+    _due_now(board)
+
+    task.task_kisa_security_notices()
+    first = board.trackers()
+    assert first == [dt.ubuntu_url(cve) for cve in bad[:20]], "첫 실행 — 오래 기다린 것부터 상한 20개"
+
+    board.clock["now"] += timedelta(hours=6)
+    _due_now(board)
+    detail = task.task_kisa_security_notices()
+
+    assert board.trackers()[len(first):] == [dt.ubuntu_url(bad[20]), dt.ubuntu_url(good)], \
+        "두 번째 실행 — 앞서 시도한 20개는 뒤로 가고(20시간 안에는 다시 묻지 않음) 아직 묻지 못한 둘을 물음"
+    statuses = _statuses(store)
+    assert statuses[("ubuntu", "fakecode", "fakessl", good)] == ("fixed", "9.9.9-0fake1.1", "released")
+    assert {statuses[("ubuntu", "fakecode", "fakessl", cve)] for cve in bad} == {("unknown", None, "모양이 다름")}, \
+        "쓰지 못한 조회는 모름 + 사유(404일 때와 같은 꼴) — 판정은 결과 없음과 같이 확인 필요"
+    assert "추적기 결과 1(고침 1·영향 없음 0·열림 0·모름 0) · 추적기 실패 1(받지 못함 0·모양이 다름 1)" in detail, "실패는 결과 건수에 세지 않음"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1024 (나) — 수정 커밋에서 표시를 뗀다")
+def test_QA_1024_받지_못한_조회는_앞서_받은_상태를_그대로_두고_시도_시각만_올린다(store, board):
+    """일시적 실패가 확정 상태(fixed·not_affected)를 모름으로 덮으면 패치됨·무관이 확인 필요로 뒤집힌다 — 상태·판·사유는 두고 시각만."""
+    _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
+    _want(store, "debian", "fakedeb", "fakessl", C2, minutes_ago=2)
+    _want(store, "debian", "fakedeb", "fakessl", C3, minutes_ago=1)
+    _checked(store, "ubuntu", "fakecode", "fakessl", C1, "fixed", timedelta(days=8), "1.0-1")
+    _checked(store, "debian", "fakedeb", "fakessl", C2, "not_affected", timedelta(days=9))
+    board.override[dt.ubuntu_url(C1)] = (503, "")
+    board.override[dt.debian_url(C2)] = (200, _debian(cve="CVE-2099-0999"))
+    board.override[dt.debian_url(C3)] = (502, "")
+    _due_now(board)
+
+    task.task_kisa_security_notices()
+
+    assert _statuses(store) == {("ubuntu", "fakecode", "fakessl", C1): ("fixed", "1.0-1", "합성"),
+                                ("debian", "fakedeb", "fakessl", C2): ("not_affected", None, "합성"),
+                                ("debian", "fakedeb", "fakessl", C3): ("unknown", None, "받지 못함")}
+    assert {r["cve"]: r["checked_at"] for r in store.distro_cve_statuses()} == {C1: NOW, C2: NOW, C3: NOW}, "시도 시각"
+    assert store.distro_tracker_due(now=NOW, open_hours=task.TRACKER_OPEN_HOURS, settled_days=task.TRACKER_SETTLED_DAYS) == []
+
+
 def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과를_둔다(store, board):
     _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
     _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
