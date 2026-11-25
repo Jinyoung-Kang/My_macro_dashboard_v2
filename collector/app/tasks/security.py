@@ -24,8 +24,11 @@ flex 그룹 — KISA 보호나라 보안공지(ADR 0046). 운영자 화면 '보�
   ``services.distro_trackers``(Ubuntu CVE JSON·Debian 보안 추적기 HTML·Alpine secdb).
   - Ubuntu·Debian은 CVE마다 요청 하나(같은 CVE의 패키지·스위트 여럿을 한 응답으로), 둘 합쳐 한 실행에 ``TRACKER_REQUEST_LIMIT``개까지.
     HTTP 404는 unknown. Alpine은 원하는 행이 있는 스위트마다 secdb ``main``·``community``를 한 번씩(상한과 별도 — 스위트 ``TRACKER_ALPINE_SUITES``개까지).
-  - 요청 사이 3~6초, 보호나라와 같은 공용 세션과 시간 예산. 받지 못함(연결·5xx 등)·틀이 다름은 행을 쓰지 않고(직전 결과 그대로) 실행 메시지에
-    건수만. 추적기의 거부(공용 세션의 거부 래치 — 호스트마다)는 그 배포판의 남은 요청만 건너뜁니다(다른 추적기는 이어서 물음 — QA-1024,
+  - 요청 사이 3~6초, 보호나라와 같은 공용 세션과 시간 예산. 받지 못함(연결·5xx 등)·틀이 다름은 결과를 쓰지 않고 실행 메시지에 건수만 —
+    다만 시도 시각은 남깁니다(QA-1024): 결과 행이 없던 것은 unknown + 사유 글('받지 못함'·'모양이 다름' — 404와 같은 꼴), 이미 결과가 있는
+    것은 상태·판·사유를 그대로 두고 확인 시각만 올립니다(일시적 실패가 fixed·not_affected를 덮지 않게). 그래서 실패한 조회도 그 상태의
+    다시 묻기 간격(open·unknown ``TRACKER_OPEN_HOURS``시간, fixed·not_affected ``TRACKER_SETTLED_DAYS``일) 뒤에 다시 묻습니다 — 늘 실패하는
+    조회가 실행마다 요청 상한의 앞자리를 차지해 다른 조회를 굶기지 않게. 추적기의 거부(공용 세션의 거부 래치 — 호스트마다)는 그 배포판의 남은 요청만 건너뜁니다(다른 추적기는 이어서 물음 — QA-1024,
     보호나라 결과는 이미 저장, 출처 상태는 보호나라 것만).
   - 실행 메시지에는 요청 수·결과 건수만 남깁니다(판 값·CVE 번호 없음 — 공개 저장소·로그).
 """
@@ -69,6 +72,9 @@ TRACKER_ALPINE_SUITES = 4             # 한 실행에 secdb를 받는 Alpine 스
 TRACKER_OPEN_HOURS = 20               # open·unknown을 다시 묻는 간격
 TRACKER_SETTLED_DAYS = 7              # fixed·not_affected를 다시 묻는 간격
 _TRACKER_NAMES = {"ubuntu": "Ubuntu", "debian": "Debian", "alpine": "Alpine"}
+# 물었지만 결과를 쓰지 못한 조회에 남기는 사유 글(결과 행이 없던 것만 unknown + 이 글 — QA-1024). 오류 원문은 넣지 않습니다.
+_MISSED_FAILED = "받지 못함"
+_MISSED_SHAPE = "모양이 다름"
 _STATUS_NAMES = {"fixed": "고침", "not_affected": "영향 없음", "open": "열림", "unknown": "모름"}
 
 # 시험이 난수·시계·쉼을 바꿔 끼우는 자리입니다.
@@ -312,6 +318,11 @@ def _ask_trackers(started: float) -> list[str]:
         for _, st in pairs:
             results[st.status] += 1
 
+    def missed(rows: list[dict], reason: str) -> None:
+        """물었지만 결과를 쓰지 못한 행 — 시도 시각만 남겨 다음 실행의 차례에서 뒤로 보냅니다(QA-1024, store.note_distro_cve_attempt)."""
+        store.note_distro_cve_attempt([(row["distro"], row["suite"], row["package"], row["cve"]) for row in rows],
+                                      reason=reason, checked_at=_now())
+
     try:
         for suite, rows in list(alpine.items())[:TRACKER_ALPINE_SUITES]:
             if "alpine" in rejected:
@@ -331,9 +342,11 @@ def _ask_trackers(started: float) -> list[str]:
                     break
                 except _Failed:
                     failed += 1
+                    missed(rows, _MISSED_FAILED)
                     break
                 except ShapeError:
                     shaped += 1
+                    missed(rows, _MISSED_SHAPE)
                     break
             if len(indexes) != len(distro_trackers.ALPINE_REPOS):
                 continue                                 # 둘 다 봐야 unknown을 말할 수 있음 — 이 스위트는 쓰지 않음
@@ -343,6 +356,7 @@ def _ask_trackers(started: float) -> list[str]:
                     pairs.append((row, distro_trackers.alpine_status(indexes, row["package"], row["cve"], distro_trackers.ALPINE_REPOS)))
                 except ShapeError:
                     shaped += 1
+                    missed([row], _MISSED_SHAPE)
             save(pairs)
 
         sent = 0
@@ -368,14 +382,17 @@ def _ask_trackers(started: float) -> list[str]:
                                 pairs.append((row, distro_trackers.debian_status(record, row["package"], row["suite"])))
                         except ShapeError:
                             shaped += 1
+                            missed([row], _MISSED_SHAPE)
             except http.SourceRejected:
                 rejected.append(distro)
                 continue
             except _Failed:
                 failed += 1
+                missed(rows, _MISSED_FAILED)
                 continue
             except ShapeError:
                 shaped += 1
+                missed(rows, _MISSED_SHAPE)
                 continue
             save(pairs)
     except _OutOfTime:

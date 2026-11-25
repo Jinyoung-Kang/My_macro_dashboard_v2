@@ -1962,7 +1962,8 @@ def distro_tracker_due(*, now: datetime, open_hours: float, settled_days: float,
     """
     추적기에 물을 것 → [{distro, suite, package, cve, status, checked_at, wanted_at}] — 백엔드가 둔 wants 가운데 결과 행이 없거나,
     결과가 open·unknown이고 ``open_hours``시간보다 오래됐거나, fixed·not_affected이고 ``settled_days``일보다 오래된 것.
-    오래된 것부터(결과 행이 없는 것이 먼저, 그다음 확인 시각·원한 시각 순).
+    오래된 것부터(결과 행이 없는 것이 먼저, 그다음 확인 시각·원한 시각 순). 확인 시각은 결과를 쓴 시각이거나, 물었지만 쓰지 못한
+    시도의 시각입니다(:func:`note_distro_cve_attempt` — QA-1024).
     """
     with connection() as conn:
         rows = conn.execute(
@@ -1987,7 +1988,8 @@ def save_distro_cve_status(rows: Iterable[tuple], *, checked_at: datetime) -> in
     추적기에 물어본 결과를 넣거나 바꿉니다 → 쓴 행 수.
 
     :param rows: (distro, suite, package, cve, status, fixed_version, detail) — status는 fixed(판 필수)·not_affected·open·unknown,
-        detail은 추적기의 원래 상태 글(100자까지). 받지 못한 요청은 부르는 쪽이 넘기지 않습니다(직전 결과 그대로).
+        detail은 추적기의 원래 상태 글(100자까지). 받지 못한 요청은 부르는 쪽이 넘기지 않습니다(직전 결과 그대로 —
+        시도 시각만 :func:`note_distro_cve_attempt`로 남김).
     """
     rows = [tuple(row) for row in rows]
     if not rows:
@@ -2002,6 +2004,32 @@ def save_distro_cve_status(rows: Iterable[tuple], *, checked_at: datetime) -> in
                 checked_at = EXCLUDED.checked_at
             """,
             [(*row[:6], (row[6] or None) and str(row[6])[:100], checked_at) for row in rows],
+        )
+    return len(rows)
+
+
+def note_distro_cve_attempt(rows: Iterable[tuple], *, reason: str, checked_at: datetime) -> int:
+    """
+    물었지만 결과를 쓰지 못한 조회(받지 못함·모양이 다름)의 시도 시각을 남깁니다 → 건드린 행 수(QA-1024).
+
+    결과 행이 없으면 ``unknown`` + 사유 글로 넣고(HTTP 404일 때 쓰는 꼴과 같음 — 판정은 결과 없음과 같이 확인 필요), 이미 있으면
+    **상태·고친 판·사유 글은 그대로 두고** ``checked_at``만 올립니다 — 일시적 실패가 앞서 받은 fixed·not_affected를 모름으로 덮어
+    패치됨·무관을 확인 필요로 뒤집지 않게. 시각을 남기는 까닭은 :func:`distro_tracker_due`의 차례(결과 없는 것·오래된 것 먼저)에서
+    뒤로 보내, 늘 실패하는 조회가 실행마다 요청 상한의 앞자리를 차지하지 않게 하려는 것입니다.
+
+    :param rows: (distro, suite, package, cve)
+    """
+    rows = [tuple(row) for row in rows]
+    if not rows:
+        return 0
+    with connection() as conn, conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO distro_cve_status (distro, suite, package, cve, status, fixed_version, detail, checked_at)
+            VALUES (%s, %s, %s, %s, 'unknown', NULL, %s, %s)
+            ON CONFLICT (distro, suite, package, cve) DO UPDATE SET checked_at = EXCLUDED.checked_at
+            """,
+            [(*row[:4], str(reason)[:100], checked_at) for row in rows],
         )
     return len(rows)
 

@@ -641,7 +641,7 @@ def test_Alpine_secdb는_스위트마다_main·community를_한_번씩이고_20�
     assert "추적기 요청 22(Ubuntu 20·Debian 0·Alpine 2)" in detail and "남음" not in detail
 
 
-def test_Alpine_secdb_하나를_받지_못하면_그_스위트는_쓰지_않는다(store, board):
+def test_Alpine_secdb_하나를_받지_못하면_그_스위트는_결과를_쓰지_않고_시도_시각만_남긴다(store, board):
     _want(store, "alpine", "v9.99", "fakessl", C1)
     board.override[dt.alpine_url("v9.99", "main")] = (200, _alpine({"fakessl": {"9.9.9-r1": [C1]}}))
     board.override[dt.alpine_url("v9.99", "community")] = (502, "")
@@ -649,7 +649,9 @@ def test_Alpine_secdb_하나를_받지_못하면_그_스위트는_쓰지_않는�
 
     detail = task.task_kisa_security_notices()
 
-    assert _statuses(store) == {} and "추적기 실패 1(받지 못함 1·모양이 다름 0)" in detail and "추적기 남음 1" in detail
+    assert _statuses(store) == {("alpine", "v9.99", "fakessl", C1): ("unknown", None, "받지 못함")}, \
+        "main의 고친 판만으로 결과를 쓰지 않음 — 결과가 없던 행에 모름 + 사유로 시도 시각만(QA-1024)"
+    assert "추적기 결과 0(" in detail and "추적기 실패 1(받지 못함 1·모양이 다름 0)" in detail and "추적기 남음 1" in detail
 
 
 def test_추적기가_거부하면_그_배포판_조회만_멈추고_보호나라_결과는_그대로(store, board):
@@ -706,7 +708,6 @@ def test_QA_1024_거부한_배포판의_남은_요청은_요청_상한을_쓰지
     assert "추적기 거부로 멈춤(Ubuntu)" in detail and "추적기 결과 19(" in detail
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1024 (나) — 수정 커밋에서 표시를 뗀다")
 def test_QA_1024_쓰지_못한_조회도_시도_시각을_남겨_다음_실행에서_뒤로_간다(store, board):
     """늘 틀이 다른 CVE 21개가 '결과 없음'으로 남아 요청 상한 20의 앞자리를 실행마다 차지하면 그 뒤의 정상 CVE는 영영 묻지 않는다."""
     bad = [f"CVE-2099-{n:04d}" for n in range(201, 222)]
@@ -735,7 +736,6 @@ def test_QA_1024_쓰지_못한_조회도_시도_시각을_남겨_다음_실행�
     assert "추적기 결과 1(고침 1·영향 없음 0·열림 0·모름 0) · 추적기 실패 1(받지 못함 0·모양이 다름 1)" in detail, "실패는 결과 건수에 세지 않음"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1024 (나) — 수정 커밋에서 표시를 뗀다")
 def test_QA_1024_받지_못한_조회는_앞서_받은_상태를_그대로_두고_시도_시각만_올린다(store, board):
     """일시적 실패가 확정 상태(fixed·not_affected)를 모름으로 덮으면 패치됨·무관이 확인 필요로 뒤집힌다 — 상태·판·사유는 두고 시각만."""
     _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
@@ -757,7 +757,7 @@ def test_QA_1024_받지_못한_조회는_앞서_받은_상태를_그대로_두�
     assert store.distro_tracker_due(now=NOW, open_hours=task.TRACKER_OPEN_HOURS, settled_days=task.TRACKER_SETTLED_DAYS) == []
 
 
-def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과를_둔다(store, board):
+def test_받지_못하거나_틀이_다르면_결과를_쓰지_않고_직전_결과에_시도_시각만_남긴다(store, board):
     _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
     _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
     _want(store, "debian", "fakedeb", "fakessl", C3, minutes_ago=1)
@@ -771,8 +771,10 @@ def test_받지_못하거나_틀이_다르면_행을_쓰지_않고_직전_결과
 
     statuses = _statuses(store)
     assert statuses == {("ubuntu", "fakecode", "fakessl", C1): ("open", None, "합성"),
-                        ("debian", "fakedeb", "fakessl", C3): ("fixed", "2.0-1", "fixed (unstable)")}
-    assert [r["checked_at"] for r in store.distro_cve_statuses() if r["cve"] == C1] == [NOW - timedelta(hours=30)], "직전 결과 그대로"
+                        ("ubuntu", "fakecode", "fakessl", C2): ("unknown", None, "모양이 다름"),
+                        ("debian", "fakedeb", "fakessl", C3): ("fixed", "2.0-1", "fixed (unstable)")}, \
+        "직전 결과(상태·판·사유)는 그대로, 결과가 없던 조회는 모름 + 사유(QA-1024)"
+    assert [r["checked_at"] for r in store.distro_cve_statuses() if r["cve"] == C1] == [NOW], "시도 시각만 올림(QA-1024)"
     assert "추적기 결과 1(고침 1·영향 없음 0·열림 0·모름 0) · 추적기 실패 2(받지 못함 1·모양이 다름 1) · 추적기 남음 2" in detail
     assert store.source_state(task.TASK_NAME)["status"] == "ok", "추적기 실패는 보호나라 출처 상태에 섞지 않음"
 
