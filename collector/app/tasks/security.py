@@ -25,7 +25,8 @@ flex 그룹 — KISA 보호나라 보안공지(ADR 0046). 운영자 화면 '보�
   - Ubuntu·Debian은 CVE마다 요청 하나(같은 CVE의 패키지·스위트 여럿을 한 응답으로), 둘 합쳐 한 실행에 ``TRACKER_REQUEST_LIMIT``개까지.
     HTTP 404는 unknown. Alpine은 원하는 행이 있는 스위트마다 secdb ``main``·``community``를 한 번씩(상한과 별도 — 스위트 ``TRACKER_ALPINE_SUITES``개까지).
   - 요청 사이 3~6초, 보호나라와 같은 공용 세션과 시간 예산. 받지 못함(연결·5xx 등)·틀이 다름은 행을 쓰지 않고(직전 결과 그대로) 실행 메시지에
-    건수만. 추적기의 거부(공용 세션의 거부 래치)는 추적기 조회만 멈춥니다(보호나라 결과는 이미 저장, 출처 상태는 보호나라 것만).
+    건수만. 추적기의 거부(공용 세션의 거부 래치 — 호스트마다)는 그 배포판의 남은 요청만 건너뜁니다(다른 추적기는 이어서 물음 — QA-1024,
+    보호나라 결과는 이미 저장, 출처 상태는 보호나라 것만).
   - 실행 메시지에는 요청 수·결과 건수만 남깁니다(판 값·CVE 번호 없음 — 공개 저장소·로그).
 """
 from __future__ import annotations
@@ -294,6 +295,7 @@ def _ask_trackers(started: float) -> list[str]:
     results = dict.fromkeys(_STATUS_NAMES, 0)
     failed = shaped = 0
     stop: str | None = None
+    rejected: list[str] = []                 # 거부한 배포판(추적기마다 호스트가 다름) — 그 배포판의 남은 요청만 건너뜁니다(QA-1024)
 
     def fetch(distro: str, url: str) -> bytes | None:
         """요청 하나 — 시간 예산을 넘겼으면 _OutOfTime(새 요청을 시작하지 않음)."""
@@ -312,6 +314,8 @@ def _ask_trackers(started: float) -> list[str]:
 
     try:
         for suite, rows in list(alpine.items())[:TRACKER_ALPINE_SUITES]:
+            if "alpine" in rejected:
+                break
             try:
                 urls = [distro_trackers.alpine_url(suite, repo) for repo in distro_trackers.ALPINE_REPOS]
             except ValueError:
@@ -322,6 +326,9 @@ def _ask_trackers(started: float) -> list[str]:
                 try:
                     body = fetch("alpine", url)
                     indexes.append({} if body is None else distro_trackers.parse_alpine(body, suite, repo))
+                except http.SourceRejected:
+                    rejected.append("alpine")            # Alpine secdb의 거부 — Ubuntu·Debian은 이어서 묻습니다
+                    break
                 except _Failed:
                     failed += 1
                     break
@@ -340,6 +347,8 @@ def _ask_trackers(started: float) -> list[str]:
 
         sent = 0
         for (distro, cve), rows in groups.items():
+            if distro in rejected:
+                continue                                 # 거부한 배포판의 남은 요청 — 보내지 않고 요청 상한도 쓰지 않음
             if sent >= TRACKER_REQUEST_LIMIT:
                 break
             sent += 1
@@ -359,6 +368,9 @@ def _ask_trackers(started: float) -> list[str]:
                                 pairs.append((row, distro_trackers.debian_status(record, row["package"], row["suite"])))
                         except ShapeError:
                             shaped += 1
+            except http.SourceRejected:
+                rejected.append(distro)
+                continue
             except _Failed:
                 failed += 1
                 continue
@@ -366,8 +378,6 @@ def _ask_trackers(started: float) -> list[str]:
                 shaped += 1
                 continue
             save(pairs)
-    except http.SourceRejected:
-        stop = "추적기 거부로 멈춤"
     except _OutOfTime:
         stop = "시간 예산으로 추적기 멈춤"
 
@@ -376,6 +386,8 @@ def _ask_trackers(started: float) -> list[str]:
              f"추적기 결과 {written}({'·'.join(f'{name} {results[key]}' for key, name in _STATUS_NAMES.items())})"]
     if failed or shaped:
         parts.append(f"추적기 실패 {failed + shaped}(받지 못함 {failed}·모양이 다름 {shaped})")
+    if rejected:
+        parts.append(f"추적기 거부로 멈춤({'·'.join(_TRACKER_NAMES[d] for d in rejected)})")
     if stop:
         parts.append(stop)
     if len(due_rows) > written:

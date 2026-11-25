@@ -652,7 +652,7 @@ def test_Alpine_secdb_하나를_받지_못하면_그_스위트는_쓰지_않는�
     assert _statuses(store) == {} and "추적기 실패 1(받지 못함 1·모양이 다름 0)" in detail and "추적기 남음 1" in detail
 
 
-def test_추적기가_거부하면_추적기_조회만_멈추고_보호나라_결과는_그대로(store, board):
+def test_추적기가_거부하면_그_배포판_조회만_멈추고_보호나라_결과는_그대로(store, board):
     _want(store, "ubuntu", "fakecode", "fakessl", C1, minutes_ago=3)
     _want(store, "ubuntu", "fakecode", "fakessl", C2, minutes_ago=2)
     _want(store, "debian", "fakedeb", "fakessl", C3, minutes_ago=1)
@@ -661,13 +661,13 @@ def test_추적기가_거부하면_추적기_조회만_멈추고_보호나라_�
 
     detail = task.task_kisa_security_notices()
 
-    assert board.trackers() == [dt.ubuntu_url(C1)], "거부 뒤 다른 추적기도 묻지 않음"
-    assert "상세 12건" in detail and "추적기 거부로 멈춤" in detail and "추적기 남음 3" in detail
-    assert store.security_notice(BASE_ID + 500)["detail_status"] == "ok" and _statuses(store) == {}
+    assert board.trackers() == [dt.ubuntu_url(C1), dt.debian_url(C3)], "거부한 배포판(Ubuntu)의 남은 요청만 건너뜀 — Debian은 물음(QA-1024)"
+    assert "상세 12건" in detail and "추적기 거부로 멈춤(Ubuntu)" in detail and "추적기 남음 2" in detail
+    assert store.security_notice(BASE_ID + 500)["detail_status"] == "ok"
+    assert _statuses(store) == {("debian", "fakedeb", "fakessl", C3): ("unknown", None, "HTTP 404")}, "Ubuntu 행은 쓰지 않음"
     assert store.source_state(task.TASK_NAME)["status"] == "ok", "출처 상태는 보호나라 것만"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1024 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1024_추적기_한_곳의_거부는_그_배포판만_건너뛰고_다른_추적기는_묻는다(store, board):
     _want(store, "alpine", "v9.99", "fakessl", C1, minutes_ago=9)
     _want(store, "alpine", "v9.98", "fakessl", C1, minutes_ago=8)          # 거부한 Alpine의 다음 스위트 — 묻지 않음
@@ -691,7 +691,6 @@ def test_QA_1024_추적기_한_곳의_거부는_그_배포판만_건너뛰고_�
     assert store.source_state(task.TASK_NAME)["status"] == "ok"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1024 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1024_거부한_배포판의_남은_요청은_요청_상한을_쓰지_않는다(store, board):
     _want(store, "ubuntu", "fakecode", "fakessl", "CVE-2099-0100", minutes_ago=200)
     for n in range(1, 25):
