@@ -71,32 +71,7 @@ fi
 # 대화형 셸에서 물려받은 umask(예: .env를 받을 때의 077)로 git이 파일을 0600으로 쓰면 컨테이너(root가 아닌 사용자)가 읽지 못합니다.
 umask 022
 
-# ---------------------------------------------------------------- 2) 코드 받기
-echo "코드를 받습니다(main)…"
-self_before="$(git rev-parse HEAD:scripts/vultr/deploy.sh)"
-git fetch --prune --quiet origin
-# 추적 중인 파일만 봅니다(.env·backups는 추적하지 않음).
-[ -z "$(git status --porcelain --untracked-files=no)" ] ||
-    die "서버에서 고친 파일이 있어 받지 않았습니다 — git status로 확인하고 git restore <파일>로 되돌리세요."
-git checkout --quiet main
-git merge --ff-only --quiet origin/main ||
-    die "서버의 main이 origin/main과 갈라져 fast-forward하지 못했습니다 — git log --oneline --graph main origin/main"
-# QA-145: 받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다. bash는 이미 연 옛 파일을 끝까지 읽어,
-# 새 판의 빌드 목록·단계가 빠진 채 기동합니다(2026-10-30 AWS gate). 다시 돈 판은 받을 것이 없어 여기를 그냥 지나갑니다.
-if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(git rev-parse HEAD:scripts/vultr/deploy.sh)" != "$self_before" ]; then
-    echo "  deploy.sh가 바뀌어 받은 새 판으로 다시 돕니다."
-    DEPLOY_REEXEC=1 exec bash scripts/vultr/deploy.sh "$@"
-fi
-# 받은 코드에 Caddyfile이 없으면 docker가 그 자리에 빈 폴더를 만들고 caddy가 뜨지 못합니다.
-[ -f deploy/vultr/Caddyfile ] || die "deploy/vultr/Caddyfile이 없습니다 — 받은 main(git log -1)을 확인하세요."
-
-# ---------------------------------------------------------------- 3) 버전
-export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
-APP_VERSION="main@$(git rev-parse --short HEAD)"
-APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
-export APP_VERSION APP_UPDATED
-echo "  코드: $APP_VERSION (최종 수정 $APP_UPDATED)"
-
+# ---------------------------------------------------------------- 실제 매매 가드(함수 — 3·6단계가 부름)
 # 실제 매매(ADR 0028) — 꺼져(OFF) 있지 않은 시장 수와 오늘(KST)의 장 시간 변경을 한 줄로 냅니다: "<수>"(변경 없음) | "<수> <개장> <마감>"(모의 설정
 # kr.calendar.openTimeOverrides의 오늘 값 — 예 "1 10:00 16:30") | "<수> bad"(그 설정을 읽지 못했거나 모양이 틀림 — 보수 창).
 # 시장 수는 LIVE·STOPPING·HALTED를 모두 셉니다(OPS-5) — 끄는 중은 이 기능의 미체결을 취소하고 이상 멈춤도 주기마다 취소를 보내, 그 사이에 백엔드·수집기를
@@ -199,6 +174,33 @@ realtrade_guard() {
     [ "$1" != "before-build" ] ||
         echo "참고: 실제 매매 켜짐(LIVE)·끄는 중(STOPPING)·이상 멈춤(HALTED) 가운데 하나 — 기동하는 동안 장중 따라 하기 주문이나 미체결 취소의 결과를 놓칠 수 있어 정규장 밖 배포가 낫습니다(오늘 한국 거래 창: $kr_win_text)."
 }
+
+# ---------------------------------------------------------------- 2) 코드 받기
+echo "코드를 받습니다(main)…"
+self_before="$(git rev-parse HEAD:scripts/vultr/deploy.sh)"
+git fetch --prune --quiet origin
+# 추적 중인 파일만 봅니다(.env·backups는 추적하지 않음).
+[ -z "$(git status --porcelain --untracked-files=no)" ] ||
+    die "서버에서 고친 파일이 있어 받지 않았습니다 — git status로 확인하고 git restore <파일>로 되돌리세요."
+git checkout --quiet main
+git merge --ff-only --quiet origin/main ||
+    die "서버의 main이 origin/main과 갈라져 fast-forward하지 못했습니다 — git log --oneline --graph main origin/main"
+# QA-145: 받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다. bash는 이미 연 옛 파일을 끝까지 읽어,
+# 새 판의 빌드 목록·단계가 빠진 채 기동합니다(2026-10-30 AWS gate). 다시 돈 판은 받을 것이 없어 여기를 그냥 지나갑니다.
+if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(git rev-parse HEAD:scripts/vultr/deploy.sh)" != "$self_before" ]; then
+    echo "  deploy.sh가 바뀌어 받은 새 판으로 다시 돕니다."
+    DEPLOY_REEXEC=1 exec bash scripts/vultr/deploy.sh "$@"
+fi
+# 받은 코드에 Caddyfile이 없으면 docker가 그 자리에 빈 폴더를 만들고 caddy가 뜨지 못합니다.
+[ -f deploy/vultr/Caddyfile ] || die "deploy/vultr/Caddyfile이 없습니다 — 받은 main(git log -1)을 확인하세요."
+
+# ---------------------------------------------------------------- 3) 버전
+export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
+APP_VERSION="main@$(git rev-parse --short HEAD)"
+APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
+export APP_VERSION APP_UPDATED
+echo "  코드: $APP_VERSION (최종 수정 $APP_UPDATED)"
+
 realtrade_guard before-build
 
 # ---------------------------------------------------------------- 4) 빌드(하나씩)
