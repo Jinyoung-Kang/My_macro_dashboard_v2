@@ -350,6 +350,39 @@ def test_QA1012_넣은_시각은_표에_넣는_순간이고_처음_받은_시각
         assert row["added_at"] - woke > timedelta(minutes=29)
 
 
+@pytest.mark.xfail(strict=True, reason="QA-1013 재현 — 구글 경유 줄이 먼저 들어온 기사가 다음 회차에 원문 주소 줄로 한 번 더 '새로 들어온 글'이 됩니다")
+def test_QA1013_구글_경유_줄이_먼저_들어온_기사의_원문_줄은_다시_새_글이_되지_않는다(store, world):
+    """
+    회차 N에 구글(경유 주소)만 준 기사를 회차 N+1에 Bing이 원문 주소로 주면 id가 달라 행이 하나 더 들어갑니다(화면은 합칠 때 경유 줄을 밂). 그 원문
+    행의 넣은 시각·처음 받은 시각은 먼저 들어온 경유 행의 값을 이어받아야 새 글 수·알림에 같은 기사가 한 번 더 들지 않습니다.
+    """
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    title = "SynthChip opens new fab"
+    world.bing_results["en"] = sources.Fetched(items=[])           # 회차 N: 구글(경유 주소)만
+    task.task_search_watch()
+    relay = _items(store, "us:SCHP")[title]
+    assert relay["source"] == "google_en" and rules.is_relay(relay["url"])
+    earlier = NOW - timedelta(hours=6)                             # 준비 — 경유 줄이 들어온 지 6시간(둘째 회차의 '지금'과 가르려고)
+    with store.connection() as conn:
+        conn.execute("UPDATE search_watch_items SET added_at = %s, first_seen_at = %s WHERE entity_key = 'us:SCHP' AND item_id = %s",
+                     (earlier, earlier, relay["item_id"]))
+
+    world.bing_results["en"] = sources.Fetched(items=[_news(title, "https://www.example.org/fab", source="bing"),
+                                                      _news("SynthChip unrelated update", "https://www.example.org/other", source="bing")])
+    flex.set_due(task.TASK_NAME, task.schedule_item("us:SCHP"), NOW - timedelta(seconds=1))
+    _due_now(store)
+    task.task_search_watch()
+
+    with store.connection() as conn:
+        rows = {row["source"]: row for row in conn.execute(
+            "SELECT source, added_at, first_seen_at FROM search_watch_items WHERE entity_key = 'us:SCHP' AND title = %s", (title,)).fetchall()}
+    assert set(rows) == {"google_en", "bing"}, "행은 둘 다 남음(지우지 않음)"
+    assert rows["bing"]["added_at"] == rows["google_en"]["added_at"] == earlier, "원문 행은 먼저 들어온 경유 행의 넣은 시각을 이어받음"
+    assert rows["bing"]["first_seen_at"] == earlier
+    other = _items(store, "us:SCHP")["SynthChip unrelated update"]
+    assert other["added_at"] > NOW - timedelta(minutes=5) and other["first_seen_at"] == NOW, "경유 행이 없던 글은 지금 그대로"
+
+
 def test_구글_경유_글은_제목_앞_24자가_같아도_다른_기사면_둘_다_남는다(store, world):
     """경유 주소 줄의 저장 id는 경유 주소의 기사 경로 — 같은 실행 안에서도, 다음 실행에서도 앞 24자가 같은 다른 기사를 막지 않습니다."""
     _watch(store, _user(store, "a@example.org"), ENTITY)
