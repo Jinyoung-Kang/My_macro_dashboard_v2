@@ -10,12 +10,14 @@
 #   1. 점검: 폴더 이름(My_macro_dashboard_v2 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
 #      서버에 적지 않는 이름(포트 네 줄·AWS 공개 주소용 값·PC 전용 값 등, .env.vultr.example)이 없는지. 값은 읽지도 찍지도 않습니다.
 #      PAPER_ENABLED=false가 있으면 운영본의 모의 매매 정기 작업이 꺼진 채 뜬다고 '주의'를 찍습니다(끝 요약에도 다시 — QA-194).
-#   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
+#   2. 실제 매매 가드(3과 같은 판정 — 거래 창이면 코드를 받기 전에 멈춤: 서버 폴더와 돌던 컨테이너 그대로, QA-1015) →
+#      git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED). 실제 매매(ADR 0028)가 꺼져(OFF) 있지 않고 — 켜짐(LIVE)뿐 아니라 미체결을 취소하는 끄는 중(STOPPING)·
 #      이상 멈춤(HALTED)도 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체: 시가 맞추기·개장 10분 뒤 맞추기·장중 스탑 매도·종가,
 #      ADR 0033)이면 멈춥니다 —
-#      창이 지난 뒤 다시 돌리거나, 알고 진행할 때만 REALTRADE_DEPLOY_OK=1. 빌드가 길어 6의 기동 직전에 한 번 더 봅니다.
+#      창이 지난 뒤 다시 돌리거나, 알고 진행할 때만 REALTRADE_DEPLOY_OK=1. 받기 전(2)·빌드 전(여기)·빌드가 길어 6의 기동 직전에 한 번씩 봅니다.
+#      빌드 실패나 기동 직전 가드로 멈추면 서버 폴더는 이미 새 main입니다 — 다시 배포하기 전까지 수집기를 다시 띄우지 않습니다(docs/DEVELOPMENT.md §7).
 #      상태는 postgres의 real_trade_config를 읽기만 하고(표가 없으면 통과), 읽지 못하면 경고만 하고 계속합니다.
 #      장 시간 변경일(같은 psql 호출로 읽는 모의 설정 kr.calendar.openTimeOverrides의 오늘 값 — 예 수능 10:00~16:30)은 개장 −15분 ~
 #      마감 +5분, 그 설정을 읽지 못했거나 모양이 틀리면 보수 창(평일 08:45~16:35)으로 봅니다.
@@ -71,7 +73,7 @@ fi
 # 대화형 셸에서 물려받은 umask(예: .env를 받을 때의 077)로 git이 파일을 0600으로 쓰면 컨테이너(root가 아닌 사용자)가 읽지 못합니다.
 umask 022
 
-# ---------------------------------------------------------------- 실제 매매 가드(함수 — 3·6단계가 부름)
+# ---------------------------------------------------------------- 실제 매매 가드(함수 — 2·3·6단계가 부름)
 # 실제 매매(ADR 0028) — 꺼져(OFF) 있지 않은 시장 수와 오늘(KST)의 장 시간 변경을 한 줄로 냅니다: "<수>"(변경 없음) | "<수> <개장> <마감>"(모의 설정
 # kr.calendar.openTimeOverrides의 오늘 값 — 예 "1 10:00 16:30") | "<수> bad"(그 설정을 읽지 못했거나 모양이 틀림 — 보수 창).
 # 시장 수는 LIVE·STOPPING·HALTED를 모두 셉니다(OPS-5) — 끄는 중은 이 기능의 미체결을 취소하고 이상 멈춤도 주기마다 취소를 보내, 그 사이에 백엔드·수집기를
@@ -146,7 +148,7 @@ in_kr_trade_window() {
     [ "$dow" -le 5 ] || return 1
     [ "$hm" -ge "${kr_win[0]}" ] && [ "$hm" -le "${kr_win[1]}" ]
 }
-# $1 = before-build(빌드 전 — 켜짐·읽지 못함도 알림) | before-up(기동 직전 — 창 안일 때만 말함)
+# $1 = before-fetch(코드를 받기 전 — 창 안일 때만 말함, QA-1015) | before-build(빌드 전 — 켜짐·읽지 못함도 알림) | before-up(기동 직전 — 창 안일 때만 말함)
 realtrade_guard() {
     local out live hours=
     out="$(realtrade_state)"
@@ -166,6 +168,9 @@ realtrade_guard() {
             echo "경고: 실제 매매가 꺼져 있지 않고(켜짐 LIVE·끄는 중 STOPPING·이상 멈춤 HALTED — 미체결 취소도 돎) 지금은 한국 거래 창($kr_win_text)이지만 REALTRADE_DEPLOY_OK=1이라 계속합니다."
             return 0
         fi
+        if [ "$1" = "before-fetch" ]; then
+            die "실제 매매가 꺼져 있지 않고(켜짐 LIVE·끄는 중 STOPPING·이상 멈춤 HALTED — 미체결 취소도 돎) 지금은 한국 거래 창($kr_win_text)이라 코드를 받기 전에 멈췄습니다(서버 폴더와 돌던 컨테이너 그대로) — 창이 지난 뒤 다시 실행하세요(알고 진행할 때만 REALTRADE_DEPLOY_OK=1). 비상 끄기라면 deploy.sh가 아니라 docs/DEVELOPMENT.md §7 비상 끄기(먼저 화면의 끄기, 안 되면 서버 셸의 끄기 한 줄, 그래도 안 되면 TOSS_TRADING_ENABLED=false로 바꾸고 수집기만 다시 만들기)."
+        fi
         if [ "$1" = "before-build" ]; then
             die "실제 매매가 꺼져 있지 않고(켜짐 LIVE·끄는 중 STOPPING·이상 멈춤 HALTED — 미체결 취소도 돎) 지금은 한국 거래 창($kr_win_text)이라 배포하지 않았습니다 — 창이 지난 뒤 다시 실행하세요(알고 진행할 때만 REALTRADE_DEPLOY_OK=1). 비상 끄기라면 deploy.sh가 아니라 docs/DEVELOPMENT.md §7 비상 끄기(먼저 화면의 끄기, 안 되면 서버 셸의 끄기 한 줄, 그래도 안 되면 TOSS_TRADING_ENABLED=false로 바꾸고 수집기만 다시 만들기)."
         fi
@@ -176,6 +181,15 @@ realtrade_guard() {
 }
 
 # ---------------------------------------------------------------- 2) 코드 받기
+# 받기 전에 실제 매매 가드를 먼저 봅니다(QA-1015). 가드가 3단계에만 있을 때는 거래 창 안에서 돌리면 서버 폴더가 새 main이 된 뒤에 멈췄습니다 —
+# 컨테이너는 옛 이미지인데 수집기는 호스트의 db/migrations를 그대로 보고(bind mount) 기동할 때 적용하므로, 다시 배포하기 전에 수집기가 다시 뜨면
+# (재부팅·메모리 상한 뒤 자동 재기동) 새 마이그레이션을 옛 코드 아래에서 적용합니다. 새 판으로 다시 도는 길(DEPLOY_REEXEC — 이미 받은 뒤)은 건너뜁니다.
+# 가드의 상태 질의가 docker compose라 덧붙임 파일과 버전 값을 여기서 먼저 내보냅니다 — 버전은 받기 전 폴더의 것이고 3단계에서 받은 코드의 것으로 다시 정합니다.
+export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
+APP_VERSION="main@$(git rev-parse --short HEAD)"
+APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
+export APP_VERSION APP_UPDATED
+[ -n "${DEPLOY_REEXEC:-}" ] || realtrade_guard before-fetch
 echo "코드를 받습니다(main)…"
 self_before="$(git rev-parse HEAD:scripts/vultr/deploy.sh)"
 git fetch --prune --quiet origin
@@ -195,7 +209,6 @@ fi
 [ -f deploy/vultr/Caddyfile ] || die "deploy/vultr/Caddyfile이 없습니다 — 받은 main(git log -1)을 확인하세요."
 
 # ---------------------------------------------------------------- 3) 버전
-export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
 APP_VERSION="main@$(git rev-parse --short HEAD)"
 APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
 export APP_VERSION APP_UPDATED

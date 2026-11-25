@@ -359,7 +359,9 @@ def test_deploy는_받은_main에_Caddyfile이_없으면_기동하지_않는다(
     result = _deploy(server, fakes)
     assert result.returncode != 0
     assert "deploy/vultr/Caddyfile" in result.stderr
-    assert _docker_calls(fakes) == []
+    calls = _docker_calls(fakes)
+    assert len(calls) == 1 and calls[0].startswith("compose exec -T postgres sh -c psql "), \
+        "받기 전 실제 매매 가드의 상태 질의(읽기 — QA-1015)뿐, 빌드·덤프·기동은 없음"
 
 
 def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으로_다시_돈다(server, fakes):
@@ -469,7 +471,8 @@ def test_QA200_deploy는_postgres가_떠_있으면_덤프_전에_컨테이너를
 
 
 # 실제 매매 가드(ADR 0028) — 가짜 docker는 postgres 안의 psql 질의(켜진 시장 수)에 FAKE_RT_OUT을 찍고(FAKE_RT_RC가 0이 아니면 실패),
-# 가짜 date는 '+%u %H%M'(요일·KST 시각)에 FAKE_KST_NOW를 찍습니다(FAKE_KST_LATER가 있으면 두 번째부터 그 값 — 빌드 중에 창에 들어옴).
+# 가짜 date는 '+%u %H%M'(요일·KST 시각)에 FAKE_KST_NOW를 찍습니다(FAKE_KST_LATER가 있으면 FAKE_KST_LATER_FROM번째(기본 3 — 받기 전·빌드 전
+# 가드 다음, QA-1015) 물음부터 그 값 — 빌드 중에 창에 들어옴. 2면 코드를 받는 사이에 들어옴).
 # 그 밖의 date 호출(백업 파일 이름 등)은 진짜 date로 넘깁니다.
 _RT_DOCKER = tools._FAKE_DOCKER.replace(
     '    *" exec -T postgres true "*)',
@@ -478,8 +481,9 @@ _RT_DOCKER = tools._FAKE_DOCKER.replace(
 _REAL_DATE = shutil.which("date") or "/usr/bin/date"
 _FAKE_DATE = ('#!/usr/bin/env bash\n'
               'if [ "$1" = "+%u %H%M" ]; then\n'
-              '  if [ -n "${FAKE_KST_LATER:-}" ] && [ -e "$FAKE_LOG.date" ]; then echo "$FAKE_KST_LATER"; else echo "$FAKE_KST_NOW"; fi\n'
-              '  : > "$FAKE_LOG.date"\n'
+              '  echo x >> "$FAKE_LOG.date"\n'
+              '  if [ -n "${FAKE_KST_LATER:-}" ] && [ "$(wc -l < "$FAKE_LOG.date")" -ge "${FAKE_KST_LATER_FROM:-3}" ]; then\n'
+              '    echo "$FAKE_KST_LATER"; else echo "$FAKE_KST_NOW"; fi\n'
               f'else exec {_REAL_DATE} "$@"; fi\n')
 
 
@@ -508,7 +512,6 @@ def test_deploy는_실제_매매가_켜져_있고_한국_거래_창이면_빌드
     assert _dump_calls(calls) == []
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1015 — 수정 커밋에서 표시를 뗀다")
 def test_QA_1015_deploy는_거래_창이면_코드를_받기_전에_멈춰_서버_폴더가_옛_main_그대로다(server, rt_fakes):
     """가드보다 먼저 받으면 컨테이너는 옛 이미지인데 서버 폴더(수집기가 bind mount로 보는 db/migrations)만 새 main이 된다."""
     here, seed = server
@@ -529,6 +532,26 @@ def test_QA_1015_deploy는_거래_창이면_코드를_받기_전에_멈춰_서�
     assert "코드를 받기 전에 멈췄습니다" in result.stderr and "REALTRADE_DEPLOY_OK=1" in result.stderr
     assert "코드를 받습니다" not in result.stdout
     assert _builds(_docker_calls(rt_fakes)) == []
+
+
+def test_QA_1015_deploy는_코드를_받는_사이_거래_창에_들어오면_빌드_전에_멈춘다(server, rt_fakes):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0844", FAKE_KST_LATER="3 0845", FAKE_KST_LATER_FROM="2", FAKE_RT_OUT="1")
+    assert result.returncode != 0
+    assert "배포하지 않았습니다" in result.stderr and "코드를 받기 전에" not in result.stderr
+    assert "코드를 받습니다" in result.stdout
+    assert _builds(_docker_calls(rt_fakes)) == []
+
+
+def test_QA_1015_deploy는_새_판으로_다시_돌_때_받기_전_가드를_되풀이하지_않는다(server, rt_fakes):
+    _, seed = server
+    script = seed / "scripts/vultr/deploy.sh"
+    script.write_text(script.read_text(encoding="utf-8") + "\n# new\n", encoding="utf-8")
+    tools._git(seed, "commit", "-qam", "new deploy.sh")
+    tools._git(seed, "push", "-q", "origin", "main")
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="3 0700", FAKE_RT_OUT="1")
+    assert result.returncode == 0, result.stderr
+    psql = [c for c in _docker_calls(rt_fakes) if c.startswith("compose exec -T postgres sh -c psql")]
+    assert len(psql) == 3, "옛 판의 받기 전 가드 한 번 + 새 판의 빌드 전·기동 직전(새 판은 이미 받은 뒤라 받기 전 가드를 건너뜀)"
 
 
 @pytest.mark.parametrize("now", ["1 0844", "2 1536", "3 0700", "5 1536", "6 0850", "7 1520", "3 2330"])
@@ -638,7 +661,7 @@ def test_RT2_COL_1_deploy는_켜진_시장_수와_오늘의_장_시간_변경을
     result = _deploy(server, rt_fakes, FAKE_KST_NOW="4 0850", FAKE_RT_OUT="1 10:00 16:30")
     assert result.returncode == 0, result.stderr
     psql = [c for c in _docker_calls(rt_fakes) if c.startswith("compose exec -T postgres sh -c psql")]
-    assert len(psql) == 2, "빌드 전·기동 직전 가드마다 psql 한 번(수집기 토큰·.env 없이)"
+    assert len(psql) == 3, "받기 전(QA-1015)·빌드 전·기동 직전 가드마다 psql 한 번(수집기 토큰·.env 없이)"
     text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
     sql = text[text.index("<<'SQL'"):text.index("\nSQL\n")]
     # 백엔드가 쓰는 설정 행(paper_settings id = 1)의 중첩 경로 — valueAt이 점 경로 kr.calendar.openTimeOverrides를 중첩 객체로 풂.
