@@ -47,6 +47,26 @@ make test-backend      # JUnit (실제 PostgreSQL 사용)
 make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(타입 검사)
 ```
 
+### 여러 벌을 함께 돌릴 때는 `make test-isolated`
+
+`make test`는 떠 있는 로컬 스택의 postgres(메모리 상한 512m)에 붙습니다. 한 벌은 괜찮지만, 여러 작업 폴더(worktree)에서
+전체 시험을 함께 붙이면 그 postgres가 메모리 부족으로 죽습니다(실제로 겪음). **여러 벌은 이 명령으로, 동시에 둘까지** 돌립니다.
+
+```bash
+make test-isolated                      # make test 전체를 일회용 postgres에서
+make test-isolated T=test-collector     # 대상을 골라서(T="test-collector test-backend"처럼 여러 개도)
+bash scripts/test-isolated.sh db-test   # 스크립트를 직접 불러도 같음
+```
+
+- 벌마다 postgres를 따로 띄웁니다(`scripts/test/docker-compose.testdb.yml` — compose 프로젝트 `my_macrodash_v2_test_<칸>`,
+  포트 127.0.0.1:25441·25442, 메모리 상한 없음). 끝나거나 Ctrl-C·TERM으로 중단되면 컨테이너와 볼륨을 지웁니다. 이 폴더의 `.env`를
+  읽지 않고 프로젝트 이름과 compose 파일을 늘 적어 부르므로 떠 있는 로컬·QA 스택을 건드리지 않습니다.
+- 동시에 두 칸까지입니다(잠금 파일 `/tmp/my_macrodash_v2_test_locks`). 세 번째는 칸이 빌 때까지 기다립니다 — 세 벌 이상이면 화면의
+  5초 제한 시험이 흔들렸습니다. 같은 작업 폴더에서 두 벌은 바로 거절합니다(`frontend/.next`·`backend/target`이 겹침).
+- 셸의 `TEST_DATABASE_URL`은 지우고(있으면 포트 설정을 조용히 이깁니다) 계정은 `macro`/`macro`(공개 기본값)로 맞춥니다. yfinance 캐시
+  (`XDG_CACHE_HOME`·`YFINANCE_CACHE_DIR`)는 벌마다 임시 폴더로, 화면 시험 일꾼 수(`VITEST_MAX_WORKERS`)는 CPU 수를 칸 수로 나눈 값으로 둡니다.
+- 종료 코드는 `make`의 것을 그대로 돌려줍니다. 강제 종료(`kill -9`)로 남은 컨테이너는 같은 칸의 다음 실행이 시작할 때 지웁니다.
+
 ### 테스트는 전용 DB에서 돕니다
 
 백엔드 통합 테스트는 시작할 때마다 `snapshots` 테이블을 **비웁니다**. 그래서

@@ -26,6 +26,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 ## 명령 (전부 `make`, 저장소 최상위에서)
 - 기동·진단: `make up` · `make doctor` · `make status` · `make logs S=backend`
 - 테스트: `make test` (= `test-collector` + `test-backend` + `test-frontend`). CI와 같은 명령.
+  여러 작업 폴더에서 함께 돌릴 때는 `make test-isolated [T=<대상>]`(벌마다 일회용 postgres, 동시에 둘까지 — [docs/DEVELOPMENT.md §2](docs/DEVELOPMENT.md)).
 - 백업·복원: `make backup` · `make restore F=backups/….sql` (ADR 0003)
 - 코드 받기는 `make update`. `git pull`은 쓰지 않는다(다른 브랜치의 작업을 조용히 놓침).
 - Vultr 서버(ADR 0023, [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md), 작업 목록 [Vultr 이전 명세](docs/specs/2026-11-02-vultr-migration.md)) — **운영본(2026-11-03 02:30 KST 컷오버,
@@ -112,6 +113,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   이 PC에는 `psql`·`pg_dump`가 없다 — 없어도 되고, 그러면 `psql`이 필요한 시험(`test_db_scripts.py` 전부와 `test_vultr_scripts.py`의 일부)이 건너뛰어진다(CI에서는 돈다).
 - `.claude/worktrees/…` 안에서는 `git checkout main`이 실패한다. 작업은 본체 폴더에서 한다.
 - 테스트 DB를 쓰는 테스트는 postgres 컨테이너가 떠 있어야 한다(`make infra` 또는 `make up`).
+- 떠 있는 로컬 스택의 postgres는 메모리 상한이 512m라, 전체 시험 여러 벌을 붙이면 죽는다 — 여러 벌은 `make test-isolated`로(포트 25441·25442,
+  프로젝트 `my_macrodash_v2_test_<칸>`, 동시에 둘까지 — 셋부터는 화면 5초 제한 시험이 흔들림). 셸에 `TEST_DATABASE_URL`이 있으면 `make test-*`의 포트 설정을 조용히 이긴다.
 - 수집기 `/health`는 DB까지 확인한다(없으면 503). `/health`를 공개 경로 예시로 쓰는 테스트는 `store.ping`을
   스텁한다 — CI에는 운영 DB가 없어 로컬에서만 통과하는 테스트가 된다.
 - 스키마 파일(`db/migrations`)은 수집기가 기동할 때만 적용된다. `make up`은 `make migrate`로 늘 적용하지만, `docker compose up`을
