@@ -13,7 +13,8 @@
 #
 # 사용(저장소 최상위로 옮겨 .env·backups/를 봄):
 #   bash scripts/vultr/reboot-check.sh                       cron — 걸린 것이 있으면 운영 텔레그램 봇으로 한 통(한 줄 요약 + 할 일 '실행:',
-#                                                            같은 KST 날짜에 같은 글은 다시 보내지 않음), 없으면 syslog에만. 늘 0으로 끝남
+#                                                            같은 KST 날짜에 같은 글은 다시 보내지 않음), 없으면 syslog에만. 늘 0으로 끝남.
+#                                                            이 길은 먼저 디스크·inode 점검(scripts/vultr/disk-check.sh — 따로 알림, 따로 syslog 태그)도 부름
 #   bash scripts/vultr/reboot-check.sh --summary             한 줄만 찍음(deploy.sh 끝 요약 — 서버에서만 돎)
 #   bash scripts/vultr/reboot-check.sh --summary-if-server   서버(.env의 COMPOSE_FILE에 compose.vultr.yml)일 때만 한 줄(make status —
 #                                                            PC에는 Livepatch가 없어 늘 경고가 되므로 찍지 않음)
@@ -39,6 +40,14 @@ case "$mode" in
         case ":$(env_file_value COMPOSE_FILE):" in *:compose.vultr.yml:*) ;; *) exit 0 ;; esac ;;
     *) echo "사용: bash scripts/vultr/reboot-check.sh [--summary | --summary-if-server]" >&2; exit 2 ;;
 esac
+
+# 디스크·inode 점검(disk-check.sh — 80%·90%를 넘으면 운영 봇으로 따로 한 통). cron 줄을 따로 두지 않고 이 cron 길(요약이 아닌 실행)에 얹습니다
+# (2026-11-27 — 새 crontab 줄 없이 다음 배포부터 돎). 아래의 이른 exit 0들과 Livepatch 읽기(못 읽으면 다시 물으며 기다림)보다 앞에서 부르고,
+# 그 스크립트가 없거나 실패해도 이 스크립트의 판정·알림·종료 코드는 그대로입니다(출력은 버리고 실패만 그쪽 태그로 syslog에).
+if [ "$mode" = "" ] && [ -f scripts/vultr/disk-check.sh ]; then
+    bash scripts/vultr/disk-check.sh >/dev/null 2>&1 ||
+        logger -t my-macro-disk-check -p user.warning "disk-check.sh가 실패함(reboot-check.sh의 cron 길이 부름)" || true
+fi
 
 reasons=()
 needs_reboot=""

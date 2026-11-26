@@ -197,6 +197,8 @@ def server(tmp_path):
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
     shutil.copy(ROOT / "scripts/vultr/backup-age.sh", seed / "scripts/vultr/backup-age.sh")   # 끝 요약의 S3 백업 나이(QA-199)
     shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", seed / "scripts/vultr/reboot-check.sh")   # 끝 요약의 재부팅 필요 여부
+    for name in ("disk-check.sh", "notify-common.sh"):                                            # 끝 요약의 디스크·inode 사용률
+        shutil.copy(ROOT / "scripts/vultr" / name, seed / "scripts/vultr" / name)
     shutil.copy(ROOT / "scripts/vultr/inventory.sh", seed / "scripts/vultr/inventory.sh")         # 끝의 버전 목록(ADR 0046)
     for name in ("db-backup.sh", "db-common.sh"):   # 배포 전 덤프(QA-200)가 부르는 것
         shutil.copy(ROOT / "scripts" / name, seed / "scripts" / name)
@@ -1436,10 +1438,11 @@ def test_OPS3_비상_끄기는_화면_끄기가_먼저이고_수집기_스위치
 # --------------------------------------------------------------------------- reboot-check.sh(ADR 0023 개정 2026-11-12)
 @pytest.fixture()
 def reboot_root(tmp_path):
-    """서버 역할의 저장소 최상위 — reboot-check.sh·db-common.sh와 서버 .env(Vultr 덧붙임 + 운영 텔레그램 봇)."""
+    """서버 역할의 저장소 최상위 — reboot-check.sh(+ cron 길이 부르는 disk-check.sh)·db-common.sh와 서버 .env(Vultr 덧붙임 + 운영 텔레그램 봇)."""
     root = tmp_path / "My_macro_dashboard_v2"
     (root / "scripts/vultr").mkdir(parents=True)
-    shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", root / "scripts/vultr/reboot-check.sh")
+    for name in ("reboot-check.sh", "disk-check.sh", "notify-common.sh"):
+        shutil.copy(ROOT / "scripts/vultr" / name, root / "scripts/vultr" / name)
     shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
     (root / ".env").write_text(f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nTELEGRAM_BOT_TOKEN={TG_TOKEN}\n"
                                f"TELEGRAM_CHAT_ID={TG_CHAT}\nDATABASE_PASSWORD={SECRET}\n", encoding="utf-8")
@@ -1859,6 +1862,104 @@ def test_disk_check는_summary_if_server면_서버가_아닐_때_아무것도_�
 def test_disk_check는_모르는_인자면_2로_끝난다(disk_root, fakes):
     assert _disk_check(disk_root, fakes, "--now").returncode == 2
     assert tools._calls(fakes) == []
+
+
+def _disk_lines(out: str) -> list[str]:
+    return [line for line in out.splitlines() if "디스크" in line and "사용" in line]
+
+
+def test_reboot_check의_cron_길은_디스크_점검도_불러_임계를_넘으면_따로_한_통_알린다(reboot_root, fakes, tmp_path):
+    """새 cron 줄 없이 매일 16:10 KST의 reboot-check cron에 얹습니다 — 재부팅 쪽에 걸린 것이 없어 일찍 끝나는 날에도 디스크는 봅니다."""
+    result = _reboot_check(reboot_root, fakes, FAKE_DF_PCT="91")
+    assert result.returncode == 0 and result.stdout == "" and result.stderr == ""
+    curls = _curls(fakes)
+    assert len(curls) == 1 and "디스크 위험: 91% 사용" in curls[0]
+    assert len([c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-reboot-check")]) == 1, "재부팅 점검의 기록은 그대로"
+    # 재부팅 알림과 디스크 알림은 따로 한 통씩, 보낸 기록도 따로입니다.
+    assert _reboot_check(reboot_root, fakes, FAKE_DF_PCT="91", **_reboot_flag(tmp_path, "linux-base")).returncode == 0
+    curls = _curls(fakes)
+    assert len(curls) == 2 and "재부팅 필요(패키지: linux-base)" in curls[1] and "디스크" not in curls[1]
+    assert (reboot_root / "backups/.disk-check-sent").is_file() and (reboot_root / "backups/.reboot-check-sent").is_file()
+
+
+@pytest.mark.parametrize("args", [("--summary",), ("--summary-if-server",)])
+def test_reboot_check의_요약은_디스크_점검을_부르지_않는다(reboot_root, fakes, args):
+    result = _reboot_check(reboot_root, fakes, *args, FAKE_DF_PCT="95")
+    assert result.returncode == 0 and result.stdout.count("\n") == 1 and "디스크" not in result.stdout
+    assert tools._calls(fakes) == []
+
+
+@pytest.mark.parametrize("broken", ["없음", "실패", "문법_오류"])
+def test_reboot_check는_디스크_점검이_없거나_실패해도_동작과_종료_코드가_그대로다(reboot_root, fakes, tmp_path, broken):
+    script = reboot_root / "scripts/vultr/disk-check.sh"
+    if broken == "없음":
+        script.unlink()
+    else:
+        script.write_text("#!/usr/bin/env bash\necho boom >&2\nexit 3\n" if broken == "실패" else "if then fi (\n", encoding="utf-8")
+    quiet = _reboot_check(reboot_root, fakes, FAKE_DF_PCT="95")
+    assert quiet.returncode == 0 and quiet.stdout == "" and quiet.stderr == ""
+    logs = [c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-reboot-check")]
+    assert len(logs) == 1 and "재부팅 필요 없음" in logs[0]
+    assert _reboot_check(reboot_root, fakes, FAKE_DF_PCT="95", **_reboot_flag(tmp_path, "linux-base")).returncode == 0
+    curls = _curls(fakes)
+    assert len(curls) == 1 and "재부팅 필요(패키지: linux-base)" in curls[0]
+    failed = [c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-disk-check") and "실패" in c]
+    assert len(failed) == (0 if broken == "없음" else 2), "실패는 디스크 점검의 태그로 syslog에만"
+
+
+def test_deploy의_끝_요약은_디스크와_inode_사용률을_disk_check의_한_줄로_찍는다(server, fakes):
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    assert _disk_lines(result.stdout) == ["디스크: 42% 사용(여유 69.6GB) · inode 3%"]
+    assert result.stdout.index("✓ 배포했습니다") < result.stdout.index("디스크: 42%") < result.stdout.index("마지막 S3 백업")
+
+
+def test_deploy의_끝_요약은_디스크가_임계를_넘으면_경고를_찍지만_알리지_않고_배포는_성공이다(server, fakes):
+    result = _deploy(server, fakes, FAKE_DF_PCT="91", FAKE_DF_IPCT="85")
+    assert result.returncode == 0, result.stderr
+    assert _disk_lines(result.stdout) == [
+        "경고: 디스크 91% 사용(여유 10.8GB) · inode 85% — 위험(디스크 90% 이상 · inode 80% 이상), DEVELOPMENT §7 '디스크'"]
+    assert "✓ 배포했습니다" in result.stdout
+    assert not [c for c in tools._calls(fakes) if c.startswith("curl ")], "요약은 알리지 않습니다 — 알림은 cron 길에서만"
+    assert not (server[0] / "backups/.disk-check-sent").exists()
+
+
+def test_deploy의_끝_요약은_disk_check가_없으면_예전의_사용률_한_줄로_물러난다(server, fakes):
+    here, seed = server
+    tools._git(seed, "rm", "-q", "scripts/vultr/disk-check.sh")
+    tools._git(seed, "commit", "-q", "-m", "disk-check 없음")
+    tools._git(seed, "push", "-q", "origin", "main")
+    result = _deploy(server, fakes, FAKE_DF_PCT="55")
+    assert result.returncode == 0, result.stderr
+    assert not (here / "scripts/vultr/disk-check.sh").exists()
+    assert _disk_lines(result.stdout) == ["   디스크: 55% 사용"]
+    assert "✓ 배포했습니다" in result.stdout and "마지막 S3 백업" in result.stdout
+
+
+@needs_make
+@pytest.mark.parametrize("pct", ["42", "83"])
+def test_make_status와_deploy는_디스크_사용률을_같은_줄로_판정한다(server, fakes, pct):
+    here, _ = server
+    deployed = _deploy(server, fakes, FAKE_DF_PCT=pct)
+    assert deployed.returncode == 0, deployed.stderr
+    status = subprocess.run([REAL_MAKE, "--no-print-directory", "-C", str(here), "-f", str(ROOT / "Makefile"), "status"],
+                            env=tools._env(fakes, FAKE_CURL_RC="7", FAKE_DF_PCT=pct), capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+    assert status.returncode == 0, status.stdout + status.stderr
+    assert len(_disk_lines(deployed.stdout)) == 1 and _disk_lines(deployed.stdout)[0].startswith("경고:") == (pct == "83")
+    assert _disk_lines(status.stdout) == _disk_lines(deployed.stdout), "판정·문구가 두 곳에서 갈라지면 안 됩니다"
+    assert not [c for c in tools._calls(fakes) if c.startswith("curl ") and "api.telegram.org" in c], "요약은 알리지 않습니다"
+
+
+@needs_make
+def test_make_status는_서버가_아니면_디스크_줄을_찍지_않는다(status_root, fakes):
+    result = _make_status(status_root, fakes)                    # .env 없음 — PC
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "디스크" not in result.stdout + result.stderr
+    (status_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml\nFRONTEND_PORT=3002\n", encoding="utf-8")
+    result = _make_status(status_root, fakes)                    # 로컬 .env — Vultr 덧붙임 없음
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "디스크" not in result.stdout + result.stderr
 
 
 # --------------------------------------------------------------------------- inventory.sh(보안 공지 버전 목록, ADR 0046)

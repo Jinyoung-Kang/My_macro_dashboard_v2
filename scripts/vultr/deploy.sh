@@ -29,7 +29,8 @@
 #      기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스) 스키마 적용과 caddy 다시 만들기는 마친 뒤 실패로 끝납니다(QA-369 —
 #      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음).
 #   7. 매달린 이미지 정리와 빌드 캐시를 크기 상한까지 줄이기(BUILD_CACHE_MAX — 환경변수 → .env → 기본 15GB, 그 정리가 실패하면 일주일 넘은 것만).
-#      정리가 실패해도 배포 결과는 그대로이고 '경고:' 한 줄만 찍습니다(QA-1034). 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
+#      정리가 실패해도 배포 결과는 그대로이고 '경고:' 한 줄만 찍습니다(QA-1034). 끝 요약에 디스크·inode 사용률(scripts/vultr/disk-check.sh — 80% 이상이면 '경고:',
+#      같은 판정을 make status·cron 알림이 씀)과 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
 #      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)과 재부팅 필요·Livepatch 상태(scripts/vultr/reboot-check.sh — 같은 판정을 make status·cron이 씀)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
@@ -317,7 +318,11 @@ echo ""
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 echo ""
 echo "✓ 배포했습니다: $APP_VERSION — tailnet 안에서 https://my-macro-app.<tailnet>.ts.net(서버 .env의 PUBLIC_ORIGIN)"
-echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
+# 디스크·inode 사용률 한 줄 — 판정(80% 경고·90% 위험)과 문구는 make status·cron 알림과 같은 disk-check.sh 한 곳에 있습니다(요약은 알리지 않음).
+# 그 스크립트가 없거나 실패하면 예전의 사용률 한 줄로 물러납니다. 요약이라 실패해도 배포를 실패로 만들지 않습니다.
+disk_line="$(bash scripts/vultr/disk-check.sh --summary 2>/dev/null)" || disk_line=""
+[ -n "$disk_line" ] || disk_line="   디스크: $( (df -P / | awk 'NR == 2 {print $5}') 2>/dev/null || true) 사용"
+echo "$disk_line"
 # QA-199: 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 뒤의 나이 — 36시간 넘었거나 기록이 없으면 경고. 판정은 make status와 같이 쓰는
 # backup-age.sh 한 곳에 있습니다(cron이 빠지면 텔레그램 알림도 없어 여기와 make status에서 봄).
 bash scripts/vultr/backup-age.sh
