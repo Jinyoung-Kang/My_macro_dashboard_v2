@@ -102,3 +102,7 @@ d4da1cb3883ac6e82d0d6a8625e17728b709b801:backend/src/test/resources/paper/golden
 0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
 0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-scheduled.json:generic-api-key:1
 0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-fill-scheduled.json:generic-api-key:1
+
+# 2026-11-27 복기의 반복 오류 스위치(ADR 0051, 794bc4f0): 한국 켠 판 결정 패킷 고정본을 새로 만든 커밋 — 위와 같은 매크로 카드 항목 키
+# ("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS)다(.env·.env.qa 값과 일치 0건).
+794bc4f0a7a29c3003be50b9e858a161b5d8c6f8:backend/src/test/resources/paper/golden/packet-kr-ft-review-errors-scheduled.json:generic-api-key:1
