@@ -33,6 +33,8 @@ import java.util.regex.Pattern;
  *       소수점 보유는 차이 계산에 그대로 들어가고, 팔 수 있는 것은 정수 부분과 매도 가능 수량까지입니다(소수 부분은 {@value #SKIP_FRACTION}로 표시).</li>
  *   <li>반대 방향 미체결이 있는 종목·이 기능의 미종료 주문이 있는 종목은 건너뜁니다(사용자 주문을 취소하지 않음).</li>
  *   <li>매수는 수량 × 상한가 ≤ 매수 가능 금액 − 같은 창에서 이미 잡은 매수의 상한가 합일 때만 — 모자라면 줄이고 1주도 안 되면 그 창에서 미룹니다.
+ *       실제 주문을 보내는 마무리 용도의 계획만은, 그 계획이 매도를 보내거나 그 묶음에 진행 중인 매도가 있으면 줄이지 않고 미룹니다
+ *       ({@link CashCut} — QA-1018).
  *       1건 상한을 넘으면 쪼개지 않고 상한까지만 보냅니다({@code capped}). 매도의 1건 상한 수량은 보내기 직전 가격이 조금 올라도 수집기 검사를 지나게
  *       현재가 × {@value #SELL_PRICE_MARGIN_TEXT}로 셉니다.</li>
  *   <li>수집기 하루 한도(오늘 건수·오늘 매수 금액 — {@link #dailyUsage})의 남은 몫 안에서만 — 넘는 주문은 {@value #SKIP_DAILY_CAP}로 미룹니다.</li>
@@ -202,6 +204,7 @@ final class RealTradePlanner {
      * 계획 규칙. {@code maxOrderKrw}는 1건 상한(수집기 한도), {@code cashLike}는 현금성 종목(창 안 순서), {@code buysPaused}면 매수 없음(손실 한도),
      * {@code requireSellable}이면 매도 가능 수량을 모르는 종목은 팔지 않습니다(실제 주문 — 켜기 창의 예상 목록은 거짓이라 정수 보유로 어림).
      * {@code remainingOrders}·{@code remainingBuyKrw}는 수집기 하루 한도의 오늘 남은 건수·매수 금액(한도 − {@link #dailyUsage}) — null이면 따지지 않습니다.
+     * {@code cashCut}은 현금이 모자라 줄여야 하는 매수의 처리({@link CashCut} — 기본 {@link CashCut#REDUCE}, null이면 기본)입니다.
      */
     record Rules(BigDecimal maxOrderKrw, Set<String> cashLike, boolean buysPaused, boolean requireSellable, Integer remainingOrders,
                  BigDecimal remainingBuyKrw, CashCut cashCut) {
@@ -231,22 +234,27 @@ final class RealTradePlanner {
             return new Rules(maxOrderKrw, cashLike, buysPaused, requireSellable, orders, buyKrw, cashCut);
         }
 
-        /** 현금이 모자라 줄여야 하는 매수의 처리({@link CashCut}). */
+        /** 현금이 모자라 줄여야 하는 매수의 처리({@link CashCut} — 실제 주문을 보내는 마무리 창의 계획만 바꿈, QA-1018). */
         Rules withCashCut(CashCut cut) {
             return new Rules(maxOrderKrw, cashLike, buysPaused, requireSellable, remainingOrders, remainingBuyKrw, cut);
         }
     }
 
     /**
-     * 현금이 모자라 목표 수량을 줄여야 하는 매수의 처리(QA-1018). <b>이 커밋에서는 값만 있고 계획({@code limit()})이 아직 보지 않습니다</b> — 어느
-     * 값이든 지금처럼 줄여 보냅니다(재현 시험이 쓰는 꼴만 먼저 둠, 동작은 수정 커밋에서).
+     * 현금이 모자라 목표 수량을 줄여야 하는 매수의 처리(QA-1018 — ADR 0028 덧붙임). 마무리 용도({@code SYNC_FOLLOWUP} — 시각 맞추기 날의 묶음, 시가
+     * 단일가가 없는 날의 묶음, 시가 뒤 마무리)는 종목마다 같은 용도의 시도가 하나라, 매도 대금이 들어오기 전의 남은 현금으로 줄여 보낸 매수가 전량
+     * 체결되면 그 종목의 시도가 닫혀 나머지를 그날 사지 못했습니다. 그래서 그 용도의 <b>보내는 계획</b>만 {@link #DEFER_WITH_SELLS}·{@link #DEFER}를
+     * 씁니다({@code RealTradeJob}). 1주도 살 수 없는 매수는 어느 값에서나 지금처럼 미룹니다({@value #SKIP_DEFERRED_CASH}).
+     *
+     * <p>남는 한계: 매도가 더 없으면 지금처럼 줄여 보내므로, 매수가 상한가로 현금을 잡는 탓에 줄어드는 마지막 매수는 여전히 줄어든 채 나가 체결되면
+     * 닫힙니다. 매도가 창 끝까지 끝나지 않으면 미룬 종목은 그날 사지 못합니다(수정 전에는 줄인 수량이라도 삼).
      */
     enum CashCut {
-        /** 남은 현금 안으로 줄여 보냄 — 기본. */
+        /** 남은 현금 안으로 줄여 보냄 — 기본(켜기 창 예상 목록·ISA 지시·회전율 판정 계획·시가 단일가 맞추기·장중 따라 하기). */
         REDUCE,
-        /** 같은 계획에 보낼 매도가 있으면 줄이지 않고 미룸, 매도가 없으면 줄여 보냄. */
+        /** 같은 계획에 보낼 매도가 있으면 줄이지 않고 미룸 — 대금이 들어온 다음 주기에 온전한 수량으로. 매도가 없으면 줄여 보냄. */
         DEFER_WITH_SELLS,
-        /** 그 창에 이 기능의 진행 중인 매도가 있음 — 이번 계획에 매도가 없어도 줄이지 않고 미룸. */
+        /** 그 묶음에 이 기능의 진행 중인(미종료) 매도 주문이 있음 — 이번 계획에 매도가 없어도 줄이지 않고 미룸. */
         DEFER
     }
 
@@ -580,7 +588,8 @@ final class RealTradePlanner {
 
     /**
      * 현금·1건 상한·매도 가능 수량(모를 때)·하루 한도를 차례로 적용합니다. 매수는 상한가 × 수량이 남은 매수 가능 금액 안이어야 하고(모자라면 줄이고, 1주도
-     * 안 되면 미룸), 1건 금액(매수 = 상한가 × 수량, 매도 = 현재가 × 수량 — 수집기 검사와 같은 기준, 매도는 가격 여유 {@link #SELL_PRICE_MARGIN})이 1건
+     * 안 되면 미룸 — 규칙이 {@link CashCut#DEFER_WITH_SELLS}·{@link CashCut#DEFER}이고 이 계획이 매도를 보내거나 그 묶음에 진행 중인 매도가 있으면 줄이지
+     * 않고 미룸, QA-1018), 1건 금액(매수 = 상한가 × 수량, 매도 = 현재가 × 수량 — 수집기 검사와 같은 기준, 매도는 가격 여유 {@link #SELL_PRICE_MARGIN})이 1건
      * 상한을 넘으면 상한까지만(쪼개지 않음). 하루 한도가 있으면 남은 건수만큼만 보내고, 매수의 상한가 × 수량은 남은 하루 매수 금액 안으로 줄입니다(1주도 안
      * 되거나 건수가 없으면 {@value #SKIP_DAILY_CAP}).
      */
@@ -589,6 +598,8 @@ final class RealTradePlanner {
         BigDecimal reserved = reservedBuy == null ? BigDecimal.ZERO : reservedBuy;
         Integer ordersLeft = rules.remainingOrders();
         BigDecimal buyLeft = rules.remainingBuyKrw();
+        // 매도 대금을 기다릴 까닭이 있는가(QA-1018) — 그 묶음에 진행 중인 매도가 있거나, 이 계획이 매도를 보냄(매도가 순서상 먼저라 매수에 닿기 전에 정해짐)
+        boolean selling = rules.cashCut() == CashCut.DEFER;
         for (Candidate c : candidates) {
             if (ordersLeft != null && ordersLeft <= 0) {
                 skipped.add(new Skip(c.symbol(), c.name(), SKIP_DAILY_CAP));
@@ -614,6 +625,7 @@ final class RealTradePlanner {
                     skipped.add(new Skip(c.symbol(), c.name(), SKIP_CAPPED));
                 }
                 out.add(new Order(c.symbol(), c.name(), SELL, clamp(quantity), c.price(), BigDecimal.ZERO, capped));
+                selling = selling || rules.cashCut() == CashCut.DEFER_WITH_SELLS;
                 if (ordersLeft != null) {
                     ordersLeft--;
                 }
@@ -637,7 +649,8 @@ final class RealTradePlanner {
             BigDecimal maxByCash = available.signum() <= 0 ? BigDecimal.ZERO
                     : available.divide(upper, 0, RoundingMode.FLOOR);
             if (quantity.compareTo(maxByCash) > 0) {
-                quantity = maxByCash;
+                // 매도 대금이 올 창이면 줄여 보내지 않음 — 줄인 주문이 전량 체결되면 그 종목의 시도가 닫혀 나머지를 그날 사지 못함(QA-1018)
+                quantity = selling ? BigDecimal.ZERO : maxByCash;
             }
             if (quantity.signum() <= 0) {
                 skipped.add(new Skip(c.symbol(), c.name(), SKIP_DEFERRED_CASH));

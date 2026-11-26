@@ -229,7 +229,6 @@ class RealTradePlannerTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-1018 재현 — 매도와 함께 계획된 매수를 남은 현금으로 줄여 보냄(수정 커밋에서 해제)")
     @DisplayName("QA-1018: 마무리 창의 계획 — 현금이 목표 수량에 모자란 매수는 같은 계획이 매도를 보내거나 그 창에 진행 중인 매도가 있으면 줄인 주문 대신 "
             + "deferred-cash, 매도가 없으면 지금처럼 줄여 보냄(기본 규칙은 매도가 있어도 줄여 보냄 — 켜기 창 예상 목록·ISA 지시·판정 계획)")
     void cashCutBuyWaitsForSellProceeds() {

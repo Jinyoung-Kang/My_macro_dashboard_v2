@@ -689,24 +689,28 @@ class RealTradeJobDbTest {
         verify(paper, never()).openTargets(anyString(), any());
 
         run("09:10:05");
+        // A(목표 100주)는 남은 현금으로 32주뿐 — 같은 계획이 C를 팔므로 줄여 보내지 않고 매도 대금을 기다림(QA-1018, 수정 전에는 BUY A DAY 32도 나감)
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
-                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
         Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
         assertThat(batch.absorbedOrderIds()).containsExactly(21L, 22L);
-        assertThat(store.recentOrders("KR", 10)).allMatch(r -> r.purpose().equals("SYNC_FOLLOWUP") && r.batchId().equals(batch.id()));
+        assertThat(store.recentOrders("KR", 10)).hasSize(2)
+                .allMatch(r -> r.purpose().equals("SYNC_FOLLOWUP") && r.batchId().equals(batch.id()));
 
         run("09:10:40");
-        verify(client, times(3)).placeOrder(anyString());   // 묶음은 하루 하나 — 진행 중인 주문은 다시 보내지 않음
+        // 묶음은 하루 하나 — 진행 중인 주문은 다시 보내지 않고, C 매도가 진행 중인 동안 A도 계속 미룸
+        verify(client, times(2)).placeOrder(anyString());
         run("09:14");
         assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
             assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
-            assertThat(e.detail().path("accepted").asInt()).isEqualTo(3);
+            assertThat(e.detail().path("accepted").asInt()).isEqualTo(2);
+            assertThat(e.detail().path("deferred").asInt()).as("매도가 창 끝까지 끝나지 않아 A는 미룸으로 남음").isEqualTo(1);
+            assertThat(e.detail().path("reasons").path("deferred-cash").asInt()).isEqualTo(1);
         });
         assertThat(RealTradeNotices.text(events("WINDOW_SUMMARY").getFirst())).contains("개장 10분 뒤 맞추기");
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-1018 재현 — 줄여 보낸 매수가 체결되면 그 종목이 그날 닫혀 나머지를 사지 못함(수정 커밋에서 해제)")
     @DisplayName("QA-1018: 시각 맞추기 날 — 매도와 함께 계획된 매수가 현금이 모자라면 줄여 보내지 않고 미루고(진행 중인 매도가 있는 주기도), 매도가 끝나 대금이 "
             + "들어온 주기에 온전한 수량으로 보냄(줄인 32주가 체결돼 그 종목이 그날 닫히지 않음)")
     void timedSyncDefersACashCutBuyUntilTheSellProceedsArrive() {
@@ -762,8 +766,9 @@ class RealTradeJobDbTest {
         RealTradeFixtures.live(store, true, d("10000000"));   // 09:11에 켬(켠 뒤 첫 묶음 — 회전율 예외)
         run("09:11");
 
+        // 현금이 모자란 A(32주뿐)는 C 매도 대금을 기다림(QA-1018 — 수정 전에는 BUY A DAY 32도 나감)
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
-                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("오늘 묶음").isPresent();
     }
 
@@ -1362,9 +1367,23 @@ class RealTradeJobDbTest {
 
         assertThat(cfg().state()).isEqualTo("LIVE");
         assertThat(events("HALT")).isEmpty();
+        // 현금성 매수(목표 900주)는 남은 현금으로 76주뿐 — 같은 계획이 스탑 종목을 팔므로 줄여 보내지 않고 그 대금을 기다림(QA-1018 — 수정 전에는
+        // BUY 153130 DAY 76도 이 주기에 나갔고, 그 76주가 체결되면 나머지를 그날 사지 못했음)
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
-                .containsExactly("SELL " + B + " DAY 200", "SELL " + A + " DAY 100", "BUY " + CASH_LIKE + " DAY 76");
+                .containsExactly("SELL " + B + " DAY 200", "SELL " + A + " DAY 100");
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+
+        // 스탑 매도가 체결로 끝나 대금이 들어온 다음 주기 — 그 대금으로 현금성을 삼(같은 창 마무리 — 회전율 멈춤 없음). 매수는 상한가(13,000원)로
+        // 현금을 잡으므로 1,000만 원으로는 900주가 아니라 769주
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", B, "SELL", "DAY", "FILLED", "200", "200", clock.now, clock.now)));
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", A, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("10000000", Map.of(), Map.of(CASH_LIKE, "10000"));
+        run("09:10:40");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + B + " DAY 200", "SELL " + A + " DAY 100", "BUY " + CASH_LIKE + " DAY 769");
     }
 
     @Test
@@ -1982,6 +2001,8 @@ class RealTradeJobDbTest {
         run("09:12:30");
         assertThat(sentSummaries()).noneMatch(o -> o.contains(A));
 
+        // 09:10에 보낸 C 매도는 체결로 끝난 상태로 둠 — 진행 중이면 현금이 모자란 A(32주뿐)는 VI가 풀려도 매도 대금을 기다림(QA-1018). 끝났으면 지금처럼 줄여 보냄
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
         restrictions(Set.of(), null);
         run("09:13:30");   // 원래 창(09:13) 뒤 — 늘어난 창 안
         assertThat(sentSummaries()).anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
@@ -2064,6 +2085,8 @@ class RealTradeJobDbTest {
         timedRestrictionDay();
         restrictions(Set.of(A), null);
         run("09:10:05");
+        // 09:10에 보낸 C 매도는 체결로 끝난 상태로 둠 — 진행 중이면 현금이 모자란 A(32주뿐)는 VI 대기를 그만둬도 매도 대금을 기다림(QA-1018)
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
         run("09:15:30");
         assertThat(sentSummaries()).noneMatch(o -> o.contains(A));
         run("09:16:10");
@@ -2083,7 +2106,8 @@ class RealTradeJobDbTest {
         assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("circuit-breaker"));
 
         run("09:41:10");
-        assertThat(sentSummaries()).hasSize(3).allMatch(o -> o.contains(" DAY "));
+        // 시장가 DAY로 — 현금이 모자란 A(32주뿐)는 같은 계획의 C 매도 대금을 기다림(QA-1018, 수정 전에는 BUY A DAY 32까지 세 건)
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
         assertThat(cfg().state()).isEqualTo("LIVE");
     }
@@ -2131,7 +2155,8 @@ class RealTradeJobDbTest {
 
         when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
         run("09:20:10");
-        assertThat(sentSummaries()).hasSize(4);
+        // 거절된 C 매도(시도 2)와 멈춰 둔 B 매수가 다시 나감. 현금이 모자란 A(32주뿐)는 같은 계획의 C 매도 대금을 기다림(QA-1018, 수정 전에는 BUY A DAY 32까지 네 건)
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
         assertThat(cfg().state()).isEqualTo("LIVE");
         assertThat(events("HALT")).isEmpty();
     }
@@ -2140,6 +2165,9 @@ class RealTradeJobDbTest {
     @DisplayName("매매 제한 — 종목 제한 거절이 3건이어도 이상 멈춤이 아니고 그 종목들만 3분 뒤 다시 보냄")
     void timedSyncHoldsRestrictedSymbols() {
         timedRestrictionDay();
+        // 세 주문이 모두 종목 제한으로 거절되는 장면이라, A의 목표를 남은 현금 안에 드는 15%(30주)로 둠 — 50%(100주)면 현금이 모자라 같은 계획의 C 매도
+        // 대금을 기다리느라(QA-1018) 첫 주기에 두 건만 나가 '거절 3건'이 되지 않음
+        timedTargets(Map.of(A, 15.0, B, 30.0), List.of(21L, 22L), List.of());
         when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.REJECTED, null, "stock-restricted", 422));
 
         run("09:10:05");
@@ -2160,7 +2188,8 @@ class RealTradeJobDbTest {
         timedRestrictionDay();
         when(client.restrictions(any())).thenReturn(Reply.failed("collector-unreachable"));
         run("09:10:05");
-        assertThat(sentSummaries()).hasSize(3);
+        // 평소 묶음 그대로(timedSyncBatch의 첫 주기와 같은 목록 — 현금이 모자란 A는 C 매도 대금을 기다림, QA-1018)
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
     }
 
     // ------------------------------------------------------------------ 묶음을 만든 뒤의 '책에 없는 보유'(QA-376)
@@ -2676,7 +2705,11 @@ class RealTradeJobDbTest {
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
 
         when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
-        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
+        // C 시가 매도가 체결로 끝남 — 주문 번호는 행에서 읽음. placeOrder를 다시 스텁할 때마다 번호가 하나씩 건너뛰어 그 주문은 T-1이 아니라서, 예전의
+        // order("T-1") 스텁은 적용되지 않았음(그때는 결과에 영향이 없었음). 이제는 묶음에 진행 중인 매도가 있으면 현금이 모자란 매수(A — 93주뿐)가
+        // 그 대금을 기다리므로(QA-1018), 이 시험이 뜻한 대로 매도가 끝난 계좌가 되게 함 — 끝났으니 A는 지금처럼 줄여 보냄
+        String sold = store.recentOrders("KR", 10).getFirst().tossOrderId();
+        when(client.order(sold)).thenReturn(Reply.of(broker(sold, C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
         preflight("10000000", Map.of(), Map.of(A, "50000", B, "20000"));
         run("09:00:40");
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
@@ -2718,7 +2751,14 @@ class RealTradeJobDbTest {
         assertThat(batch.targets().path(A).asDouble()).isEqualTo(50.0);
 
         run("09:00:40");
-        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + C + " DAY 100", "BUY " + A + " DAY 92");
+        // 책에 없는 C를 팖. 책의 A(목표 100주)는 남은 현금으로 92주뿐이라 같은 계획의 C 매도 대금을 기다림(QA-1018 — 수정 전에는 BUY A DAY 92도 이 주기에 나감)
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + C + " DAY 100");
+
+        // C 매도가 체결로 끝나 대금이 들어온 다음 주기 — 책의 종목 A를 온전한 100주로 메움
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        run("09:01:15");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + C + " DAY 100", "BUY " + A + " DAY 100");
     }
 
     @Test
@@ -3441,11 +3481,15 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).as("그 주기 — 매도만, 매수는 미룸").containsExactly("SELL " + C + " OPG 100");
 
         oddAppBuyEnded();   // 앱 주문이 끝나 잡혔던 200만이 매수 가능 금액으로 돌아옴
-        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        // 시가 매도 C 100주도 체결로 끝나 보유가 없고 현금이 1,000만(총액 그대로 — 손실 0)인 계좌로 둠. 예전 준비 자료(C가 아직 보유·매도 진행 중, 현금
+        // 600만)에서는 현금이 모자란 A(92주뿐)가 그 매도 대금을 기다려(QA-1018) '매수가 다시 나감'을 볼 수 없음 — 바로 위 시험의 둘째 단계와 같은 준비
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
+        strictPreflight("10000000", Map.of(), Map.of(A, "50000"), new ArrayList<>());
         run("09:01");
 
         assertThat(cfg().buysPaused()).isFalse();
-        assertThat(sentSummaries()).as("그 주문이 끝난 뒤 매수가 다시 나감").anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
+        assertThat(events("BUYS_PAUSED")).isEmpty();
+        assertThat(sentSummaries()).as("그 주문이 끝난 뒤 매수가 다시 나감").containsExactly("SELL " + C + " OPG 100", "BUY " + A + " DAY 100");
     }
 
     @Test
@@ -4378,23 +4422,84 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @DisplayName("N1 예외 묶음의 매수가 현금 부족으로 미뤄짐 — 153130 매도 대금이 들어온 뒤 같은 창 마무리가 매수를 보냄(회전율 검사 없음)")
+    @DisplayName("N1 예외 묶음의 매수가 현금 부족으로 미뤄짐 — 153130 매도 대금이 들어온 뒤 같은 창 마무리가 매수를 보냄(회전율 검사 없음). QA-1018: 현금이 "
+            + "모자란 매수는 줄여 보내지 않고 미뤄 온전한 수량으로 — 다만 마지막 종목은 상한가로 잡는 현금 때문에 여전히 줄어들고, 그 주문이 체결되면 그날 닫힘")
     void rebalanceExemptFollowupSendsDeferredBuys() {
         rebalanceDay(P1, H1, NOW1, Set.of());
 
         run("09:10:05");
         assertExempt("N1");
-        assertThat(sentSummaries()).contains("SELL " + CASH_LIKE + " DAY 4000").noneMatch(o -> o.startsWith("BUY " + r("G")));
+        // 남은 현금 120,000원으로는 F(목표 1,000주)를 92주만 살 수 있음 — 같은 계획이 153130을 팔므로 줄여 보내지 않고 G·H·I(1주도 못 삼)와 함께 미룸
+        // (QA-1018 — 수정 전에는 BUY F DAY 92가 이 주기에 나갔고, 그 92주가 체결되면 F는 그날 닫혀 나머지 908주를 사지 못했음)
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 4000");
 
         Map<String, String[]> after = new LinkedHashMap<>();
         H1.forEach((sym, pct) -> after.put(sym, new String[]{sym.equals(CASH_LIKE) ? "400" : String.valueOf((long) Math.floor(pct * 100 + 1e-9)),
                 "1000"}));
         Map<String, String> quotes = new LinkedHashMap<>();
         NOW1.keySet().forEach(sym -> quotes.put(sym, "1000"));
-        preflight("4120000", after, quotes);   // 153130 4,000주를 판 대금(F 92주 매수는 아직 진행 중)
+        // 153130 4,000주 매도가 체결로 끝나 대금이 들어옴
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", CASH_LIKE, "SELL", "DAY", "FILLED", "4000", "4000", clock.now, clock.now)));
+        preflight("4120000", after, quotes);
         run("09:10:40");
 
-        assertThat(sentSummaries()).contains("BUY " + r("G") + " DAY 1000", "BUY " + r("H") + " DAY 1000", "BUY " + r("I") + " DAY 1000");
+        // F·G·H는 온전한 1,000주. 남는 한계(ADR 0028 덧붙임 QA-1018): 매수는 상한가(1,300원)로 현금을 잡으므로 셋이 390만 원을 잡으면 I에는 22만 원 —
+        // 진행 중인 매도가 더 없으니 지금처럼 줄여 169주(수정 전에는 F가 92주, 이제는 I가 169주)
+        List<String> sent = List.of("SELL " + CASH_LIKE + " DAY 4000", "BUY " + r("F") + " DAY 1000", "BUY " + r("G") + " DAY 1000",
+                "BUY " + r("H") + " DAY 1000", "BUY " + r("I") + " DAY 169");
+        assertThat(sentSummaries()).containsExactlyElementsOf(sent);
+        assertThat(events("HALT")).isEmpty();
+
+        // 네 매수가 기준가로 체결돼 끝난 다음 주기 — I의 시도 1이 169주 전량 체결로 닫혀, 현금 951,000원이 남아도 나머지 831주는 그날 나가지 않음
+        int id = 2;
+        for (String bought : List.of("F", "G", "H", "I")) {
+            String qty = bought.equals("I") ? "169" : "1000";
+            String toss = "T-" + id++;
+            when(client.order(toss)).thenReturn(Reply.of(broker(toss, r(bought), "BUY", "DAY", "FILLED", qty, qty, clock.now, clock.now)));
+            after.put(r(bought), new String[]{qty, "1000"});
+        }
+        preflight("951000", after, quotes);
+        run("09:11:15");
+
+        assertThat(sentSummaries()).as("줄여 보낸 I는 다시 사지 않음").containsExactlyElementsOf(sent);
+        assertThat(store.recentOrders("KR", 10)).filteredOn(row -> row.symbol().equals(r("I"))).singleElement()
+                .satisfies(row -> assertThat(row.terminal()).isTrue());
+        assertThat(events("HALT")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-1018: N1 예외 묶음 — 153130 매도가 진행 중인 주기에는 현금이 모자란 마지막 매수를 줄여 보내지 않고 미루고, 매도가 끝난 주기에 보냄. "
+            + "그때도 상한가로 잡는 현금 때문에 온전한 수량은 아님(앞 매수들이 체결된 뒤라 861주)")
+    void rebalanceExemptFollowupDefersTheLastBuyWhileTheSellIsInFlight() {
+        rebalanceDay(P1, H1, NOW1, Set.of());
+
+        run("09:10:05");
+        assertExempt("N1");
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 4000");
+
+        // 대금은 매수 가능 금액에 보이지만 153130 매도 행은 아직 진행 중(상태 조회 전) — F·G·H는 온전히, 22만 원으로 169주뿐인 I는 줄이지 않고 미룸
+        Map<String, String[]> after = new LinkedHashMap<>();
+        H1.forEach((sym, pct) -> after.put(sym, new String[]{sym.equals(CASH_LIKE) ? "400" : String.valueOf((long) Math.floor(pct * 100 + 1e-9)),
+                "1000"}));
+        Map<String, String> quotes = new LinkedHashMap<>();
+        NOW1.keySet().forEach(sym -> quotes.put(sym, "1000"));
+        preflight("4120000", after, quotes);
+        run("09:10:40");
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 4000", "BUY " + r("F") + " DAY 1000", "BUY " + r("G") + " DAY 1000",
+                "BUY " + r("H") + " DAY 1000");
+
+        // 매도와 F·G·H 매수가 기준가로 체결돼 끝남(현금 4,120,000 − 3,000,000) — 진행 중인 매도가 없으니 I를 지금처럼 줄여 보냄: 1,120,000 ÷ 1,300 = 861주
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", CASH_LIKE, "SELL", "DAY", "FILLED", "4000", "4000", clock.now, clock.now)));
+        int id = 2;
+        for (String bought : List.of("F", "G", "H")) {
+            String toss = "T-" + id++;
+            when(client.order(toss)).thenReturn(Reply.of(broker(toss, r(bought), "BUY", "DAY", "FILLED", "1000", "1000", clock.now, clock.now)));
+            after.put(r(bought), new String[]{"1000", "1000"});
+        }
+        preflight("1120000", after, quotes);
+        run("09:11:15");
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 4000", "BUY " + r("F") + " DAY 1000", "BUY " + r("G") + " DAY 1000",
+                "BUY " + r("H") + " DAY 1000", "BUY " + r("I") + " DAY 861");
         assertThat(events("HALT")).isEmpty();
     }
 
@@ -4829,8 +4934,22 @@ class RealTradeJobDbTest {
         assertThat(events("HALT")).isEmpty();
         assertThat(events("TURNOVER_EXEMPT")).isEmpty();
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
-        // 매도와, 남은 현금(6,000원)만큼의 매수 4주 — 매수 직전 대기 STOP 읽기(두 번째 부름)는 정상이라 그대로 나감
-        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 200", "BUY " + held8(0) + " DAY 4");
+        // 매도만 — 매수(200주)는 남은 현금(6,000원)으로 4주뿐이라 같은 계획의 153130 매도 대금을 기다림(QA-1018 — 수정 전에는 BUY 4주도 이 주기에 나감)
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 200");
+        verify(paper, never()).decisionState(anyString(), any());
+
+        // 매도가 체결로 끝나 대금이 들어온 다음 주기 — 매수 직전 대기 STOP 읽기(두 번째 부름)는 정상이라 그대로 나감. 매수는 상한가(1,300원)로 현금을
+        // 잡으므로 206,000원으로는 200주가 아니라 158주
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", CASH_LIKE, "SELL", "DAY", "FILLED", "200", "200", clock.now, clock.now)));
+        Map<String, Double> sold = new java.util.TreeMap<>(s.prev());
+        sold.put(CASH_LIKE, s.prev().get(CASH_LIKE) - 2);
+        rulesAccount(sold, calm.keySet(), Set.of());
+        run("09:10:40");
+
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 200", "BUY " + held8(0) + " DAY 158");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(events("TURNOVER_EXEMPT")).isEmpty();
         verify(paper, never()).decisionState(anyString(), any());
     }
 }

@@ -898,6 +898,10 @@ class RealTradeJob {
      * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔). 재선정 회전율 예외로 보내는 묶음은 남은 몫이 있어도 끕니다(QA-803 — 다음 날까지
      * 남은 몫이 60%를 넘으면 지금처럼 멈춤, 이어 주기 없음).
      *
+     * <p>보내는 계획(QA-1018): 마무리 용도({@code SYNC_FOLLOWUP})로 만드는 묶음은 이 계획이 매도를 보내면 현금이 모자라 줄여야 하는 매수를 보내지 않고
+     * 미룹니다({@link RealTradePlanner.CashCut#DEFER_WITH_SELLS} — 같은 창 마무리가 대금이 들어온 뒤 보냄). 회전율 판정·재선정 예외 판정·남은 몫
+     * ({@link #LEFTOVER_SKIPS}) 판정은 예전처럼 줄여 보내는 계획으로 셉니다. 시가 단일가 묶음({@code OPG})은 그대로입니다.
+     *
      * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
      */
     private void createBatchAndSend(Cycle c, String purpose, String timeInForce, String window, boolean send) {
@@ -967,6 +971,14 @@ class RealTradeJob {
         }
         boolean leftover = plan.skipped().stream().anyMatch(s -> LEFTOVER_SKIPS.contains(s.reason()));
         Optional<Instant> since = leftover ? start : Optional.empty();
+        // 보낼 계획(QA-1018) — 마무리 용도의 묶음(시각 맞추기 날·시가 단일가가 없는 날)은 종목마다 같은 용도의 시도가 하나라, 매도 대금이 들어오기 전의
+        // 현금으로 줄여 보낸 매수가 전량 체결되면 그 종목이 그날 닫힘. 그래서 이 계획이 매도를 보내면 줄여야 하는 매수는 보내지 않고 미룸(같은 창
+        // 마무리가 대금이 들어온 뒤 온전한 수량으로). 회전율 판정·예외 판정·남은 몫 표시는 위의 계획(plan) 그대로이고, 시가 단일가 묶음(OPG)도 그대로
+        // (줄여 보낸 OPG 매수는 시가 뒤 마무리가 다른 용도의 시도로 메움).
+        Plan sending = RealTradeStore.PURPOSE_SYNC_FOLLOWUP.equals(purpose)
+                ? RealTradePlanner.sync(weightPct, f.equity(), f.account(), f.blocked(), f.reserved(),
+                        rules(c, f).withCashCut(RealTradePlanner.CashCut.DEFER_WITH_SELLS), true)
+                : plan;
         Config planned = c.cfg;
         Map<String, Object> exempt = exemptDetail;
         Locked locked = store.lockConfig(MARKET, current -> {
@@ -994,14 +1006,14 @@ class RealTradeJob {
             return;
         }
         c.cfg = locked.config();
-        log.info("시가 맞추기 묶음 — 주문 {}건·건너뜀 {}건·회전율 {}%{}{}", plan.orders().size(), plan.skipped().size(), plan.turnoverPct(),
+        log.info("시가 맞추기 묶음 — 주문 {}건·건너뜀 {}건·회전율 {}%{}{}", sending.orders().size(), sending.skipped().size(), plan.turnoverPct(),
                 c.cfg.syncPending() ? "(남은 몫 — 회전율 예외 유지)" : "", observed);
-        recordSkips(c, window, plan.skipped(), null);
+        recordSkips(c, window, sending.skipped(), null);
         if (!send) {
-            plan.orders().forEach(o -> c.day.miss(window, o.symbol()));
+            sending.orders().forEach(o -> c.day.miss(window, o.symbol()));
             return;
         }
-        sendBatchOrders(c, plan.orders(), locked.batch(), purpose, timeInForce);
+        sendBatchOrders(c, sending.orders(), locked.batch(), purpose, timeInForce);
     }
 
     private record Locked(Batch batch, Config config) {
@@ -1501,6 +1513,10 @@ class RealTradeJob {
      * 하기가 손댄 종목(오늘 MIRROR 행이 있거나 흡수되지 않은 장중 대기 주문의
      * 따라 할 시각이 지난 종목)은 뺍니다 — 같은 시간대의 장중 따라 하기 결과를 묶음 목표로 되돌리지 않게(장중에 산 종목을 '책에 없는 보유'로 팔거나, 장중에
      * 판 종목을 다시 사지 않음). E는 전체 계좌로 셉니다. 현금은 이번에 보낼 수 있는 종목(그 종목의 마무리 시도가 남은 것)에만 배정합니다.
+     *
+     * <p>현금이 모자라 줄여야 하는 매수(QA-1018 — ADR 0028 덧붙임): 이 묶음에 진행 중인 매도가 있거나 이번 계획이 매도를 보내면 줄여 보내지 않고
+     * {@code deferred-cash}로 미룹니다({@link RealTradePlanner.CashCut}) — 줄인 주문이 전량 체결되면 그 종목의 마무리 시도가 닫혀 나머지를 그날 사지
+     * 못하기 때문입니다. 매도가 더 없으면 지금처럼 줄여 보냅니다. 묶음을 만드는 주기({@link #createBatchAndSend})도 마무리 용도면 같습니다.
      */
     private void runFollowup(Cycle c, List<DueOrder> upcoming) {
         Optional<Batch> existing = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC);
@@ -1531,8 +1547,14 @@ class RealTradeJob {
                 sendable.add(symbol);
             }
         }
+        // 줄여야 하는 매수(QA-1018) — 이 묶음에 진행 중인(미종료) 매도 행이 있거나(용도 무관 — 시가 단일가 매도 포함) 이번 계획이 매도를 보내면 줄여
+        // 보내지 않고 미룸(대금이 들어온 다음 주기에 온전한 수량으로 시도 1). 매도가 다 끝났으면 지금처럼 남은 현금 안으로 줄여 보냄. 스탑 매도 경로·장중
+        // 따라 하기의 매도(묶음 행이 아님)와 매매 제한으로 이번 계획에서 빠진 매도는 보지 않음(그때는 지금처럼 줄여 보냄).
+        boolean selling = rows.stream().anyMatch(row -> RealTradePlanner.SELL.equals(row.side()) && !row.terminal());
+        RealTradePlanner.CashCut cut = selling ? RealTradePlanner.CashCut.DEFER : RealTradePlanner.CashCut.DEFER_WITH_SELLS;
         Planned planned = planSync(c, scope, RealTradeStore.PURPOSE_SYNC_FOLLOWUP,
-                (f, r) -> RealTradePlanner.sync(weights, f.equity(), f.account(), f.blocked(), f.reserved(), r, true, scope, sendable));
+                (f, r) -> RealTradePlanner.sync(weights, f.equity(), f.account(), f.blocked(), f.reserved(), r.withCashCut(cut), true, scope,
+                        sendable));
         if (planned == null) {
             return;
         }
