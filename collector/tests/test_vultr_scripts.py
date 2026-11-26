@@ -425,7 +425,6 @@ def test_QA369_deploy는_앞단_재생성이_실패하면_알리고_실패로_�
 
 
 # --------------------------------------------------------------------------- 배포 끝 정리(QA-1034)
-@pytest.mark.xfail(strict=True, reason="QA-1034: 정리 두 줄이 set -e 아래에 || 없이 있어, 정리가 실패하면 성공 문구 없이 0이 아닌 값으로 끝남")
 @pytest.mark.parametrize("fail", ["image prune", "builder prune"], ids=["매달린_이미지", "빌드_캐시"])
 def test_QA_1034_deploy는_끝_정리가_실패해도_배포를_실패로_끝내지_않고_경고만_찍는다(server, fakes, fail):
     """

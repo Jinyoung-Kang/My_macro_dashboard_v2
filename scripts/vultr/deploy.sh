@@ -289,8 +289,12 @@ fi
 
 # ---------------------------------------------------------------- 7) 정리
 # 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음). 빌드 캐시는 다음 빌드를 빠르게 하므로 일주일 넘은 것만.
-docker image prune -f >/dev/null
-docker builder prune -f --filter until=168h >/dev/null
+# 정리는 뒷일입니다 — 여기까지 왔으면 컨테이너·스키마·앞단이 모두 끝났으므로, 정리가 실패해도 배포 결과(종료 코드·성공 문구·끝 요약)를
+# 바꾸지 않고 '경고:' 한 줄만 찍습니다(QA-1034 — 예전에는 set -e 아래에 || 없이 있어 성공 문구 없이 0이 아닌 값으로 끝났음).
+docker image prune -f >/dev/null ||
+    echo "경고: 매달린 이미지 정리(docker image prune)가 실패했습니다 — 배포는 끝났습니다(docker system df로 확인)." >&2
+docker builder prune -f --filter until=168h >/dev/null ||
+    echo "경고: 빌드 캐시 정리(docker builder prune)가 실패했습니다 — 배포는 끝났습니다(docker system df로 확인)." >&2
 
 echo ""
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
