@@ -13,7 +13,7 @@ app/services/search_article.py
   (start가 거짓이면 not_cached) → 기억표 → 받지 않는 매체 → 호스트 닫힘 → 줄 상한(:data:`QUEUE_LIMIT`) → 하루 전체 예산(fetch_budgets ``*``/article,
   :data:`DAILY_BUDGET`) → 작업자 하나(한 번에 한 건, 작업 상한 :data:`JOB_DEADLINE`초)에 넘기고 ``pending``·``queued``.
 - 작업자: 구글 경유면 원문 주소로 풀기(services/search_relay — 요청 0~2건) → 한 건 받기(app/fetch/article — 홉마다 주소 검사·고정 주소·리다이렉트 3번·
-  3MB·HTML만) → 본문 추출(:func:`extract` — trafilatura 2.3.1, 처음 쓸 때 가져옴, 여는 태그 :data:`MAX_TAGS`개 넘으면 하지 않음) → 메모리 캐시(성공 24시간, 실패는 사유별 — :func:`_ttl`).
+  3MB·HTML만) → 본문 추출(:func:`extract` — trafilatura 2.4.0, 처음 쓸 때 가져옴, 여는 태그 :data:`MAX_TAGS`개 넘으면 하지 않음) → 메모리 캐시(성공 24시간, 실패는 사유별 — :func:`_ttl`).
 - 사유 글·로그에는 호스트·상태·사유 코드만(경로·인자·제목·본문·꼬리표 없음).
 """
 from __future__ import annotations
@@ -54,8 +54,9 @@ MIN_CHARS = 80                            # 이보다 짧으면 no_body
 AUTHOR_MAX = 200
 TITLE_MAX = 500
 # 추출 앞 관문 — 여는 태그 어림수('<' 수 − '</' 수 — 주석·스크립트 안의 '<'도 셈, 넉넉히 많게 셈)가 이보다 많으면 추출하지 않습니다. 추출(trafilatura —
-# lxml 트리와 그 복사본)은 시간 상한(JOB_DEADLINE — 네트워크에만 걸림) 밖에서 이 과정의 메모리를 씁니다. 이 PC 실측(Python 3.11, trafilatura 2.3.1,
-# lxml 6.1.3): 여는 태그 6만 개(<div><span><a> 반복 0.8MB) 2.3초·최대 +73MB, 4만 개(표 칸 반복) 0.9초·+55MB, 12만 개 4.4초·+145MB — 3MB 전부가
+# lxml 트리와 그 복사본)은 시간 상한(JOB_DEADLINE — 네트워크에만 걸림) 밖에서 이 과정의 메모리를 씁니다. 이 PC 실측(Python 3.11, trafilatura 2.4.0,
+# lxml 6.1.3 — 2026-11-27에 한 번씩 다시 잼): 여는 태그 6만 개(<div><span><a> 반복 0.6MB) 1.4초·최대 +42MB, 4만 개(표 칸 반복) 1.2초·+54MB,
+# 12만 개 3.0초·+86MB(같은 표본에서 2.3.1은 2.7초·+51MB, 1.4초·+63MB, 5.4초·+105MB — 처음 넣을 때 다른 표본으로 잰 값은 ADR 0043) — 3MB 전부가
 # 태그면 수 초·수백 MB라 수집기(mem_limit 1g — 실제 매매 주문 길·모의 매매 입력 수집과 같은 과정)를 지키려고 둡니다. 보통 기사 쪽은 수천 개입니다.
 MAX_TAGS = 50_000
 
@@ -342,10 +343,9 @@ def _trafilatura_config():
         if _config is None:
             from trafilatura.settings import use_config
 
-            for name in ("trafilatura", "htmldate", "courlan", "justext"):
+            for name in ("trafilatura", "htmldate", "courlan"):
                 logging.getLogger(name).setLevel(logging.ERROR)     # 경고 글에 주소·제목이 섞이지 않게
             config = use_config()
-            config.set("DEFAULT", "EXTRACTION_TIMEOUT", "0")
             config.set("DEFAULT", "EXTENSIVE_DATE_SEARCH", "off")
             config.set("DEFAULT", "MAX_FILE_SIZE", str(fetch_article.MAX_BYTES))
             config.set("DEFAULT", "MAX_TREE_SIZE", "50000")
