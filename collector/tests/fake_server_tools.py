@@ -2,7 +2,7 @@
 tests/fake_server_tools.py
 서버 스크립트 시험(tests/test_*_scripts.py)이 같이 쓰는 가짜 실행 파일과 도우미 — test_aws_scripts.py에서 옮겼습니다.
 
-docker·aws·make·logger·sleep·curl은 PATH 앞에 둔 가짜 실행 파일로 바꿉니다(부른 인자를 기록 파일에 남김). git은 진짜를
+docker·aws·make·logger·sleep·curl·df는 PATH 앞에 둔 가짜 실행 파일로 바꿉니다(부른 인자를 기록 파일에 남김). git은 진짜를
 쓰되 사용자 git 설정은 읽지 않습니다.
 """
 from __future__ import annotations
@@ -40,6 +40,11 @@ case " $* " in
         exit "${FAKE_EXEC_RC:-0}" ;;
 esac
 if [ -n "${FAKE_DOCKER_FAIL:-}" ] && [[ "$*" == *"$FAKE_DOCKER_FAIL"* ]]; then exit 1; fi
+# 디스크 알림(scripts/vultr/disk-check.sh)이 읽는 종류별 크기 — 종류<탭>크기<탭>회수 가능.
+case " $* " in
+    *" system df "*)
+        printf 'Images\\t9.9GB\\t1.1GB (11%%)\\nContainers\\t12.3MB\\t0B (0%%)\\nLocal Volumes\\t7.7GB\\t0B (0%%)\\nBuild Cache\\t61.2GB\\t56.8GB\\n' ;;
+esac
 exit 0
 """
 # s3 cp는 FAKE_AWS_RC로 끝납니다(기본 0).
@@ -98,6 +103,24 @@ shift
 [ "${FAKE_SUDO:-ok}" = ok ] || { echo "sudo: a password is required" >&2; exit 1; }
 [ "${1:-}" != -l ] || exit 0
 FAKE_AS_ROOT=1 exec "$@"
+"""
+
+# 디스크 점검(scripts/vultr/disk-check.sh) — `df -P /`와 `df -Pi /`의 둘째 줄만 흉내 냅니다(120 GB 디스크). 사용률은 FAKE_DF_PCT(기본 42)·
+# FAKE_DF_IPCT(기본 3). FAKE_DF_RC가 0이 아니면 둘 다 실패하고, FAKE_DF_NO_INODE가 있으면 inode 사용률 칸이 '-'입니다(사용률을 내지 않는
+# 파일 시스템). 부른 기록은 남기지 않습니다(배포 시험의 호출 목록을 바꾸지 않게) — 시험을 돌리는 기계의 디스크가 끼어들지 않게 하는 것이기도 합니다.
+_FAKE_DF = """#!/usr/bin/env bash
+[ "${FAKE_DF_RC:-0}" = 0 ] || { echo "df: fake failure" >&2; exit "$FAKE_DF_RC"; }
+case " $* " in
+    *" -Pi "*)
+        echo "Filesystem Inodes IUsed IFree IUse% Mounted on"
+        if [ -n "${FAKE_DF_NO_INODE:-}" ]; then echo "/dev/vda2 0 0 0 - /"; exit 0; fi
+        p="${FAKE_DF_IPCT:-3}"
+        echo "/dev/vda2 7800000 $((78000 * p)) $((78000 * (100 - p))) $p% /" ;;
+    *)
+        p="${FAKE_DF_PCT:-42}"
+        echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+        echo "/dev/vda2 125829120 $((1258291 * p)) $((1258291 * (100 - p))) $p% /" ;;
+esac
 """
 
 # 서버의 버전 목록(scripts/vultr/inventory.sh, ADR 0046)이 호스트에서 부르는 것 — 가짜 값만. 부른 인자는 <기록>.host에 따로 남깁니다(배포 시험의

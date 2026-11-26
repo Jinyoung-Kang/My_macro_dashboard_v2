@@ -1,6 +1,6 @@
 """
 tests/test_vultr_scripts.py
-Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,inventory,instance,firewall-pc-ip}.sh
+Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,disk-check,inventory,instance,firewall-pc-ip}.sh
 와 make status의 마지막 S3 백업 나이(QA-199)·재부팅 필요 여부(ADR 0023 개정 2026-11-12).
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
@@ -30,8 +30,8 @@ import yaml
 from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "inventory.sh",
-           "instance.sh", "firewall-pc-ip.sh"]
+SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "disk-check.sh",
+           "inventory.sh", "instance.sh", "firewall-pc-ip.sh"]
 SECRET = tools.SECRET
 
 
@@ -40,7 +40,7 @@ def fakes(tmp_path):
     """가짜 실행 파일 폴더와 기록 파일(tests/fake_server_tools.py). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
-                       "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL,
+                       "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL, "df": tools._FAKE_DF,
                        "canonical-livepatch": tools._FAKE_LIVEPATCH, "sudo": tools._FAKE_SUDO,
                        "dpkg-query": tools._FAKE_DPKG_QUERY, "apt": tools._FAKE_APT, "tailscale": tools._FAKE_TAILSCALE}.items():
         tools._write_exec(bin_dir / name, text)
@@ -1654,6 +1654,211 @@ def test_make_status와_deploy는_재부팅_필요_여부를_같은_줄로_판�
 def test_deploy는_재부팅_점검이_실패해도_배포를_실패로_만들지_않는다():
     text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
     assert "\nbash scripts/vultr/reboot-check.sh --summary || true\n" in text
+
+
+# --------------------------------------------------------------------------- disk-check.sh(디스크·inode 알림 — ADR 0023 덧붙임 2026-11-27)
+# 사용률은 가짜 df(tests/fake_server_tools.py — FAKE_DF_PCT·FAKE_DF_IPCT)로, docker system df는 가짜 docker의 고정 네 줄로 봅니다.
+@pytest.fixture()
+def disk_root(tmp_path):
+    """서버 역할의 저장소 최상위 — disk-check.sh·notify-common.sh·db-common.sh와 서버 .env(Vultr 덧붙임 + 운영 텔레그램 봇)."""
+    root = tmp_path / "My_macro_dashboard_v2"
+    (root / "scripts/vultr").mkdir(parents=True)
+    for name in ("disk-check.sh", "notify-common.sh"):
+        shutil.copy(ROOT / "scripts/vultr" / name, root / "scripts/vultr" / name)
+    shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
+    (root / ".env").write_text(f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nTELEGRAM_BOT_TOKEN={TG_TOKEN}\n"
+                               f"TELEGRAM_CHAT_ID={TG_CHAT}\nDATABASE_PASSWORD={SECRET}\n", encoding="utf-8")
+    return root
+
+
+def _disk_check(root: Path, fakes, *args: str, **extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(root / "scripts/vultr/disk-check.sh"), *args], cwd=root, env=tools._env(fakes, **extra),
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
+def _disk_logs(fakes) -> list[str]:
+    return [c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-disk-check")]
+
+
+def test_notify_common은_source로만_읽고_토큰을_curl_설정의_stdin으로만_넘긴다():
+    text = (ROOT / "scripts/vultr/notify-common.sh").read_text(encoding="utf-8")
+    assert text.startswith("# shellcheck shell=bash\n"), "db-common.sh처럼 source로 읽는 파일"
+    assert subprocess.run(["bash", "-n", str(ROOT / "scripts/vultr/notify-common.sh")], capture_output=True).returncode == 0
+    assert "-K - --data-urlencode" in text and ">/dev/null 2>&1" in text, "설정은 stdin으로, curl의 출력(주소가 실릴 수 있음)은 버림"
+
+
+def test_disk_check는_임계_아래면_알리지_않고_syslog에만_남긴다(disk_root, fakes):
+    result = _disk_check(disk_root, fakes, FAKE_DF_PCT="79", FAKE_DF_IPCT="79")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "" and result.stderr == "", "알림 길은 아무것도 찍지 않습니다(cron)"
+    assert _curls(fakes) == []
+    logs = _disk_logs(fakes)
+    assert len(logs) == 1 and "점검: 디스크: 79% 사용(여유 25.2GB) · inode 79%" in logs[0] and "user.warning" not in logs[0]
+    assert not any("system df" in c for c in tools._calls(fakes)), "알릴 때만 docker를 부릅니다"
+    assert not (disk_root / "backups/.disk-check-sent").exists()
+
+
+@pytest.mark.parametrize(("pct", "word", "why"), [("80", "경고", "디스크 80% 이상"), ("89", "경고", "디스크 80% 이상"),
+                                                  ("90", "위험", "디스크 90% 이상"), ("100", "위험", "디스크 90% 이상")])
+def test_disk_check는_임계를_넘으면_등급과_쓰는_자리를_운영_봇으로_한_통_알리고_비밀값은_인자에_남기지_않는다(disk_root, fakes, pct, word, why):
+    (disk_root / "backups").mkdir()
+    (disk_root / "backups/macrodash-20261127-080000.sql").write_text("x" * 4096, encoding="utf-8")
+    result = _disk_check(disk_root, fakes, FAKE_DF_PCT=pct)
+    assert result.returncode == 0, result.stderr
+    curls = _curls(fakes)
+    assert len(curls) == 1 and "-K -" in curls[0] and "--max-time" in curls[0]
+    assert f"text=my-macro 서버 — 디스크 {word}: {pct}% 사용(여유 " in curls[0] and "inode 3%" in curls[0]
+    assert f"({why} — 임계 경고 80% · 위험 90%)" in curls[0]
+    sent = fakes[1].read_text(encoding="utf-8")
+    for part in ("Docker(docker system df):", "  Images 9.9GB(회수 가능 1.1GB (11%))", "  Local Volumes 7.7GB(회수 가능 0B (0%))",
+                 "  Build Cache 61.2GB(회수 가능 56.8GB)", "backups/: ", "실행:",
+                 "cd ~/My_macro_dashboard_v2 && bash scripts/vultr/disk-check.sh --summary && docker system df",
+                 "docker builder prune -f --max-used-space 15GB", "볼륨·쓰는 이미지·backups/는 지우지 않습니다", "디스크 확인해 줘"):
+        assert part in sent, part
+    assert "backups/: 읽지 못함" not in sent
+    assert TG_TOKEN not in sent and TG_CHAT not in sent, "토큰·채팅 ID가 명령 인자(서버 ps)에 남았습니다"
+    assert f'url = "https://api.telegram.org/bot{TG_TOKEN}/sendMessage"' in _curl_config(fakes) and f"chat_id={TG_CHAT}" in _curl_config(fakes)
+    assert TG_TOKEN not in result.stdout + result.stderr and SECRET not in sent + result.stdout + result.stderr
+    logs = _disk_logs(fakes)
+    assert len(logs) == 1 and "user.warning" in logs[0] and f"{word}({why})" in logs[0]
+    assert (disk_root / "backups/.disk-check-sent").read_text(encoding="utf-8").split()[1] == ("2" if word == "위험" else "1")
+
+
+@pytest.mark.parametrize(("ipct", "word"), [("80", "경고"), ("95", "위험")])
+def test_disk_check는_디스크가_남아도_inode만_높으면_알린다(disk_root, fakes, ipct, word):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="40", FAKE_DF_IPCT=ipct).returncode == 0
+    curls = _curls(fakes)
+    assert len(curls) == 1
+    assert f"디스크 {word}: 40% 사용(여유 72.0GB) · inode {ipct}% (inode {'90' if word == '위험' else '80'}% 이상 — " in curls[0]
+
+
+def test_disk_check는_디스크와_inode가_함께_넘으면_둘_다_적고_높은_등급으로_알린다(disk_root, fakes):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="85", FAKE_DF_IPCT="91").returncode == 0
+    curls = _curls(fakes)
+    assert len(curls) == 1 and "디스크 위험: " in curls[0] and "(디스크 80% 이상 · inode 90% 이상 — " in curls[0]
+
+
+def test_disk_check는_같은_KST_날짜에_두_번_보내지_않고_다음_날은_다시_보낸다(disk_root, fakes):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82").returncode == 0
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="84").returncode == 0, "사용률이 조금 움직여도 같은 날 같은 등급은 한 통"
+    assert len(_curls(fakes)) == 1
+    assert any("이미 보냄" in c for c in _disk_logs(fakes))
+    marker = disk_root / "backups/.disk-check-sent"
+    day, level = marker.read_text(encoding="utf-8").split()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) and level == "1"
+    marker.write_text(f"2000-01-01 {level}\n", encoding="utf-8")      # 지난 날에 보낸 기록
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82").returncode == 0
+    assert len(_curls(fakes)) == 2
+
+
+def test_disk_check의_하루_한_번은_KST_날짜로_센다(disk_root, fakes):
+    """서버 시간대는 UTC입니다 — 날짜는 TZ=Asia/Seoul로 물어야 합니다. 그 밖의 date 호출은 진짜 date로 넘깁니다."""
+    bin_dir, _ = fakes
+    tools._write_exec(bin_dir / "date", '#!/usr/bin/env bash\n'
+                      'if [ "$1" = "+%F" ]; then [ "${TZ:-}" = Asia/Seoul ] || { echo "TZ=${TZ:-}" >&2; exit 1; }; echo "$FAKE_KST_DAY"; '
+                      f'else exec {_REAL_DATE} "$@"; fi\n')
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82", FAKE_KST_DAY="2026-11-27").returncode == 0
+    assert (disk_root / "backups/.disk-check-sent").read_text(encoding="utf-8") == "2026-11-27 1\n"
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82", FAKE_KST_DAY="2026-11-27").returncode == 0
+    assert len(_curls(fakes)) == 1
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82", FAKE_KST_DAY="2026-11-28").returncode == 0
+    assert len(_curls(fakes)) == 2
+
+
+def test_disk_check는_경고로_보낸_날_위험으로_오르면_한_번_더_보내고_내려온_것은_다시_보내지_않는다(disk_root, fakes):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="82").returncode == 0
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="93").returncode == 0
+    assert len(_curls(fakes)) == 2 and "디스크 위험: " in _curls(fakes)[1]
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="85").returncode == 0
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="95").returncode == 0
+    assert len(_curls(fakes)) == 2
+
+
+def test_disk_check는_알림이_실패하면_보낸_기록을_남기지_않아_다음_실행에_다시_보낸다(disk_root, fakes):
+    failed = _disk_check(disk_root, fakes, FAKE_DF_PCT="91", FAKE_CURL_RC="7")
+    assert failed.returncode == 0, "늘 0 — 실패는 syslog에"
+    assert not (disk_root / "backups/.disk-check-sent").exists()
+    assert any("텔레그램 알림을 보내지 못함" in c for c in _disk_logs(fakes))
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="91").returncode == 0
+    assert len(_curls(fakes)) == 2 and (disk_root / "backups/.disk-check-sent").is_file()
+
+
+@pytest.mark.parametrize("env_lines", ["", "TELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=1\n", f"TELEGRAM_BOT_TOKEN={TG_TOKEN}\n"])
+def test_disk_check는_텔레그램_값이_하나라도_없으면_보내지_않고_syslog에_남긴다(disk_root, fakes, env_lines):
+    (disk_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\n" + env_lines, encoding="utf-8")
+    result = _disk_check(disk_root, fakes, FAKE_DF_PCT="91")
+    assert result.returncode == 0
+    assert _curls(fakes) == []
+    assert any("텔레그램 값이 없어" in c for c in _disk_logs(fakes))
+    assert not (disk_root / "backups/.disk-check-sent").exists()
+
+
+def test_disk_check는_docker_크기를_읽지_못해도_그렇게_적어_알린다(disk_root, fakes):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="91", FAKE_DOCKER_FAIL="system df").returncode == 0
+    assert len(_curls(fakes)) == 1
+    assert "Docker(docker system df):\n  읽지 못함\n" in fakes[1].read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(("extra", "sent"), [
+    (dict(DISK_WARN_PCT="70", DISK_CRIT_PCT="75"), "디스크 위험: 76% 사용"),
+    (dict(DISK_WARN_PCT="70"), "디스크 경고: 76% 사용"),
+    (dict(DISK_WARN_PCT="95", DISK_CRIT_PCT="99"), None),
+    (dict(DISK_WARN_PCT="95", DISK_CRIT_PCT="60"), None),          # 경고 > 위험 — 기본값(80·90)
+    (dict(DISK_WARN_PCT="0", DISK_CRIT_PCT="많이"), None),          # 모양이 틀림 — 기본값
+], ids=["둘_다_낮춤", "경고만_낮춤", "둘_다_높임", "뒤집힘은_기본값", "틀린_값은_기본값"])
+def test_disk_check의_임계는_DISK_WARN_PCT와_DISK_CRIT_PCT를_따른다(disk_root, fakes, extra, sent):
+    assert _disk_check(disk_root, fakes, FAKE_DF_PCT="76", **extra).returncode == 0
+    curls = _curls(fakes)
+    assert (len(curls) == 1 and sent in curls[0]) if sent else curls == []
+
+
+def test_disk_check의_임계는_env_파일에서도_읽고_환경변수가_먼저다(disk_root, fakes):
+    with (disk_root / ".env").open("a", encoding="utf-8") as env_file:
+        env_file.write("DISK_WARN_PCT=70\nDISK_CRIT_PCT=75\n")        # cron에는 셸 환경변수가 없습니다
+    assert "위험(디스크 75% 이상)" in _disk_check(disk_root, fakes, "--summary", FAKE_DF_PCT="76").stdout
+    assert _disk_check(disk_root, fakes, "--summary", FAKE_DF_PCT="76", DISK_CRIT_PCT="90").stdout.count("경고(디스크 70% 이상)") == 1
+
+
+@pytest.mark.parametrize(("extra", "line"), [
+    (dict(), "디스크: 42% 사용(여유 69.6GB) · inode 3%"),
+    (dict(FAKE_DF_PCT="80"), "경고: 디스크 80% 사용(여유 24.0GB) · inode 3% — 경고(디스크 80% 이상), DEVELOPMENT §7 '디스크'"),
+    (dict(FAKE_DF_PCT="97", FAKE_DF_IPCT="88"),
+     "경고: 디스크 97% 사용(여유 3.6GB) · inode 88% — 위험(디스크 90% 이상 · inode 80% 이상), DEVELOPMENT §7 '디스크'"),
+    (dict(FAKE_DF_NO_INODE="1"), "디스크: 42% 사용(여유 69.6GB) · inode 모름"),
+    (dict(FAKE_DF_RC="1"), "경고: 디스크 사용률을 읽지 못했습니다(df -P /)"),
+], ids=["정상", "경고", "위험", "inode_모름", "df_실패"])
+def test_disk_check_요약은_알리지_않고_한_줄만_찍는다(disk_root, fakes, extra, line):
+    result = _disk_check(disk_root, fakes, "--summary", **extra)
+    assert result.returncode == 0 and result.stderr == ""
+    assert result.stdout == line + "\n"
+    assert tools._calls(fakes) == [], "요약은 알림·syslog·docker 없이 df만"
+    assert not (disk_root / "backups").exists()
+
+
+def test_disk_check는_디스크를_읽지_못하면_알리지_않고_syslog에_경고로_남긴다(disk_root, fakes):
+    result = _disk_check(disk_root, fakes, FAKE_DF_RC="1")
+    assert result.returncode == 0 and result.stdout == ""
+    assert _curls(fakes) == []
+    logs = _disk_logs(fakes)
+    assert len(logs) == 1 and "user.warning" in logs[0] and "읽지 못했습니다" in logs[0]
+
+
+def test_disk_check는_summary_if_server면_서버가_아닐_때_아무것도_찍지_않는다(disk_root, fakes):
+    (disk_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml\n", encoding="utf-8")
+    result = _disk_check(disk_root, fakes, "--summary-if-server", FAKE_DF_PCT="95")
+    assert result.returncode == 0 and result.stdout == "" and result.stderr == "", "PC의 디스크는 보지 않습니다"
+    (disk_root / ".env").unlink()
+    result = _disk_check(disk_root, fakes, "--summary-if-server", FAKE_DF_PCT="95")
+    assert result.returncode == 0 and result.stdout == "" and result.stderr == "", ".env가 없어도 조용합니다"
+    (disk_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\n", encoding="utf-8")
+    result = _disk_check(disk_root, fakes, "--summary-if-server", FAKE_DF_PCT="95")
+    assert result.stdout.startswith("경고: 디스크 95% 사용") and result.stdout.count("\n") == 1
+    assert tools._calls(fakes) == []
+
+
+def test_disk_check는_모르는_인자면_2로_끝난다(disk_root, fakes):
+    assert _disk_check(disk_root, fakes, "--now").returncode == 2
+    assert tools._calls(fakes) == []
 
 
 # --------------------------------------------------------------------------- inventory.sh(보안 공지 버전 목록, ADR 0046)
