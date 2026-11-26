@@ -16,6 +16,8 @@ tests/test_group_schedule.py
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -289,3 +291,64 @@ def test_flex_틱_작업은_실패해도_스케줄러를_멈추지_않는다(mon
 
     monkeypatch.setattr(tasks, "run_flex_due", broken)
     main._run_flex_job()    # 예외를 밖으로 내지 않음(로그만)
+
+
+# ==============================================================================
+# QA-1016 — 긴 flex 태스크가 도는 동안에도 다음 틱이 다른 flex 태스크를 실행한다
+# ==============================================================================
+def _fire_flex_tick(jobs: dict[str, dict], running: dict[str, threading.Thread]) -> None:
+    """
+    스케줄러의 flex 틱 한 번을 흉내 냅니다 — 등록된 ``collect-flex*`` 작업을 저마다 스레드로 부르되, 앞선 실행이 아직 도는 작업은
+    건너뜁니다(APScheduler의 ``max_instances=1``과 같은 규칙).
+    """
+    for job_id, job in jobs.items():
+        if not job_id.startswith("collect-flex"):
+            continue
+        previous = running.get(job_id)
+        if previous is not None and previous.is_alive():
+            continue
+        thread = threading.Thread(target=job["func"], daemon=True)
+        running[job_id] = thread
+        thread.start()
+
+
+@pytest.mark.xfail(strict=True, reason="QA-1016 — flex 틱이 태스크를 차례로 돌려 긴 태스크 뒤의 틱이 건너뛰어진다")
+def test_QA_1016_긴_flex_태스크가_도는_동안에도_다음_틱이_다른_flex_태스크를_실행한다(monkeypatch):
+    """
+    보안 공지 수집(시간 상한 420초)이 도는 동안 미국 지표 발표 직후 수집(`us_consensus_release`)의 때가 오면, 다음 1분 틱이 그 태스크를
+    실행해야 합니다(ADR 0040 결정 1 — '발표 + 2~4분' 창). 틱 작업이 하나뿐이면 앞 태스크가 끝날 때까지 다음 틱이 건너뛰어집니다.
+    """
+    monkeypatch.delenv("POLITE_FETCH_ENABLED", raising=False)
+    jobs = _jobs(monkeypatch)
+    release = threading.Event()
+    entered = threading.Event()
+    called: list[str] = []
+    due = {"kisa_security_notices"}
+
+    def fake_run_group(**kwargs):
+        name = kwargs["task_name"]
+        called.append(name)
+        if name == "kisa_security_notices":
+            entered.set()
+            release.wait(timeout=20)
+
+    patched = [task if task.speed != tasks.flex.SPEED
+               else type(task)(task.name, task.speed, task.run, task.description, task.yahoo, (lambda name=task.name: name in due))
+               for task in tasks.runner.ALL_TASKS]
+    monkeypatch.setattr(tasks.runner, "ALL_TASKS", tuple(patched))
+    monkeypatch.setattr(tasks.runner, "run_group", fake_run_group)
+    running: dict[str, threading.Thread] = {}
+    try:
+        _fire_flex_tick(jobs, running)                       # 첫 틱 — 보안 공지 수집이 시작해 오래 돎
+        assert entered.wait(timeout=10), "보안 공지 수집이 시작되지 않음"
+        due.add("us_consensus_release")                      # 그 사이 발표 직후 수집의 때가 옴
+        _fire_flex_tick(jobs, running)                       # 다음 1분 틱
+        deadline = time.monotonic() + 5
+        while "us_consensus_release" not in called and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert "us_consensus_release" in called, "긴 태스크가 끝나기 전에는 다음 틱이 다른 flex 태스크를 실행하지 못함"
+        assert not release.is_set() and called.count("kisa_security_notices") == 1
+    finally:
+        release.set()
+        for thread in running.values():
+            thread.join(timeout=10)
