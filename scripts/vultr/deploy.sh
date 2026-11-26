@@ -28,7 +28,8 @@
 #   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile).
 #      기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스) 스키마 적용과 caddy 다시 만들기는 마친 뒤 실패로 끝납니다(QA-369 —
 #      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음).
-#   7. 매달린 이미지·오래된 빌드 캐시 정리. 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
+#   7. 매달린 이미지 정리와 빌드 캐시를 크기 상한까지 줄이기(BUILD_CACHE_MAX — 환경변수 → .env → 기본 15GB, 그 정리가 실패하면 일주일 넘은 것만).
+#      정리가 실패해도 배포 결과는 그대로이고 '경고:' 한 줄만 찍습니다(QA-1034). 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
 #      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)과 재부팅 필요·Livepatch 상태(scripts/vultr/reboot-check.sh — 같은 판정을 make status·cron이 씀)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
@@ -288,13 +289,29 @@ if [ -n "$failed" ]; then
 fi
 
 # ---------------------------------------------------------------- 7) 정리
-# 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음). 빌드 캐시는 다음 빌드를 빠르게 하므로 일주일 넘은 것만.
+# 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음).
 # 정리는 뒷일입니다 — 여기까지 왔으면 컨테이너·스키마·앞단이 모두 끝났으므로, 정리가 실패해도 배포 결과(종료 코드·성공 문구·끝 요약)를
 # 바꾸지 않고 '경고:' 한 줄만 찍습니다(QA-1034 — 예전에는 set -e 아래에 || 없이 있어 성공 문구 없이 0이 아닌 값으로 끝났음).
 docker image prune -f >/dev/null ||
     echo "경고: 매달린 이미지 정리(docker image prune)가 실패했습니다 — 배포는 끝났습니다(docker system df로 확인)." >&2
-docker builder prune -f --filter until=168h >/dev/null ||
-    echo "경고: 빌드 캐시 정리(docker builder prune)가 실패했습니다 — 배포는 끝났습니다(docker system df로 확인)." >&2
+# 빌드 캐시는 다음 빌드를 빠르게 하므로 다 지우지 않고 크기 상한까지만 줄입니다(오래 안 쓴 것부터 지워짐). 예전의 나이 기준(일주일 넘은 것만)은
+# 배포가 하루에도 여러 번이라 일주일 안의 캐시가 수십 GB 쌓였습니다(2026-11-27 61 GB — docs/improve/2026-11-27-quality-plan.md §4).
+# 상한은 BUILD_CACHE_MAX(환경변수 → .env의 같은 이름 → 15GB, docker의 크기 표기 — 예 25GB). 모양이 틀리면 기본값을 씁니다.
+# 크기 상한 정리가 실패하면(그 옵션을 모르는 dockerd 등) 예전의 나이 기준으로 물러납니다.
+build_cache_max="${BUILD_CACHE_MAX:-$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?BUILD_CACHE_MAX=[[:space:]]*["'"'"']?([^"'"'"'[:space:]#]*).*$/\2/p' .env | tail -n 1)}"
+if [ -z "$build_cache_max" ]; then
+    build_cache_max=15GB
+elif ! [[ "$build_cache_max" =~ ^[0-9]+(\.[0-9]+)?([kKmMgGtT]?[bB])?$ ]]; then
+    echo "경고: BUILD_CACHE_MAX의 모양이 틀려(예: 15GB) 기본값 15GB를 씁니다." >&2
+    build_cache_max=15GB
+fi
+if ! docker builder prune -f --max-used-space "$build_cache_max" >/dev/null; then
+    if docker builder prune -f --filter until=168h >/dev/null; then
+        echo "경고: 빌드 캐시의 크기 상한 정리(--max-used-space $build_cache_max)가 실패해 나이 기준(일주일 넘은 것만)으로 정리했습니다 — 캐시가 상한보다 클 수 있습니다(docker system df로 확인)." >&2
+    else
+        echo "경고: 빌드 캐시 정리(docker builder prune — 크기 상한 $build_cache_max·나이 기준 모두)가 실패했습니다 — 배포는 끝났습니다(docker system df로 확인)." >&2
+    fi
+fi
 
 echo ""
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'

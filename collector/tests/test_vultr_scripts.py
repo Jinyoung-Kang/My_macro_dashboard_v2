@@ -440,6 +440,60 @@ def test_QA_1034_deploy는_끝_정리가_실패해도_배포를_실패로_끝내
     assert len(warned) == 1, result.stderr
 
 
+SIZE_PRUNE = "builder prune -f --max-used-space"
+AGE_PRUNE = "builder prune -f --filter until=168h"
+
+
+def test_deploy는_성공하면_매달린_이미지를_지우고_빌드_캐시를_크기_상한까지_줄인다(server, fakes):
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    calls = _docker_calls(fakes)
+    prunes = [c for c in calls if "prune" in c]
+    assert prunes == ["image prune -f", f"{SIZE_PRUNE} 15GB"], "기본 상한 15GB — 나이 기준은 크기 상한 정리가 실패했을 때만"
+    assert calls.index(prunes[0]) > calls.index(CADDY), "정리는 기동·스키마·앞단이 끝난 뒤"
+    assert "경고" not in result.stderr
+
+
+@pytest.mark.parametrize("where", ["환경변수", "env_파일", "env_파일_따옴표"])
+def test_deploy의_빌드_캐시_상한은_BUILD_CACHE_MAX를_따른다(server, fakes, where):
+    extra = {}
+    if where == "환경변수":
+        extra["BUILD_CACHE_MAX"] = "25GB"
+    else:
+        with (server[0] / ".env").open("a", encoding="utf-8") as env_file:
+            env_file.write('BUILD_CACHE_MAX="25GB"   # 캐시 상한\n' if where.endswith("따옴표") else "BUILD_CACHE_MAX=25GB\n")
+    result = _deploy(server, fakes, **extra)
+    assert result.returncode == 0, result.stderr
+    assert [c for c in _docker_calls(fakes) if "builder prune" in c] == [f"{SIZE_PRUNE} 25GB"]
+
+
+def test_deploy의_빌드_캐시_상한은_환경변수가_env_파일보다_먼저다(server, fakes):
+    with (server[0] / ".env").open("a", encoding="utf-8") as env_file:
+        env_file.write("BUILD_CACHE_MAX=25GB\n")
+    assert _deploy(server, fakes, BUILD_CACHE_MAX="10GB").returncode == 0
+    assert [c for c in _docker_calls(fakes) if "builder prune" in c] == [f"{SIZE_PRUNE} 10GB"]
+
+
+@pytest.mark.parametrize("value", ["많이", "15 GB", "-f", "15GB --all", "$(id)"])
+def test_deploy는_BUILD_CACHE_MAX의_모양이_틀리면_알리고_기본_상한을_쓴다(server, fakes, value):
+    result = _deploy(server, fakes, BUILD_CACHE_MAX=value)
+    assert result.returncode == 0, result.stderr
+    assert [c for c in _docker_calls(fakes) if "builder prune" in c] == [f"{SIZE_PRUNE} 15GB"]
+    assert any(line.startswith("경고: BUILD_CACHE_MAX") for line in result.stderr.splitlines())
+
+
+def test_deploy는_크기_상한_정리가_실패하면_나이_기준으로_물러나고_배포는_성공으로_끝난다(server, fakes):
+    """서버 dockerd가 --max-used-space를 받지 않는 판이어도(로컬 29.9.3의 도움말로만 확인) 정리가 통째로 빠지지 않습니다."""
+    result = _deploy(server, fakes, FAKE_DOCKER_FAIL="--max-used-space")
+
+    assert result.returncode == 0, result.stderr
+    assert "✓ 배포했습니다" in result.stdout
+    prunes = [c for c in _docker_calls(fakes) if "builder prune" in c]
+    assert prunes == [f"{SIZE_PRUNE} 15GB", AGE_PRUNE]
+    warned = [line for line in result.stderr.splitlines() if line.startswith("경고:")]
+    assert len(warned) == 1 and "나이 기준" in warned[0] and "--max-used-space 15GB" in warned[0], result.stderr
+
+
 def _dump_calls(calls: list[str]) -> list[int]:
     return [i for i, c in enumerate(calls) if c.startswith("compose exec -T postgres pg_dump")]
 
