@@ -89,7 +89,7 @@
 
 ## 적용 기록
 
-- 2026-11-27 07:2x KST `main@9075dbae` push, CI 6개 job 통과(구현 `8ac90d0a`·`794bc4f0`, 문서 `c2778468`, gitleaks 지문 `9075dbae`).
+- 2026-11-27 07:05 KST `main@9075dbae` push, CI 6개 job 통과(구현 `8ac90d0a`·`794bc4f0`, 문서 `c2778468`, gitleaks 지문 `9075dbae`).
 - 2026-11-27 07:28 KST Vultr 배포(`main@9075dbae` — 사용자 지시 "모두 지금 배포해", [ADR 0050](0050-claude-menu-no-close.md)과 함께). 실제 매매 창(평일 08:45~15:35 KST) 밖,
   스키마 변경 없음, 배포 전 덤프 `backups/pre-deploy-20261126-222754.sql`(서버). 배포 뒤 확인: 컨테이너 여섯 정상, 백엔드 오류 로그 0건, 설정 v30 그대로,
   설정 본문에 `reviewErrors`·`kr.reviewErrors` 키 없음(= 꺼짐 — 결정 입력은 바뀌지 않음), 설정 키 목록에 두 키가 보임.
