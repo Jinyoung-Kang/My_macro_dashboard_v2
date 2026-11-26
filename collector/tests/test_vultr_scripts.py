@@ -424,6 +424,23 @@ def test_QA369_deploy는_앞단_재생성이_실패하면_알리고_실패로_�
     assert not any("prune" in c for c in calls) and "배포했습니다" not in result.stdout
 
 
+# --------------------------------------------------------------------------- 배포 끝 정리(QA-1034)
+@pytest.mark.xfail(strict=True, reason="QA-1034: 정리 두 줄이 set -e 아래에 || 없이 있어, 정리가 실패하면 성공 문구 없이 0이 아닌 값으로 끝남")
+@pytest.mark.parametrize("fail", ["image prune", "builder prune"], ids=["매달린_이미지", "빌드_캐시"])
+def test_QA_1034_deploy는_끝_정리가_실패해도_배포를_실패로_끝내지_않고_경고만_찍는다(server, fakes, fail):
+    """
+    정리는 컨테이너가 새로 뜨고 스키마·앞단까지 끝난 뒤의 뒷일입니다. 그 명령이 실패했다고(디스크 IO 오류·dockerd가 받지 않는 옵션 등)
+    0이 아닌 값으로 끝나면 배포는 됐는데 실패로 보이고, 끝 요약(S3 백업 나이·재부팅 필요·버전 목록)도 빠집니다.
+    """
+    result = _deploy(server, fakes, FAKE_DOCKER_FAIL=fail)      # 그 정리 명령만 실패
+
+    assert result.returncode == 0, result.stderr
+    assert "✓ 배포했습니다" in result.stdout, "컨테이너는 이미 새로 떴습니다 — 성공 문구와 끝 요약이 그대로 나와야 합니다"
+    assert "마지막 S3 백업" in result.stdout and "  버전 목록: " in result.stdout
+    warned = [line for line in result.stderr.splitlines() if line.startswith("경고:") and "정리" in line]
+    assert len(warned) == 1, result.stderr
+
+
 def _dump_calls(calls: list[str]) -> list[int]:
     return [i for i, c in enumerate(calls) if c.startswith("compose exec -T postgres pg_dump")]
 
