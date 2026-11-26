@@ -277,7 +277,7 @@ class PaperIntradayJobTest {
     // ------------------------------------------------------------------ 창·한 번·판
     @Test
     @DisplayName("계좌1의 첫 판단: +2분 전에는 안 부르고 창 안에서 한 번 — 자유 시점 판 시스템 프롬프트(장중 판단 절, 투자 성향 절 없음)·장중 판단 스키마"
-            + "(시점 셋·atLocal·nextCheckpoint)·패킷(계좌·순번·종류 INTRADAY_1), 결정 행 INTRADAY_1(기준 거래일 d)·계획 행 DONE(결정·지연·부른 시각), "
+            + "(시점 둘·atLocal·nextCheckpoint)·패킷(계좌·순번·종류 INTRADAY_1), 결정 행 INTRADAY_1(기준 거래일 d)·계획 행 DONE(결정·지연·부른 시각), "
             + "다음 주기에 다시 부르지 않음. 패킷의 MINUTE 피드는 이 계획의 종목만(다른 계좌 계획의 ZZZ는 빠짐)")
     void callsOnceInTheWindowWithTheFreeTimingVariant() {
         PaperIntradayJob job = job(true);
@@ -288,7 +288,7 @@ class PaperIntradayJobTest {
         PaperIntradayJob.Outcome outcome = runAt(job, called);
 
         assertThat(sent).hasSize(1);
-        assertThat(sent.get(0)[0]).contains("## 장중 판단(고정)").contains(ClaudePrompts.CLAUDE2_PRIORITY).contains("AT_MINUTE")
+        assertThat(sent.get(0)[0]).contains("## 장중 판단(고정)").contains(ClaudePrompts.US_FT_PRIORITY).contains("AT_MINUTE")
                 .doesNotContain("## 장중 확인(고정)").doesNotContain("## 투자 성향").doesNotContain("AT_1000");
         JsonNode packet = MAPPER.readTree(sent.get(0)[1]);
         JsonNode basis = packet.get("1_basis");
@@ -304,7 +304,7 @@ class PaperIntradayJobTest {
         assertThat(basis.get("nextCheckpoint").get("replaces").isNull()).as("다음 순번의 남은 예약 없음").isTrue();
         assertThat(packet.get("3_request").get("trigger").isNull()).isTrue();
         assertThat(basis.get("asOfInstant").asString()).isEqualTo(called.toString());
-        assertThat(basis.get("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
+        assertThat(basis.get("remainingTimings").toString()).as("그날 종가는 받지 않음(ADR 0050)").isEqualTo("[\"MARKET\",\"AT_MINUTE\"]");
         assertThat(basis.get("atMinute").get("firstEt").asString()).as("10:02 + 60초 뒤의 다음 분").isEqualTo("10:04");
         assertThat(basis.get("atMinute").get("lastEt").asString()).isEqualTo("15:54");
         JsonNode nextOptions = basis.get("nextCheckpoint");
@@ -315,7 +315,8 @@ class PaperIntradayJobTest {
         assertThat(packet.get("5_feed").get("status").asString()).isEqualTo("OK");
         assertThat(packet.get("5_feed").get("tickers").propertyNames()).as("이 계획의 감시·기준 종목만").containsExactlyInAnyOrder("SPY", "AAA");
         assertThat(packet.get("0_instructions").get("lines").toString()).contains("장중 판단이다").contains("nextCheckpoint");
-        assertThat(packet.get("6_hardRules").get("lines").toString()).contains("MARKET·AT_MINUTE·NEXT_CLOSE").doesNotContain("AT_1000");
+        assertThat(packet.get("6_hardRules").get("lines").toString()).contains("MARKET·AT_MINUTE 가운데").doesNotContain("AT_1000")
+                .doesNotContain("NEXT_CLOSE");
         assertThat(sent.get(0)[2]).contains("\"nextCheckpoint\"").contains("AT_MINUTE").contains("atLocal").contains("KEEP")
                 .doesNotContain("AT_1000").doesNotContain("stance");
 
@@ -349,7 +350,7 @@ class PaperIntradayJobTest {
         ObjectNode trigger = MAPPER.createObjectNode().put("originalAt", "13:30");
         trigger.putArray("events").addObject().put("type", "INDEX_MOVE").put("ticker", "SPY").put("direction", "DOWN")
                 .put("changePct", -1.62);
-        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, E, 1, TEN, "HOURLY", List.of(), "오후 확인", "ft-2", false,
+        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, E, 1, TEN, "HOURLY", List.of(), "오후 확인", "ft-3", false,
                 morning1, null, IntradayPlan.ORIGIN_EVENT, trigger));
         plan(PaperBooks.CLAUDE, 2, LocalTime.of(14, 0), "HOURLY", List.of(), morning1, false);
 
@@ -691,9 +692,10 @@ class PaperIntradayJobTest {
 
     // ------------------------------------------------------------------ 응답
     @Test
-    @DisplayName("REPLACE: 기준 시각이 남은 대기 주문(11:30 지정 시각·종가)만 대신하고 지난 것(시가·09:45 지정 시각)은 남김. 새 주문은 장중 시장가·남은 지정 "
-            + "시각·그날 종가 — 지난 분(10:02)은 LATE_FOR_TIMING, 범위 밖(15:57)·시각 없음은 MALFORMED, 통과 주문은 AT_MINUTE + target_local 행(기준 거래일 d·만료 E)")
-    void replaceSupersedesOnlyOrdersAheadAndAcceptsTheThreeTimings() {
+    @DisplayName("REPLACE: 기준 시각이 남은 대기 주문(11:30 지정 시각·옛 판의 종가)만 대신하고 지난 것(시가·09:45 지정 시각)은 남김. 새 주문은 장중 시장가·남은 "
+            + "지정 시각(그날 종가는 판 ft-3부터 받지 않음 — ADR 0050) — 지난 분(10:02)은 LATE_FOR_TIMING, 범위 밖(15:57)·시각 없음은 MALFORMED, 받는 마지막 분은 15:54, "
+            + "통과 주문은 AT_MINUTE + target_local 행(기준 거래일 d·만료 E)")
+    void replaceSupersedesOnlyOrdersAheadAndAcceptsTheTwoTimings() {
         long open = pending(PaperBooks.CLAUDE, "AAA", PaperBooks.NEXT_OPEN, null);
         long early = pending(PaperBooks.CLAUDE, "AAA", PaperBooks.AT_MINUTE, LocalTime.of(9, 45));
         long later = pending(PaperBooks.CLAUDE, "BBB", PaperBooks.AT_MINUTE, LocalTime.of(11, 30));
@@ -701,7 +703,7 @@ class PaperIntradayJobTest {
         answer = ok(reply("REPLACE", null, order("BBB", "BUY", 3.0, null, "MARKET", null),
                 order("CCC", "BUY", 3.0, null, "AT_MINUTE", "13:15"), order("AAA", "BUY", 2.0, null, "AT_MINUTE", "10:02"),
                 order("DDD", "BUY", 2.0, null, "AT_MINUTE", "15:57"), order("EEE", "BUY", 2.0, null, "AT_MINUTE", null),
-                order("FFF", "BUY", 2.0, null, "NEXT_CLOSE", null)));
+                order("FFF", "BUY", 2.0, null, "AT_MINUTE", "15:54")));
 
         runAt(job(true), T.plus(Duration.ofMinutes(3)).plusSeconds(20));
 
@@ -721,7 +723,7 @@ class PaperIntradayJobTest {
         assertThat(made).extracting(o -> o.ticker() + " " + o.timing() + " " + o.targetLocal() + " " + o.status()
                 + (o.rejectReason() == null ? "" : " " + o.rejectReason())).containsExactlyInAnyOrder(
                 "BBB MARKET null PENDING", "CCC AT_MINUTE 13:15 PENDING", "AAA AT_MINUTE 10:02 REJECTED LATE_FOR_TIMING",
-                "DDD AT_MINUTE 15:57 REJECTED MALFORMED", "EEE AT_MINUTE null REJECTED MALFORMED", "FFF NEXT_CLOSE null PENDING");
+                "DDD AT_MINUTE 15:57 REJECTED MALFORMED", "EEE AT_MINUTE null REJECTED MALFORMED", "FFF AT_MINUTE 15:54 PENDING");
         assertThat(made.stream().filter(o -> PaperBooks.ORDER_PENDING.equals(o.status()))).allSatisfy(o -> {
             assertThat(o.asOfTradingDate()).isEqualTo(D);
             assertThat(o.expiresOn()).isEqualTo(E);
@@ -750,7 +752,7 @@ class PaperIntradayJobTest {
         assertThat(second.feed()).isEqualTo("HOURLY");
         assertThat(second.sourceDecisionId()).as("패킷이 읽는 결정은 그 세션의 결정 그대로").isEqualTo(morning1);
         assertThat(second.requestedByDecisionId()).isEqualTo(first.id());
-        assertThat(second.variant()).as("다음 판단 예약은 지금 켠 판의 판").isEqualTo(PacketBuilder.FREE_FIXED_RULES_VERSION).isEqualTo("ft-2");
+        assertThat(second.variant()).as("다음 판단 예약은 지금 켠 판의 판").isEqualTo(PacketBuilder.FREE_FIXED_RULES_VERSION).isEqualTo("ft-3");
         JsonNode view = first.response().path("intradayPlan");
         assertThat(view.path("planned").get(0).path("slot").asInt()).isEqualTo(2);
         assertThat(view.path("planned").get(0).path("atEt").asString()).isEqualTo("13:30");

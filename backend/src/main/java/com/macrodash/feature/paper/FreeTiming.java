@@ -30,9 +30,10 @@ import java.util.regex.Pattern;
  * {@code AT_MINUTE} + {@code target_local}로 되돌립니다({@link #timeOf}). 검증기의 계산과 끈 판의 표는 그대로입니다.
  *
  * <p>받는 범위는 정규장 안입니다 — 개장 {@link #AFTER_OPEN} 뒤부터 그 시장의 장 끝 여유({@link #tail}) 앞까지(사용자 결정 2026-11-06 '정규장 개장
- * 10분 뒤 ~ 마감 전', ADR 0031). 미국은 장중 시장가와 같은 마감 5분 전({@link UsTimedFills#MARKET_BEFORE_CLOSE} — 보통 날 09:40~15:54 ET), 한국은
- * 종가 단일가 시간 앞({@link KrTimedLadder#CLOSING_AUCTION} — 보통 날 09:10~15:19 KST)입니다. 개장 단일가(시가)와 개장 직후 10분은 받지 않습니다 —
- * 켠 판 메뉴에 시가({@code NEXT_OPEN})가 없습니다(판 ft-2·kr-ft-2). 조기 폐장·개장 시각 변경일은 그날의 개장·마감으로 셉니다(달력 — 수능일 10:10~16:19).
+ * 10분 뒤 ~ 마감 전', ADR 0031 · 2026-11-27 '연속 매매 끝 5분 전', ADR 0050). 미국은 장중 시장가와 같은 마감 5분 전({@link UsTimedFills#MARKET_BEFORE_CLOSE} —
+ * 보통 날 09:40~15:54 ET), 한국은 종가 단일가 시작({@link KrTimedLadder#CLOSING_AUCTION}) 5분 전({@link #KR_BEFORE_CLOSING_AUCTION} — 보통 날 09:10~15:14 KST)
+ * 앞까지입니다({@link #claudeWindow} — 규칙 계좌의 체결 시각은 공용 창 {@link #window}). 개장 단일가(시가)·종가 단일가(종가)와 개장 직후 10분은 받지 않습니다 —
+ * 켠 판 메뉴에 시가({@code NEXT_OPEN})·종가({@code NEXT_CLOSE})가 없습니다(판 ft-3·kr-ft-3). 조기 폐장·개장 시각 변경일은 그날의 개장·마감으로 셉니다(달력 — 수능일 10:10~16:14).
  * 장중 판단 응답의 장중 시장가({@code MARKET})도 기준 분이 그 세션 첫 분 앞이면 닫습니다({@link #validation}). 상태가 없는 계산입니다.
  */
 final class FreeTiming {
@@ -41,12 +42,19 @@ final class FreeTiming {
     }
 
     /**
-     * 자유 시점 판의 아침(한국은 밤) 결정이 받는 체결 시점, 이른 것부터 — 켠 판 응답 스키마의 {@code timing} enum과 같은 목록. 시가({@code NEXT_OPEN})는
-     * 받지 않습니다(판 ft-2·kr-ft-2 — 사용자 결정 2026-11-06). 그 전 판에서 만든 대기 시가 주문은 장부가 만든 그대로 체결합니다.
+     * 자유 시점 판의 정기 결정이 받는 체결 시점 — 켠 판 응답 스키마의 {@code timing} enum과 같은 목록. 분 단위 지정 시각 하나입니다 — 시가({@code NEXT_OPEN})는
+     * 판 ft-2·kr-ft-2부터(사용자 결정 2026-11-06, ADR 0031), 종가({@code NEXT_CLOSE})는 판 ft-3·kr-ft-3부터(사용자 결정 2026-11-27, ADR 0050) 받지 않습니다.
+     * 그 전 판에서 만든 대기 시가·종가 주문은 장부가 만든 그대로 체결합니다.
      */
-    static final List<String> DECISION_TIMINGS = List.of(PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
-    /** 자유 시점 판의 장중 판단 응답이 받는 체결 시점 — 장중 시장가 · 그날 남은 지정 시각 · 그날 종가. */
-    static final List<String> INTRADAY_TIMINGS = List.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE, PaperBooks.NEXT_CLOSE);
+    static final List<String> DECISION_TIMINGS = List.of(PaperBooks.AT_MINUTE);
+    /** 자유 시점 판의 장중 판단 응답이 받는 체결 시점 — 장중 시장가 · 그날 남은 지정 시각(그날 종가는 판 ft-3·kr-ft-3부터 받지 않음 — ADR 0050). */
+    static final List<String> INTRADAY_TIMINGS = List.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE);
+    /**
+     * Claude 계좌 지정 시각의 한국 끝 — 종가 단일가 시작(마감 − {@link SessionWindows#KR_CLOSING_AUCTION}) 이만큼 전부터는 받지 않습니다(사용자 결정 2026-11-27
+     * '연속 매매 끝 5분 전', ADR 0050 — 보통 날 마지막 분 15:14 KST). 미국은 공용 창의 끝(마감 5분 전) 그대로입니다. 규칙 계좌의 체결 시각·장중 스탑·장부 사다리는
+     * 공용 창({@link #window})을 씁니다.
+     */
+    static final Duration KR_BEFORE_CLOSING_AUCTION = Duration.ofMinutes(5);
 
     /** 응답의 시각 글자({@code atLocal}) — 그 시장 현지 시각 'HH:MM'(24시간). 응답 스키마의 pattern과 같은 식. */
     static final String CLOCK_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
@@ -108,9 +116,19 @@ final class FreeTiming {
         return keyed(timing) ? PaperBooks.AT_MINUTE : timing;
     }
 
-    /** 그 시장의 장 끝 여유 — 이 시간 안의 시각은 받지 않습니다(미국 마감 5분 전, 한국 종가 단일가 10분 — {@link SessionWindows#tail}). */
+    /**
+     * Claude 계좌 지정 시각의 장 끝 여유 — 이 시간 안의 시각은 받지 않습니다(미국 마감 5분 전 — {@link SessionWindows#tail}, 한국 종가 단일가 10분 +
+     * {@link #KR_BEFORE_CLOSING_AUCTION} = 마감 15분 전 — ADR 0050).
+     */
     static Duration tail(boolean korea) {
-        return SessionWindows.tail(korea);
+        return korea ? SessionWindows.KR_CLOSING_AUCTION.plus(KR_BEFORE_CLOSING_AUCTION) : SessionWindows.tail(false);
+    }
+
+    /** 보통 날 Claude 계좌 지정 시각의 범위 글 — 'HH:MM~HH:MM'(양 끝 포함 — 미국 09:40~15:54, 한국 09:10~15:14). 프롬프트·설정 글과 시험이 대조합니다. */
+    static String regularRange(boolean korea) {
+        // 공용 창의 보통 날 마지막 분(마감 − 공용 장 끝 여유 − 1분)에서 Claude 몫으로 더 당긴 만큼을 뺌.
+        LocalTime last = SessionWindows.regularLast(korea).minus(tail(korea).minus(SessionWindows.tail(korea)));
+        return label(SessionWindows.regularFirst(korea)) + "~" + label(last);
     }
 
     /**
@@ -131,8 +149,17 @@ final class FreeTiming {
         }
     }
 
+    /** 공용 장중 창(규칙 계좌의 체결 시각 — {@link SessionWindows#first}·{@link SessionWindows#end}). Claude 계좌의 지정 시각은 {@link #claudeWindow}입니다. */
     static Window window(LocalDate session, TradingCalendar calendar, boolean korea) {
         return new Window(SessionWindows.first(calendar, session), SessionWindows.end(calendar, session, korea));
+    }
+
+    /**
+     * Claude 계좌(자유 시점 판 — 정기 결정·장중 판단)의 지정 시각 창 — 공용 창과 시작이 같고 끝은 그날 마감 − {@link #tail}(미국 마감 5분 전, 한국 종가 단일가
+     * 시작 5분 전 — ADR 0050). 조기 폐장·장 시간 변경일은 그날 마감에서 같은 간격입니다(수능일 한국 10:10~16:14).
+     */
+    static Window claudeWindow(LocalDate session, TradingCalendar calendar, boolean korea) {
+        return new Window(SessionWindows.first(calendar, session), calendar.closeInstant(session).minus(tail(korea)));
     }
 
     /** 그 세션의 그 현지 시각의 순간. */
@@ -158,7 +185,7 @@ final class FreeTiming {
         if (!base.timings().contains(PaperBooks.AT_MINUTE)) {
             throw new IllegalArgumentException("자유 시점 판의 검증 표가 아닙니다(AT_MINUTE 없음): " + base.timings());
         }
-        Window window = window(session, calendar, korea);
+        Window window = claudeWindow(session, calendar, korea);
         String zone = korea ? " KST" : " ET";
         String day = korea ? (intraday ? "오늘 " : "다음 거래일 ") : (intraday ? "이 세션 " : "다음 세션 ");
         Map<String, Instant> targets = new LinkedHashMap<>();
@@ -217,7 +244,8 @@ final class FreeTiming {
         for (String timing : shut) {
             ranks.put(timing, rank + 1);
         }
-        String early = ordered.get(0);
+        // 정기 결정의 표는 지정 시각 하나라(ADR 0050), 응답의 시각이 모두 닫히면 받는 시점이 없음 — 그때는 닫힌 시점들이 같은 순위 0이고 그 첫째가 이른 시점.
+        String early = ordered.isEmpty() ? shut.get(0) : ordered.get(0);
         ordered.addAll(shut);
         return new OrderValidator.Market(ordered, early, names, base.money(), ranks, closed);
     }

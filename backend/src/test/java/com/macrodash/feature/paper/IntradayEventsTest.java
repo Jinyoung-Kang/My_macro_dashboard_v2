@@ -84,7 +84,7 @@ class IntradayEventsTest {
     }
 
     private static IntradayPlan row(int slot, LocalTime at, String status) {
-        IntradayPlan p = IntradayPlan.planned(PaperBooks.CLAUDE, MON, slot, at, "HOURLY", List.of(), "q", "ft-2", false, 1L, null);
+        IntradayPlan p = IntradayPlan.planned(PaperBooks.CLAUDE, MON, slot, at, "HOURLY", List.of(), "q", "ft-3", false, 1L, null);
         return new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(), p.question(), p.variant(),
                 p.manual(), p.sourceDecisionId(), null, null, status, null, null, null, null, null, p.origin(), null);
     }
@@ -316,9 +316,9 @@ class IntradayEventsTest {
         body().put(IntradayPolicy.US_EVENTS, true);
         ((ObjectNode) body().get("claude2")).put("freeTiming", false);
         store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 1, LocalTime.of(14, 0), "HOURLY", List.of(), "오후 확인",
-                "ft-2", false, source, null));
+                "ft-3", false, source, null));
         store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 2, LocalTime.of(15, 0), "HOURLY", List.of(), "마감 전",
-                "ft-2", false, source, null));
+                "ft-3", false, source, null));
         ObjectNode tickers = MAPPER.createObjectNode();
         usEntry(tickers, "SPY", 100.0, 100.0, 101.6);
         monitor = usSnapshot(et(10, 0, 20), tickers);
@@ -337,7 +337,7 @@ class IntradayEventsTest {
         store.intradayPlans.clear();
         scheduler = new IntradayScheduler(store, new PaperLedgerService(store, mock(PaperMarketData.class), MAPPER), MAPPER);
         store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 1, LocalTime.of(14, 0), "HOURLY", List.of(), "오후 확인",
-                "ft-2", false, source, null));
+                "ft-3", false, source, null));
         blocked = PaperCheckpointJob.CALL_CAP;
         Map<String, String> attached = events(et(10, 0, 40));
         assertThat(attached.get("claude 2026-11-09 #1")).startsWith("EVENT ATTACH 14:00 ET(당기지 않음 — CALL_CAP");
@@ -361,7 +361,7 @@ class IntradayEventsTest {
         body().put(FreeTimingSettings.US_INTRADAY_MAX, 1);
         ((ObjectNode) body().get("claude2")).put("freeTiming", false);
         long source = freeDecision(PaperBooks.CLAUDE);
-        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 1, LocalTime.of(9, 45), "HOURLY", List.of(), "q", "ft-2",
+        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 1, LocalTime.of(9, 45), "HOURLY", List.of(), "q", "ft-3",
                 false, source, null));
         store.markIntradayPlan(PaperBooks.CLAUDE, MON, 1, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, null, null, null);
         ObjectNode tickers = MAPPER.createObjectNode();

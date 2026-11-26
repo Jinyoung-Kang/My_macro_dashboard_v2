@@ -189,7 +189,7 @@ final class ExecutionSection {
 
     /**
      * {@link #build(LocalDate, List, TradingCalendar, double, boolean, PaperStore, String, boolean)}에 자유 시점 판(ADR 0027 결정 2)을 더한 것 —
-     * {@code free}가 참이면 메뉴가 분 단위 지정 시각·종가 둘이고(판 4 — 시가 없음, {@code AT_MINUTE} 줄은 받는 범위 개장 10분 뒤 ~), {@code atMinute}(그 세션의 받는 범위 —
+     * {@code free}가 참이면 메뉴가 분 단위 지정 시각 하나이고(판 5 — 시가·종가 없음, {@code AT_MINUTE} 줄은 받는 범위 개장 10분 뒤 ~), {@code atMinute}(그 세션의 받는 범위 —
      * 첫 분·마지막 분, ET·KST)와 {@code intraday}(장중 판단 선택지 — 세션당 횟수·그 세션의 받는 범위·간격·피드 뜻·감시 상한·최근 잰 지연·규칙)가
      * 더해지며 판은 {@value PacketBuilder#EXECUTION_MENU_VERSION_FREE}입니다. 거짓이면 그 전과 글자 그대로입니다.
      *
@@ -240,7 +240,7 @@ final class ExecutionSection {
 
         List<List<Object>> menu = new ArrayList<>();
         List<String> closed = new ArrayList<>();
-        FreeTiming.Window window = free ? FreeTiming.window(session, calendar, false) : null;
+        FreeTiming.Window window = free ? FreeTiming.claudeWindow(session, calendar, false) : null;
         for (String timing : timings) {
             if (free && PaperBooks.AT_MINUTE.equals(timing)) {
                 // 분 단위 지정 시각 — 시각 하나가 아니라 받는 범위(첫 분 ~ 마지막 분). 닫힘은 이름이 아니라 주문의 시각으로 정해집니다.

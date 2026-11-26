@@ -39,7 +39,7 @@ import java.util.Objects;
  * @param checkpoints    장중 확인 판인가(계좌2 단계 2 — 설정 {@value Claude2Settings#CHECKPOINTS}를 켠 결정, {@link #US_CLAUDE2_C2}): 응답 스키마에
  *                       {@code checkpoint} 칸, 고정 문단 c2-2, 패킷 {@code executionMenuVersion} 2·{@code 13_execution.checkpointOptions}. 그 밖은 거짓
  * @param freeTiming     자유 시점 판인가(ADR 0027 결정 2 — 그 계좌의 스위치 {@link FreeTimingSettings}를 켠 결정): 받는 시점은
- *                       {@link FreeTiming#DECISION_TIMINGS}(분 단위 지정 시각·종가 — 판 ft-2부터 시가 없음), 검증 표는 결정마다 주문의 시각으로 만들고
+ *                       {@link FreeTiming#DECISION_TIMINGS}(분 단위 지정 시각 — 판 ft-2부터 시가, ft-3부터 종가 없음), 검증 표는 결정마다 주문의 시각으로 만들고
  *                       ({@link FreeTiming#validation}), 주문 행은 {@code AT_MINUTE} + {@code target_local}. 그 밖은 거짓 — 끈 판의 프로필은
  *                       이 칸이 생기기 전과 같은 값이라 프롬프트·스키마·패킷·검증이 바이트까지 같습니다
  */
@@ -153,7 +153,7 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     /**
      * 자유 시점 판 계좌의 장중 판단 응답 프로필(ADR 0027 결정 3) — 장중 판단 작업({@link PaperIntradayJob}·한국 작업)이 받은 응답의 주문을 검증할 때
      * 씁니다(호출 자체는 그 계좌의 자유 시점 판 프로필의 시스템 프롬프트와 장중 판단 응답 스키마). 같은 계좌 코드·시장 묶음·고정 문단·패킷 변형·소상한
-     * 키·시각 지정 체결 여부이고, 받는 시점만 {@link FreeTiming#INTRADAY_TIMINGS}(장중 시장가 · 그날 남은 분 단위 지정 시각 · 그날 종가)입니다. 순위는
+     * 키·시각 지정 체결 여부이고, 받는 시점만 {@link FreeTiming#INTRADAY_TIMINGS}(장중 시장가 · 그날 남은 분 단위 지정 시각 — 판 ft-3부터 그날 종가 없음)입니다. 순위는
      * 결정마다 기준 시각 순으로 다시 만듭니다({@link FreeTiming#validation}).
      *
      * @throws IllegalArgumentException 자유 시점 판 프로필이 아님
@@ -162,11 +162,9 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
         if (!free.freeTiming()) {
             throw new IllegalArgumentException("자유 시점 판 프로필이 아닙니다: " + free.code());
         }
-        boolean korea = free.market() == KrPaperMarket.INSTANCE;
         Map<String, String> names = new LinkedHashMap<>();
         names.put(PaperBooks.MARKET, "장중 시장가");
         names.put(PaperBooks.AT_MINUTE, "지정 시각");
-        names.put(PaperBooks.NEXT_CLOSE, korea ? "오늘 종가" : OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
         return new ClaudeBookProfile(free.market(), free.code(), ClaudeDecisionPipeline.checkpointSchemaResource(free),
                 free.fixedRules(), free.packetVariant(), FreeTiming.INTRADAY_TIMINGS, sequence(FreeTiming.INTRADAY_TIMINGS),
                 free.callCapKey(), names, free.timed(), false, true);
@@ -224,21 +222,19 @@ record ClaudeBookProfile(PaperMarket market, String code, String schemaResource,
     }
 
     /**
-     * 미국 자유 시점 판 검증기 근거 문구의 시점 이름 — 종가는 계좌2와 같은 이름, 분 단위 지정 시각은 이름만('지정 시각' — 시각이 없는 주문의
-     * 거절 문구에 쓰임). 시각이 있는 주문의 이름('다음 세션 10:47 ET')은 결정마다 {@link FreeTiming#validation}이 만듭니다. 시가는 받지 않습니다(판 ft-2).
+     * 미국 자유 시점 판 검증기 근거 문구의 시점 이름 — 분 단위 지정 시각은 이름만('지정 시각' — 시각이 없는 주문의 거절 문구에 쓰임). 시각이 있는 주문의
+     * 이름('다음 세션 10:47 ET')은 결정마다 {@link FreeTiming#validation}이 만듭니다. 시가(판 ft-2부터)·종가(판 ft-3부터)는 받지 않습니다.
      */
     private static Map<String, String> usFreeTimingNames() {
         Map<String, String> out = new LinkedHashMap<>();
         out.put(PaperBooks.AT_MINUTE, "지정 시각");
-        out.put(PaperBooks.NEXT_CLOSE, OrderValidator.Market.US.timingNames().get(PaperBooks.NEXT_CLOSE));
         return out;
     }
 
-    /** 한국 자유 시점 판 검증기 근거 문구의 시점 이름 — 종가는 한국 계좌2와 같은 이름, 분 단위 지정 시각은 이름만(시각은 결정마다). 시가는 받지 않음(kr-ft-2). */
+    /** 한국 자유 시점 판 검증기 근거 문구의 시점 이름 — 분 단위 지정 시각은 이름만(시각은 결정마다). 시가(kr-ft-2부터)·종가(kr-ft-3부터)는 받지 않음. */
     private static Map<String, String> krFreeTimingNames() {
         Map<String, String> out = new LinkedHashMap<>();
         out.put(PaperBooks.AT_MINUTE, "지정 시각");
-        out.put(PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
         return out;
     }
 

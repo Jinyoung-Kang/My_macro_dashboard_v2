@@ -292,8 +292,8 @@ class FrameworkServiceTest {
     }
 
     @Test
-    @DisplayName("고정본: 한국 자유 시점 판 시스템 프롬프트(ADR 0027 결정 2·ADR 0031 — kr-ft-2) — 계좌1·계좌2 켠 판. 끈 판 한국 렌더링과 하드 규칙의 체결 시점 줄·"
-            + "우선순위 줄의 시점 읽는 법·timing 줄·체결할 수 없는 종목 매도 줄·체결 절만 다르고(시가 없음), 계좌2는 투자 성향 절이 더해짐. 끈 판 렌더링은 그대로")
+    @DisplayName("고정본: 한국 자유 시점 판 시스템 프롬프트(ADR 0027 결정 2·ADR 0031·0050 — kr-ft-3) — 계좌1·계좌2 켠 판. 끈 판 한국 렌더링과 하드 규칙의 체결 시점 줄·"
+            + "우선순위 줄의 시점 읽는 법·timing 줄·체결할 수 없는 종목 매도 줄·체결 절만 다르고(시가·종가 없음), 계좌2는 투자 성향 절이 더해짐. 끈 판 렌더링은 그대로")
     void goldenKrFreeTimingRender() {
         JsonNode body = FrameworkService.interimBody(MAPPER);
         String off = FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, body, 0, settings.defaultsJson());
@@ -303,10 +303,11 @@ class FrameworkServiceTest {
         Golden.assertMatches("render-kr-ft-claude-v0-default.txt", one);
         Golden.assertMatches("render-kr-ft-claude2-v0-default.txt", two);
 
-        assertThat(one).contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM)·"
-                + "NEXT_CLOSE(다음 거래일 종가), 정수 주").contains("## 체결(고정)").doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000")
+        assertThat(one).contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 시작 5분 전 앞 — atLocal에 한국 시간 "
+                + "HH:MM)뿐, 정수 주").contains("## 체결(고정)").doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000")
+                .doesNotContain("NEXT_CLOSE(").doesNotContain("NEXT_CLOSE는 정규장 마감")
                 .doesNotContain("NEXT_OPEN(").doesNotContain("NEXT_OPEN은 시가 단일가").doesNotContain("그 뒤 첫 시가에 체결된다")
-                .contains("보통 날 09:10~15:19 KST")
+                .contains("보통 날 09:10~15:14 KST")
                 .doesNotContain("## 장중 확인(고정)").doesNotContain("실시간").doesNotContain("## 투자 성향")
                 .contains("## 장중 판단(고정)").contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint");
         assertThat(one.indexOf("## 체결(고정)")).as("체결 절 → 장중 판단 절 → 출력 절").isLessThan(one.indexOf("## 장중 판단(고정)"));

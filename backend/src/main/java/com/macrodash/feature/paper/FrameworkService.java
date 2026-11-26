@@ -280,12 +280,11 @@ public class FrameworkService {
     }
 
     /**
-     * 한국 자유 시점 판 하드 규칙 줄의 시점 표기 — 시점(뜻). 분 단위 지정 시각은 받는 범위와 시각 칸까지 적습니다. 시가는 받지 않습니다(판 kr-ft-2 —
+     * 한국 자유 시점 판 하드 규칙 줄의 시점 표기 — 시점(뜻). 분 단위 지정 시각은 받는 범위와 시각 칸까지 적습니다. 시가·종가는 받지 않습니다(판 kr-ft-3 —
      * 받는 시점은 {@link FreeTiming#DECISION_TIMINGS}).
      */
     static final Map<String, String> KR_FT_TIMING_TEXT = Map.of(
-            PaperBooks.AT_MINUTE, "다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM",
-            PaperBooks.NEXT_CLOSE, "다음 거래일 종가");
+            PaperBooks.AT_MINUTE, "다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 시작 5분 전 앞 — atLocal에 한국 시간 HH:MM");
 
     /** 그 시장 묶음의 하드 규칙 줄로 렌더링(시장 단위 경로 — 주간 복기). */
     private static String render(PaperMarket market, String fixedRules, JsonNode body, int version,

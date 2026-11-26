@@ -76,7 +76,7 @@ class IntradaySchedulerTest {
     }
 
     private static IntradayPlan row(int slot, LocalTime at, String status) {
-        IntradayPlan p = IntradayPlan.planned(PaperBooks.CLAUDE, MON, slot, at, "HOURLY", List.of(), "q", "ft-2", false, 1L, null);
+        IntradayPlan p = IntradayPlan.planned(PaperBooks.CLAUDE, MON, slot, at, "HOURLY", List.of(), "q", "ft-3", false, 1L, null);
         return new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(), p.question(), p.variant(),
                 p.manual(), p.sourceDecisionId(), null, null, status, null, null, null, null, null, p.origin(), null);
     }
@@ -245,7 +245,7 @@ class IntradaySchedulerTest {
         blocked = null;
 
         store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, MON, 1, LocalTime.of(14, 30), "HOURLY", List.of(), "예약",
-                "ft-2", false, 1L, null));
+                "ft-3", false, 1L, null));
         assertThat(guarantee(now)).as("남은 예약").isEmpty();
         store.intradayPlans.clear();
         assertThat(guarantee(now)).containsOnlyKeys("claude 2026-11-09 #1");

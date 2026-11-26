@@ -211,7 +211,7 @@ class FreeTimingDecisionTest {
         set("claude2", "checkpoints", true);
         set("claude2", "freeTiming", true);
         answerJson(decision(buy("AAA", 5, "AT_MINUTE", "10:47"), buy("BBB", 5, "AT_MINUTE", null),
-                buy("CCC", 3, "AT_MINUTE", "15:55"), buy("SHY", 4, "NEXT_CLOSE", "10:00")));
+                buy("CCC", 3, "AT_MINUTE", "15:55"), buy("SHY", 4, "AT_MINUTE", "15:54")));
 
         Decision d = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.SCHEDULED, true, null,
                 null, true).decision();
@@ -256,10 +256,10 @@ class FreeTimingDecisionTest {
         assertThat(outside.targetLocal()).as("거절 행은 받은 시각 그대로").isEqualTo(LocalTime.of(15, 55));
         assertThat(outside.reason().path("validation").asString()).contains("09:40~15:54 ET");
 
-        Order close = orderOf(PaperBooks.CLAUDE2, "SHY");
-        assertThat(close.status()).isEqualTo(PaperBooks.ORDER_PENDING);
-        assertThat(close.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
-        assertThat(close.targetLocal()).as("다른 시점의 atLocal은 보지 않음").isNull();
+        Order last = orderOf(PaperBooks.CLAUDE2, "SHY");
+        assertThat(last.status()).as("받는 마지막 분 — 마감 5분 전 앞(ADR 0050에서도 미국 끝은 그대로)").isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(last.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+        assertThat(last.targetLocal()).isEqualTo(LocalTime.of(15, 54));
 
         JsonNode verdicts = d.response().path("validation");
         assertThat(verdicts.get(0).path("timing").asString()).isEqualTo("AT_MINUTE");
@@ -325,7 +325,7 @@ class FreeTimingDecisionTest {
         ((ObjectNode) store.settings.body()).put("continuity", true);
         String carried = "{\"schemaVersion\":2,\"stance\":\"NEUTRAL\",\"targetEquityExposurePct\":10,"
                 + "\"desiredEquityExposurePct\":40,\"exposurePlan\":\"10년물이 내려오면 두 번에 나눠 좁힌다\",\"exposureRationale\":\"r\","
-                + "\"summary\":\"이어받기 판단\",\"orders\":[" + buy("AAA", 5, "NEXT_CLOSE", null) + "],\"noTradeReason\":null,"
+                + "\"summary\":\"이어받기 판단\",\"orders\":[" + buy("AAA", 5, "AT_MINUTE", "10:47") + "],\"noTradeReason\":null,"
                 + "\"conditions\":[{\"metric\":\"us10y\",\"op\":\"BELOW\",\"level\":4.75,\"then\":\"노출 확대 검토\",\"ticker\":\"\"}],"
                 + "\"confidence\":0.6}";
         answerJson(carried);
@@ -348,14 +348,14 @@ class FreeTimingDecisionTest {
         assertThat(on[2]).contains("\"desiredEquityExposurePct\"").contains("\"exposurePlan\"").contains("\"conditions\"");
 
         // 그 칸이 빠진 응답(예전 판 모양)은 형식 오류 — 주문이 나가지 않는다.
-        answerJson(decision(buy("BBB", 5, "NEXT_CLOSE", null)));
+        answerJson(decision(buy("BBB", 5, "AT_MINUTE", "10:47")));
         Decision missing = service().decide(TUE, RuleBookService.SCHEDULED, true);
         assertThat(missing.status()).isEqualTo(ClaudeBookService.STATUS_FORMAT_ERROR);
         assertThat(missing.error()).contains("desiredEquityExposurePct");
 
         // 끄면 다음 결정부터 예전 판 — 시스템 프롬프트·스키마가 고정본 그대로.
         ((ObjectNode) store.settings.body()).put("continuity", false);
-        answerJson(decision(buy("CCC", 3, "NEXT_CLOSE", null)));
+        answerJson(decision(buy("CCC", 3, "AT_MINUTE", "10:47")));
         Decision off = service().decide(TUE, RuleBookService.MANUAL, true);
         assertThat(off.error()).isNull();
         String[] plain = sent();
@@ -364,14 +364,13 @@ class FreeTimingDecisionTest {
     }
 
     @Test
-    @DisplayName("계좌1: claude.freeTiming을 켠 정기 결정은 켠 판(계좌2와 같은 스키마·고정 문단, 투자 성향 절 없음) — 종가·지정 시각 주문이 다음 세션 하루짜리, "
-            + "받는 가장 이른 분은 개장 10분 뒤(09:40 ET — 09:39는 MALFORMED). 끈 판 응답 시점(NEXT_OBSERVATION)과 시가(NEXT_OPEN — 판 ft-2부터)는 켠 판 스키마가 "
-            + "받지 않음. 기존 장중 확인(종류 CHECKPOINT)은 스위치가 켜져 있어도 끈 판 파이프라인")
+    @DisplayName("계좌1: claude.freeTiming을 켠 정기 결정은 켠 판(계좌2와 같은 스키마·고정 문단, 투자 성향 절 없음) — 지정 시각 주문이 다음 세션 하루짜리, "
+            + "받는 가장 이른 분은 개장 10분 뒤(09:40 ET — 09:39는 MALFORMED). 끈 판 응답 시점(NEXT_OBSERVATION)·시가(NEXT_OPEN — 판 ft-2부터)·종가(NEXT_CLOSE — "
+            + "판 ft-3부터, ADR 0050)는 켠 판 스키마가 받지 않음. 기존 장중 확인(종류 CHECKPOINT)은 스위치가 켜져 있어도 끈 판 파이프라인")
     void claude1SwitchSelectsTheVariantButNotForTheOldCheckpoint() {
         active(PaperBooks.CLAUDE);
         ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
-        answerJson(decision(buy("AAA", 5, "NEXT_CLOSE", null), buy("BBB", 5, "AT_MINUTE", "09:40"),
-                buy("CCC", 3, "AT_MINUTE", "09:39")));
+        answerJson(decision(buy("BBB", 5, "AT_MINUTE", "09:40"), buy("CCC", 3, "AT_MINUTE", "09:39")));
 
         Decision d = service().decide(MON, RuleBookService.SCHEDULED, true);
 
@@ -382,20 +381,17 @@ class FreeTimingDecisionTest {
         Golden.assertMatches("decision-schema-forapi-us-ft.json", on[2]);
         assertThat(on[0]).doesNotContain("## 투자 성향").doesNotContain("timing은 NEXT_OBSERVATION");
         verify(packets, never()).build(any(), anyString(), anyBoolean(), any(), any());
-        Order close = orderOf(PaperBooks.CLAUDE, "AAA");
-        assertThat(close.status()).isEqualTo(PaperBooks.ORDER_PENDING);
-        assertThat(close.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
-        assertThat(close.expiresOn()).as("시각 지정 방식 — 다음 세션 하루짜리").isEqualTo(TUE);
         Order first = orderOf(PaperBooks.CLAUDE, "BBB");
         assertThat(first.targetLocal()).as("받는 가장 이른 분 — 개장 10분 뒤").isEqualTo(LocalTime.of(9, 40));
         assertThat(first.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        assertThat(first.expiresOn()).as("시각 지정 방식 — 다음 세션 하루짜리").isEqualTo(TUE);
         Order early = orderOf(PaperBooks.CLAUDE, "CCC");
         assertThat(early.status()).isEqualTo("REJECTED");
         assertThat(early.rejectReason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
         assertThat(early.reason().path("validation").asString()).contains("09:39").contains("09:40~15:54 ET");
 
-        // 끈 판의 시점 글자와 시가(판 ft-2부터)는 켠 판 스키마(enum 둘)가 받지 않음 — 형식 오류로 남고 주문 행은 없음.
-        for (String refused : List.of("NEXT_OBSERVATION", "NEXT_OPEN")) {
+        // 끈 판의 시점 글자·시가(판 ft-2부터)·종가(판 ft-3부터 — ADR 0050)는 켠 판 스키마(enum 하나)가 받지 않음 — 형식 오류로 남고 주문 행은 없음.
+        for (String refused : List.of("NEXT_OBSERVATION", "NEXT_OPEN", "NEXT_CLOSE")) {
             store.decisions.clear();
             store.orders.clear();
             answerJson(decision(buy("AAA", 5, refused, null)));
@@ -417,7 +413,7 @@ class FreeTimingDecisionTest {
     }
 
     @Test
-    @DisplayName("장중 판단 예약(계좌2): 켠 판 결정의 checkpoints가 시각 순으로 순번 1·2의 PLANNED 행(판 ft-2·그 결정)이 됨. 같은 세션의 뒤 결정(수동)이 "
+    @DisplayName("장중 판단 예약(계좌2): 켠 판 결정의 checkpoints가 시각 순으로 순번 1·2의 PLANNED 행(판 ft-3·그 결정)이 됨. 같은 세션의 뒤 결정(수동)이 "
             + "예약을 줄이면 첫 순번은 새 값으로 바뀌고 남은 순번은 SUPERSEDED, 규칙에 맞지 않는 항목만 버려지고 주문 판정은 그대로")
     void checkpointsBecomePlanRowsAndALaterDecisionReplacesThem() {
         active(PaperBooks.CLAUDE2);
@@ -433,7 +429,7 @@ class FreeTimingDecisionTest {
         List<com.macrodash.store.PaperStore.IntradayPlan> plans = store.intradayPlans(PaperBooks.CLAUDE2, TUE);
         assertThat(plans).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " " + p.watch() + " " + p.status() + " "
                 + p.variant() + " " + p.manual()).as("시각 순으로 순번")
-                .containsExactly("1 10:15 MINUTE [AAA, SHY] PLANNED ft-2 false", "2 13:30 HOURLY [] PLANNED ft-2 false");
+                .containsExactly("1 10:15 MINUTE [AAA, SHY] PLANNED ft-3 false", "2 13:30 HOURLY [] PLANNED ft-3 false");
         assertThat(plans).allSatisfy(p -> {
             assertThat(p.sourceDecisionId()).isEqualTo(d.id());
             assertThat(p.requestedByDecisionId()).as("아침 결정이 예약").isNull();
@@ -453,7 +449,7 @@ class FreeTimingDecisionTest {
 
         // 같은 세션을 대신하는 수동 결정 — 하나는 유니버스 밖 감시 종목이라 버리고 하나만 받음.
         answerJson(decisionWith("[" + checkpoint("11:00", "MINUTE", "[\"ZZZ\"]", "없는 종목") + ","
-                + checkpoint("14:00", "HOURLY", "[]", "늦은 확인") + "]", buy("BBB", 5, "NEXT_CLOSE", null)));
+                + checkpoint("14:00", "HOURLY", "[]", "늦은 확인") + "]", buy("BBB", 5, "AT_MINUTE", "15:00")));
         Decision manual = service().decideClaude2(MarketRun.of(UsPaperMarket.INSTANCE, store), MON, RuleBookService.MANUAL, true, null,
                 null, false).decision();
 
@@ -552,13 +548,13 @@ class FreeTimingDecisionTest {
             + "바이트까지 같다. 끈 판 장중 확인 글(render-us-claude2-c2·render-kr-claude2)은 옛 글 그대로(알려진 차이 — 바이트 그대로)")
     void onlyTheMarketSentenceChanged() {
         java.util.Map<String, String[]> goldens = new java.util.LinkedHashMap<>();
-        goldens.put("render-us-ft-claude-v0-default.txt", new String[]{"us", "c27cff9379b80d2227148c2780721a42984a5a767177488e00ad35fe475438a8"});
-        goldens.put("render-us-ft-claude2-v0-default.txt", new String[]{"us", "38afee5a7863f50fdfc5f8e02558192f2ebc47503a37ab7eb47962b6a8c6ca10"});
-        goldens.put("render-us-ft-claude-v0-continuity.txt", new String[]{"us", "c5d73d37ee231b3a94b75c54d979ed40a4443e3b56d76a58f23e77aaf02e7aec"});
-        goldens.put("render-kr-ft-claude-v0-default.txt", new String[]{"kr", "ffee6010765e8854366db02417e31fa30e2f5145924d5bea58869f7dca50a2c9"});
-        goldens.put("render-kr-ft-claude2-v0-default.txt", new String[]{"kr", "cd414a29af390e975933da124d983363dfe615ddc2da9daff7aa9f6f495641dd"});
-        goldens.put("render-kr-ft-claude-v0-stopwatch.txt", new String[]{"kr", "ce7266001d979bd0b4dd1e041da2a818a7a6df1af8be878d871f9360ccf87c64"});
-        goldens.put("render-kr-ft-claude2-v0-continuity.txt", new String[]{"kr", "322a9da2e4861ef199dd2631da43c292d8eb308bdd4feeddd5cb5d4b4800a11e"});
+        goldens.put("render-us-ft-claude-v0-default.txt", new String[]{"us", "80cc082140fe83e02706d68adafc08bb5522cbc298843ebf987471b26204aaaa"});
+        goldens.put("render-us-ft-claude2-v0-default.txt", new String[]{"us", "a73df66362922f18ca92cd47bdbf35b08851f448b6547b58b7d2d012fc6eb578"});
+        goldens.put("render-us-ft-claude-v0-continuity.txt", new String[]{"us", "ebb4d5939e782c4ad3516dd1df1b8be4e445d01d07f1056f2fec0d3aa052a0cb"});
+        goldens.put("render-kr-ft-claude-v0-default.txt", new String[]{"kr", "dbb13933d5a98f352a1466f25b5fc3883cc30b76871965fbd73a201902d8c6df"});
+        goldens.put("render-kr-ft-claude2-v0-default.txt", new String[]{"kr", "1a3ed0c383c94c9e0aae444804c10b3f0087a6bb1d8a784a9e48339e59a0330b"});
+        goldens.put("render-kr-ft-claude-v0-stopwatch.txt", new String[]{"kr", "fef48ebd1c782da7357f9a2855a8edc66708b17f6e5c21e5a6bb7b7cc3b84cf2"});
+        goldens.put("render-kr-ft-claude2-v0-continuity.txt", new String[]{"kr", "ddee9b6b0d74825776ddc4f4b5cc9b0ecd15c254b39c32e05f3a18092f412bd1"});
         for (java.util.Map.Entry<String, String[]> golden : goldens.entrySet()) {
             String now = new String(Golden.resourceBytes("paper/golden/" + golden.getKey()), StandardCharsets.UTF_8);
             boolean us = "us".equals(golden.getValue()[0]);

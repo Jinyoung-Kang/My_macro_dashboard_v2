@@ -1072,9 +1072,9 @@ class KrPacketBuilderTest {
     }
 
     @Test
-    @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031): 한국 계좌1 켠 판의 정기 패킷 — 끈 판 패킷과 0_instructions의 시점 줄·체결가 낱말, 1_basis의 세 칸"
-            + "(variant·fixedRules kr-ft-2·atMinute 범위 09:10~15:19), 12_hardRules의 매도 자리 줄·체결할 수 없는 종목 줄·시가 줄(빠짐)·지정 시각 체결 줄·받는 시점"
-            + "(AT_MINUTE·NEXT_CLOSE — 시가 없음)만 다르고 그 밖은 바이트 그대로. 계좌2 켠 판은 기존 장중 확인 문장이 없음. 끈 판 패킷은 그대로")
+    @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031·0050): 한국 계좌1 켠 판의 정기 패킷 — 끈 판 패킷과 0_instructions의 시점 줄·체결가 낱말, 1_basis의 세 칸"
+            + "(variant·fixedRules kr-ft-3·atMinute 범위 09:10~15:14), 12_hardRules의 매도 자리 줄·체결할 수 없는 종목 줄·시가 줄(빠짐)·지정 시각 체결 줄·받는 시점"
+            + "(AT_MINUTE 하나 — 시가·종가 없음)만 다르고 그 밖은 바이트 그대로. 계좌2 켠 판은 기존 장중 확인 문장이 없음. 끈 판 패킷은 그대로")
     void goldenKrFreeTimingPacket() {
         Packet off = scheduled();
         Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
@@ -1085,9 +1085,9 @@ class KrPacketBuilderTest {
 
         JsonNode basis = on.body().get(PacketBuilder.BASIS);
         assertThat(basis.get("variant").asString()).isEqualTo("freeTiming");
-        assertThat(basis.get("fixedRules").asString()).isEqualTo("kr-ft-2");
+        assertThat(basis.get("fixedRules").asString()).isEqualTo("kr-ft-3");
         assertThat(basis.get("atMinute").get("firstKst").asString()).isEqualTo("09:10");
-        assertThat(basis.get("atMinute").get("lastKst").asString()).isEqualTo("15:19");
+        assertThat(basis.get("atMinute").get("lastKst").asString()).as("종가 단일가 시작 5분 전 앞(ADR 0050)").isEqualTo("15:14");
         assertThat(basis.get("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE);
         List<String> instructions = new ArrayList<>();
         on.body().get(PacketBuilder.INSTRUCTIONS).get("lines").forEach(line -> instructions.add(line.asString()));
@@ -1097,15 +1097,15 @@ class KrPacketBuilderTest {
         on.body().get(PacketBuilder.HARD_RULES).get("lines").forEach(line -> rules.add(line.asString()));
         assertThat(rules).contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE, KrPacketBuilder.KR_FT_TIMED_FILL_LINE);
         assertThat(rules).as("켠 판은 시가 주문을 받지 않아 시가 체결 문장이 없음").noneMatch(line -> line.contains("주문은 기준 거래일 뒤 첫 관측 봉"));
-        assertThat(rules).anyMatch(line -> line.contains("만료 전에 풀리면 장부가 그 주문의 시점(지정 시각·종가)으로 체결한다."))
+        assertThat(rules).anyMatch(line -> line.contains("만료 전에 풀리면 장부가 그 주문의 지정 시각으로 체결한다."))
                 .noneMatch(line -> line.contains("그 뒤 첫 시가에 체결된다"));
         List<String> timings = new ArrayList<>();
         on.body().get(PacketBuilder.HARD_RULES).get("timings").forEach(t -> timings.add(t.asString()));
-        assertThat(timings).containsExactly("AT_MINUTE", "NEXT_CLOSE");
+        assertThat(timings).containsExactly("AT_MINUTE");
         assertThat(on.text()).doesNotContain("AT_1000").doesNotContain("NEXT_OPEN뿐").doesNotContain("실시간");
         assertThat(MAPPER.writeValueAsString(on.body().get(PacketBuilder.INSTRUCTIONS)) + basis.get("atMinute").toString()
                 + MAPPER.writeValueAsString(KrPacketBuilder.KR_FT_ALLOCATION_LINE + KrPacketBuilder.KR_FT_TIMED_FILL_LINE))
-                .as("켠 판의 지시·범위·체결 문장에 시가 시점이 없음").doesNotContain("NEXT_OPEN");
+                .as("켠 판의 지시·범위·체결 문장에 시가·종가 시점이 없음").doesNotContain("NEXT_OPEN").doesNotContain("NEXT_CLOSE");
         assertThat(rules.stream().filter(line -> line.contains("트레일링 스탑"))).as("스탑 문장은 따로(장중 스탑 묶음 몫)").hasSize(1);
 
         // 다른 곳만 걷어 내면 끈 판 패킷과 같음.
@@ -1423,7 +1423,7 @@ class KrPacketBuilderTest {
         assertThat(now.split(java.util.regex.Pattern.quote(fresh), -1)).as("새 구절 두 번(하드 규칙·1_basis)").hasSize(3);
         assertThat(now).doesNotContain("감지 + 60초 뒤 첫 분");
         assertThat(Golden.sha256(now.replace(fresh, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다")))
-                .isEqualTo("0c9426e644e8bc4e8804b25539daeb72f49d5c778385b9381405ae17aa2c47c2");
+                .isEqualTo("8ee9cfc5da0d91a5d446a37692d2755b0bcdc01999176feed90e45f7078457d3");
     }
 
     @Test

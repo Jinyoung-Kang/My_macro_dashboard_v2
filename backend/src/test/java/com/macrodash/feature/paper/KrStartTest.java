@@ -516,8 +516,8 @@ class KrStartTest {
 
         fake.answer(KrClaudeFixtures.decision(10, null, KrClaudeFixtures.freeOrder("005930", "BUY", 10.0, null, PaperBooks.AT_MINUTE, "10:47")))
                 .answer(KrClaudeFixtures.decision(10, null,
-                        KrClaudeFixtures.freeOrder("005930", "BUY", 10.0, null, PaperBooks.AT_MINUTE, "15:20"),
-                        KrClaudeFixtures.freeOrder("000660", "BUY", 5.0, null, PaperBooks.NEXT_CLOSE, null)));
+                        KrClaudeFixtures.freeOrder("005930", "BUY", 10.0, null, PaperBooks.AT_MINUTE, "15:15"),
+                        KrClaudeFixtures.freeOrder("000660", "BUY", 5.0, null, PaperBooks.AT_MINUTE, "15:14")));
         sessionData(NEXT, S, everyCodeOn(NEXT));
         PaperDecisionJob.Result next = runAt("2026-12-01T22:30");
 
@@ -526,11 +526,11 @@ class KrStartTest {
         for (int i : new int[]{1, 2}) {
             KrClaudeFixtures.Request request = fake.requests.get(i);
             assertThat(request.system()).as("켠 판 시스템 프롬프트 " + i).contains(ClaudePrompts.KR_FT_TIMING_LINES)
-                    .contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 앞 — atLocal에 한국 시간 HH:MM)·"
-                            + "NEXT_CLOSE(다음 거래일 종가)")
+                    .contains("- 체결 시점은 AT_MINUTE(다음 거래일의 지정한 분, 개장 10분 뒤 ~ 종가 단일가 시작 5분 전 앞 — atLocal에 한국 시간 "
+                            + "HH:MM)뿐")
                     .doesNotContain("NEXT_OPEN뿐").doesNotContain("AT_1000").doesNotContain("## 장중 확인(고정)");
             assertThat(request.user()).as("켠 판 패킷 문장 " + i).contains(KrPacketBuilder.KR_FT_TIMING_LINE)
-                    .contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE).contains("\"variant\":\"freeTiming\"").contains("\"lastKst\":\"15:19\"");
+                    .contains(KrPacketBuilder.KR_FT_ALLOCATION_LINE).contains("\"variant\":\"freeTiming\"").contains("\"lastKst\":\"15:14\"");
             assertThat(request.schema().toString()).as("켠 판 스키마 " + i).contains("atLocal").contains("AT_MINUTE").contains("checkpoints=")
                     .doesNotContain("AT_1000").as("끈 판의 요청 칸(checkpoint — 단수·atKst)은 없음").doesNotContain("checkpoint=")
                     .doesNotContain("atKst");
@@ -554,9 +554,10 @@ class KrStartTest {
         java.util.List<com.macrodash.store.PaperStore.Order> second = store.ordersOf(PaperBooks.KR_CLAUDE2).stream()
                 .filter(o -> java.util.Objects.equals(o.decisionId(), two.id())).toList();
         assertThat(second).extracting(o -> o.ticker() + " " + o.timing() + " " + o.status() + " " + o.targetLocal())
-                .containsExactly("005930 AT_MINUTE REJECTED 15:20", "000660 NEXT_CLOSE PENDING null");
+                .as("Claude 계좌의 지정 시각은 15:14까지(ADR 0050 — 종가 단일가 시작 5분 전 앞)")
+                .containsExactly("005930 AT_MINUTE REJECTED 15:15", "000660 AT_MINUTE PENDING 15:14");
         assertThat(second.get(0).rejectReason()).isEqualTo(com.macrodash.analytics.OrderValidator.MALFORMED);
-        assertThat(second.get(0).reason().path("validation").asString()).contains("09:10~15:19 KST");
+        assertThat(second.get(0).reason().path("validation").asString()).contains("09:10~15:14 KST");
         assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, LocalDate.of(2026, 12, 2))).as("켠 판은 기존 장중 확인 계획 행을 쓰지 않음").isEmpty();
     }
 
@@ -952,7 +953,7 @@ class KrStartTest {
                     .put("v", 900);
             tools.jackson.databind.node.ObjectNode windows = t.putObject("windows");
             windows.putArray("09:00").addObject().put("label", "09:01").put("open", 70_100).put("volume", 300);
-            // 켠 판(kr-ft-2)의 가장 이른 지정 시각 09:10 창 — 시가가 없는 판의 '이미 지난 주문'은 이 창 가격으로 어림.
+            // 켠 판(kr-ft-2부터)의 가장 이른 지정 시각 09:10 창 — 시가가 없는 판의 '이미 지난 주문'은 이 창 가격으로 어림.
             windows.putArray("09:10").addObject().put("label", "09:11").put("open", 70_100).put("volume", 300);
             t.putObject("firstAfter");
             t.putObject("lastBar").put("label", label).put("c", 70_550).put("v", 900);
@@ -1070,7 +1071,7 @@ class KrStartTest {
         Decision night = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED).orElseThrow();
         assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.feed() + " "
                 + p.watch() + " " + p.status() + " " + p.variant()).as("시각 순으로 순번 — 한국은 늘 감시 1분봉")
-                .containsExactly("1 09:10 MINUTE [005930] PLANNED kr-ft-2", "2 13:00 MINUTE [000660] PLANNED kr-ft-2");
+                .containsExactly("1 09:10 MINUTE [005930] PLANNED kr-ft-3", "2 13:00 MINUTE [000660] PLANNED kr-ft-3");
         assertThat(night.response().path("intradayPlan").path("planned").get(0).path("atKst").asString()).isEqualTo("09:10");
         assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E)).as("계좌2는 예약하지 않음").isEmpty();
         assertThat(store.checkpoint(PaperBooks.KR_CLAUDE2, E)).as("끈 판의 장중 확인 표는 쓰지 않음").isEmpty();
@@ -1114,9 +1115,9 @@ class KrStartTest {
         assertThat(basis.path("fixedRules").asString()).isEqualTo(KrPacketBuilder.KR_FREE_FIXED_RULES_VERSION);
         assertThat(basis.path("slot").asInt()).isEqualTo(1);
         assertThat(basis.path("sourceDecisionId").asLong()).isEqualTo(night.id());
-        assertThat(basis.path("remainingTimings").toString()).isEqualTo("[\"MARKET\",\"AT_MINUTE\",\"NEXT_CLOSE\"]");
+        assertThat(basis.path("remainingTimings").toString()).as("그날 종가는 받지 않음(ADR 0050)").isEqualTo("[\"MARKET\",\"AT_MINUTE\"]");
         assertThat(basis.path("atMinute").path("firstKst").asString()).as("09:14 + 60초 뒤의 다음 분").isEqualTo("09:16");
-        assertThat(basis.path("atMinute").path("lastKst").asString()).isEqualTo("15:19");
+        assertThat(basis.path("atMinute").path("lastKst").asString()).as("종가 단일가 시작 5분 전 앞").isEqualTo("15:14");
         assertThat(basis.path("nextCheckpoint").path("available").asBoolean()).isTrue();
         assertThat(basis.path("nextCheckpoint").path("firstKst").asString()).as("09:10 + 20분").isEqualTo("09:30");
         assertThat(basis.path("nextCheckpoint").path("lastKst").asString()).isEqualTo("14:50");
@@ -1604,7 +1605,7 @@ class KrStartTest {
         assertThat(now).doesNotContain("생성 + 60초가 지난 첫 분").doesNotContain("감지 + 60초 뒤 첫 분");
         String before = now.replace(market, "MARKET은 응답 뒤 생성 + 60초가 지난 첫 분의 1분봉 시가(그 분이 마감 10분 전 이후면 거절)")
                 .replace(stop, "감지 + 60초 뒤 첫 분의 1분봉 시가로 전량 매도한다");
-        assertThat(com.macrodash.Golden.sha256(before)).isEqualTo("6ee31d655da6f3ee2504246f765382b4f6bbdae974acc1dcd2e5368d7e9895c2");
+        assertThat(com.macrodash.Golden.sha256(before)).isEqualTo("63be40bad10447b1a78158be42e186411ab7e5a9ed253ffb158cf631e4d2b5ef");
     }
 
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */

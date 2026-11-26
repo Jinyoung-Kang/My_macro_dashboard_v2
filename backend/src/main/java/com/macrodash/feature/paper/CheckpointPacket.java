@@ -52,7 +52,7 @@ import java.util.Set;
  * <p>입력({@link Inputs})을 받아 조립만 합니다 — 저장소·저장본을 읽지 않아 같은 입력이면 같은 글자입니다(고정본 시험).
  *
  * <p><b>자유 시점 판의 장중 판단</b>(ADR 0027 결정 3 — {@link Free}가 있을 때): 같은 섹션·같은 자료에 그 계좌(계좌1·계좌2)와 순번을 적고, 남은 시점은
- * 장중 시장가·그날 남은 분 단위 지정 시각({@code 1_basis.atMinute} 범위)·그날 종가, 다음 판단을 예약할 수 있는지({@code 1_basis.nextCheckpoint}),
+ * 장중 시장가·그날 남은 분 단위 지정 시각({@code 1_basis.atMinute} 범위 — 그날 종가는 판 ft-3부터 받지 않음, ADR 0050), 다음 판단을 예약할 수 있는지({@code 1_basis.nextCheckpoint}),
  * 지시문·하드 규칙 문장은 그 판의 것입니다. 응답 스키마는 {@value #FREE_SCHEMA_RESOURCE}. MINUTE 피드는 그 계획의 종목(감시 목록·보유·대기·기준
  * 종목)만 싣습니다 — 감시 저장본 한 장이 다른 계좌 계획의 종목도 싣기 때문입니다. {@link Free}가 없으면 끈 판 장중 확인 글자 그대로입니다.
  */
@@ -377,7 +377,7 @@ final class CheckpointPacket {
         return out;
     }
 
-    /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각·종가)·다음 판단 예약을 적습니다. */
+    /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각)·다음 판단 예약을 적습니다. */
     private static Map<String, Object> freeInstructions() {
         List<String> lines = List.of(
                 "장중 판단이다 — 이 세션의 결정(1_basis.sourceDecisionId)이나 앞선 장중 판단이 예약한 시각, 또는 코드 규칙(보장·사건)·운영자가 정한 "
@@ -480,13 +480,13 @@ final class CheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 분 단위 지정 시각의 범위 {@code [첫 분, 마지막 분]} — 검증({@link FreeTiming#validation})과 같은
-     * 규칙: 그 세션의 받는 범위({@link FreeTiming#window}) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
+     * 규칙: 그 세션의 받는 범위({@link FreeTiming#claudeWindow}) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
      */
     static Instant[] freeMinutes(LocalDate session, TradingCalendar calendar, Instant now) {
         if (!calendar.isTradingDay(session)) {
             return null;
         }
-        FreeTiming.Window window = FreeTiming.window(session, calendar, false);
+        FreeTiming.Window window = FreeTiming.claudeWindow(session, calendar, false);
         // 지금 + 60초보다 '뒤'인 첫 분 — (지금 + 60초)를 분으로 내린 뒤 + 1분(검증의 늦은 주문 가드 ⑤와 같은 경계).
         Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
@@ -497,8 +497,8 @@ final class CheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가는 끈 판과 같은 규칙
-     * ({@link UsTimedFills#closedTimings})에 더해 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#window}) 이상일 때(검증
-     * {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}), 그날 종가는 마감 전일 때.
+     * ({@link UsTimedFills#closedTimings})에 더해 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#claudeWindow}) 이상일 때(검증
+     * {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}). 그날 종가는 받지 않습니다(판 ft-3 — ADR 0050).
      */
     static List<String> freeRemainingTimings(LocalDate session, TradingCalendar calendar, Instant now) {
         List<String> out = new ArrayList<>();
@@ -508,14 +508,10 @@ final class CheckpointPacket {
         for (String timing : FreeTiming.INTRADAY_TIMINGS) {
             if (PaperBooks.MARKET.equals(timing)) {
                 if (UsTimedFills.closedTimings(List.of(timing), calendar.previousTradingDay(session), now, calendar).isEmpty()
-                        && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.window(session, calendar, false).first())) {
+                        && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.claudeWindow(session, calendar, false).first())) {
                     out.add(timing);
                 }
-            } else if (PaperBooks.AT_MINUTE.equals(timing)) {
-                if (freeMinutes(session, calendar, now) != null) {
-                    out.add(timing);
-                }
-            } else if (calendar.closeInstant(session).isAfter(now.plus(ExecutionAudit.AFTER_CREATED))) {
+            } else if (PaperBooks.AT_MINUTE.equals(timing) && freeMinutes(session, calendar, now) != null) {
                 out.add(timing);
             }
         }
@@ -883,8 +879,8 @@ final class CheckpointPacket {
                 "주문 timing은 " + String.join("·", FreeTiming.INTRADAY_TIMINGS) + " 가운데 아직 고를 수 있는 것(1_basis.remainingTimings)만 받는다. "
                         + "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가로 체결하고, 그 분이 마감 5분 전(조기 폐장일 12:55 ET) "
                         + "이후면 MALFORMED로 거절. AT_MINUTE은 atLocal의 분에 시작한 1분봉 시가 — atLocal이 없거나 받는 범위 밖이면 MALFORMED, 주문 생성 "
-                        + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute). NEXT_CLOSE는 이 세션 확정 종가.",
-                "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순) < NEXT_CLOSE).",
+                        + "+ 60초 이전의 분이면 LATE_FOR_TIMING으로 거절(1_basis.atMinute).",
+                "매도는 같은 시각이거나 더 늦은 시각 매수의 현금·종목 자리만 만든다(기준 시각 순 — MARKET < AT_MINUTE(이른 순)).",
                 "REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신한다(취소) — 기준 시각이 지난 대기 주문은 이미 체결된 주문으로 보고 자료가 "
                         + "오는 대로 체결한다. 형식 검사를 통과하면 새 주문이 모두 거절돼도 그 취소는 일어난다. KEEP은 아무것도 바꾸지 않는다.",
                 "한도·재량 매도 보유 기간·월 상한·재진입 금지는 이 세션의 결정과 같다(아래 값)."));

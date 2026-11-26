@@ -239,12 +239,12 @@ public class PacketBuilder {
     /**
      * 자유 시점 판 패킷의 변형 이름·{@code 13_execution} 판·고정 문단 판(ADR 0027 결정 2 — {@link ClaudeBookProfile#freeTiming}). 패킷의 모양은
      * 계좌2 변형과 같은 줄기({@code 13_execution} 섹션 — {@link ClaudeBookProfile#packetVariant}는 {@value #VARIANT_CLAUDE2})이고, 머리의 이 세 칸과
-     * 섹션의 메뉴(분 단위 지정 시각·종가)·하드 규칙의 시점 문장만 다릅니다. 미국 계좌1·계좌2의 켠 판이 함께 씁니다. 판 4·ft-2(ADR 0031 — 2026-11-06
-     * 사용자 결정): 체결 창이 개장 10분 뒤부터이고 메뉴에 시가가 없습니다(그 전 판 3·ft-1은 개장 1분 뒤·시가 포함).
+     * 섹션의 메뉴(분 단위 지정 시각)·하드 규칙의 시점 문장만 다릅니다. 미국 계좌1·계좌2의 켠 판이 함께 씁니다. 판 5·ft-3(ADR 0050 — 2026-11-27
+     * 사용자 결정): 메뉴가 분 단위 지정 시각 하나입니다(그 전 판 4·ft-2는 종가 포함 — ADR 0031, 판 3·ft-1은 개장 1분 뒤·시가 포함).
      */
     static final String VARIANT_FREE = "freeTiming";
-    static final int EXECUTION_MENU_VERSION_FREE = 4;
-    static final String FREE_FIXED_RULES_VERSION = "ft-2";
+    static final int EXECUTION_MENU_VERSION_FREE = 5;
+    static final String FREE_FIXED_RULES_VERSION = "ft-3";
     /**
      * 장중 확인을 켠 계좌2 패킷의 목표 크기에 더하는 {@code 13_execution.checkpointOptions} 몫(토큰 어림) — 시각 열하나(ET·KST)·피드 뜻·규칙 세 줄
      * (packet-us-claude2-c2-meta.txt). 단계 1 패킷은 이 몫이 없습니다.
@@ -2413,7 +2413,7 @@ public class PacketBuilder {
      * {@link FreeTiming#validation}).
      */
     static final String FREE_RANK_RULE = "매수 목표 합 + 매도 뒤 남는 보유 비중이 100%를 넘으면 목표 비중이 큰 주문부터 받고 넘치는 주문은 거절"
-            + "(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — AT_MINUTE(atLocal이 이른 순) < NEXT_CLOSE(마감). 매도는 같은 "
+            + "(OVER_ALLOCATED). 체결 순서는 기준 시각 순이다 — AT_MINUTE의 atLocal이 이른 순. 매도는 같은 "
             + "시각이거나 더 늦은 시각의 매수에만 현금(비중 합, OVER_ALLOCATED)과 종목 자리(최대 종목 수, MAX_POSITIONS)를 만든다 — 예: AT_MINUTE "
             + "09:45 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지만 AT_MINUTE 14:00 전량 매도는 AT_MINUTE 10:00 매수의 자리를 비우지 못한다. "
             + "100% 검사·종목 수는 매수가 있는 시각마다 본다.";

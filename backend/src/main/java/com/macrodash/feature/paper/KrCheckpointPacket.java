@@ -256,7 +256,7 @@ final class KrCheckpointPacket {
         return out;
     }
 
-    /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각·종가)·다음 판단 예약을 적습니다. */
+    /** 자유 시점 판 장중 판단의 지시문 — 끈 판과 같은 뜻에 순번·남은 시점(장중 시장가·지정 시각)·다음 판단 예약을 적습니다. */
     private static Map<String, Object> freeInstructions() {
         List<String> lines = List.of(
                 "장중 판단이다 — 밤 결정(1_basis.sourceDecisionId)이나 앞선 장중 판단이 예약한 시각, 또는 코드 규칙(보장·사건)·운영자가 정한 시각에 "
@@ -270,7 +270,7 @@ final class KrCheckpointPacket {
                         + "4_portfolio.expected가 그 주문을 체결로 본 예상 장부다.",
                 "주문 timing은 1_basis.remainingTimings 가운데 하나다(장중 판단이 받는 시점 — 12_hardRules의 timings는 밤 결정의 것이다). "
                         + "MARKET은 응답 뒤 주문을 만든 다음 처음 시작하는 분(1분 안)의 1분봉 시가(그 분이 마감 10분 전 이후면 거절), AT_MINUTE이면 atLocal(한국 시간 "
-                        + "HH:MM)을 1_basis.atMinute 범위 안에서 적고, NEXT_CLOSE는 오늘 종가 단일가다. 주문마다 executionNote를 쓰고, 주문이 없으면 "
+                        + "HH:MM)을 1_basis.atMinute 범위 안에서 적는다. 주문마다 executionNote를 쓰고, 주문이 없으면 "
                         + "noTradeReason을 쓴다. 한도·유니버스는 12_hardRules(밤 결정과 같음)이고 검증 문맥은 예상 장부다.",
                 "다음 판단이 필요하면 nextCheckpoint에 시각을 적는다(1_basis.nextCheckpoint — available이 false면 적어도 버려진다). 필요 없으면 null로 둔다.",
                 "통화는 원(KRW), 시각 표기는 한국 시간(KST), 종목은 6자리 코드다.");
@@ -316,7 +316,7 @@ final class KrCheckpointPacket {
             Map<String, Object> range = new LinkedHashMap<>();
             range.put("firstKst", minutes == null ? null : clock(minutes[0]));
             range.put("lastKst", minutes == null ? null : clock(minutes[1]));
-            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 주문 생성 + 60초 뒤의 분부터 종가 단일가 시간 앞까지. "
+            range.put("note", "AT_MINUTE 주문의 atLocal은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 주문 생성 + 60초 뒤의 분부터 종가 단일가 시작 5분 전 앞까지. "
                     + "null이면 남은 분이 없다");
             out.put("atMinute", range);
             out.put("nextCheckpoint", nextCheckpoint(free, in.checkpoint(), session, calendar, now));
@@ -347,13 +347,13 @@ final class KrCheckpointPacket {
 
     /**
      * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 분 단위 지정 시각의 범위 {@code [첫 분, 마지막 분]} — 검증({@link FreeTiming#validation})과 같은
-     * 규칙: 그 세션의 받는 범위({@link FreeTiming#window} — 개장 10분 뒤 ~ 종가 단일가 시간 앞) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
+     * 규칙: 그 세션의 받는 범위({@link FreeTiming#claudeWindow} — 개장 10분 뒤 ~ 종가 단일가 시작 5분 전 앞) 안이고 지금 + 60초보다 뒤. 남은 분이 없으면 null.
      */
     static Instant[] freeMinutes(LocalDate session, TradingCalendar calendar, Instant now) {
         if (!calendar.isTradingDay(session)) {
             return null;
         }
-        FreeTiming.Window window = FreeTiming.window(session, calendar, true);
+        FreeTiming.Window window = FreeTiming.claudeWindow(session, calendar, true);
         Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
             first = window.first();
@@ -362,9 +362,9 @@ final class KrCheckpointPacket {
     }
 
     /**
-     * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가·종가는 끈 판과 같은 규칙
-     * ({@link KrTimedLadder#closedTimings})이고 장중 시장가는 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#window}) 이상일 때만
-     * (검증 {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}).
+     * 자유 시점 판 장중 판단 주문이 아직 고를 수 있는 시점({@link FreeTiming#INTRADAY_TIMINGS} 가운데) — 장중 시장가는 끈 판과 같은 규칙
+     * ({@link KrTimedLadder#closedTimings})이고 기준 분이 그 세션 첫 분(개장 10분 뒤 — {@link FreeTiming#claudeWindow}) 이상일 때만
+     * (검증 {@link FreeTiming#validation}의 하한과 같음), 분 단위 지정 시각은 남은 분이 있을 때({@link #freeMinutes}). 그날 종가는 받지 않습니다(판 kr-ft-3 — ADR 0050).
      */
     static List<String> freeRemainingTimings(LocalDate asOf, LocalDate session, TradingCalendar calendar, Instant now) {
         List<String> out = new ArrayList<>();
@@ -372,17 +372,14 @@ final class KrCheckpointPacket {
             return out;
         }
         Map<String, com.macrodash.analytics.OrderValidator.Closed> closed = KrTimedLadder.closedTimings(
-                List.of(PaperBooks.MARKET, PaperBooks.NEXT_CLOSE), asOf, now, calendar);
+                List.of(PaperBooks.MARKET), asOf, now, calendar);
         for (String timing : FreeTiming.INTRADAY_TIMINGS) {
             if (PaperBooks.AT_MINUTE.equals(timing)) {
                 if (freeMinutes(session, calendar, now) != null) {
                     out.add(timing);
                 }
-            } else if (PaperBooks.MARKET.equals(timing)) {
-                if (!closed.containsKey(timing) && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.window(session, calendar, true).first())) {
-                    out.add(timing);
-                }
-            } else if (!closed.containsKey(timing)) {
+            } else if (PaperBooks.MARKET.equals(timing)
+                    && !closed.containsKey(timing) && !ExecutionAudit.marketTarget(now).isBefore(FreeTiming.claudeWindow(session, calendar, true).first())) {
                 out.add(timing);
             }
         }
