@@ -283,8 +283,20 @@ async def lifespan(app: FastAPI):
             coalesce=True,
             misfire_grace_time=tasks.flex.TICK_MISFIRE_GRACE_SECONDS,
         )
-        logger.info("스케줄 등록: flex 틱 %d초(+지터 %d초) — 때가 된 피드가 있는 태스크만", tasks.flex.TICK_SECONDS,
-                    tasks.flex.TICK_JITTER_SECONDS)
+        # 느린 줄(QA-1016): 몇 분씩 걸릴 수 있는 flex 태스크(tasks.flex.SLOW — 보안 공지 수집)는 틱 작업을 따로 둡니다. 작업 하나가
+        # max_instances=1로 차례로 돌리면, 긴 태스크가 도는 동안 다음 틱이 건너뛰어져 '발표 + 2~4분' 창의 수집이 늦어집니다.
+        scheduler.add_job(
+            _run_flex_slow_job,
+            "interval",
+            seconds=tasks.flex.TICK_SECONDS,
+            jitter=tasks.flex.TICK_JITTER_SECONDS,
+            id="collect-flex-slow",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=tasks.flex.TICK_MISFIRE_GRACE_SECONDS,
+        )
+        logger.info("스케줄 등록: flex 틱 %d초(+지터 %d초) — 때가 된 피드가 있는 태스크만(느린 줄 %s는 틱을 따로)", tasks.flex.TICK_SECONDS,
+                    tasks.flex.TICK_JITTER_SECONDS, sorted(tasks.flex.SLOW))
         scheduler.start()
     else:
         logger.info("스케줄러 비활성화 — REST 요청으로만 수집합니다.")
@@ -324,10 +336,19 @@ def _run_polite_job() -> None:
 
 
 def _run_flex_job() -> None:
+    """flex 빠른 줄의 틱 — 느린 줄(tasks.flex.SLOW)을 뺀 태스크."""
     try:
-        tasks.run_flex_due()
+        tasks.run_flex_due(slow=False)
     except Exception as exc:  # noqa: BLE001
         logger.exception("스케줄 수집 실패 (flex): %s", exc)
+
+
+def _run_flex_slow_job() -> None:
+    """flex 느린 줄의 틱 — tasks.flex.SLOW의 태스크만(QA-1016)."""
+    try:
+        tasks.run_flex_due(slow=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("스케줄 수집 실패 (flex 느린 줄): %s", exc)
 
 
 def _check_token(token: str | None) -> None:

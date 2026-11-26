@@ -59,7 +59,7 @@ ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-b
       │ 표준입력(탭 구분 줄)
       ▼
 docker compose exec -T collector python -m app.inventory ──(검증 통과 때만, 한 트랜잭션)──► env_inventory · env_components · env_pending_updates · env_changelog_cves
-보호나라 게시판 ──► Collector kisa_security_notices(flex, KST 6시간 구간마다 한 번) ──► security_notices · security_notice_rows
+보호나라 게시판 ──► Collector kisa_security_notices(flex 느린 줄 — 틱 작업이 따로라 다른 flex 태스크를 막지 않음, KST 6시간 구간마다 한 번) ──► security_notices · security_notice_rows
 Ubuntu·Debian 추적기·Alpine secdb ──► (같은 실행 안에서, security_tracker_wants만) ──► distro_cve_status
                                                      Backend SecurityService(읽을 때 판정) ──► /api/security/* ──► 화면 /security · /security/<번호>
                                                      Backend SecurityAlertJob ──► 알림함 · 텔레그램 운영 봇(security_alerts에 기록)

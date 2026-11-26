@@ -455,9 +455,13 @@ def run_polite_due() -> list[str]:
     return ran
 
 
-def run_flex_due() -> list[str]:
+def run_flex_due(slow: bool | None = None) -> list[str]:
     """
     flex 속도군에서 때가 된 일이 있는 태스크만 차례로 실행합니다(스케줄러의 1분 틱이 부름) → 실행한 태스크 이름.
+
+    ``slow``는 틱의 줄입니다(QA-1016) — ``False``는 빠른 줄(``flex.SLOW``에 없는 태스크), ``True``는 느린 줄(``flex.SLOW``의 태스크),
+    ``None``(기본)은 줄을 가리지 않고 전부. 스케줄러는 줄마다 작업을 따로 두어, 느린 줄의 긴 태스크가 도는 동안에도 빠른 줄의 다음 틱이
+    제때 돕니다. 같은 줄 안에서는 전처럼 차례로 실행합니다.
 
     태스크마다 ``Task.due``(표만 읽음 — 외부 호출 없음)를 묻고 참일 때만 부릅니다. 할 일이 없던 틱은 실행 기록을 남기지 않습니다(polite와
     같은 관례 — ADR 0040 결정 5). 앞선 실행이 아직 도는 태스크(시간 상한을 넘긴 작업 포함)는 이번 틱에 부르지 않습니다 — 1분마다
@@ -466,6 +470,8 @@ def run_flex_due() -> list[str]:
     ran: list[str] = []
     for task in ALL_TASKS:
         if task.speed != flex.SPEED:
+            continue
+        if slow is not None and (task.name in flex.SLOW) != slow:
             continue
         with _inflight_lock:
             busy = task.name in _inflight

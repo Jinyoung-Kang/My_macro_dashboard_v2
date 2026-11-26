@@ -27,6 +27,11 @@ TICK_JITTER_SECONDS = 10
 # 늦게 깬 틱을 버리지 않는 유예(초) — 틱보다 짧아야 밀린 틱과 다음 틱이 겹치지 않습니다(QA-374와 같은 규칙).
 TICK_MISFIRE_GRACE_SECONDS = 30
 
+# 느린 줄(QA-1016) — 한 번 돌면 몇 분씩 걸릴 수 있는 flex 태스크의 이름. 틱은 줄마다 따로 돌아(main의 collect-flex·collect-flex-slow),
+# 이 태스크가 도는 동안에도 빠른 줄의 다음 틱이 다른 태스크(미국 지표 발표 직후 수집 등)를 제때 실행합니다. 보안 공지 수집은 시간 상한이
+# 420초(tasks/security.TIME_LIMIT_SECONDS)라 여기에 둡니다. 태스크의 속도군·실행 기록·일정 표는 그대로입니다(줄은 틱이 고르는 묶음일 뿐).
+SLOW: frozenset[str] = frozenset({"kisa_security_notices"})
+
 # fetch_schedule 이름의 구분자 — '태스크/항목'. polite 태스크 이름에는 이 글자가 없습니다.
 KEY_SEPARATOR = "/"
 

@@ -312,7 +312,6 @@ def _fire_flex_tick(jobs: dict[str, dict], running: dict[str, threading.Thread])
         thread.start()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-1016 — flex 틱이 태스크를 차례로 돌려 긴 태스크 뒤의 틱이 건너뛰어진다")
 def test_QA_1016_긴_flex_태스크가_도는_동안에도_다음_틱이_다른_flex_태스크를_실행한다(monkeypatch):
     """
     보안 공지 수집(시간 상한 420초)이 도는 동안 미국 지표 발표 직후 수집(`us_consensus_release`)의 때가 오면, 다음 1분 틱이 그 태스크를
@@ -352,3 +351,27 @@ def test_QA_1016_긴_flex_태스크가_도는_동안에도_다음_틱이_다른_
         release.set()
         for thread in running.values():
             thread.join(timeout=10)
+
+
+def test_QA_1016_느린_줄_틱은_빠른_줄과_같은_꼴로_따로_등록되고_줄마다_제_태스크만_고른다(monkeypatch):
+    monkeypatch.delenv("POLITE_FETCH_ENABLED", raising=False)
+    jobs = _jobs(monkeypatch)
+    fast, slow = jobs["collect-flex"], jobs["collect-flex-slow"]
+    assert slow["func"] is main._run_flex_slow_job and fast["func"] is main._run_flex_job
+    for key in ("trigger", "seconds", "jitter", "max_instances", "coalesce", "misfire_grace_time"):
+        assert slow[key] == fast[key]
+    assert "next_run_time" not in slow
+
+    called: list[str] = []
+    patched = [task if task.speed != tasks.flex.SPEED
+               else type(task)(task.name, task.speed, task.run, task.description, task.yahoo, lambda: True)
+               for task in tasks.runner.ALL_TASKS]
+    monkeypatch.setattr(tasks.runner, "ALL_TASKS", tuple(patched))
+    monkeypatch.setattr(tasks.runner, "run_group", lambda **kwargs: called.append(kwargs["task_name"]))
+    flex_names = [task.name for task in patched if task.speed == tasks.flex.SPEED]
+
+    assert tasks.flex.SLOW == {"kisa_security_notices"} and tasks.flex.SLOW <= set(flex_names)
+    assert tasks.runner.run_flex_due(slow=True) == ["kisa_security_notices"]
+    assert tasks.runner.run_flex_due(slow=False) == [name for name in flex_names if name not in tasks.flex.SLOW]
+    assert tasks.runner.run_flex_due() == flex_names        # 줄을 가리지 않으면 전처럼 전부
+

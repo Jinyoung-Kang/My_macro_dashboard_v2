@@ -10,6 +10,7 @@
     저장 시각 유지: `collector/tests/test_news_feeds.py`
   - 받기·저장 규칙(중복·보관·알 수 있는 시각)과 바뀐 상태 칸: `test_news_headlines.py`·`test_kr_news_headlines.py`
   - flex 틱 등록(1분 interval, 기동 직후 돌지 않음, 유예 < 틱): `test_group_schedule.py`의 `test_flex_틱은_…`
+  - 느린 줄의 틱이 따로 돌아 긴 태스크가 다음 틱을 막지 않음(QA-1016): `test_group_schedule.py`의 `test_QA_1016_…` 둘
   - Retry-After를 거부 예외에 싣기: `test_http_guards.py`의 `test_429는_…`·`test_Retry_After_…`
   - 미국 휴장일(수집기로 옮긴 규칙): `test_uscalendar.py`(백엔드 `UsMarketCalendarTest`와 같은 날짜)
   - BLS 공식 실제치(받기·읽기·셈·일정·다시 묻기·잠김·거부·대조·키가 저장본·오류 글에 없음): `test_bls_actuals.py`, 키 이름의 로그 가림:
@@ -194,3 +195,15 @@
   - 마감: TVC 마감 뒤 값 **19.29** vs 다음 날 Yahoo `^VIX` 일봉 종가 **19.30**(기준 '같음').
 - 결정: 작업 A는 하지 않습니다 — 위험 패널·분석 시계열의 VIX는 지금처럼 Yahoo(15분 지연 배지). 다시 재려면(예: 15초 간격 표본, 조용한 날) 사용자 결정으로.
 
+## 덧붙임 — flex 틱의 느린 줄 (2026-11-26, QA-1016)
+
+- 문제: 결정 1의 틱 작업은 하나(`collect-flex`, `max_instances=1`)이고 때가 된 태스크를 차례로 돌립니다. ADR 0046이 시간 상한 420초인
+  `kisa_security_notices`를 같은 속도군에 넣은 뒤로, 그 태스크가 도는 동안에는 다음 틱들이 건너뛰어져 '발표 + 2~4분' 창에 맞춰야 하는
+  `us_consensus_release`·`us_bls_actuals`가 그만큼 늦을 수 있었습니다(겹칠 확률은 낮지만 겹치면 수 분).
+- 결정: 몇 분씩 걸릴 수 있는 flex 태스크의 이름을 `flex.SLOW`(지금은 `kisa_security_notices` 하나)에 두고, 틱 작업을 줄마다 둡니다 —
+  `collect-flex`는 빠른 줄(`run_flex_due(slow=False)`), `collect-flex-slow`는 느린 줄(`run_flex_due(slow=True)`). 두 작업의 간격·지터·유예는 같습니다.
+  같은 줄 안에서는 전처럼 차례로 실행하고, 이미 도는 태스크를 건너뛰는 검사(이름 기준)도 그대로입니다.
+- 바뀌지 않는 것: 태스크 수(69)·속도군 이름·데이터셋·실행 기록의 꼴·일정 표. 같은 태스크가 같은 조건에서 돌고, 서로 기다리지 않을 뿐입니다.
+  속도군끼리는 전부터 스케줄러 작업이 달라 동시에 돌았으므로 새로 생기는 동시성은 'flex 태스크 둘이 함께'뿐입니다(DB 풀 8).
+- 버린 대안: 태스크마다 스레드로 넘기기 — DB 풀과 저장본 잠금의 경합을 새로 만듭니다.
+- 새 긴 flex 태스크를 더할 때: 시간 상한이 틱(60초)보다 훨씬 길면 `flex.SLOW`에 이름을 더합니다.
