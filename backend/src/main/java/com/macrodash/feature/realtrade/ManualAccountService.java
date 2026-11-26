@@ -181,8 +181,16 @@ public class ManualAccountService {
         }
     }
 
-    /** {@code POST /api/manual/isa/trades} 본문 — 지시에 없던 매매: 방향(BUY·SELL)·종목(이름 또는 코드)·수량·체결 금액(총액)·수수료(없으면 수수료율로). */
-    public record DirectTradeRequest(String side, String symbol, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+    /**
+     * {@code POST /api/manual/isa/trades} 본문 — 지시에 없던 매매: 방향(BUY·SELL)·종목(이름 또는 코드)·수량·체결 금액(총액)·수수료(없으면 수수료율로).
+     * {@code requestId}는 화면이 적기 창마다 만드는 요청 열쇠(선택 — QA-1035)입니다.
+     */
+    public record DirectTradeRequest(String side, String symbol, BigDecimal quantity, BigDecimal amount, BigDecimal fee, String requestId) {
+
+        /** 요청 열쇠 없이(옛 화면의 본문). */
+        public DirectTradeRequest(String side, String symbol, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+            this(side, symbol, quantity, amount, fee, null);
+        }
 
         @Override
         public String toString() {

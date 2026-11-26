@@ -2,6 +2,7 @@ package com.macrodash.web;
 
 import com.macrodash.store.Datasets;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -368,6 +369,57 @@ class ApiIntegrationTest {
             assertThat(added.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(rest.exchange(url("/api/manual/isa/positions/000660/delete"), HttpMethod.POST, new HttpEntity<>(null, owner),
                     JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+        } finally {
+            cleanManualAccount();
+        }
+    }
+
+    @Test
+    @Disabled("QA-1035 재현 — 같은 요청이 두 번 오면 내역 두 줄(수정 전)")
+    @DisplayName("QA-1035: 지시 없는 매매 적기(POST /api/manual/isa/trades)에 같은 requestId로 두 번 보내면 내역 한 줄·현금 한 번 — 두 번째 응답은 같은 번호에 "
+            + "replayed, 모양이 틀린 requestId는 400 invalid-request, 열쇠 없는 요청은 지금처럼 한 줄씩 — 값은 합성")
+    void manualAccountDirectTradeRequestId() {
+        cleanManualAccount();
+        try {
+            HttpHeaders owner = new HttpHeaders();
+            owner.add(HttpHeaders.COOKIE, sessionCookie);
+            owner.setContentType(MediaType.APPLICATION_JSON);
+            assertThat(rest.exchange(url("/api/manual/isa/start"), HttpMethod.POST, new HttpEntity<>(Map.of("totalAsset", 50_000,
+                    "positions", List.of(Map.of("symbol", "005930", "quantity", 2, "purchaseAmount", 20_000))), owner), JsonNode.class)
+                    .getStatusCode()).isEqualTo(HttpStatus.OK);
+            Map<String, Object> trade = Map.of("side", "BUY", "symbol", "005930", "quantity", 1, "amount", 10_000, "fee", 2,
+                    "requestId", "0b6f3c1a-5d2e-4f70-8a9b-c1d2e3f4a5b6");
+
+            ResponseEntity<JsonNode> first = rest.exchange(url("/api/manual/isa/trades"), HttpMethod.POST, new HttpEntity<>(trade, owner), JsonNode.class);
+            assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(first.getBody().path("ok").asBoolean()).isTrue();
+            assertThat(first.getBody().has("replayed")).as("처음 적은 응답은 지금 모양 그대로").isFalse();
+            JsonNode afterFirst = authorizedGet("/api/manual/isa");
+
+            ResponseEntity<JsonNode> second = rest.exchange(url("/api/manual/isa/trades"), HttpMethod.POST, new HttpEntity<>(trade, owner), JsonNode.class);
+            assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(second.getBody().path("ok").asBoolean()).isTrue();
+            assertThat(second.getBody().path("replayed").asBoolean()).isTrue();
+            assertThat(second.getBody().path("id").asLong()).isEqualTo(first.getBody().path("id").asLong());
+            assertThat(second.getBody().path("symbol").asString()).isEqualTo("005930");
+            JsonNode afterSecond = authorizedGet("/api/manual/isa");
+            assertThat(afterSecond.path("trades").size()).isEqualTo(1);
+            assertThat(afterFirst.path("summary").path("cash").decimalValue()).isEqualByComparingTo("19998");
+            assertThat(afterSecond.path("summary").path("cash").decimalValue()).as("현금은 한 번만").isEqualByComparingTo("19998");
+            assertThat(afterSecond.path("positions").get(0).path("quantity").decimalValue()).isEqualByComparingTo("3");
+
+            Map<String, Object> bad = Map.of("side", "BUY", "symbol", "005930", "quantity", 1, "amount", 10_000, "fee", 2, "requestId", "no good");
+            ResponseEntity<JsonNode> rejected = rest.exchange(url("/api/manual/isa/trades"), HttpMethod.POST, new HttpEntity<>(bad, owner), JsonNode.class);
+            assertThat(rejected.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(rejected.getBody().path("error").asString()).isEqualTo("invalid-request");
+
+            Map<String, Object> keyless = Map.of("side", "BUY", "symbol", "005930", "quantity", 1, "amount", 10_000, "fee", 2);
+            for (int i = 0; i < 2; i++) {
+                ResponseEntity<JsonNode> plain = rest.exchange(url("/api/manual/isa/trades"), HttpMethod.POST, new HttpEntity<>(keyless, owner), JsonNode.class);
+                assertThat(plain.getStatusCode()).isEqualTo(HttpStatus.OK);
+                assertThat(plain.getBody().has("replayed")).isFalse();
+            }
+            assertThat(authorizedGet("/api/manual/isa").path("trades").size()).as("열쇠 없는 요청은 요청마다 한 줄").isEqualTo(3);
         } finally {
             cleanManualAccount();
         }

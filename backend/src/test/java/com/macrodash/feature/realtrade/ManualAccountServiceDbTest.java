@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1031,6 +1032,132 @@ class ManualAccountServiceDbTest {
 
         assertThat(store.instruction(upcoming)).isEmpty();
         assertThat(store.session("isa", tomorrow)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ 지시 없는 매매의 요청 열쇠(QA-1035)
+    private static final String KEY_1 = "3f2c9a1e-7b64-4d0a-9c1f-5e8b2a6d4c10";
+    private static final String KEY_2 = "a81d0c55-2e3f-4b7a-8d90-1c2b3a4d5e6f";
+
+    private Map<String, Object> keyed(String side, String symbol, String quantity, String amount, String requestId) {
+        return service.recordTrade(new ManualAccountService.DirectTradeRequest(side, symbol, d(quantity), d(amount), null, requestId));
+    }
+
+    private List<String> requestIds() {
+        return jdbc.queryForList("SELECT request_id FROM manual_trades WHERE account = 'isa' ORDER BY id", String.class);
+    }
+
+    @Test
+    @Disabled("QA-1035 재현 — 같은 요청이 두 번 오면 내역 두 줄·현금 두 번 반영(수정 전)")
+    @DisplayName("QA-1035: 같은 요청 열쇠로 두 번 오면 내역 한 줄·현금과 보유 한 번만 — 두 번째 응답은 첫 줄의 번호·종목에 replayed, 계좌 버전도 그대로")
+    void recordTradeSameRequestIdTwice() {
+        startSynthetic();                                          // 현금 775,000, B 5주(100,000)
+
+        Map<String, Object> first = keyed("BUY", B, "1", "21000", KEY_1);
+        BigDecimal cashAfterFirst = cash();
+        int versionAfterFirst = store.account("isa").orElseThrow().version();
+        Map<String, Object> second = keyed("BUY", B, "1", "21000", KEY_1);
+
+        Trade t = onlyTrade();
+        assertThat(first).containsEntry("ok", true).containsEntry("id", t.id()).containsEntry("symbol", B).doesNotContainKey("replayed");
+        assertThat(second).containsEntry("ok", true).containsEntry("id", t.id()).containsEntry("symbol", B).containsEntry("replayed", true);
+        assertThat(cashAfterFirst).isEqualByComparingTo(d("775000").subtract(d("21000")).subtract(t.fee()));
+        assertThat(cash()).as("현금은 한 번만").isEqualByComparingTo(cashAfterFirst);
+        assertThat(position(B).quantity()).as("보유도 한 번만").isEqualByComparingTo("6");
+        assertThat(position(B).purchaseAmount()).isEqualByComparingTo("121000");
+        assertThat(store.account("isa").orElseThrow().version()).as("다시 온 요청은 아무것도 쓰지 않음").isEqualTo(versionAfterFirst);
+        assertThat(requestIds()).containsExactly(KEY_1);
+    }
+
+    @Test
+    @Disabled("QA-1035 재현 — 다 판 매도가 다시 오면 '보유 없음' 400(수정 전)")
+    @DisplayName("QA-1035: 다 판 매도가 같은 열쇠로 다시 오면 '보유 없음' 거절이 아니라 첫 줄의 결과(replayed) — 열쇠를 보유 검사보다 먼저 찾음")
+    void recordTradeSameRequestIdAfterFullSell() {
+        startSynthetic();
+
+        Map<String, Object> first = keyed("SELL", B, "5", "105000", KEY_1);
+        BigDecimal cashAfterFirst = cash();
+        Map<String, Object> second = keyed("SELL", B, "5", "105000", KEY_1);
+
+        assertThat(second).containsEntry("id", first.get("id")).containsEntry("symbol", B).containsEntry("replayed", true);
+        assertThat(onlyTrade().id()).isEqualTo(first.get("id"));
+        assertThat(cash()).isEqualByComparingTo(cashAfterFirst);
+        assertThat(store.position("isa", B)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-1035: 열쇠가 다르면 같은 본문도 따로 적고(두 줄), 열쇠가 없으면 지금처럼 요청마다 한 줄")
+    void recordTradeDifferentOrNoRequestId() {
+        startSynthetic();
+
+        Map<String, Object> one = keyed("BUY", B, "1", "21000", KEY_1);
+        Map<String, Object> two = keyed("BUY", B, "1", "21000", KEY_2);
+        Map<String, Object> three = direct("BUY", B, "1", "21000", null);
+        Map<String, Object> four = direct("BUY", B, "1", "21000", null);
+
+        assertThat(List.of(one, two, three, four)).allSatisfy(out -> assertThat(out).containsEntry("ok", true).doesNotContainKey("replayed"));
+        assertThat(List.of(one.get("id"), two.get("id"), three.get("id"), four.get("id"))).doesNotHaveDuplicates();
+        assertThat(store.recentTrades("isa", 10)).hasSize(4);
+        assertThat(position(B).quantity()).isEqualByComparingTo("9");
+        assertThat(cash()).isEqualByComparingTo(d("775000").subtract(d("84000")).subtract(d("12")));   // 수수료 1.5bp 절사 = 줄마다 3
+    }
+
+    @Test
+    @DisplayName("QA-1035: 되돌린 뒤 같은 열쇠가 다시 오면 다시 적음 — 되돌리기가 그 줄을 지우므로(남는 한계: 옛 탭의 같은 열쇠)")
+    void recordTradeSameRequestIdAfterUndo() {
+        startSynthetic();
+        Map<String, Object> first = keyed("BUY", B, "1", "21000", KEY_1);
+        service.undoTrade((Long) first.get("id"));
+        assertThat(cash()).isEqualByComparingTo("775000");
+
+        Map<String, Object> again = keyed("BUY", B, "1", "21000", KEY_1);
+
+        assertThat(again).containsEntry("ok", true).doesNotContainKey("replayed");
+        assertThat(again.get("id")).isNotEqualTo(first.get("id"));
+        assertThat(onlyTrade().id()).isEqualTo(again.get("id"));
+        assertThat(position(B).quantity()).isEqualByComparingTo("6");
+    }
+
+    @Test
+    @Disabled("QA-1035 재현 — 모양이 틀린 열쇠를 그대로 받음(수정 전)")
+    @DisplayName("QA-1035: 모양이 틀린 열쇠(짧음·김·허용 밖 글자·빈 글자)는 400 invalid-request, 아무것도 쓰지 않음 — 글자·숫자·'-'·'_' 8~64자만")
+    void recordTradeRequestIdShape() {
+        startSynthetic();
+
+        for (String bad : List.of("", "   ", "short", "a".repeat(65), "has space-12345", "한글열쇠-12345678", "semi;colon-1234", KEY_1 + "\n")) {
+            rejects(() -> keyed("BUY", B, "1", "21000", bad), 400, "invalid-request");
+        }
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+        assertThat(cash()).isEqualByComparingTo("775000");
+
+        assertThat(keyed("BUY", B, "1", "21000", "abcDEF_0")).as("가장 짧은 열쇠").containsEntry("ok", true);
+        assertThat(keyed("BUY", B, "1", "21000", "Z".repeat(64))).as("가장 긴 열쇠").containsEntry("ok", true);
+    }
+
+    @Test
+    @Disabled("QA-1035 — 열쇠 칸 확인이 들어온 뒤 켬(수정 전에는 칸 자체가 없음)")
+    @DisplayName("QA-1035: 열쇠 칸이 아직 없는 스키마(V46 전)에서는 열쇠를 무시하고 지금처럼 적음 — ISA는 '준비 중'이 되지 않고, 칸을 읽거나 쓰지 않음")
+    void recordTradeIgnoresRequestIdOnOldSchema() {
+        SchemaCheck old = new SchemaCheck(jdbc) {
+            @Override
+            public boolean columnExists(String table, String column) {
+                return !("manual_trades".equals(table) && "request_id".equals(column)) && super.columnExists(table, column);
+            }
+        };
+        ManualAccountStore oldStore = new ManualAccountStore(jdbc, MAPPER, old);
+        ManualAccountJob job = new ManualAccountJob(oldStore, paper, mock(PaperTelegram.class), MAPPER, clock, false, false, 600_000);
+        ManualAccountService oldService = new ManualAccountService(oldStore, paper, job, clock);
+        startSynthetic();
+        assertThat(oldStore.ready()).as("열쇠 칸은 '준비됨' 판정에 들지 않음").isTrue();
+        assertThat(oldService.view()).containsEntry("available", true);
+
+        ManualAccountService.DirectTradeRequest body = new ManualAccountService.DirectTradeRequest("BUY", B, d("1"), d("21000"), null, KEY_1);
+        Map<String, Object> first = oldService.recordTrade(body);
+        Map<String, Object> second = oldService.recordTrade(body);
+
+        assertThat(List.of(first, second)).allSatisfy(out -> assertThat(out).containsEntry("ok", true).doesNotContainKey("replayed"));
+        assertThat(store.recentTrades("isa", 10)).hasSize(2);
+        assertThat(requestIds()).as("칸에 쓰지 않음").containsExactly(null, null);
+        rejects(() -> oldService.recordTrade(new ManualAccountService.DirectTradeRequest("BUY", B, d("1"), d("21000"), null, "short")), 400, "invalid-request");
     }
 
     // ------------------------------------------------------------------ 매매 내역 시각 고치기(2026-11-24)
