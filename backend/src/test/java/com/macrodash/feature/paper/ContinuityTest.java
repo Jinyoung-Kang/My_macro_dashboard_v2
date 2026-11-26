@@ -278,6 +278,70 @@ class ContinuityTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-1017 재현 — 조건을 다시 적지 않은 추가 매수 뒤 포지션을 연 결정의 조건이 버려짐(수정 커밋에서 해제)")
+    @DisplayName("보유 종목의 조건(QA-1017): 조건을 다시 적지 않은 추가 매수 뒤에도 포지션을 연 결정의 조건이 남는다 — 부분 매도는 경계가 아니고, "
+            + "전량 매도 뒤 다시 산 종목에는 옛 조건이 붙지 않는다(진입 논거는 가장 최근 매수의 것 그대로)")
+    void holdingChecksSurviveATopUpBuy() {
+        long opened = decision(FRI.minusDays(3), """
+                [{"metric":"TOP","op":"BELOW","level":90.0,"then":"TOP 매도","ticker":"TOP"},
+                 {"metric":"us10y","op":"ABOVE","level":5.0,"then":"TRIM 논거 폐기","ticker":"TRIM"},
+                 {"metric":"BACK","op":"BELOW","level":40.0,"then":"옛 포지션의 조건","ticker":"BACK"}]""");
+        filled("TOP", "BUY", opened, null, FRI_CLOSE);
+        filled("TRIM", "BUY", opened, null, FRI_CLOSE);
+        filled("BACK", "BUY", opened, null, FRI_CLOSE);
+        long second = decision(FRI.minusDays(2), "[]");
+        filled("TOP", "BUY", second, null, FRI_CLOSE.plusSeconds(60));      // 조건을 다시 적지 않은 추가 매수
+        filled("TRIM", "SELL", second, 0.5, FRI_CLOSE.plusSeconds(60));     // 부분 매도 — 포지션은 이어짐
+        filled("BACK", "SELL", second, null, FRI_CLOSE.plusSeconds(60));    // 전량 매도 — 포지션이 닫힘
+        long third = decision(FRI.minusDays(1), "[]");
+        filled("TRIM", "BUY", third, null, FRI_CLOSE.plusSeconds(120));     // 부분 매도 뒤 추가 매수
+        filled("BACK", "BUY", third, null, FRI_CLOSE.plusSeconds(120));     // 전량 매도 뒤 다시 삼
+        List<String> held = List.of("TOP", "TRIM", "BACK");
+
+        Map<String, Continuity.Entry> entries = Continuity.entries(store, PaperBooks.CLAUDE, held);
+        assertThat(entries.get("TOP").decisionId()).as("진입 논거는 가장 최근 매수의 것 그대로").isEqualTo(second);
+        assertThat(entries.get("TRIM").decisionId()).isEqualTo(third);
+
+        Map<String, Continuity.HoldingChecks> checks = Continuity.holdingChecks(store, PaperBooks.CLAUDE, held, entries, d -> true);
+
+        assertThat(checks).as("TOP·TRIM은 포지션을 연 결정의 조건, BACK은 옛 포지션의 조건이라 없음").containsOnlyKeys("TOP", "TRIM");
+        assertThat(checks.get("TOP").decisionId()).isEqualTo(opened);
+        assertThat(checks.get("TOP").conditions()).singleElement().satisfies(c -> assertThat(c.level()).isEqualTo(90.0));
+        assertThat(checks.get("TRIM").decisionId()).as("부분 매도는 경계가 아님").isEqualTo(opened);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-1017 재현 — 장중 판단이 교체한 매수가 체결되면 그 세션 정기 결정의 조건이 버려짐(수정 커밋에서 해제)")
+    @DisplayName("보유 종목의 조건(QA-1017): 장중 판단이 그 세션 결정의 매수를 교체(REPLACE)해 체결돼도 그 세션 정기 결정의 조건이 남는다 — "
+            + "장중 판단의 매수는 그 판단이 속한 세션의 정기 결정이 경계")
+    void holdingChecksSurviveAnIntradayReplaceBuy() {
+        long earlier = decision(FRI.minusDays(2), """
+                [{"metric":"SWAP","op":"BELOW","level":10.0,"then":"그 전 세션의 조건","ticker":"SWAP"}]""");
+        long session = decision(FRI.minusDays(1), """
+                [{"metric":"SWAP","op":"BELOW","level":70.0,"then":"SWAP 매도","ticker":"SWAP"}]""");
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE, session, "SWAP", "BUY", null, 5.0, null, "AT_MINUTE", "CLAUDE", "CANCELLED",
+                "장중 판단이 대신함", reason("세션 결정의 논거", "70 이탈"), FRI.minusDays(1), FRI_CLOSE, null, null));
+        // 그 세션의 장중 판단(같은 기준 거래일, 조건 칸 없음)이 매수를 교체했고 그 주문이 체결됨.
+        ObjectNode replaced = MAPPER.createObjectNode();
+        replaced.put("action", "REPLACE");
+        long judgment = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE, FRI.minusDays(1),
+                RuleBookService.intradayKind(1), null, "OK", "claude-sonnet-5-5", null, 1, FRI.minusDays(1), null, null, null, null,
+                replaced, null, null, List.of(), true, 900L, 0)).orElseThrow();
+        filled("SWAP", "BUY", judgment, null, FRI_CLOSE.plusSeconds(60));
+
+        Map<String, Continuity.Entry> entries = Continuity.entries(store, PaperBooks.CLAUDE, List.of("SWAP"));
+        assertThat(entries.get("SWAP").decisionId()).as("진입 논거는 체결된 장중 판단의 매수").isEqualTo(judgment);
+
+        Map<String, Continuity.HoldingChecks> checks = Continuity.holdingChecks(store, PaperBooks.CLAUDE, List.of("SWAP"), entries,
+                d -> PacketBuilder.priorDecisionKind(PaperBooks.CLAUDE, d.kind()));
+
+        assertThat(checks).containsOnlyKeys("SWAP");
+        assertThat(checks.get("SWAP").decisionId()).as("그 세션 정기 결정의 조건 — 그 전 세션의 결정까지 거슬러 가지 않음").isEqualTo(session);
+        assertThat(checks.get("SWAP").conditions()).singleElement().satisfies(c -> assertThat(c.level()).isEqualTo(70.0));
+        assertThat(earlier).isLessThan(session);
+    }
+
+    @Test
     @DisplayName("조건 읽기: ticker가 없는 옛 판의 조건·빈 글자·공백은 종목 없음, 배열이 아니면 빈 목록")
     void conditionListReadsTheTicker() throws Exception {
         List<com.macrodash.analytics.CarriedConditions.Condition> list = Continuity.conditionList(MAPPER.readTree("""
@@ -313,5 +377,12 @@ class ContinuityTest {
     private long order(String ticker, String side, String status, String source, JsonNode reason, Instant createdAt) {
         return store.insertOrder(new Order(0, PaperBooks.CLAUDE, 7L, ticker, side, null, 5.0, null, "NEXT_CLOSE", source, status,
                 null, reason, FRI, createdAt, null, "FILLED".equals(status) ? createdAt : null));
+    }
+
+    /** 그 결정이 낸 체결된 Claude 주문 — 매수는 목표 비중, 매도는 비율({@code sellFraction} null이면 전량). */
+    private long filled(String ticker, String side, long decisionId, Double sellFraction, Instant at) {
+        boolean buy = "BUY".equals(side);
+        return store.insertOrder(new Order(0, PaperBooks.CLAUDE, decisionId, ticker, side, null, buy ? 5.0 : null, sellFraction,
+                "NEXT_CLOSE", "CLAUDE", "FILLED", null, reason(ticker + " 논거", ticker + " 무효화"), FRI, at, null, at));
     }
 }
