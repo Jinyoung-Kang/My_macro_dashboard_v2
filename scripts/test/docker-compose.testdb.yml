@@ -1,0 +1,31 @@
+# =============================================================================
+# 시험 전용 일회용 PostgreSQL (scripts/test-isolated.sh · make test-isolated 가 띄우고 지웁니다)
+#
+# 떠 있는 로컬 스택의 postgres(mem_limit 512m)에 전체 시험 여러 벌을 붙이면 그 postgres가 메모리 부족으로 죽습니다(실제로 겪음).
+# 그래서 시험 한 벌마다 이 파일로 postgres를 따로 띄웁니다.
+#
+#   - 서비스 이름은 postgres — `make db-test`가 `$(COMPOSE) exec -T postgres psql`을 부릅니다.
+#   - 계정은 저장소의 공개 기본값(macro/macro — .env.example·CI와 같음). 비밀값이 아니고, 셸·.env의 값을 읽지 않습니다.
+#   - 포트는 TESTDB_PORT 하나로 받고 127.0.0.1에만 엽니다(값이 없으면 해석부터 실패).
+#   - 메모리 상한을 두지 않습니다(여러 벌이 붙어도 죽지 않게). 지워질 DB라 fsync 등을 꺼 빠르게 돌립니다 — 운영·로컬 스택에는 쓰지 않습니다.
+#   - 프로젝트 이름은 스크립트가 -p 로 칸마다 줍니다(my_macrodash_v2_test_<칸>). 아래 name 은 -p 없이 손으로 부를 때의 값입니다.
+# =============================================================================
+name: my_macrodash_v2_test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: macro
+      POSTGRES_PASSWORD: macro
+      POSTGRES_DB: scratch
+      LANG: C.UTF-8
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+    ports:
+      - "127.0.0.1:${TESTDB_PORT:?TESTDB_PORT가 필요합니다 (scripts/test-isolated.sh가 넘깁니다)}:5432"
+    healthcheck:
+      # -h localhost: 소켓만 보면 최초 initdb 중에도 healthy로 나옵니다(docker-compose.yml의 같은 주석).
+      test: ["CMD-SHELL", "pg_isready -h localhost -U macro -d scratch"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

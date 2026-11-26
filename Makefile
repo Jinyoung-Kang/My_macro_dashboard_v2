@@ -36,7 +36,7 @@ PAPER_ENABLED ?= $(shell grep -s '^PAPER_ENABLED=' .env | tail -n 1 | cut -d= -f
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up migrate down restart logs ps collect collect-all status verify \
-        doctor test db-test test-collector test-backend test-frontend \
+        doctor test test-isolated db-test test-collector test-backend test-frontend \
         dev-collector dev-backend dev-frontend db infra backup restore reset constraints
 
 # 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
@@ -157,6 +157,11 @@ doctor: ## 어디가 막혔는지 한 번에 진단 (데이터가 안 보일 때
 
 # ------------------------------------------------------------------ 테스트
 test: test-collector test-backend test-frontend ## 전체 테스트
+
+# 여러 작업 폴더에서 시험을 함께 돌릴 때는 이것을 씁니다 — 벌마다 일회용 postgres를 띄우고 끝나면 볼륨까지 지웁니다(동시에 둘까지).
+# 떠 있는 로컬 스택의 postgres(512m)에 여러 벌을 붙이면 그 postgres가 죽습니다. `make test`의 뜻은 그대로입니다.
+test-isolated: ## 일회용 postgres에 붙여 시험 (여러 벌은 이것으로, 동시에 둘까지) — 대상 고르기: make test-isolated T=test-collector
+	@bash scripts/test-isolated.sh $(T)
 
 # 주의: 테스트는 운영 DB(macrodash)를 쓰지 않습니다.
 #
