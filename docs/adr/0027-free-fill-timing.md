@@ -7,6 +7,7 @@
   결정 2의 켠 판 메뉴(시가 `NEXT_OPEN`을 빼고 `AT_MINUTE`·`NEXT_CLOSE` — `ft-2`·`kr-ft-2`), 결정 3의 장중 판단(최대 2회·간격 30분·창 개장 + 5분 → 최소 1·최대 3회·간격 20분·창 개장 + 10분 ~ 마감 − 30분,
   보장·사건), 결정 4의 스키마(V27 — `INTRADAY_3`·순번 3·계획 행 출처), 결정 5의 규칙 계좌(설정으로 개장 10분 뒤, 한국 대체·다시 내기는 다음 세션 첫 분), 결정 9의 예산(70·30·5)과
   장중 판단만 effort medium. 이 문서의 나머지 결정(스위치는 계좌별·끄면 바이트까지 같음·검증 표·복기·정규장만)은 그대로입니다.
+  **결정 3 일부 개정 — [ADR 0050](0050-claude-menu-no-close.md)(2026-11-27 결정, 배포 전)**: 장중 판단 교체의 새 주문이 받는 시점에서 그날 종가(`NEXT_CLOSE`)를 뺌 — 장중 시장가·그날 남은 지정 시각 둘.
 - 근거: [명세](../specs/2026-11-05-free-fill-timing.md) · [ADR 0018](0018-paper-trading-guardrails.md)(미국 책 가드레일) · [ADR 0020](0020-v2-program.md)(호출 상한) ·
   [ADR 0021](0021-kr-paper-prices-fills-start.md)(한국 책 가격·체결) · [ADR 0022](0022-us-claude-book2-timing.md)(계좌2 체결 시점 실험) ·
   [ADR 0008](0008-backend-owned-tables-and-scheduled-jobs.md)(테이블마다 쓰는 쪽 하나)
