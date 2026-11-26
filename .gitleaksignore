@@ -95,3 +95,10 @@ c9998b69d37a3cf1d47c9ceb0dccd5d3c0e665c8:backend/src/test/resources/paper/golden
 # 만든 커밋 — 위 c9998b69와 같은 매크로 카드 항목 키("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS)다(.env·.env.qa 값과 일치 0건). 병합 전에 이
 # 브랜치를 다시 쌓아 커밋 번호가 바뀌면 이 지문도 새 번호로 바꿔야 한다.
 d4da1cb3883ac6e82d0d6a8625e17728b709b801:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-fill-scheduled.json:generic-api-key:1
+
+# 2026-11-27 Claude 계좌 켠 판 메뉴에서 종가 제거(ADR 0050, 0b577b48): 한국 켠 판 패킷 고정본 넷을 다시 만든 커밋 — 위와 같은 매크로 카드 항목 키
+# ("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS)다(.env·.env.qa 값과 일치 0건).
+0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-continuity-scheduled.json:generic-api-key:1
+0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-scheduled.json:generic-api-key:1
+0b577b48dd4280276d4892feb52a045ecbc643c8:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-fill-scheduled.json:generic-api-key:1
