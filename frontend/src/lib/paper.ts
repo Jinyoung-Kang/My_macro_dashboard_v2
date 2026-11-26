@@ -391,13 +391,13 @@ const US_STOP =
 const US_INTRADAY =
   "장중 판단(세션당 최대 intradayMaxPerSession회, 개장 10분 뒤 ~ 마감 30분 전 — intradayMinPerSession이 1이면 세션 중간까지 예약이 없을 때 "
   + "한 번 보장, intradayEvents를 켜면 보유·지수 급변 때 가장 이른 예약을 당김)은 기준 시각이 남은 대기 주문을 그대로 두거나 장중 시장가·그날 "
-  + "남은 지정 시각·그날 종가 주문으로 바꿉니다. intradayFixed(고정 일정 판, ADR 0039)를 켜면 예약을 받지 않고 코드가 개장 1시간 뒤·마감 "
+  + "남은 지정 시각 주문으로 바꿉니다(그날 종가는 받지 않음 — ADR 0050). intradayFixed(고정 일정 판, ADR 0039)를 켜면 예약을 받지 않고 코드가 개장 1시간 뒤·마감 "
   + "40분 전에 한 번씩 부르며, 사건은 보유·지수 하락과 스탑 근접만 판단을 하나 더합니다.";
 
-/** 미국 자유 시점 판의 켠 판 체결(두 Claude 계좌 공통 — 백엔드 FreeTiming·UsTimedFills). */
+/** 미국 자유 시점 판의 켠 판 체결(두 Claude 계좌 공통 — 백엔드 FreeTiming·UsTimedFills, 판 ft-3 — ADR 0050). */
 const US_FREE_FILL =
-  "켬이면 주문마다 다음 세션의 지정 시각(AT_MINUTE — 개장 10분 뒤부터 마감 5분 전 앞까지의 분, 그 시각 1분봉 시가)이나 확정 종가(NEXT_CLOSE)를 "
-  + "고르는 다음 세션 하루짜리 주문이고, 시가는 없습니다";
+  "켬이면 주문마다 다음 세션의 지정 시각(AT_MINUTE — 개장 10분 뒤부터 마감 5분 전 앞까지의 분, 그 시각 1분봉 시가)을 정하는 "
+  + "다음 세션 하루짜리 주문이고, 시가·확정 종가는 없습니다";
 
 /**
  * 미국 Claude 계좌1의 체결 문장 — 자유 시점 판 스위치 claude.freeTiming의 두 경우(QA-323 — 예전에는 체결 시점을 적지 않고 '계좌1식 = 다음 시간별
@@ -560,7 +560,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "briefing.afterCloseMinutes", label: "마감 브리핑 시각(정규장 마감 뒤)", unit: "분" },
       { key: "claude.checkpoint", label: "장중 확인(세션당 한 번 — 끈 판)" },
       { key: "claude.checkpointAtEt", label: "장중 확인 시각(뉴욕)" },
-      { key: "claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "claude.freeTiming", label: "자유 시점 판(지정 시각·장중 판단)" },
       { key: "continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...US_INTRADAY_SETTINGS,
       { key: "apiDailyCallCap", label: "하루 호출 상한", unit: "회" },
@@ -642,7 +642,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude2.barsWaitMinutes", label: "1분봉 기다림 상한", unit: "분" },
       { key: "claude2.executionRecord", label: "패킷에 자기 체결 기록" },
       { key: "claude2.checkpoints", label: "장중 확인(세션당 최대 한 번 — 끈 판)" },
-      { key: "claude2.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "claude2.freeTiming", label: "자유 시점 판(지정 시각·장중 판단)" },
       { key: "continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...US_INTRADAY_SETTINGS,
       { key: "claude2.riskProfile", label: "투자 성향" },

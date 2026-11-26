@@ -52,7 +52,7 @@ const KR_STOP =
 const KR_INTRADAY =
   "장중 판단(세션당 최대 kr.intradayMaxPerSession회, 개장 10분 뒤 ~ 종가 단일가 30분 전 — kr.intradayMinPerSession이 1이면 세션 중간까지 "
   + "예약이 없을 때 한 번 보장, kr.intradayEvents를 켜면 보유·지수 급변 때 가장 이른 예약을 당김)은 기준 시각이 남은 대기 주문을 그대로 두거나 "
-  + "장중 시장가·그날 남은 지정 시각·그날 종가 주문으로 바꿉니다. kr.intradayFixed(고정 일정 판, ADR 0039)를 켜면 예약을 받지 않고 코드가 개장 "
+  + "장중 시장가·그날 남은 지정 시각 주문으로 바꿉니다(그날 종가는 받지 않음 — ADR 0050). kr.intradayFixed(고정 일정 판, ADR 0039)를 켜면 예약을 받지 않고 코드가 개장 "
   + "1시간 뒤·마감 40분 전에 한 번씩 부르며, 사건은 보유·지수 하락과 스탑 근접만 판단을 하나 더합니다.";
 
 /**
@@ -62,8 +62,8 @@ const KR_INTRADAY =
  */
 const KR_CLAUDE_FILL =
   "체결 시점은 설정 kr.claude.freeTiming(자유 시점 판)을 따릅니다. 끔이면 " + KR_FILL + " 켬이면 결정의 주문마다 다음 KR 거래일의 지정 시각"
-  + "(AT_MINUTE — 개장 10분 뒤부터 종가 단일가 앞까지의 분, 그 시각에 시작한 토스 1분봉 시가로 체결하고 확정 조정하지 않음)이나 종가(NEXT_CLOSE — "
-  + "KRX 종가 단일가 1분봉, 금융위 종가로 확정 조정)를 고르고 시가는 없습니다 — 켜기 전에 만든 대기 시가 주문만 시가로 체결합니다. "
+  + "(AT_MINUTE — 개장 10분 뒤부터 종가 단일가 시작 5분 전 앞까지의 분, 그 시각에 시작한 토스 1분봉 시가로 체결하고 확정 조정하지 않음)을 정하고 "
+  + "시가·종가는 없습니다(ADR 0050) — 켜기 전에 만든 대기 시가·종가 주문만 그 시점으로 체결합니다. "
   + KR_INTRADAY;
 
 /** 장중 스탑 감시 스위치(kr.stopWatch.mode)의 지금 값 이름표. */
@@ -90,8 +90,8 @@ const KR_CLAUDE2_FILL =
   + "값으로 확정 조정), 매시는 그 시각에 시작한 토스 1분봉 시가(거래가 없으면 4분 안 "
   + "첫 거래 봉, 그것도 없으면 그날 그 시각 뒤 첫 거래 봉 — 대체)로 체결해 확정 조정하지 않으며(금융위에 그 시각 값이 없음), 종가는 KRX 종가 "
   + "단일가 1분봉으로 체결해 금융위 종가로 확정 조정합니다. 매시·종가 주문은 다음 KR 거래일 하루뿐이고, 체결 순서는 시가 → 매시 → 종가라 매도는 "
-  + "같은 시점이거나 더 늦은 시점 매수의 현금만 만듭니다. 켬이면 계좌1의 켠 판과 같은 메뉴입니다 — 지정 시각(AT_MINUTE)·종가(NEXT_CLOSE) "
-  + "가운데 고르고 시가·매시는 없으며(켜기 전에 만든 대기 주문만 그 시점으로 체결), 장중 확인 대신 장중 판단을 씁니다. " + KR_INTRADAY;
+  + "같은 시점이거나 더 늦은 시점 매수의 현금만 만듭니다. 켬이면 계좌1의 켠 판과 같은 메뉴입니다 — 지정 시각(AT_MINUTE) 하나이고 "
+  + "시가·매시·종가는 없으며(켜기 전에 만든 대기 주문만 그 시점으로 체결), 장중 확인 대신 장중 판단을 씁니다. " + KR_INTRADAY;
 
 /**
  * 네 계좌가 함께 출발한 문장 — 출발일 토스 종가 사후 체결(백엔드 StartCloseRestart의 토스 출처, 사용자 결정 2026-11-02 — K28의 'S+1 시가 출발,
@@ -220,7 +220,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.decisionBeforeOpenMinutes", label: "결정을 다음 개장 몇 분 전에(0 = 끔 — 결정 시각·기한 그대로, 켜면 기한은 개장 30분 전)", unit: "분" },
       { key: "kr.briefing.enabled", label: "마감 브리핑(텔레그램 — 시장 전체, 모의 매매 입력 아님)" },
       { key: "kr.briefing.afterCloseMinutes", label: "마감 브리핑 시각(정규장 마감 뒤)", unit: "분" },
-      { key: "kr.claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "kr.claude.freeTiming", label: "자유 시점 판(지정 시각·장중 판단)" },
       { key: "kr.continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...KR_INTRADAY_SETTINGS,
       { key: "apiDailyCallCap", label: "하루 호출 상한(두 시장 공유)", unit: "회" },
@@ -253,7 +253,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
           + "고른 이유(executionNote)를 냅니다. 밤 결정은 다음 거래일 장중 확인 한 번(10:00~15:00 KST 30분 단위·감시 종목 1~10개 — 단계 2b)을 "
           + "요청할 수 있고, 그 시각 뒤에 받은 토스 1분봉으로 한 번 더 판단해 대기 주문을 그대로 두거나 기준 시각이 아직 오지 않은 주문만 장중 "
           + "시장가(MARKET)·남은 매시·종가 주문으로 바꿉니다(재시도 없음, 설정 kr.claude2.checkpoints로 끔). 켜면 두 계좌가 같은 켠 판 메뉴"
-          + "(지정 시각·종가)와 장중 판단을 씁니다(매수 칸).",
+          + "(지정 시각 하나 — ADR 0050)와 장중 판단을 씁니다(매수 칸).",
       },
       {
         key: "buy",
@@ -289,7 +289,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     settings: [
       { key: "kr.claude2.riskProfile", label: "투자 성향" },
       { key: "kr.claude2.checkpoints", label: "장중 확인(세션당 최대 한 번 — 끈 판)" },
-      { key: "kr.claude2.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "kr.claude2.freeTiming", label: "자유 시점 판(지정 시각·장중 판단)" },
       { key: "kr.continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...KR_INTRADAY_SETTINGS,
       { key: "model", label: "모델(두 시장 공용)" },

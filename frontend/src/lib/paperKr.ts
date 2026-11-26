@@ -754,7 +754,7 @@ export function krDecisionBookNote(kind: string | null | undefined, code?: strin
     return "한국 Claude 계좌는 KR 거래일마다 결정 창(설정 kr.decisionTimeKst~kr.decisionDeadlineKst) 안에서 자료 게이트 ①~⑥이 모두 통과하면 한국 "
       + "패킷을 Claude에 보내 주문과 목표 주식 노출을 받습니다. 검증기(하드 규칙 — 체결할 수 없는 종목 매수 UNFILLABLE·1주 미만 증가분 "
       + `BUY_BELOW_ONE_SHARE 포함)가 통과시킨 주문만 대기 주문이 되고, 체결 시점은 설정 ${key}(자유 시점 판)을 따릅니다 — ${off}, 켬이면 다음 KR `
-      + "거래일의 지정 시각(개장 10분 뒤 ~ 종가 단일가 앞)·종가이고 그 세션 장중 판단(설정 kr.intradayMaxPerSession)이 대기 주문을 바꿀 수 있습니다. "
+      + "거래일의 지정 시각(개장 10분 뒤 ~ 종가 단일가 시작 5분 전 앞) 하나이고 그 세션 장중 판단(설정 kr.intradayMaxPerSession)이 대기 주문을 바꿀 수 있습니다. "
       + "기한이 지나면 그 세션은 부르지 않고 '건너뜀'(기한 지남)으로 남깁니다. '지금 결정 실행'은 같은 창·같은 게이트 안에서만 받고, 수동 호출 "
       + "문턱(상한 − 정기 몫 예약)까지입니다.";
   }
