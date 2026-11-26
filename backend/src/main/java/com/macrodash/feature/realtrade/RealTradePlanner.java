@@ -204,10 +204,17 @@ final class RealTradePlanner {
      * {@code remainingOrders}·{@code remainingBuyKrw}는 수집기 하루 한도의 오늘 남은 건수·매수 금액(한도 − {@link #dailyUsage}) — null이면 따지지 않습니다.
      */
     record Rules(BigDecimal maxOrderKrw, Set<String> cashLike, boolean buysPaused, boolean requireSellable, Integer remainingOrders,
-                 BigDecimal remainingBuyKrw) {
+                 BigDecimal remainingBuyKrw, CashCut cashCut) {
 
         Rules {
             cashLike = Set.copyOf(cashLike);
+            cashCut = cashCut == null ? CashCut.REDUCE : cashCut;
+        }
+
+        /** 현금이 모자란 매수를 지금처럼 줄여 보내는 규칙({@link CashCut#REDUCE}). */
+        Rules(BigDecimal maxOrderKrw, Set<String> cashLike, boolean buysPaused, boolean requireSellable, Integer remainingOrders,
+              BigDecimal remainingBuyKrw) {
+            this(maxOrderKrw, cashLike, buysPaused, requireSellable, remainingOrders, remainingBuyKrw, CashCut.REDUCE);
         }
 
         /** 하루 한도를 따지지 않는 규칙. */
@@ -216,13 +223,31 @@ final class RealTradePlanner {
         }
 
         Rules withRequireSellable(boolean require) {
-            return new Rules(maxOrderKrw, cashLike, buysPaused, require, remainingOrders, remainingBuyKrw);
+            return new Rules(maxOrderKrw, cashLike, buysPaused, require, remainingOrders, remainingBuyKrw, cashCut);
         }
 
         /** 오늘 남은 하루 건수·매수 금액(null이면 따지지 않음). */
         Rules withDaily(Integer orders, BigDecimal buyKrw) {
-            return new Rules(maxOrderKrw, cashLike, buysPaused, requireSellable, orders, buyKrw);
+            return new Rules(maxOrderKrw, cashLike, buysPaused, requireSellable, orders, buyKrw, cashCut);
         }
+
+        /** 현금이 모자라 줄여야 하는 매수의 처리({@link CashCut}). */
+        Rules withCashCut(CashCut cut) {
+            return new Rules(maxOrderKrw, cashLike, buysPaused, requireSellable, remainingOrders, remainingBuyKrw, cut);
+        }
+    }
+
+    /**
+     * 현금이 모자라 목표 수량을 줄여야 하는 매수의 처리(QA-1018). <b>이 커밋에서는 값만 있고 계획({@code limit()})이 아직 보지 않습니다</b> — 어느
+     * 값이든 지금처럼 줄여 보냅니다(재현 시험이 쓰는 꼴만 먼저 둠, 동작은 수정 커밋에서).
+     */
+    enum CashCut {
+        /** 남은 현금 안으로 줄여 보냄 — 기본. */
+        REDUCE,
+        /** 같은 계획에 보낼 매도가 있으면 줄이지 않고 미룸, 매도가 없으면 줄여 보냄. */
+        DEFER_WITH_SELLS,
+        /** 그 창에 이 기능의 진행 중인 매도가 있음 — 이번 계획에 매도가 없어도 줄이지 않고 미룸. */
+        DEFER
     }
 
     // ------------------------------------------------------------------ 출력

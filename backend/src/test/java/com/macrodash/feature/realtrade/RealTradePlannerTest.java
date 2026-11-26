@@ -229,6 +229,46 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-1018 재현 — 매도와 함께 계획된 매수를 남은 현금으로 줄여 보냄(수정 커밋에서 해제)")
+    @DisplayName("QA-1018: 마무리 창의 계획 — 현금이 목표 수량에 모자란 매수는 같은 계획이 매도를 보내거나 그 창에 진행 중인 매도가 있으면 줄인 주문 대신 "
+            + "deferred-cash, 매도가 없으면 지금처럼 줄여 보냄(기본 규칙은 매도가 있어도 줄여 보냄 — 켜기 창 예상 목록·ISA 지시·판정 계획)")
+    void cashCutBuyWaitsForSellProceeds() {
+        // 책에 없는 C 10주(매도) + A 25%(목표 35주), 현금 1,000,000원 — 상한가 91,000원 기준으로는 10주까지만
+        Account selling = new Acct().cash("1000000").hold(C, "10", "40000").quote(A, "70000").build();
+        Account buyOnly = new Acct().cash("1000000").quote(A, "70000").build();
+        Map<String, Double> weights = Map.of(A, 25.0);
+        Rules followup = RULES.withCashCut(RealTradePlanner.CashCut.DEFER_WITH_SELLS);
+
+        Plan reduced = RealTradePlanner.sync(weights, E, selling, Set.of(), BigDecimal.ZERO, RULES, true);
+        assertThat(reduced.orders()).as("기본 규칙 — 지금처럼 줄여 보냄").extracting(o -> o.side() + " " + o.symbol() + " " + o.quantity())
+                .containsExactly("SELL " + C + " 10", "BUY " + A + " 10");
+
+        Plan waiting = RealTradePlanner.sync(weights, E, selling, Set.of(), BigDecimal.ZERO, followup, true);
+        assertThat(waiting.orders()).as("매도를 보내는 계획 — 줄여야 하는 매수는 보내지 않음")
+                .extracting(o -> o.side() + " " + o.symbol() + " " + o.quantity()).containsExactly("SELL " + C + " 10");
+        assertThat(waiting.skipped()).extracting(s -> s.symbol() + " " + s.reason())
+                .containsExactly(A + " " + RealTradePlanner.SKIP_DEFERRED_CASH);
+        assertThat(waiting.turnoverAmount()).as("회전율은 줄이기·미루기 전 값 그대로").isEqualByComparingTo(reduced.turnoverAmount());
+
+        Plan noSells = RealTradePlanner.sync(weights, E, buyOnly, Set.of(), BigDecimal.ZERO, followup, true);
+        assertThat(noSells.orders()).as("매도가 없는 계획 — 지금처럼 줄여 보냄").singleElement()
+                .satisfies(o -> assertThat(o.quantity()).isEqualTo(10));
+
+        Plan inFlight = RealTradePlanner.sync(weights, E, buyOnly, Set.of(), BigDecimal.ZERO,
+                RULES.withCashCut(RealTradePlanner.CashCut.DEFER), true);
+        assertThat(inFlight.orders()).as("그 창에 진행 중인 매도가 있음 — 계획에 매도가 없어도 미룸").isEmpty();
+        assertThat(reasons(inFlight)).containsExactly(RealTradePlanner.SKIP_DEFERRED_CASH);
+
+        // 미룬 매수(B 25% — 125주, 상한가 26,000원)는 현금을 잡지 않아, 뒤 순서의 온전히 살 수 있는 매수(A 5% — 7주)는 매도가 있어도 그대로 나감
+        Account mixed = new Acct().cash("1000000").hold(C, "10", "40000").quote(A, "70000").quote(B, "20000").build();
+        Plan fits = RealTradePlanner.sync(Map.of(A, 5.0, B, 25.0), E, mixed, Set.of(), BigDecimal.ZERO, followup, true);
+        assertThat(fits.orders()).extracting(o -> o.side() + " " + o.symbol() + " " + o.quantity())
+                .containsExactly("SELL " + C + " 10", "BUY " + A + " 7");
+        assertThat(fits.skipped()).extracting(s -> s.symbol() + " " + s.reason())
+                .containsExactly(B + " " + RealTradePlanner.SKIP_DEFERRED_CASH);
+    }
+
+    @Test
     @DisplayName("1건 상한을 넘으면 쪼개지 않고 상한까지만(capped) — 매수는 상한가, 매도는 현재가 기준")
     void orderCap() {
         Rules capped = new Rules(d("1000000"), Set.of(), false, true);

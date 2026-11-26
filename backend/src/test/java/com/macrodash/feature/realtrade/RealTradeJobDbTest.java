@@ -705,6 +705,33 @@ class RealTradeJobDbTest {
         assertThat(RealTradeNotices.text(events("WINDOW_SUMMARY").getFirst())).contains("개장 10분 뒤 맞추기");
     }
 
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-1018 재현 — 줄여 보낸 매수가 체결되면 그 종목이 그날 닫혀 나머지를 사지 못함(수정 커밋에서 해제)")
+    @DisplayName("QA-1018: 시각 맞추기 날 — 매도와 함께 계획된 매수가 현금이 모자라면 줄여 보내지 않고 미루고(진행 중인 매도가 있는 주기도), 매도가 끝나 대금이 "
+            + "들어온 주기에 온전한 수량으로 보냄(줄인 32주가 체결돼 그 종목이 그날 닫히지 않음)")
+    void timedSyncDefersACashCutBuyUntilTheSellProceedsArrive() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).as("A(목표 100주)는 남은 현금으로 32주뿐 — 같은 계획이 C를 팔므로 줄여 보내지 않음")
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
+
+        // 다음 주기 — C 매도가 아직 진행 중(대금 전): A는 여전히 32주뿐이라 다시 미룸
+        run("09:10:40");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
+
+        // C 매도·B 매수가 체결로 끝나고 대금이 들어옴(현금 6,000,000 + 4,000,000 − 3,000,000) — A를 온전한 100주로
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", B, "BUY", "DAY", "FILLED", "150", "150", clock.now, clock.now)));
+        preflight("7000000", Map.of(B, new String[]{"150", "20000"}), Map.of(A, "50000"));
+        run("09:11:15");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 100");
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(A)).singleElement()
+                .satisfies(r -> assertThat(r.attempt()).as("미룬 매수는 시도 1 — 시도 번호 규칙 그대로").isEqualTo(1));
+    }
+
     // QA-378(고치지 않음 — 경로 확인): 모의 장부가 보류해 목표 세션이 지난 STOP 아닌 대기 주문은 다음 세션 목표에 보이지 않습니다
     // (PaperMirrorServiceTest.heldDecisionOrdersPastTheirSessionAreInvisibleToTheNextSession). 그 목표를 받은 묶음은 어제 따라 한 매매를 되돌립니다 —
     // 뒤에 모의가 원래 세션 값으로 체결하면 다음 묶음이 다시 맞추므로 실제 돈이 왕복합니다. 아래는 지금 동작을 그대로 적은 것입니다(결정 전).
