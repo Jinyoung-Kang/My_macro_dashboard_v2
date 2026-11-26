@@ -65,8 +65,11 @@ public final class ReviewFacts {
     private ReviewFacts() {
     }
 
-    /** 입력 모양의 판 — 칸을 바꾸면 올립니다(복기 기록끼리 비교할 때 같은 모양인지 알게). */
-    public static final int INPUT_VERSION = 2;
+    /**
+     * 입력 모양의 판 — 칸을 바꾸면 올립니다(복기 기록끼리 비교할 때 같은 모양인지 알게). 3(ADR 0051): 수익 귀속({@code attribution} —
+     * {@link #attribution}).
+     */
+    public static final int INPUT_VERSION = 3;
 
     /** 기본 창(주) — 명세 D2·D32. */
     public static final int DEFAULT_WEEKS = 4;
@@ -196,6 +199,24 @@ public final class ReviewFacts {
             + "시각을 정했나 — RESERVED·NEXT는 결정·앞 판단이 예약, GUARANTEE·EVENT는 코드 규칙, MANUAL은 운영자, CHECKPOINT는 옛 장중 확인; "
             + "action KEEP은 바꾸지 않음, REPLACE는 대기 주문을 바꿈, null은 호출 실패; 그 판단이 낸 주문은 그 결정의 orders에 함께 있음). "
             + "previousReview = 바로 앞 복기가 남긴 반복 오류·지킬 것·지켜볼 것(없으면 null).";
+
+    /**
+     * 입력 판 3이 더한 칸의 설명({@link #V2_NOTE} 뒤에 붙임 — ADR 0051). 계좌 수익률을 위험 노출의 몫과 나머지로 나눈 값입니다.
+     */
+    public static final String V3_NOTE = " 입력 판 3: attribution = 복기하는 계좌마다 수익률을 둘로 나눈 값(window는 comparison과 같은 "
+            + "창, sinceStart는 그 계좌의 첫 순자산 줄부터) — 칸마다의 뜻은 attribution.note.";
+
+    /** 수익 귀속 칸의 설명(그 칸의 note). */
+    static final String ATTRIBUTION_NOTE = "수익률은 %, 노출·비중은 순자산 대비 %. 구간은 그 계좌 순자산 줄이 있는 날을 차례로 이은 것(days = 이은 "
+            + "구간 수). avgRiskExposurePct = 구간마다 앞 날의 위험 노출(보유 평가액 − 현금성 종목 평가액)의 평균, avgCashLikePct = 현금성 종목 "
+            + "비중의 평균. exposureEffectPct = 구간마다 (앞 날 위험 노출 × 지수 수익률)을 이어 곱한 값 — 그 노출만큼 지수(index)만 들었다면의 "
+            + "수익률. residualPct = bookReturnPct − exposureEffectPct(%p) — 지수 대신 고른 종목·현금성 종목의 수익·비용의 몫. upDays·downDays = "
+            + "지수가 오른 구간·내린 구간만 이어 곱한 지수(indexPct)와 계좌(bookPct) 수익률과 구간 수. 현금성 평가는 체결 기록의 수량 × 그날 "
+            + "종가(수정주가)라 배당만큼 작은 차이가 있을 수 있음. isEstimated = 확정 종가가 아닌 순자산 줄을 씀. 못 구한 값은 null(이유는 "
+            + "reason), 0이 아님";
+
+    /** 위험 노출이 이 값(%p)보다 더 음수면(현금성 평가가 장부 노출보다 큼) 재료가 어긋난 것으로 보고 값을 내지 않습니다. */
+    static final double RISK_EXPOSURE_TOLERANCE = 1.0;
 
     /** 시장 표의 설명. */
     static final String MARKET_NOTE = "결정 기준일·복기 기준일마다 한 줄 — indexClose·indexDayPct는 지수 종가와 전일 대비(%), 그 밖의 열은 그날 "
@@ -349,14 +370,48 @@ public final class ReviewFacts {
         }
     }
 
-    /** 계좌의 거래일별 순자산 한 줄(paper_nav_daily). */
-    public record NavPoint(LocalDate date, double nav, boolean pricesFinal) {
+    /**
+     * 계좌의 거래일별 순자산 한 줄(paper_nav_daily).
+     *
+     * @param exposurePct 그 줄의 노출(보유 평가액 ÷ 순자산 × 100 — 현금성 종목 포함). 모르면 null(수익 귀속의 노출 몫을 내지 않음)
+     */
+    public record NavPoint(LocalDate date, double nav, boolean pricesFinal, Double exposurePct) {
+        /** 노출을 모르는 줄(계좌 비교·결정 뒤 사실만 쓰는 재료). */
+        public NavPoint(LocalDate date, double nav, boolean pricesFinal) {
+            this(date, nav, pricesFinal, null);
+        }
     }
 
     /** 계좌 하나의 순자산 줄(날짜 순서 상관없음). */
     public record BookNav(String book, List<NavPoint> rows) {
         public BookNav {
             rows = rows == null ? List.of() : List.copyOf(rows);
+        }
+    }
+
+    /**
+     * 현금성 종목의 체결 한 건(입력 판 3 — 위험 노출을 내려고 그 종목의 날짜별 수량을 되짚는 재료).
+     *
+     * @param qty 산 수량은 양수, 판 수량은 음수
+     */
+    public record CashLikeFill(String book, String ticker, LocalDate date, long qty) {
+    }
+
+    /**
+     * 수익 귀속의 재료(입력 판 3 — ADR 0051).
+     *
+     * @param books       귀속을 낼 계좌(복기하는 Claude 계좌 — 이 순서로 실음). 순자산 줄은 {@link Inputs#books}에서 찾습니다
+     * @param cashLike    그 시장의 현금성 종목(설정 — 종가는 {@link Inputs#closes}에)
+     * @param fills       그 계좌들의 현금성 종목 체결 전부(출발부터 — 일부만 주면 수량이 틀림)
+     * @param unavailable 계좌 → 위험 노출을 낼 수 없는 이유(체결 기록을 끝까지 읽지 못함 등). 그 계좌는 노출 몫을 내지 않습니다
+     */
+    public record AttributionInputs(List<String> books, List<String> cashLike, List<CashLikeFill> fills,
+                                    Map<String, String> unavailable) {
+        public AttributionInputs {
+            books = books == null ? List.of() : List.copyOf(books);
+            cashLike = cashLike == null ? List.of() : List.copyOf(cashLike);
+            fills = fills == null ? List.of() : List.copyOf(fills);
+            unavailable = unavailable == null ? Map.of() : Collections.unmodifiableMap(new HashMap<>(unavailable));
         }
     }
 
@@ -370,11 +425,12 @@ public final class ReviewFacts {
      * @param benchmark  그 시장 지수 종목(미국 SPY·한국 KODEX 200 — 종가는 {@code closes}에). null이면 결정 뒤 지수 사실·시장 표를 내지 않음
      * @param marketDays 결정 기준일마다 그 결정 패킷이 본 매크로 값(시장 표의 열)
      * @param previous   바로 앞 복기의 요지(없으면 null)
+     * @param attribution 수익 귀속의 재료(입력 판 3 — null이면 그 칸을 싣지 않음)
      */
     public record Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
                          List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion,
                          String frameworkStatus, Map<String, Map<LocalDate, EntryOpen>> opens, String benchmark,
-                         List<MarketDay> marketDays, PreviousReview previous) {
+                         List<MarketDay> marketDays, PreviousReview previous, AttributionInputs attribution) {
         public Inputs {
             marketDays = marketDays == null ? List.of() : List.copyOf(marketDays);
             decisions = decisions == null ? List.of() : List.copyOf(decisions);
@@ -387,6 +443,15 @@ public final class ReviewFacts {
                 opens.forEach((ticker, days) -> copied.put(ticker, days == null ? Map.of() : Map.copyOf(days)));
             }
             opens = Collections.unmodifiableMap(copied);
+        }
+
+        /** 입력 판 2의 재료(수익 귀속 없음). */
+        public Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
+                      List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion, String frameworkStatus,
+                      Map<String, Map<LocalDate, EntryOpen>> opens, String benchmark, List<MarketDay> marketDays,
+                      PreviousReview previous) {
+            this(decisions, closes, stops, fullSells, books, frameworkVersion, frameworkStatus, opens, benchmark,
+                    marketDays, previous, null);
         }
 
         /** 입력 판 1의 재료(지수·시장 표·앞 복기 없음). */
@@ -530,16 +595,47 @@ public final class ReviewFacts {
         }
     }
 
+    /** 지수가 오른(또는 내린) 구간만 이어 곱한 수익률. 그런 구간이 없으면 days 0·수익률 null. */
+    public record DaySplit(int days, Double indexPct, Double bookPct) {
+    }
+
+    /**
+     * 계좌 하나의 한 구간 수익 귀속(입력 판 3). 못 구한 값은 null이고 이유는 {@code reason}(여러 개면 ' · '로 이음).
+     *
+     * @param days               이은 구간 수(순자산 줄이 있는 날의 쌍)
+     * @param avgRiskExposurePct 구간마다 앞 날의 위험 노출(현금성 제외)의 평균
+     * @param exposureEffectPct  그 위험 노출만큼 지수만 들었다면의 수익률
+     * @param residualPct        계좌 수익률 − 노출 효과(%p)
+     */
+    public record AttributionSpan(LocalDate from, LocalDate to, Integer days, Double bookReturnPct,
+                                  Double indexReturnPct, Double avgRiskExposurePct, Double avgCashLikePct,
+                                  Double exposureEffectPct, Double residualPct, DaySplit upDays, DaySplit downDays,
+                                  Boolean isEstimated, String reason) {
+    }
+
+    /** 계좌 하나의 수익 귀속 — 복기 창과 출발 뒤 전체. */
+    public record BookAttribution(String book, AttributionSpan window, AttributionSpan sinceStart) {
+    }
+
+    /** 수익 귀속(입력 판 3) — 지수 종목과 계좌별 값. */
+    public record Attribution(String index, List<BookAttribution> books) {
+        public Attribution {
+            books = List.copyOf(books);
+        }
+    }
+
     /**
      * 복기 입력 전체.
      *
      * @param trimmedReason      2주로 줄였으면 그 이유(아니면 null)
      * @param omittedDecisions   사실을 만들지 않은 결정의 상태 → 건수(이름 순)
      * @param entry              거절 주문의 가정 진입 규칙(입력 설명 note와 hypothetical의 모양이 따름)
+     * @param attribution        수익 귀속(입력 판 3 — 재료가 없으면 null)
      */
     public record Facts(LocalDate weekEnding, Window window, String trimmedReason, Integer frameworkVersion,
                         String frameworkStatus, List<DecisionFacts> decisions, Map<String, Integer> omittedDecisions,
-                        Comparison comparison, Entry entry, MarketTable market, PreviousReview previous) {
+                        Comparison comparison, Entry entry, MarketTable market, PreviousReview previous,
+                        Attribution attribution) {
         public Facts {
             decisions = List.copyOf(decisions);
             omittedDecisions = Collections.unmodifiableMap(new TreeMap<>(omittedDecisions));
@@ -711,7 +807,7 @@ public final class ReviewFacts {
         }
         return new Facts(weekEnding, window, trimmedReason, in.frameworkVersion(), in.frameworkStatus(), decisions,
                 omitted, comparison(calendar, in.books(), window), entry, market(calendar, in, inWindow, weekEnding),
-                in.previous());
+                in.previous(), attribution(calendar, in, window));
     }
 
     /**
@@ -1322,6 +1418,207 @@ public final class ReviewFacts {
         return true;
     }
 
+    // ------------------------------------------------------------------ 수익 귀속
+    /** 한 날의 노출 분해 — 위험 노출과 현금성 비중(순자산 대비 %). 못 구하면 둘 다 null이고 이유. */
+    private record Exposure(Double riskPct, Double cashLikePct, String reason) {
+    }
+
+    /**
+     * 수익 귀속(입력 판 3 — ADR 0051): 복기하는 계좌마다 수익률을 <b>위험 노출의 몫</b>과 <b>나머지</b>로 나눕니다. 지수보다 덜 잃은(또는 덜 번)
+     * 것이 낮은 노출 때문인지 고른 종목 때문인지를 복기가 가를 사실입니다.
+     *
+     * <p>구간은 그 계좌의 순자산 줄이 있는 날을 차례로 이은 것입니다(줄이 빠진 날은 앞뒤 줄이 한 구간 — 계좌 수익률은 그대로 맞고, 그 구간의
+     * 노출은 앞 줄의 값). 구간마다 계좌 수익률 = 뒤 순자산 ÷ 앞 순자산 − 1, 지수 수익률 = 뒤 종가 ÷ 앞 종가 − 1, 위험 노출 = 앞 날의 장부 노출
+     * (보유 평가액 ÷ 순자산) − 현금성 종목 비중(체결 기록으로 되짚은 수량 × 그날 종가 ÷ 순자산)입니다. 노출 효과는 (1 + 위험 노출 × 지수 수익률)을
+     * 이어 곱한 값 − 1, 나머지는 계좌 수익률 − 노출 효과(반올림한 두 값의 차 — 실린 숫자끼리 맞게)입니다.
+     *
+     * <p>창 구간은 계좌 비교와 같은 시작일(창 시작 당일, 휴장이면 직전 거래일 — 그날 줄이 없으면 그 뒤 첫 줄)부터, 출발 뒤 구간은 그 계좌의 첫
+     * 순자산 줄부터 복기 기준일까지입니다. 지수 종가·노출 줄·현금성 종가가 하나라도 없으면 그 값에 기대는 칸은 null이고 이유를 남깁니다
+     * (계좌 수익률처럼 구할 수 있는 칸은 그대로 실음). 재료({@link Inputs#attribution})나 지수 종목이 없으면 null — 칸을 싣지 않습니다.
+     */
+    static Attribution attribution(TradingCalendar calendar, Inputs in, Window window) {
+        AttributionInputs a = in.attribution();
+        if (a == null || a.books().isEmpty() || in.benchmark() == null) {
+            return null;
+        }
+        LocalDate base = calendar.isTradingDay(window.after()) ? window.after()
+                : calendar.previousTradingDay(window.after());
+        LocalDate end = window.through();
+        DailySeries index = in.closes().get(in.benchmark());
+        List<BookAttribution> out = new ArrayList<>();
+        for (String book : a.books()) {
+            TreeMap<LocalDate, NavPoint> rows = new TreeMap<>();
+            for (BookNav b : in.books()) {
+                if (!Objects.equals(b.book(), book)) {
+                    continue;
+                }
+                for (NavPoint p : b.rows()) {
+                    if (!p.date().isAfter(end)) {
+                        rows.put(p.date(), p);
+                    }
+                }
+            }
+            Map<LocalDate, Exposure> exposures = exposures(book, rows, a, in.closes());
+            LocalDate windowFrom = rows.containsKey(base) ? base : rows.higherKey(base);
+            LocalDate first = rows.isEmpty() ? null : rows.firstKey();
+            out.add(new BookAttribution(book, span(rows, exposures, index, in.benchmark(), windowFrom, end),
+                    span(rows, exposures, index, in.benchmark(), first, end)));
+        }
+        return new Attribution(in.benchmark(), out);
+    }
+
+    /** 순자산 줄이 있는 날마다의 노출 분해 — 현금성 종목의 날짜별 누적 수량(체결 기록)과 그날 종가로. */
+    private static Map<LocalDate, Exposure> exposures(String book, TreeMap<LocalDate, NavPoint> rows,
+                                                      AttributionInputs a, Map<String, DailySeries> closes) {
+        Map<String, TreeMap<LocalDate, Long>> held = new TreeMap<>();
+        for (CashLikeFill f : a.fills()) {
+            if (Objects.equals(f.book(), book) && f.date() != null && a.cashLike().contains(f.ticker())) {
+                held.computeIfAbsent(f.ticker(), t -> new TreeMap<>()).merge(f.date(), f.qty(), Long::sum);
+            }
+        }
+        for (TreeMap<LocalDate, Long> days : held.values()) {
+            long running = 0;
+            for (Map.Entry<LocalDate, Long> day : days.entrySet()) {
+                running += day.getValue();
+                day.setValue(running);
+            }
+        }
+        String blocked = a.unavailable().get(book);
+        Map<LocalDate, Exposure> out = new HashMap<>();
+        for (NavPoint p : rows.values()) {
+            out.put(p.date(), blocked != null ? new Exposure(null, null, blocked) : exposure(p, held, closes));
+        }
+        return out;
+    }
+
+    private static Exposure exposure(NavPoint p, Map<String, TreeMap<LocalDate, Long>> held,
+                                     Map<String, DailySeries> closes) {
+        if (p.exposurePct() == null) {
+            return new Exposure(null, null, "노출 줄 없음(" + p.date() + ")");
+        }
+        if (!(p.nav() > 0)) {
+            return new Exposure(null, null, "순자산이 0 이하(" + p.date() + ")");
+        }
+        double value = 0.0;
+        for (Map.Entry<String, TreeMap<LocalDate, Long>> ticker : held.entrySet()) {
+            Map.Entry<LocalDate, Long> upTo = ticker.getValue().floorEntry(p.date());
+            long shares = upTo == null ? 0 : upTo.getValue();
+            if (shares == 0) {
+                continue;
+            }
+            if (shares < 0) {
+                return new Exposure(null, null,
+                        "현금성(" + ticker.getKey() + ") 수량을 체결 기록으로 되짚지 못함(" + p.date() + ")");
+            }
+            DailySeries series = closes.get(ticker.getKey());
+            Double close = series == null ? null : series.valueOn(p.date());
+            if (close == null || !(close > 0)) {
+                return new Exposure(null, null, "현금성(" + ticker.getKey() + ") " + p.date() + " 종가 없음");
+            }
+            value += shares * close;
+        }
+        double cashLike = value / p.nav() * 100.0;
+        double risk = p.exposurePct() - cashLike;
+        if (risk < -RISK_EXPOSURE_TOLERANCE) {
+            return new Exposure(null, null, "현금성 평가가 장부 노출보다 큼(" + p.date() + ")");
+        }
+        return new Exposure(Math.max(0.0, risk), cashLike, null);
+    }
+
+    /** 한 구간(from 줄 → to 줄)의 귀속. 계좌 수익률·지수 수익률·노출 몫을 따로 구해, 못 구한 것만 null로 둡니다. */
+    private static AttributionSpan span(TreeMap<LocalDate, NavPoint> rows, Map<LocalDate, Exposure> exposures,
+                                        DailySeries index, String benchmark, LocalDate from, LocalDate to) {
+        if (rows.get(to) == null) {
+            return noSpan(from, to, rows.isEmpty() ? "순자산 기록 없음" : "복기 기준일(" + to + ") 순자산 없음");
+        }
+        if (from == null || !from.isBefore(to)) {
+            return noSpan(from, to, "구간에 순자산 줄이 둘 미만");
+        }
+        List<NavPoint> points = new ArrayList<>(rows.subMap(from, true, to, true).values());
+        List<String> reasons = new ArrayList<>();
+        boolean estimated = !points.get(0).pricesFinal();
+        boolean bookOk = true;
+        boolean indexOk = true;
+        boolean exposureOk = true;
+        double effect = 1.0;
+        double riskSum = 0.0;
+        double cashSum = 0.0;
+        int up = 0;
+        int down = 0;
+        double upIndex = 1.0;
+        double upBook = 1.0;
+        double downIndex = 1.0;
+        double downBook = 1.0;
+        for (int i = 1; i < points.size(); i++) {
+            NavPoint prev = points.get(i - 1);
+            NavPoint cur = points.get(i);
+            estimated |= !cur.pricesFinal();
+            Double bookRet = null;
+            if (prev.nav() > 0) {
+                bookRet = cur.nav() / prev.nav() - 1.0;
+            } else if (bookOk) {
+                bookOk = false;
+                reasons.add("순자산이 0 이하(" + prev.date() + ")");
+            }
+            Double indexRet = null;
+            if (indexOk) {
+                Double before = index == null ? null : index.valueOn(prev.date());
+                Double after = index == null ? null : index.valueOn(cur.date());
+                if (before == null || !(before > 0) || after == null) {
+                    indexOk = false;
+                    reasons.add("지수(" + benchmark + ") " + (before == null || !(before > 0) ? prev.date() : cur.date())
+                            + " 종가 없음");
+                } else {
+                    indexRet = after / before - 1.0;
+                }
+            }
+            if (exposureOk) {
+                Exposure e = exposures.get(prev.date());
+                if (e == null || e.riskPct() == null) {
+                    exposureOk = false;
+                    reasons.add(e == null ? "노출 줄 없음(" + prev.date() + ")" : e.reason());
+                } else {
+                    riskSum += e.riskPct();
+                    cashSum += e.cashLikePct();
+                    if (indexRet != null) {
+                        effect *= 1.0 + e.riskPct() / 100.0 * indexRet;
+                    }
+                }
+            }
+            if (indexRet != null && bookRet != null) {
+                if (indexRet > 0) {
+                    up++;
+                    upIndex *= 1.0 + indexRet;
+                    upBook *= 1.0 + bookRet;
+                } else if (indexRet < 0) {
+                    down++;
+                    downIndex *= 1.0 + indexRet;
+                    downBook *= 1.0 + bookRet;
+                }
+            }
+        }
+        int days = points.size() - 1;
+        NavPoint first = points.get(0);
+        NavPoint last = points.get(days);
+        Double bookPct = bookOk ? pct(last.nav() / first.nav() - 1.0) : null;
+        Double indexPct = indexOk ? pct(index.valueOn(to) / index.valueOn(from) - 1.0) : null;
+        boolean effectOk = exposureOk && indexOk;
+        Double effectPct = effectOk ? pct(effect - 1.0) : null;
+        Double residual = effectPct == null || bookPct == null ? null : round(bookPct - effectPct, 2);
+        boolean splitOk = bookOk && indexOk;
+        return new AttributionSpan(from, to, days, bookPct, indexPct,
+                exposureOk ? round(riskSum / days, 2) : null, exposureOk ? round(cashSum / days, 2) : null,
+                effectPct, residual,
+                splitOk ? new DaySplit(up, up == 0 ? null : pct(upIndex - 1.0), up == 0 ? null : pct(upBook - 1.0)) : null,
+                splitOk ? new DaySplit(down, down == 0 ? null : pct(downIndex - 1.0),
+                        down == 0 ? null : pct(downBook - 1.0)) : null,
+                estimated, reasons.isEmpty() ? null : String.join(" · ", reasons));
+    }
+
+    private static AttributionSpan noSpan(LocalDate from, LocalDate to, String reason) {
+        return new AttributionSpan(from, to, null, null, null, null, null, null, null, null, null, null, reason);
+    }
+
     // ------------------------------------------------------------------ 직렬화 모양
     static Map<String, Object> toMap(Facts f) {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -1338,7 +1635,7 @@ public final class ReviewFacts {
         framework.put("version", f.frameworkVersion());
         framework.put("status", f.frameworkStatus());
         out.put("framework", framework);
-        out.put("note", (f.entry() == Entry.NEXT_OPEN ? NEXT_OPEN_NOTE : NOTE) + V2_NOTE);
+        out.put("note", (f.entry() == Entry.NEXT_OPEN ? NEXT_OPEN_NOTE : NOTE) + V2_NOTE + V3_NOTE);
         List<String> books = new ArrayList<>();
         for (DecisionFacts d : f.decisions()) {
             if (d.book() != null && !books.contains(d.book())) {
@@ -1353,6 +1650,9 @@ public final class ReviewFacts {
         out.put("decisions", decisions);
         out.put("omittedDecisions", new LinkedHashMap<>(f.omittedDecisions()));
         out.put("comparison", comparisonMap(f.comparison()));
+        if (f.attribution() != null) {
+            out.put("attribution", attributionMap(f.attribution()));
+        }
         if (f.market() != null) {
             Map<String, Object> market = new LinkedHashMap<>();
             market.put("index", f.market().index());
@@ -1574,6 +1874,53 @@ public final class ReviewFacts {
             books.add(row);
         }
         m.put("books", books);
+        return m;
+    }
+
+    private static Map<String, Object> attributionMap(Attribution a) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("index", a.index());
+        m.put("note", ATTRIBUTION_NOTE);
+        List<Object> books = new ArrayList<>();
+        for (BookAttribution b : a.books()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("book", b.book());
+            row.put("window", spanMap(b.window()));
+            row.put("sinceStart", spanMap(b.sinceStart()));
+            books.add(row);
+        }
+        m.put("books", books);
+        return m;
+    }
+
+    private static Map<String, Object> spanMap(AttributionSpan s) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("from", text(s.from()));
+        m.put("to", text(s.to()));
+        m.put("days", s.days());
+        m.put("bookReturnPct", s.bookReturnPct());
+        m.put("indexReturnPct", s.indexReturnPct());
+        m.put("avgRiskExposurePct", s.avgRiskExposurePct());
+        m.put("avgCashLikePct", s.avgCashLikePct());
+        m.put("exposureEffectPct", s.exposureEffectPct());
+        m.put("residualPct", s.residualPct());
+        m.put("upDays", splitMap(s.upDays()));
+        m.put("downDays", splitMap(s.downDays()));
+        m.put("isEstimated", s.isEstimated());
+        if (s.reason() != null) {
+            m.put("reason", s.reason());
+        }
+        return m;
+    }
+
+    private static Map<String, Object> splitMap(DaySplit d) {
+        if (d == null) {
+            return null;
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("days", d.days());
+        m.put("indexPct", d.indexPct());
+        m.put("bookPct", d.bookPct());
         return m;
     }
 

@@ -1019,6 +1019,45 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("입력 판 3(ADR 0051): 수익 귀속 — 순자산 줄의 노출에서 현금성 종목(설정 — SHY) 평가액을 뺀 위험 노출로 노출 효과와 나머지를 싣는다")
+    void attributionFromLedger() throws Exception {
+        long id = decision(MON, RuleBookService.SCHEDULED, ClaudeBookService.STATUS_NO_TRADE, 40.0, "관망");
+        // 현금성 SHY 200주를 10-23에 삼(체결 기록) — 10-23 200 × 100 ÷ 100,000 = 20%, 10-26 200 × 101 ÷ 101,000 = 20%
+        long shy = order(id, "SHY", PaperBooks.BUY, null, PacketBuilder.SOURCE_CLAUDE, PaperFixtures.FRI);
+        store.insertFill(new Fill(0, shy, PaperBooks.CLAUDE, "SHY", PaperBooks.BUY, 200, 100.0, 100.0, 5, 20_000,
+                PaperFixtures.FRI.atTime(20, 15).toInstant(ZoneOffset.UTC), PaperFixtures.FRI, PaperBooks.SOURCE_QUOTES,
+                false, null));
+        // 장부 노출(현금성 포함) 60 → 70, 위험 노출(앞 날) 40 → 50. 지수 100 → 102(+2%) → 96.9(−5%), 계좌 +1% → −2%
+        store.upsertNav(new NavRow(PaperBooks.CLAUDE, PaperFixtures.FRI, 100_000, 40_000, 60_000, 60, true));
+        store.upsertNav(new NavRow(PaperBooks.CLAUDE, MON, 101_000, 30_300, 70_700, 70, true));
+        store.upsertNav(new NavRow(PaperBooks.CLAUDE, WE, 98_980, 89_082, 9_898, 10, true));
+        history("SPY", PaperFixtures.FRI, 100, MON, 102);
+        history("SHY", PaperFixtures.FRI, 100, MON, 101);
+        finals.put("SPY", new PaperMarketData.SourcedClose(96.9, PaperBooks.SOURCE_QUOTES));
+        finals.put("SHY", new PaperMarketData.SourcedClose(101.0, PaperBooks.SOURCE_QUOTES));
+        FrameworkService.Frame frame = new FrameworkService.Frame(0, "INTERIM", "임시", MAPPER.createObjectNode(), "", 0, null,
+                null, null);
+
+        JsonNode input = MAPPER.readTree(service().build(WE, frame).text());
+
+        JsonNode block = input.path("attribution");
+        assertThat(block.path("index").asString()).isEqualTo("SPY");
+        assertThat(block.path("books")).hasSize(1);
+        assertThat(block.path("books").get(0).path("book").asString()).isEqualTo(PaperBooks.CLAUDE);
+        JsonNode span = block.path("books").get(0).path("window");
+        assertThat(span.path("from").asString()).isEqualTo("2026-10-23");
+        assertThat(span.path("days").asInt()).isEqualTo(2);
+        assertThat(span.path("bookReturnPct").asDouble()).isEqualTo(-1.02);
+        assertThat(span.path("indexReturnPct").asDouble()).isEqualTo(-3.1);
+        assertThat(span.path("avgRiskExposurePct").asDouble()).isEqualTo(45.0);
+        assertThat(span.path("avgCashLikePct").asDouble()).isEqualTo(20.0);
+        // 1.008 × 0.975 − 1 = −1.72%, 나머지 = −1.02 − (−1.72) = +0.70%p
+        assertThat(span.path("exposureEffectPct").asDouble()).isEqualTo(-1.72);
+        assertThat(span.path("residualPct").asDouble()).isEqualTo(0.7);
+        assertThat(span.has("reason")).isFalse();
+    }
+
+    @Test
     @DisplayName("입력 판 2(ADR 0038): 계좌2의 결정도 함께 싣고(결정마다 book), 관망 결정에 그 뒤 지수·계좌·관심 종목 사실, 결정 패킷이 본 매크로 "
             + "값의 시장 표, 바로 앞 복기의 요지를 싣는다")
     void twoBooksMarketTableAndPreviousReview() throws Exception {
@@ -1064,7 +1103,7 @@ class ReviewServiceTest {
 
         JsonNode input = MAPPER.readTree(service().build(WE, frame).text());
 
-        assertThat(input.path("inputVersion").asInt()).isEqualTo(2);
+        assertThat(input.path("inputVersion").asInt()).isEqualTo(com.macrodash.analytics.ReviewFacts.INPUT_VERSION);
         assertThat(input.path("books")).extracting(JsonNode::asString).containsExactly("claude", "claude2");
         JsonNode one = input.path("decisions").get(0);
         JsonNode two = input.path("decisions").get(1);

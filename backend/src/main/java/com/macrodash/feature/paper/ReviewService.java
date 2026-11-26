@@ -54,6 +54,9 @@ import java.util.regex.Pattern;
  * {@link ReviewMarket})과 그 세션 장중 판단의 계기·질문·결과, 바로 앞 복기의 요지({@link #previous})를 싣습니다. 판 1은 계좌1의 주문 사실만
  * 실어 관망 결정 대부분이 판단불가였습니다(미국 2026-11-06 주 16건 중 10건).
  *
+ * <p><b>입력 판 3</b>(2026-11-27, ADR 0051): 복기하는 계좌마다 수익 귀속({@code attribution} — 계좌 수익률을 위험 노출의 몫과 나머지로 나눈
+ * 값, {@link ReviewFacts#attribution})을 더합니다. 재료는 순자산 줄의 노출, 그 시장 현금성 종목(설정)의 체결 기록과 종가, 지수 종가입니다.
+ *
  * <p><b>입력</b>({@link #build}): 장부(결정·주문·체결·스탑·순자산)와 종가 이력을 읽어 {@link ReviewFacts}가 사실을 계산합니다 —
  * 수익률·낙폭·스탑·200일선·무효화 평가·가정 수익률·계좌 비교를 Claude가 계산하지 않게. 기준일 종가는 "그날이 지금 세션이면 이력 값을
  * 믿지 않는" 사후 체결과 같은 규칙({@link PaperMarketData#sourcedClosesOn})으로 고르고, 못 구하면 값을 만들지 않고 null(이유는 입력의
@@ -400,10 +403,31 @@ public class ReviewService {
         // 결정 기준일 → 그날 결정 패킷이 본 매크로 값(시장 표의 열). 같은 날 여러 결정이면 값을 실은 가장 늦은 결정의 패킷입니다.
         Map<LocalDate, Long> marketSource = new HashMap<>();
         Map<LocalDate, Map<String, Object>> marketValues = new HashMap<>();
-        for (String book : reviewedBooks(market)) {
+        // 수익 귀속(입력 판 3 — ADR 0051)의 재료: 그 시장 현금성 종목(설정)의 체결 전부와 종가. 위험 노출 = 장부 노출 − 현금성 비중.
+        List<String> reviewed = reviewedBooks(market);
+        List<String> cashLike = PaperSettings.from(settingsBody(market), market).cashLikeTickers();
+        tickers.addAll(cashLike);
+        List<ReviewFacts.CashLikeFill> cashLikeFills = new ArrayList<>();
+        Map<String, String> noExposure = new LinkedHashMap<>();
+        for (String book : reviewed) {
             Map<Long, Fill> fillsByOrder = new HashMap<>();
-            for (Fill f : store.recentFills(book, LEDGER_SCAN)) {
+            List<Fill> bookFills = store.recentFills(book, LEDGER_SCAN);
+            if (bookFills.size() >= LEDGER_SCAN) {
+                // 읽은 범위 앞의 체결을 모르면 현금성 수량이 틀립니다 — 값을 만들지 않고 이유를 남깁니다.
+                noExposure.put(book, "체결 기록이 읽는 범위(" + LEDGER_SCAN + "건)를 넘어 현금성 수량을 되짚지 못함");
+            }
+            for (Fill f : bookFills) {
                 fillsByOrder.putIfAbsent(f.orderId(), f);
+                if (!cashLike.contains(f.ticker())) {
+                    continue;
+                }
+                LocalDate day = fillDate(f, zone);
+                if (day == null) {
+                    noExposure.putIfAbsent(book, "현금성(" + f.ticker() + ") 체결의 날짜를 알 수 없음");
+                } else {
+                    cashLikeFills.add(new ReviewFacts.CashLikeFill(book, f.ticker(), day,
+                            PaperBooks.SELL.equals(f.side()) ? -(long) f.qty() : f.qty()));
+                }
             }
             List<DecisionSummary> summaries = store.decisions(book, DECISION_SCAN).stream()
                     .filter(s -> window.contains(s.asOfTradingDate())).toList();
@@ -501,7 +525,7 @@ public class ReviewService {
             }
             List<ReviewFacts.NavPoint> rows = new ArrayList<>();
             for (NavRow r : store.navSeries(code)) {
-                rows.add(new ReviewFacts.NavPoint(r.tradingDate(), r.nav(), r.pricesFinal()));
+                rows.add(new ReviewFacts.NavPoint(r.tradingDate(), r.nav(), r.pricesFinal(), r.exposurePct()));
             }
             books.add(new ReviewFacts.BookNav(code, rows));
         }
@@ -509,7 +533,8 @@ public class ReviewService {
         new TreeMap<>(marketValues).forEach((date, values) -> marketDays.add(new ReviewFacts.MarketDay(date, values)));
         return new ReviewFacts.Inputs(decisions, closes(market, tickers, weekEnding), stops, fullSells, books,
                 frame.version(), frame.status(), opens(market, rejected, window.after()), benchmark, marketDays,
-                previous(market, weekEnding));
+                previous(market, weekEnding),
+                new ReviewFacts.AttributionInputs(reviewed, cashLike, cashLikeFills, noExposure));
     }
 
     /**

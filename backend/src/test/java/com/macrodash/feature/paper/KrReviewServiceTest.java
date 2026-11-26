@@ -330,7 +330,7 @@ class KrReviewServiceTest {
         Review review = store.otherReviews.get(Book.MARKET_KR).get(WE);
         assertThat(review.status()).isEqualTo(Review.OK);
         JsonNode input = review.input();
-        assertThat(input.path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
+        assertThat(input.path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE + ReviewFacts.V3_NOTE);
         assertThat(input.path("window").path("after").asString()).isEqualTo("2026-10-09");
 
         List<JsonNode> monday = orders(input, 0);
@@ -451,7 +451,7 @@ class KrReviewServiceTest {
 
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.review().market()).isEqualTo(Book.MARKET_KR);
-        assertThat(result.review().input().path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
+        assertThat(result.review().input().path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE + ReviewFacts.V3_NOTE);
         assertThat(store.jobRuns).singleElement().satisfies(r -> {
             assertThat(r.job()).isEqualTo("kr.review");
             assertThat(r.detail().path("status").asString()).isEqualTo(Review.OK);

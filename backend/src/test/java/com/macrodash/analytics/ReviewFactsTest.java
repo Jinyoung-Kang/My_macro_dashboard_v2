@@ -772,7 +772,7 @@ class ReviewFactsTest {
                 Map.entry("returnPct", 10.0));
         assertThat((Map<String, Object>) orderMap(facts, 0, 1).get("hypothetical")).containsKeys("afterSellLabel")
                 .doesNotContainKey("entryClose");
-        assertThat(facts.toMap().get("note")).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
+        assertThat(facts.toMap().get("note")).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE + ReviewFacts.V3_NOTE);
     }
 
     @Test
@@ -838,7 +838,7 @@ class ReviewFactsTest {
         assertThat(ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_CLOSE, withOpens, WE, 4, null).toMap())
                 .isEqualTo(us.toMap());
         assertThat(us.entry()).isEqualTo(Entry.NEXT_CLOSE);
-        assertThat(us.toMap().get("note")).isEqualTo(ReviewFacts.NOTE + ReviewFacts.V2_NOTE);
+        assertThat(us.toMap().get("note")).isEqualTo(ReviewFacts.NOTE + ReviewFacts.V2_NOTE + ReviewFacts.V3_NOTE);
         @SuppressWarnings("unchecked")
         Map<String, Object> hypothetical = (Map<String, Object>) orderMap(us, 0, 0).get("hypothetical");
         assertThat(hypothetical).containsExactly(Map.entry("basis", ReviewFacts.HYPOTHETICAL),
@@ -889,7 +889,7 @@ class ReviewFactsTest {
         Map<String, Object> map = facts.toMap();
         assertThat(map.keySet()).containsExactly("inputVersion", "weekEnding", "window", "trimmedReason", "framework",
                 "note", "books", "decisions", "omittedDecisions", "comparison", "market", "previousReview");
-        assertThat(map).containsEntry("inputVersion", 2).containsEntry("books", List.of("claude"));
+        assertThat(map).containsEntry("inputVersion", ReviewFacts.INPUT_VERSION).containsEntry("books", List.of("claude"));
         @SuppressWarnings("unchecked")
         Map<String, Object> row = (Map<String, Object>) ((List<Object>) map.get("decisions")).get(0);
         assertThat(row.keySet()).containsExactly("id", "book", "kind", "asOf", "status", "stance", "targetExposurePct",
@@ -953,5 +953,197 @@ class ReviewFactsTest {
 
         assertThat(facts.decisions().get(0).orders().get(0).stop().triggered()).isFalse();
         assertThat(facts.decisions().get(1).orders().get(0).stop().triggered()).isTrue();
+    }
+
+    // ------------------------------------------------------------------ 입력 판 3 — 수익 귀속(ADR 0051)
+    /** 귀속 시험의 계좌 줄 — 10-23·10-26·10-27·10-30(10-28·10-29 줄 없음), 노출은 현금성 포함 값. */
+    private static List<BookNav> attributionBooks() {
+        return List.of(new BookNav("claude", List.of(
+                new NavPoint(d("2026-10-23"), 100_000, true, 60.0),
+                new NavPoint(d("2026-10-26"), 101_000, true, 70.0),
+                new NavPoint(d("2026-10-27"), 98_980, true, 10.0),
+                new NavPoint(WE, 98_980, true, null))));
+    }
+
+    private static Map<String, DailySeries> attributionCloses() {
+        Map<String, DailySeries> closes = new HashMap<>();
+        closes.put("IDX", series("2026-10-23", 100, "2026-10-26", 102, "2026-10-27", 96.9, "2026-10-30", 100.776));
+        closes.put("CSH", series("2026-10-23", 100, "2026-10-26", 101, "2026-10-27", 98.98, "2026-10-30", 99));
+        return closes;
+    }
+
+    private static List<ReviewFacts.CashLikeFill> attributionFills() {
+        return List.of(new ReviewFacts.CashLikeFill("claude", "CSH", d("2026-10-23"), 200),
+                new ReviewFacts.CashLikeFill("claude", "CSH", d("2026-10-27"), -100),
+                new ReviewFacts.CashLikeFill("claude2", "CSH", d("2026-10-23"), 999),      // 다른 계좌 — 세지 않음
+                new ReviewFacts.CashLikeFill("claude", "AAA", d("2026-10-23"), 999));     // 현금성이 아님 — 세지 않음
+    }
+
+    private static Inputs attributionInputs(List<BookNav> books, Map<String, DailySeries> closes,
+                                            ReviewFacts.AttributionInputs attribution) {
+        return new Inputs(List.of(), closes, List.of(), List.of(), books, 3, "현행", Map.of(), "IDX", List.of(), null,
+                attribution);
+    }
+
+    @Test
+    @DisplayName("입력 판 3: 수익 귀속 — 위험 노출(현금성 제외)만큼 지수를 들었다면의 수익률과 나머지, 지수가 오른 날·내린 날의 수익률(손계산)")
+    void attributionByHand() {
+        // 위험 노출(앞 날): 10-23 60 − 현금성 200주 × 100 ÷ 100,000 = 40, 10-26 70 − 200 × 101 ÷ 101,000 = 50, 10-27 10 − 100 × 98.98 ÷ 98,980 = 0
+        // 지수: 100 → 102(+2%) → 96.9(−5%) → 100.776(+4%), 계좌: +1% → −2% → 0%
+        // 노출 효과 = 1.008 × 0.975 × 1 − 1 = −1.72%, 계좌 −1.02%, 나머지 = −1.02 − (−1.72) = +0.70%p
+        Inputs in = attributionInputs(attributionBooks(), attributionCloses(),
+                new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"), attributionFills(), Map.of()));
+        ReviewFacts.Attribution a = ReviewFacts.attribution(UsMarketCalendar.CALENDAR, in, ReviewFacts.window(WE, 4));
+
+        assertThat(a.index()).isEqualTo("IDX");
+        assertThat(a.books()).hasSize(1);
+        ReviewFacts.AttributionSpan w = a.books().get(0).window();
+        // 창 시작(10-02)에 줄이 없어 그 뒤 첫 줄 10-23부터
+        assertThat(w.from()).isEqualTo(d("2026-10-23"));
+        assertThat(w.to()).isEqualTo(WE);
+        assertThat(w.days()).isEqualTo(3);
+        assertThat(w.bookReturnPct()).isEqualTo(-1.02);
+        assertThat(w.indexReturnPct()).isEqualTo(0.78);
+        assertThat(w.avgRiskExposurePct()).isEqualTo(30.0);
+        assertThat(w.avgCashLikePct()).isEqualTo(16.67);
+        assertThat(w.exposureEffectPct()).isEqualTo(-1.72);
+        assertThat(w.residualPct()).isEqualTo(0.7);
+        assertThat(w.upDays()).isEqualTo(new ReviewFacts.DaySplit(2, 6.08, 1.0));
+        assertThat(w.downDays()).isEqualTo(new ReviewFacts.DaySplit(1, -5.0, -2.0));
+        assertThat(w.isEstimated()).isFalse();
+        assertThat(w.reason()).isNull();
+        // 첫 순자산 줄이 10-23이라 출발 뒤 구간도 같은 값
+        assertThat(a.books().get(0).sinceStart()).isEqualTo(w);
+
+        Map<String, Object> map = ReviewFacts.build(in, WE, 4, null).toMap();
+        assertThat(map.keySet()).containsSubsequence("comparison", "attribution", "previousReview");
+        assertThat((String) map.get("note")).endsWith(ReviewFacts.V3_NOTE);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> block = (Map<String, Object>) map.get("attribution");
+        assertThat(block.keySet()).containsExactly("index", "note", "books");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = (Map<String, Object>) ((List<Object>) block.get("books")).get(0);
+        assertThat(row.keySet()).containsExactly("book", "window", "sinceStart");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> span = (Map<String, Object>) row.get("window");
+        assertThat(span.keySet()).containsExactly("from", "to", "days", "bookReturnPct", "indexReturnPct",
+                "avgRiskExposurePct", "avgCashLikePct", "exposureEffectPct", "residualPct", "upDays", "downDays",
+                "isEstimated");
+        assertThat(span).containsEntry("from", "2026-10-23").containsEntry("residualPct", 0.7);
+    }
+
+    @Test
+    @DisplayName("입력 판 3: 창 구간은 계좌 비교와 같은 시작일부터, 출발 뒤 구간은 첫 순자산 줄부터 — 확정 종가가 아닌 줄이 끼면 isEstimated")
+    void attributionWindowAndSinceStart() {
+        // 10-01 100,000 → 10-02 100,000(확정 아님) → 10-30 110,000. 지수 50 → 100 → 110. 노출은 내내 50(현금성 없음)
+        List<BookNav> books = List.of(new BookNav("claude", List.of(new NavPoint(d("2026-10-01"), 100_000, true, 50.0),
+                new NavPoint(d("2026-10-02"), 100_000, false, 50.0), new NavPoint(WE, 110_000, true, 50.0))));
+        Map<String, DailySeries> closes = Map.of("IDX", series("2026-10-01", 50, "2026-10-02", 100, "2026-10-30", 110));
+        Inputs in = attributionInputs(books, closes,
+                new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"), List.of(), Map.of()));
+        ReviewFacts.BookAttribution b = ReviewFacts.attribution(UsMarketCalendar.CALENDAR, in, ReviewFacts.window(WE, 4))
+                .books().get(0);
+
+        // 창: 10-02 → 10-30, 지수 +10%, 노출 50 → 효과 +5%, 계좌 +10%, 나머지 +5%p
+        assertThat(b.window().from()).isEqualTo(d("2026-10-02"));
+        assertThat(b.window().days()).isEqualTo(1);
+        assertThat(b.window().exposureEffectPct()).isEqualTo(5.0);
+        assertThat(b.window().residualPct()).isEqualTo(5.0);
+        assertThat(b.window().avgCashLikePct()).isEqualTo(0.0);
+        assertThat(b.window().downDays()).isEqualTo(new ReviewFacts.DaySplit(0, null, null));
+        assertThat(b.window().isEstimated()).isTrue();
+        // 출발 뒤: 10-01 → 10-30, 지수 +120%, 효과 = 1.5 × 1.05 − 1 = +57.5%, 계좌 +10%, 나머지 −47.5%p
+        assertThat(b.sinceStart().from()).isEqualTo(d("2026-10-01"));
+        assertThat(b.sinceStart().days()).isEqualTo(2);
+        assertThat(b.sinceStart().indexReturnPct()).isEqualTo(120.0);
+        assertThat(b.sinceStart().exposureEffectPct()).isEqualTo(57.5);
+        assertThat(b.sinceStart().residualPct()).isEqualTo(-47.5);
+    }
+
+    @Test
+    @DisplayName("입력 판 3: 재료가 빠지면 그 값에 기대는 칸만 null과 이유 — 0으로 채우지 않고, 구할 수 있는 칸은 그대로")
+    void attributionMissingPieces() {
+        Window window = ReviewFacts.window(WE, 4);
+        ReviewFacts.AttributionInputs material =
+                new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"), attributionFills(), Map.of());
+
+        // 지수 종가 하나가 없음 → 지수·효과·나머지·오른 날/내린 날은 null, 계좌 수익률과 평균 노출은 그대로
+        Map<String, DailySeries> noIndexDay = attributionCloses();
+        noIndexDay.put("IDX", series("2026-10-23", 100, "2026-10-26", 102, "2026-10-30", 100.776));
+        ReviewFacts.AttributionSpan index = ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), noIndexDay, material), window).books().get(0).window();
+        assertThat(index.bookReturnPct()).isEqualTo(-1.02);
+        assertThat(index.avgRiskExposurePct()).isEqualTo(30.0);
+        assertThat(index.indexReturnPct()).isNull();
+        assertThat(index.exposureEffectPct()).isNull();
+        assertThat(index.residualPct()).isNull();
+        assertThat(index.upDays()).isNull();
+        assertThat(index.reason()).isEqualTo("지수(IDX) 2026-10-27 종가 없음");
+
+        // 현금성 종가가 없음 → 노출 몫만 null, 지수 수익률과 오른 날/내린 날은 그대로
+        Map<String, DailySeries> noCashClose = attributionCloses();
+        noCashClose.put("CSH", series("2026-10-23", 100, "2026-10-27", 98.98));
+        ReviewFacts.AttributionSpan cash = ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), noCashClose, material), window).books().get(0).window();
+        assertThat(cash.indexReturnPct()).isEqualTo(0.78);
+        assertThat(cash.upDays().days()).isEqualTo(2);
+        assertThat(cash.avgRiskExposurePct()).isNull();
+        assertThat(cash.exposureEffectPct()).isNull();
+        assertThat(cash.residualPct()).isNull();
+        assertThat(cash.reason()).isEqualTo("현금성(CSH) 2026-10-26 종가 없음");
+
+        // 판 수량이 산 수량보다 많음(체결 기록이 모자람) → 되짚지 못함
+        ReviewFacts.AttributionInputs oversold = new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"),
+                List.of(new ReviewFacts.CashLikeFill("claude", "CSH", d("2026-10-23"), -1)), Map.of());
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), attributionCloses(), oversold), window).books().get(0).window()
+                .reason()).isEqualTo("현금성(CSH) 수량을 체결 기록으로 되짚지 못함(2026-10-23)");
+
+        // 현금성 평가가 장부 노출보다 큼(재료가 어긋남) → 값을 내지 않음
+        ReviewFacts.AttributionInputs tooMuch = new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"),
+                List.of(new ReviewFacts.CashLikeFill("claude", "CSH", d("2026-10-23"), 700)), Map.of());
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), attributionCloses(), tooMuch), window).books().get(0).window()
+                .reason()).isEqualTo("현금성 평가가 장부 노출보다 큼(2026-10-23)");
+
+        // 서비스가 넘긴 이유(체결 기록을 끝까지 읽지 못함 등)는 그대로 실림
+        ReviewFacts.AttributionInputs blocked = new ReviewFacts.AttributionInputs(List.of("claude"), List.of("CSH"),
+                attributionFills(), Map.of("claude", "체결 기록이 읽는 범위를 넘음"));
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), attributionCloses(), blocked), window).books().get(0).window()
+                .reason()).isEqualTo("체결 기록이 읽는 범위를 넘음");
+
+        // 노출을 모르는 줄(판 2의 재료) → 노출 몫 null
+        List<BookNav> noExposure = List.of(new BookNav("claude", List.of(new NavPoint(d("2026-10-23"), 100_000, true),
+                new NavPoint(WE, 98_980, true))));
+        ReviewFacts.AttributionSpan unknown = ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(noExposure, attributionCloses(), material), window).books().get(0).window();
+        assertThat(unknown.bookReturnPct()).isEqualTo(-1.02);
+        assertThat(unknown.exposureEffectPct()).isNull();
+        assertThat(unknown.reason()).isEqualTo("노출 줄 없음(2026-10-23)");
+
+        // 복기 기준일 줄이 없거나 줄이 하나뿐이면 구간 자체가 없음
+        List<BookNav> noEnd = List.of(new BookNav("claude", List.of(new NavPoint(d("2026-10-23"), 100_000, true, 60.0))));
+        ReviewFacts.BookAttribution none = ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(noEnd, attributionCloses(), material), window).books().get(0);
+        assertThat(none.window().bookReturnPct()).isNull();
+        assertThat(none.window().days()).isNull();
+        assertThat(none.window().reason()).isEqualTo("복기 기준일(2026-10-30) 순자산 없음");
+        List<BookNav> onlyEnd = List.of(new BookNav("claude", List.of(new NavPoint(WE, 100_000, true, 60.0))));
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(onlyEnd, attributionCloses(), material), window).books().get(0).sinceStart().reason())
+                .isEqualTo("구간에 순자산 줄이 둘 미만");
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(List.of(), attributionCloses(), material), window).books().get(0).window().reason())
+                .isEqualTo("순자산 기록 없음");
+
+        // 재료가 없거나 지수 종목이 없으면 칸을 싣지 않음(판 2의 재료로 조립한 입력은 그대로)
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR,
+                attributionInputs(attributionBooks(), attributionCloses(), null), window)).isNull();
+        assertThat(ReviewFacts.build(attributionInputs(attributionBooks(), attributionCloses(), null), WE, 4, null).toMap())
+                .doesNotContainKey("attribution");
+        Inputs noBenchmark = new Inputs(List.of(), attributionCloses(), List.of(), List.of(), attributionBooks(), 3, "현행",
+                Map.of(), null, List.of(), null, material);
+        assertThat(ReviewFacts.attribution(UsMarketCalendar.CALENDAR, noBenchmark, window)).isNull();
     }
 }

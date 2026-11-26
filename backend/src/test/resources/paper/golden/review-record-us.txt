@@ -1,5 +1,5 @@
 review weekEnding=2026-10-30 status=OK windowWeeks=4 framework=0 model=claude-sonnet-5-5 retry=0 error=null proposal=5
-usage={"model":"claude-sonnet-5-5","effort":"high","inputTokens":9000,"outputTokens":1200,"cacheReadTokens":0,"cacheWriteTokens":5000,"estCostUsd":0.0425,"stopReason":"end_turn","charged":true,"errorKind":null,"inputTokensEst":1751,"defaultWindowTokensEst":null}
+usage={"model":"claude-sonnet-5-5","effort":"high","inputTokens":9000,"outputTokens":1200,"cacheReadTokens":0,"cacheWriteTokens":5000,"estCostUsd":0.0425,"stopReason":"end_turn","charged":true,"errorKind":null,"inputTokensEst":2373,"defaultWindowTokensEst":null}
 response={
   "schemaVersion" : 2,
   "weekEnding" : "2026-10-30",
