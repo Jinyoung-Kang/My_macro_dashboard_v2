@@ -26,7 +26,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029·0034)의 표({@code manual_*}, V25 — 장중 스탑 매도 지시는 V28, 잔고·보유·매매 내역은 V31) — 백엔드가 쓰는
+ * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029·0034)의 표({@code manual_*}, V25 — 장중 스탑 매도 지시는 V28, 잔고·보유·매매 내역은 V31, 매매 내역의 요청 열쇠는 V46) — 백엔드가 쓰는
  * 표(ADR 0008). 이 표들의 JDBC는 <b>전부 여기</b>에 있고, 부르는 곳은 {@code feature.realtrade}의 ISA 계좌 클래스뿐입니다(ArchitectureRulesTest가 막음).
  *
  * <p><b>잠금</b>: {@link #lockAccount}가 계좌 행을 {@code SELECT … FOR UPDATE}로 잡은 트랜잭션 안에서 받은 일을 돌립니다 — 안에서 부르는 이 저장소의
@@ -236,6 +236,7 @@ public class ManualAccountStore {
     /**
      * 표가 있는가. 수집기가 아직 V25·V28·V30·V31·V32를 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 지시·잔고·매매 내역 조회가 그 표·칸을 읽으므로
      * 백엔드만 새로 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게. V32의 {@code manual_trades.amount}는 매매 내역을 읽고 쓰는 모든 문장이 씁니다(QA-354).
+     * V46의 요청 열쇠 칸은 여기에 넣지 않습니다 — {@link #requestKeyReady}로 따로 봅니다(넣으면 새 백엔드가 옛 스키마를 만난 동안 ISA 전체가 '준비 중').
      */
     public boolean ready() {
         return schema.tableExists("manual_accounts") && schema.tableExists("manual_ledger")
@@ -247,6 +248,14 @@ public class ManualAccountStore {
                 && schema.columnExists("manual_stop_instructions", "notified_midday_at")
                 && schema.columnExists("manual_stop_instructions", "notified_preclose_at")
                 && schema.columnExists("manual_trades", "amount");
+    }
+
+    /**
+     * 매매 내역에 요청 열쇠 칸(V46 {@code manual_trades.request_id} — QA-1035)이 있는가. 없으면 부르는 쪽이 열쇠를 무시하고 지금처럼 적습니다 —
+     * {@link #tradeByRequest}와 열쇠를 싣는 {@link #insertTrade(String, TradeValues, String)}는 이것이 true일 때만 부릅니다. 그 밖의 문장은 이 칸을 읽지도 쓰지도 않습니다.
+     */
+    public boolean requestKeyReady() {
+        return schema.columnExists("manual_trades", "request_id");
     }
 
     /**
@@ -342,10 +351,30 @@ public class ManualAccountStore {
         return jdbc.query("SELECT " + TRADE_COLUMNS + " FROM manual_trades WHERE id = ?", tradeMapper(), id).stream().findFirst();
     }
 
-    /** 매매 내역을 씁니다 — 새 번호. */
+    /** 그 요청 열쇠로 적은 매매 내역(V46 — {@link #requestKeyReady}가 true일 때만 부름). 계좌마다 많아야 하나입니다(부분 유일 색인). */
+    public Optional<Trade> tradeByRequest(String code, String requestId) {
+        return jdbc.query("SELECT " + TRADE_COLUMNS + " FROM manual_trades WHERE account = ? AND request_id = ?", tradeMapper(), code, requestId)
+                .stream().findFirst();
+    }
+
+    /** 매매 내역을 씁니다 — 새 번호. 요청 열쇠 칸은 비워 둡니다(그 칸이 없는 스키마에서도 그대로 돎). */
     public long insertTrade(String code, TradeValues v) {
-        Long id = jdbc.query("INSERT INTO manual_trades (account, at, side, symbol, quantity, price, fee, tax, cost_basis, realized_pnl, tax_assumed, "
-                        + "instruction_id, stop_instruction_id, price_source, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        return insertTrade(code, v, null);
+    }
+
+    /**
+     * 매매 내역을 요청 열쇠와 함께 씁니다(V46 — 열쇠가 있으면 {@link #requestKeyReady}가 true일 때만 부름). 열쇠가 null이면 그 칸을 문장에 넣지 않습니다.
+     * 같은 (계좌, 열쇠)가 이미 있으면 유일 색인이 막아 예외가 납니다 — 부르는 쪽이 계좌 행 잠금 안에서 {@link #tradeByRequest}로 먼저 찾습니다.
+     */
+    public long insertTrade(String code, TradeValues v, String requestId) {
+        String columns = "account, at, side, symbol, quantity, price, fee, tax, cost_basis, realized_pnl, tax_assumed, "
+                + "instruction_id, stop_instruction_id, price_source, amount";
+        String marks = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+        if (requestId != null) {
+            columns += ", request_id";
+            marks += ", ?";
+        }
+        Long id = jdbc.query("INSERT INTO manual_trades (" + columns + ") VALUES (" + marks + ") RETURNING id",
                 ps -> {
                     ps.setString(1, code);
                     ps.setTimestamp(2, Timestamp.from(v.at()));
@@ -370,6 +399,9 @@ public class ManualAccountStore {
                     }
                     ps.setString(14, v.priceSource());
                     ps.setBigDecimal(15, v.amount());
+                    if (requestId != null) {
+                        ps.setString(16, requestId);
+                    }
                 }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst().orElseThrow();
         return id;
     }

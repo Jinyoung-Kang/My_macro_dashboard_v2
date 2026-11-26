@@ -27,7 +27,8 @@ import java.util.Map;
  *  POST /api/manual/isa/instructions/apply           {items:[{instructionId 또는 stopInstructionId, price?, priceSource?}]} — 확인을 잔고에 바로 반영
  *  POST /api/manual/isa/instructions/{id}/skip
  *  POST /api/manual/isa/stop-instructions/{id}/skip  스탑 지시 건너뜀(매매하지 않음 — QA-990, 스탑 지시는 확인·건너뜀 전까지 대기 중)
- *  POST /api/manual/isa/trades                       {side, symbol, quantity, amount, fee?} — 지시에 없던 매매를 적음(잔고에 바로 반영, 지시 번호 없는 내역)
+ *  POST /api/manual/isa/trades                       {side, symbol, quantity, amount, fee?, requestId?} — 지시에 없던 매매를 적음(잔고에 바로 반영, 지시 번호 없는 내역).
+ *                                                    같은 requestId로 다시 오면 다시 적지 않고 첫 줄의 결과에 replayed: true(QA-1035)
  *  POST /api/manual/isa/trades/{id}/undo             확인 되돌리기(잔고 되돌림, 지시는 PLANNED — 지시는 그 세션 마감이 지났으면 SKIPPED, 스탑 지시는 늘 PLANNED)
  *  POST /api/manual/isa/trades/{id}                  {quantity, amount, fee?, at?} — 적은 매매를 실제 값·시각으로 고침
  * </pre>

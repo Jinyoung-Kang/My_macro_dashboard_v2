@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1047,7 +1046,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-1035 재현 — 같은 요청이 두 번 오면 내역 두 줄·현금 두 번 반영(수정 전)")
     @DisplayName("QA-1035: 같은 요청 열쇠로 두 번 오면 내역 한 줄·현금과 보유 한 번만 — 두 번째 응답은 첫 줄의 번호·종목에 replayed, 계좌 버전도 그대로")
     void recordTradeSameRequestIdTwice() {
         startSynthetic();                                          // 현금 775,000, B 5주(100,000)
@@ -1069,7 +1067,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-1035 재현 — 다 판 매도가 다시 오면 '보유 없음' 400(수정 전)")
     @DisplayName("QA-1035: 다 판 매도가 같은 열쇠로 다시 오면 '보유 없음' 거절이 아니라 첫 줄의 결과(replayed) — 열쇠를 보유 검사보다 먼저 찾음")
     void recordTradeSameRequestIdAfterFullSell() {
         startSynthetic();
@@ -1118,7 +1115,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-1035 재현 — 모양이 틀린 열쇠를 그대로 받음(수정 전)")
     @DisplayName("QA-1035: 모양이 틀린 열쇠(짧음·김·허용 밖 글자·빈 글자)는 400 invalid-request, 아무것도 쓰지 않음 — 글자·숫자·'-'·'_' 8~64자만")
     void recordTradeRequestIdShape() {
         startSynthetic();
@@ -1134,7 +1130,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-1035 — 열쇠 칸 확인이 들어온 뒤 켬(수정 전에는 칸 자체가 없음)")
     @DisplayName("QA-1035: 열쇠 칸이 아직 없는 스키마(V46 전)에서는 열쇠를 무시하고 지금처럼 적음 — ISA는 '준비 중'이 되지 않고, 칸을 읽거나 쓰지 않음")
     void recordTradeIgnoresRequestIdOnOldSchema() {
         SchemaCheck old = new SchemaCheck(jdbc) {

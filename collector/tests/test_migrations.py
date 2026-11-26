@@ -381,3 +381,40 @@ def test_V45_모은_글의_넣은_시각_칸은_있던_줄을_처음_받은_시�
     with pytest.raises(psycopg.errors.NotNullViolation):
         conn.execute("UPDATE search_watch_items SET added_at = NULL")
 
+
+def test_V46_매매_내역의_요청_열쇠_칸은_있던_줄을_비워_두고_계좌마다_한_번만_받으며_다시_실행해도_안전하다(conn):
+    """ISA 지시 없는 매매 적기의 중복 방지(QA-1035) — manual_trades.request_id와 (account, request_id) 부분 유일 색인. 값은 모두 합성입니다."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v46 = next(m for m in found if m.version == 46)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 46])
+    conn.execute("INSERT INTO manual_accounts (code, label, market, source_book, state, started_at, start_cash) "
+                 "VALUES ('fake_a', '합성 계좌', 'KR', 'kr_rules', 'ACTIVE', now(), 0), ('fake_b', '합성 계좌 2', 'KR', 'kr_rules', 'ACTIVE', now(), 0)")
+    old = ("INSERT INTO manual_trades (account, at, side, symbol, quantity, price, cost_basis, price_source) "
+           "VALUES (%s, now(), 'BUY', '000001', 1, 1000, 1000, 'user')")
+    conn.execute(old, ("fake_a",))
+    conn.execute(old, ("fake_a",))
+
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 46]) == [46]
+    conn.execute(v46.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v46.sql)
+
+    rows = conn.execute("SELECT request_id FROM manual_trades").fetchall()
+    assert [row["request_id"] for row in rows] == [None, None], "있던 줄은 비어 있음(열쇠 없는 줄은 여럿이어도 됨)"
+    column = conn.execute(
+        "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'manual_trades' AND column_name = 'request_id'").fetchone()
+    assert column == {"data_type": "text", "is_nullable": "YES", "column_default": None}
+    checks = conn.execute("SELECT count(*) AS n FROM pg_constraint WHERE conrelid = 'manual_trades'::regclass "
+                          "AND conname = 'manual_trades_request_id_length'").fetchone()
+    assert checks["n"] == 1, "다시 실행해도 CHECK는 하나"
+
+    keyed = ("INSERT INTO manual_trades (account, at, side, symbol, quantity, price, cost_basis, price_source, request_id) "
+             "VALUES (%s, now(), 'BUY', '000001', 1, 1000, 1000, 'user', %s)")
+    conn.execute(keyed, ("fake_a", "fake-key-0001"))
+    conn.execute(keyed, ("fake_b", "fake-key-0001"))      # 다른 계좌의 같은 열쇠는 따로
+    conn.execute(keyed, ("fake_a", "fake-key-0002"))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(keyed, ("fake_a", "fake-key-0001"))
+    for bad in ("short", "k" * 65):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(keyed, ("fake_a", bad))

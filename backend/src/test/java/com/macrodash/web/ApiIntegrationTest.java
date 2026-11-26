@@ -2,7 +2,6 @@ package com.macrodash.web;
 
 import com.macrodash.store.Datasets;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -375,7 +374,6 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @Disabled("QA-1035 재현 — 같은 요청이 두 번 오면 내역 두 줄(수정 전)")
     @DisplayName("QA-1035: 지시 없는 매매 적기(POST /api/manual/isa/trades)에 같은 requestId로 두 번 보내면 내역 한 줄·현금 한 번 — 두 번째 응답은 같은 번호에 "
             + "replayed, 모양이 틀린 requestId는 400 invalid-request, 열쇠 없는 요청은 지금처럼 한 줄씩 — 값은 합성")
     void manualAccountDirectTradeRequestId() {

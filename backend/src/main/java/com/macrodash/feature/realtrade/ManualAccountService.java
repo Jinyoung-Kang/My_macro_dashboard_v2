@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * ISA 계좌 API(운영자 전용 — ADR 0029·0034) — 연결되지 않은 다른 증권사 계좌의 잔고와 다음 매매 지시를 보여 주고, 시작·잔고 고침·지시(스탑 지시 포함) 확인·건너뜀·되돌림을 받습니다.
@@ -106,6 +107,8 @@ public class ManualAccountService {
     /** 표가 없을 때의 안내(보기의 {@code message}). */
     static final String NOT_READY = "ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V32)을 적용한 뒤 다시 보세요.";
     private static final String NEED_CODE = "종목을 찾지 못했습니다 — 여섯 자리 코드를 넣으세요.";
+    /** 지시 없는 매매 적기의 요청 열쇠 모양(QA-1035) — 글자·숫자·'-'·'_' 8~64자(UUID가 들어감). DB CHECK(V46)는 글자 수만 봅니다. */
+    private static final Pattern REQUEST_ID = Pattern.compile("[A-Za-z0-9_-]{8,64}");
     /** 거절 글에 되돌려 적는 입력 글자의 길이 상한(QA-357). */
     private static final int ECHO_MAX = 40;
 
@@ -183,7 +186,8 @@ public class ManualAccountService {
 
     /**
      * {@code POST /api/manual/isa/trades} 본문 — 지시에 없던 매매: 방향(BUY·SELL)·종목(이름 또는 코드)·수량·체결 금액(총액)·수수료(없으면 수수료율로).
-     * {@code requestId}는 화면이 적기 창마다 만드는 요청 열쇠(선택 — QA-1035)입니다.
+     * {@code requestId}는 화면이 적기 창마다 만드는 요청 열쇠(선택 — 글자·숫자·'-'·'_' 8~64자, QA-1035)입니다 — 같은 열쇠로 다시 오면 다시 적지 않고 첫 줄의 결과를
+     * 돌려줍니다.
      */
     public record DirectTradeRequest(String side, String symbol, BigDecimal quantity, BigDecimal amount, BigDecimal fee, String requestId) {
 
@@ -855,12 +859,19 @@ public class ManualAccountService {
      * 금액 ÷ 수량, 직전 종가 ±40% 밖이면 400, 수수료 상한, 매도 세금 자동)으로 잔고에 바로 반영하고 지시 번호 없이 {@code manual_trades}에 남깁니다(한 트랜잭션).
      * 매도는 그 종목의 정수 보유까지만 — 보유가 없으면 400(확인처럼 닫을 지시가 없으므로 조용히 넘기지 않음). 시각은 적은 때입니다. 고치기·되돌리기는 확인한 매매와 같고,
      * 되돌려도 다시 열 지시가 없습니다.
+     *
+     * <p><b>요청 열쇠(QA-1035)</b>: 본문에 {@code requestId}가 있으면 계좌 행을 잠근 뒤 그 열쇠로 적은 줄을 먼저 찾아, 있으면 아무것도 쓰지 않고 그 줄의 번호·종목에
+     * {@code replayed: true}를 붙여 돌려줍니다(응답이 안 와 다시 누른 요청이 내역 두 줄·현금 두 번이 되지 않게 — 보유 검사보다 먼저라 다 판 매도가 다시 와도 거절이
+     * 아님). 본문 검사(빈 칸·방향·종목·수수료 상한·종가 범위)는 그보다 먼저라 다시 온 요청도 틀린 본문이면 400입니다. 모양이 틀린 열쇠는 400. 열쇠가 없으면 지금처럼
+     * 요청마다 한 줄이고 응답에 {@code replayed}가 없습니다. 열쇠 칸(V46)이 아직 없는 스키마에서는 열쇠를 무시합니다. 되돌린 줄은 지워지므로 그 열쇠가 다시 오면 다시
+     * 적습니다.
      */
     public Map<String, Object> recordTrade(DirectTradeRequest body) {
         requireReady();
         if (body == null || body.quantity() == null || body.amount() == null) {
             throw ManualAccountException.invalid("매수·매도, 종목, 수량, 체결 금액을 넣으세요.");
         }
+        String requestId = requestId(body.requestId());
         String side = side(body.side());
         boolean sell = ManualAccountStore.SIDE_SELL.equals(side);
         int quantity = wholeQuantity(body.quantity());
@@ -879,8 +890,16 @@ public class ManualAccountService {
         Instant now = clock.instant();
         LocalDate today = Kst.today(clock);
         SessionHours next = ManualAccountCalendar.nextSession(paper, now);
-        long id = store.lockAccount(CODE, acc -> {
+        // 열쇠 칸이 아직 없으면(옛 스키마) 열쇠를 무시하고 지금처럼 적습니다 — ISA 전체의 '준비됨'과 따로 봅니다.
+        String key = requestId != null && store.requestKeyReady() ? requestId : null;
+        Recorded recorded = store.lockAccount(CODE, acc -> {
             Balance balance = requireStarted(acc);
+            if (key != null) {
+                Trade first = store.tradeByRequest(CODE, key).orElse(null);
+                if (first != null) {
+                    return new Recorded(first.id(), first.symbol(), true);   // 같은 요청이 다시 옴 — 아무것도 쓰지 않음
+                }
+            }
             Position held = store.position(CODE, symbol).orElse(null);
             if (sell) {
                 BigDecimal whole = held == null ? BigDecimal.ZERO : held.quantity().setScale(0, RoundingMode.FLOOR);
@@ -903,16 +922,34 @@ public class ManualAccountService {
                 store.upsertPosition(CODE, symbol, held == null ? null : held.name(), result.quantity(), bounded(result.purchaseAmount()));
             }
             long tradeId = store.insertTrade(CODE, new TradeValues(now, side, symbol, qty, chosen, fee, costs.tax(), result.costBasis(), result.realizedPnl(),
-                    costs.taxAssumed(), null, null, SOURCE_USER, gross));
+                    costs.taxAssumed(), null, null, SOURCE_USER, gross), key);
             invalidateUpcoming(acc, next, now);
             store.bumpVersion(CODE);
-            return tradeId;
+            return new Recorded(tradeId, symbol, false);
         });
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
-        out.put("id", id);
-        out.put("symbol", symbol);
+        out.put("id", recorded.id());
+        out.put("symbol", recorded.symbol());
+        if (recorded.replayed()) {
+            out.put("replayed", true);
+        }
         return out;
+    }
+
+    /** 지시 없는 매매 적기의 결과 — 새로 적은 줄이거나, 같은 요청 열쇠로 이미 적혀 있던 줄({@code replayed}). */
+    private record Recorded(long id, String symbol, boolean replayed) {
+    }
+
+    /** 요청 열쇠 — 없으면 null(옛 화면), 있으면 {@link #REQUEST_ID} 모양이어야 합니다(앞뒤 공백도 받지 않음). 거절 글에 받은 값을 되돌려 적지 않습니다. */
+    private static String requestId(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (!REQUEST_ID.matcher(raw).matches()) {
+            throw ManualAccountException.invalid("요청 열쇠(requestId)가 올바르지 않습니다 — 화면을 새로 고친 뒤 다시 적으세요.");
+        }
+        return raw;
     }
 
     /**
