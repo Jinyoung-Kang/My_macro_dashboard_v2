@@ -233,6 +233,11 @@ export interface IsaDirectTradeRequest {
   /** 체결 금액(총액, 원). */
   amount: number;
   fee?: number;
+  /**
+   * 요청 열쇠(QA-1035 — 글자·숫자·'-'·'_' 8~64자) — 적기 창마다 화면이 만듭니다. 같은 열쇠로 다시 보내면 서버가 다시 적지 않고 첫 줄의 결과에
+   * `replayed: true`를 붙여 돌려줍니다.
+   */
+  requestId?: string;
 }
 
 /** POST /api/manual/isa/trades/{id} 본문 — 확인한 매매의 실제 수량·체결 금액·수수료. */
@@ -255,6 +260,8 @@ export interface IsaOkResponse {
   /** 지시 없는 매매로 새로 적은 내역 번호. */
   id?: number;
   symbol?: string;
+  /** 지시 없는 매매 적기 — 같은 요청 열쇠로 이미 적혀 있던 줄의 결과(이번에는 아무것도 쓰지 않음, QA-1035). 새로 적었으면 없습니다. */
+  replayed?: boolean;
   count?: number;
   skipped?: number;
   notes?: string[];

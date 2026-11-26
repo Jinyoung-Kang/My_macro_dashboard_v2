@@ -7,6 +7,7 @@
  *  - 확인은 체결 입력 창(수량·체결 금액·평균 단가·수수료, 실시간 가격으로 채움)을 열어 적은 값으로 POST
  *  - 쓰기는 POST /api/manual/isa/{start, balance/total, balance/commission, positions, positions/{symbol}/delete, instructions/apply, instructions/{id}/skip, trades, trades/{id}/undo}
  *  - 실시간 평가: 받은 가격으로 평가액·손익·비중 다시 계산(못 받은 종목은 '직전 종가')
+ *  - QA-1035: 쓰기 11개는 시간 한도 20초 — 넘으면 다시 읽고 '처리됐을 수 있음' 안내. 지시 없는 매매 적기는 창마다 요청 열쇠(다시 누르면 같은 열쇠, 본문을 고치면 새 열쇠)
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -15,7 +16,16 @@ import { resetLiveSecondsForTest } from "@/hooks/useLiveSeconds";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
-  return { apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn(), apiGetShared: vi.fn(), apiBase: () => "http://backend", UnauthorizedError };
+  /** lib/api NetworkError 모양 — 시간 한도를 넘겨 끊은 요청이면 timedOut. */
+  class NetworkError extends Error {
+    readonly timedOut: boolean;
+
+    constructor(message: string, timedOut = false) {
+      super(message);
+      this.timedOut = timedOut;
+    }
+  }
+  return { apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn(), apiGetShared: vi.fn(), apiBase: () => "http://backend", UnauthorizedError, NetworkError };
 });
 vi.mock("@/lib/api", () => api);
 // 매번 같은 객체를 돌려줘야 합니다 — 새 함수면 그것을 의존성으로 쓰는 effect가 끝없이 다시 돕니다.
@@ -955,5 +965,104 @@ describe("장중 스탑 매도 지시·매매 내역 — 5줄씩 쪽 넘김(사�
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
     expect(inRegion().queryByRole("navigation", { name: "ISA 계좌 매매 내역 쪽" })).toBeNull();
+  });
+});
+
+describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠", () => {
+  const TRADES = "/api/manual/isa/trades";
+  const WITHIN = { timeoutMs: 20_000 };
+  const timedOut = () => new api.NetworkError("백엔드가 20초 안에 응답하지 않았습니다 (http://backend)", true);
+  const tradeCalls = () => api.apiPost.mock.calls.filter(([path]) => path === TRADES);
+  const keyOf = (index: number) => (tradeCalls()[index][1] as { requestId: string }).requestId;
+  const submitButton = () => within(dialog()).getByRole("button", { name: "잔고에 반영" }) as HTMLButtonElement;
+
+  /** 적기 창을 열고 합성화학 10주 매도·530,000원을 채웁니다(수수료 79는 수수료율로). */
+  const openFilled = async () => {
+    renderIsa();
+    fireEvent.click(await inRegion().findByRole("button", { name: "지시 없는 매매 적기" }));
+    fireEvent.change(within(dialog()).getByRole("combobox", { name: "종목" }), { target: { value: "합성화학" } });
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "수량(주)" }), { target: { value: "10" } });
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결 금액(총액, 원)" }), { target: { value: "530,000" } });
+  };
+
+  it.skip("시간 초과 — 창 안에 '처리됐을 수 있음' 안내와 다시 읽기, 같은 창에서 다시 누르면 같은 열쇠, 본문을 고치면 새 열쇠", async () => {
+    await openFilled();
+    api.apiPost.mockRejectedValue(timedOut());
+    const readsBefore = isaReads();
+
+    fireEvent.click(submitButton());
+    const alert = await within(dialog()).findByRole("alert");
+    expect(alert.textContent).toContain("처리됐을 수 있습니다");
+    expect(alert.textContent).toContain("매매 내역");
+    await waitFor(() => expect(isaReads()).toBeGreaterThan(readsBefore));
+    expect(tradeCalls()).toEqual([
+      [TRADES, { side: "SELL", symbol: "합성화학", quantity: 10, amount: 530_000, fee: 79, requestId: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) }, WITHIN],
+    ]);
+    expect(dialog().textContent).toContain("다시 눌러도 두 번 적히지 않습니다");
+    expect(screen.queryByText(/지시 없는 매매를 적은 값으로 잔고에 반영했습니다/)).toBeNull();
+
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(tradeCalls()).toHaveLength(2));
+    expect(keyOf(1)).toBe(keyOf(0));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결 금액(총액, 원)" }), { target: { value: "540,000" } });
+    api.apiPost.mockResolvedValue({ ok: true, id: 41, symbol: "222220" });
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(tradeCalls()).toHaveLength(3));
+    expect(keyOf(2)).not.toBe(keyOf(0));
+    expect(keyOf(2)).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(await screen.findByText(/지시 없는 매매를 적은 값으로 잔고에 반영했습니다/)).toBeTruthy();
+  });
+
+  it.skip("창을 닫았다 다시 열면 새 열쇠 — 같은 값을 다시 적어도 다른 요청", async () => {
+    await openFilled();
+    api.apiPost.mockRejectedValue(timedOut());
+    fireEvent.click(submitButton());
+    await within(dialog()).findByRole("alert");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(inRegion().getByRole("button", { name: "지시 없는 매매 적기" }));
+    fireEvent.change(within(dialog()).getByRole("combobox", { name: "종목" }), { target: { value: "합성화학" } });
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "수량(주)" }), { target: { value: "10" } });
+    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결 금액(총액, 원)" }), { target: { value: "530,000" } });
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(tradeCalls()).toHaveLength(2));
+    expect(keyOf(1)).not.toBe(keyOf(0));
+  });
+
+  it.skip("다시 보낸 요청이 이미 처리돼 있었으면(replayed) 한 번만 적혔다고 안내", async () => {
+    await openFilled();
+    api.apiPost.mockRejectedValueOnce(timedOut());
+    fireEvent.click(submitButton());
+    await within(dialog()).findByRole("alert");
+    api.apiPost.mockResolvedValueOnce({ ok: true, id: 41, symbol: "222220", replayed: true });
+    fireEvent.click(submitButton());
+    expect(await screen.findByText(/앞서 보낸 요청이 이미 처리돼 있었습니다 — 매매는 한 번만 적혔습니다/)).toBeTruthy();
+    expect(keyOf(1)).toBe(keyOf(0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.skip("다른 쓰기도 시간 한도 20초 — 건너뜀이 시간 초과면 '처리됐을 수 있음' 안내와 다시 읽기, 성공 안내는 없음", async () => {
+    api.apiPost.mockRejectedValue(timedOut());
+    renderIsa();
+    fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성화학 222220" }));
+    const readsBefore = isaReads();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "건너뜀" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/7/skip", undefined, WITHIN));
+    expect((await inRegion().findByRole("alert")).textContent).toContain("처리됐을 수 있습니다");
+    await waitFor(() => expect(isaReads()).toBeGreaterThan(readsBefore));
+    expect(screen.queryByText(/건너뜀으로 두었습니다/)).toBeNull();
+  });
+
+  it.skip("연결하지 못한 실패(timedOut 아님)는 서버가 받지 않았으므로 그 문구 그대로 — '처리됐을 수 있음' 안내 없음", async () => {
+    await openFilled();
+    api.apiPost.mockRejectedValue(new api.NetworkError("백엔드에 연결하지 못했습니다 (http://backend)"));
+    fireEvent.click(submitButton());
+    const alert = await within(dialog()).findByRole("alert");
+    expect(alert.textContent).toContain("백엔드에 연결하지 못했습니다");
+    expect(alert.textContent).not.toContain("처리됐을 수 있습니다");
+    expect(dialog().textContent).not.toContain("다시 눌러도 두 번 적히지 않습니다");
   });
 });
