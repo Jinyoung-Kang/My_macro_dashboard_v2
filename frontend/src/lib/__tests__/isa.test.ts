@@ -8,7 +8,7 @@
  *  - '확인'에 실을 가격(받았으면 live, 끊겼거나 없으면 생략)
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   stopsPendingFirst,
   buildApplyRequest,
@@ -47,6 +47,8 @@ import {
   isaErrorCode,
   isaErrorNeedsReload,
   isaErrorText,
+  isaTimeoutText,
+  newIsaRequestId,
   isaValuation,
   kstInputFromIso,
   kstShort,
@@ -684,5 +686,45 @@ describe("QA-1027 스탑 지시 표의 줄 차례", () => {
     // 모두 대기 중이거나 모두 닫혔으면 받은 차례 그대로.
     expect(stopsPendingFirst([{ id: 1, status: "PLANNED" }, { id: 2, status: "PLANNED" }]).map((row) => row.id)).toEqual([1, 2]);
     expect(stopsPendingFirst([{ id: 2, status: "CONFIRMED" }, { id: 1, status: "SKIPPED" }]).map((row) => row.id)).toEqual([2, 1]);
+  });
+});
+
+describe("QA-1035 지시 없는 매매의 요청 열쇠와 시간 초과 안내", () => {
+  const SHAPE = /^[A-Za-z0-9_-]{8,64}$/;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("열쇠는 서버가 받는 모양(글자·숫자·'-'·'_' 8~64자)이고 부를 때마다 다름", () => {
+    const keys = Array.from({ length: 20 }, () => newIsaRequestId());
+    expect(keys.every((key) => SHAPE.test(key))).toBe(true);
+    expect(new Set(keys).size).toBe(20);
+  });
+
+  it("crypto.randomUUID가 있으면 그것을 씀", () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "11111111-2222-4333-8444-555555555555" });
+    expect(newIsaRequestId()).toBe("11111111-2222-4333-8444-555555555555");
+  });
+
+  it("randomUUID가 없으면 getRandomValues로, crypto가 아예 없어도 만든다 — 모양은 같고 서로 다름", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(171);
+        return bytes;
+      },
+    });
+    const viaBytes = newIsaRequestId();
+    expect(viaBytes).toMatch(SHAPE);
+    expect(viaBytes.endsWith("ab".repeat(16))).toBe(true);
+
+    vi.stubGlobal("crypto", undefined);
+    const bare = [newIsaRequestId(), newIsaRequestId()];
+    expect(bare.every((key) => SHAPE.test(key))).toBe(true);
+    expect(bare[0]).not.toBe(bare[1]);
+  });
+
+  it("시간 초과 안내 — 처리됐을 수 있으니 매매 내역과 잔고를 확인하라는 뜻, 금액은 없음", () => {
+    expect(isaTimeoutText(20)).toBe("응답이 20초 안에 오지 않았습니다 — 처리됐을 수 있습니다. 화면을 다시 읽었으니 매매 내역과 잔고를 확인하고, 반영되지 않았을 때만 다시 하세요.");
   });
 });

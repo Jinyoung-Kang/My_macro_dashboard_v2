@@ -1105,6 +1105,39 @@ export function isaErrorText(code: IsaErrorCode | null, fallback: string | null)
   }
 }
 
+/**
+ * 쓰기가 시간 한도를 넘겨 끊겼을 때의 안내(QA-1035) — 서버가 요청을 받아 처리했을 수 있어 화면은 계좌를 다시 읽고, 사용자가 내역을 보고 판단하게 합니다.
+ */
+export function isaTimeoutText(seconds: number): string {
+  return `응답이 ${seconds}초 안에 오지 않았습니다 — 처리됐을 수 있습니다. 화면을 다시 읽었으니 매매 내역과 잔고를 확인하고, 반영되지 않았을 때만 다시 하세요.`;
+}
+
+/** 지시 없는 매매 적기 창이 시간 초과 뒤에 덧붙이는 안내 — 같은 창·같은 값이면 같은 요청 열쇠로 다시 나갑니다. */
+export const DIRECT_TRADE_RETRY_TEXT =
+  "이 창에서 값을 그대로 두고 다시 눌러도 두 번 적히지 않습니다(같은 요청으로 보냅니다). 창을 닫고 다시 적거나 값을 고치면 새 매매로 적으니 매매 내역을 먼저 확인하세요.";
+
+/** 다시 보낸 지시 없는 매매가 이미 처리돼 있었을 때(응답 `replayed`)의 안내. */
+export const DIRECT_TRADE_REPLAYED_TEXT = "앞서 보낸 요청이 이미 처리돼 있었습니다 — 매매는 한 번만 적혔습니다(매매 내역의 '지시 없음').";
+
+/**
+ * 지시 없는 매매 적기의 요청 열쇠(QA-1035) — 서버가 받는 모양(글자·숫자·'-'·'_' 8~64자). `crypto.randomUUID`가 없는 환경(보안 맥락이 아닌 주소·옛 브라우저)은
+ * `getRandomValues`로, 그것도 없으면 시각과 `Math.random`으로 만듭니다 — 보안 값이 아니라 한 계좌 안에서 요청을 가르는 이름표입니다.
+ */
+export function newIsaRequestId(): string {
+  const source: Partial<Pick<Crypto, "randomUUID" | "getRandomValues">> | undefined = globalThis.crypto;
+  if (source && typeof source.randomUUID === "function") {
+    return source.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (source && typeof source.getRandomValues === "function") {
+    source.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `r${Date.now().toString(36)}-${hex}`;
+}
+
 /** 이 오류 뒤에 화면을 다시 읽어야 하는가(화면이 서버와 어긋났다는 뜻 — 없는 행·이미 시작·시작 전·이미 적힌 지시). */
 export function isaErrorNeedsReload(code: IsaErrorCode | null): boolean {
   return code === "not-found" || code === "already-started" || code === "not-started" || code === "already-recorded";

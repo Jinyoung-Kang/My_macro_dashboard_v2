@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { Banner, buttonClasses, inputClasses, NativeSelect } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
+import { NetworkError } from "@/lib/api";
 import {
   buildDirectTradeRequest,
   confirmLineWarning,
+  DIRECT_TRADE_RETRY_TEXT,
   directTradeHolding,
   directTradePrice,
   emptyDirectTradeForm,
@@ -14,6 +16,7 @@ import {
   formatShares,
   type IsaDirectTradeField,
   type IsaDirectTradeForm,
+  newIsaRequestId,
   symbolText,
   toNumber,
   updateDirectTradeForm,
@@ -25,6 +28,10 @@ import { postDirectTrade, sendIsa } from "./isaRequests";
  * 지시 없는 매매 적기 창(2026-11-24 사용자 결정 — ADR 0034 개정) — 지시와 다른 종목을 사거나 판 날, 그 매매를 방향·종목(이름 또는 코드)·수량·체결 금액(총액)·
  * 수수료로 적습니다. 지시 줄의 '확인'과 같은 계산으로 잔고에 바로 반영하고 매매 내역에 '지시 없음'으로 남깁니다(세금은 서버가 매도에 자동으로 셈). 수수료는 직접
  * 고치기 전까지 수수료율로 다시 셉니다. 증권사로 주문을 보내지 않습니다.
+ *
+ * 요청 열쇠(QA-1035): 창이 열릴 때 열쇠 하나를 만들어 본문에 싣습니다. 응답이 안 와(시간 초과) 같은 창에서 값을 그대로 두고 다시 누르면 같은 열쇠가 가므로 서버가
+ * 한 번만 적습니다. 보낸 뒤 본문(방향·종목·수량·금액·수수료)이 달라지면 새 열쇠를 만들고, 성공하면 버립니다(창이 닫히면 입력과 함께 사라짐). 새로 고친 뒤 다시
+ * 적는 것은 열쇠가 달라 막지 못합니다.
  */
 export function IsaDirectTradeDialog({
   open,
@@ -78,6 +85,10 @@ function DirectTradeForm({
 }) {
   const ids = useId();
   const [form, setForm] = useState<IsaDirectTradeForm>(emptyDirectTradeForm);
+  // 요청 열쇠 — 창이 열릴 때(이 폼이 그려질 때) 하나. sent는 마지막으로 보낸 열쇠와 그때의 본문(아직 안 보냈으면 본문 null)입니다.
+  const [openedId] = useState(newIsaRequestId);
+  const sent = useRef<{ id: string; body: string | null } | null>(null);
+  const [maybeDone, setMaybeDone] = useState(false);
   const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, onReload), [onReload]);
   const action = useAsyncAction(send, "매매를 적지 못했습니다.");
   const checked = buildDirectTradeRequest(form);
@@ -91,15 +102,32 @@ function DirectTradeForm({
 
   const submit = async () => {
     if (!checked.ok || action.busy) return;
-    const body = checked.body;
+    // 같은 본문을 다시 보내면 같은 열쇠, 보낸 뒤 본문이 달라졌으면 새 열쇠.
+    const text = JSON.stringify(checked.body);
+    const last = sent.current;
+    const requestId = last === null ? openedId : last.body === null || last.body === text ? last.id : newIsaRequestId();
+    sent.current = { id: requestId, body: text };
+    const body = { ...checked.body, requestId };
     let reply: IsaOkResponse = { ok: true };
+    let timedOut = false;
+    setMaybeDone(false);
     onBusyChange(true);
     const ok = await action.run(async () => {
-      reply = await postDirectTrade(body);
+      try {
+        reply = await postDirectTrade(body);
+      } catch (error) {
+        timedOut = error instanceof NetworkError && error.timedOut;
+        throw error;
+      }
       return reply;
     });
     onBusyChange(false);
-    if (ok) onDone(reply);
+    if (ok) {
+      sent.current = { id: newIsaRequestId(), body: null };   // 성공한 열쇠는 버림
+      onDone(reply);
+    } else if (timedOut) {
+      setMaybeDone(true);
+    }
   };
 
   const field = (key: Exclude<IsaDirectTradeField, "side">, label: string, placeholder: string, help?: string, decimal = true) => (
@@ -180,6 +208,7 @@ function DirectTradeForm({
           <Banner tone="danger">{action.error}</Banner>
         </div>
       )}
+      {action.error && maybeDone && <p className="text-xs leading-relaxed text-text-2">{DIRECT_TRADE_RETRY_TEXT}</p>}
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={action.busy} className={buttonClasses("secondary")}>
           취소

@@ -19,6 +19,7 @@ import {
   BALANCE_CHANGED_TEXT,
   canConfirm,
   COST_NOTE,
+  DIRECT_TRADE_REPLAYED_TEXT,
   formatShares,
   formatWon,
   instructionWhenText,
@@ -313,9 +314,9 @@ export function IsaSection() {
         commissionPct={commissionPct}
         onClose={() => setDirectOpen(false)}
         onReload={reloadNow}
-        onDone={() => {
+        onDone={(result) => {
           setDirectOpen(false);
-          setNotice("지시 없는 매매를 적은 값으로 잔고에 반영했습니다 — 매매 내역에 '지시 없음'으로 남았습니다.");
+          setNotice(result.replayed ? DIRECT_TRADE_REPLAYED_TEXT : "지시 없는 매매를 적은 값으로 잔고에 반영했습니다 — 매매 내역에 '지시 없음'으로 남았습니다.");
           reloadNow();
         }}
       />

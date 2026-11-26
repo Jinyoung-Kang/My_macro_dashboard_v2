@@ -145,6 +145,8 @@ const table = (name: string) => inRegion().getByRole("table", { name });
 const rowOf = (name: string, text: string) =>
   within(table(name)).getAllByRole("row").find((row) => row.textContent?.includes(text)) as HTMLElement;
 const postPaths = () => api.apiPost.mock.calls.map((call) => call[0]);
+/** ISA 쓰기에 붙는 시간 한도 인자(QA-1035 — apiPost의 셋째 인자). */
+const WITHIN = { timeoutMs: 20_000 };
 const lastBody = () => api.apiPost.mock.calls.at(-1)?.[1];
 
 describe("탭은 한국만", () => {
@@ -220,7 +222,7 @@ describe("시작 전 — '시작' 창", () => {
     expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/start", {
       totalAsset: 10_000_000,
       positions: [{ symbol: "합성전자", quantity: 10, purchaseAmount: 1_000_000 }, { symbol: "222220", quantity: 3, purchaseAmount: 0 }],
-    });
+    }, WITHIN);
     expect(await screen.findByText(/시작했습니다 — 보유 2종목과 현금을 넣었습니다/)).toBeTruthy();
   });
 
@@ -464,7 +466,7 @@ describe("확인·건너뜀·되돌리기", () => {
     fireEvent.click(within(dialog()).getByRole("button", { name: "잔고에 반영" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/apply", {
       items: [{ instructionId: 7, quantity: 3, amount: 150_003, fee: 25, priceSource: "user" }],
-    }));
+    }, WITHIN));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await inRegion().findByText(/확인 1건을 적은 값으로 잔고에 반영했습니다/)).toBeTruthy();
     await waitFor(() => expect(isaReads()).toBeGreaterThan(1));
@@ -581,7 +583,7 @@ describe("확인·건너뜀·되돌리기", () => {
     fireEvent.change(amount, { target: { value: "151500" } });
     api.apiPost.mockResolvedValue({ ok: true });
     fireEvent.click(within(dialog()).getByRole("button", { name: "잔고에 반영" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades/9", { quantity: 3, amount: 151_500, fee: 22 }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades/9", { quantity: 3, amount: 151_500, fee: 22 }, WITHIN));
     expect(await screen.findByText(/매매를 고쳤습니다/)).toBeTruthy();
   });
 
@@ -595,7 +597,7 @@ describe("확인·건너뜀·되돌리기", () => {
     fireEvent.change(time, { target: { value: "2026-11-08T14:20" } });
     api.apiPost.mockResolvedValue({ ok: true });
     fireEvent.click(within(dialog()).getByRole("button", { name: "잔고에 반영" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades/9", { quantity: 3, amount: 150_000, fee: 22, at: "2026-11-08T14:20:00+09:00" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades/9", { quantity: 3, amount: 150_000, fee: 22, at: "2026-11-08T14:20:00+09:00" }, WITHIN));
   });
 
   it("지시 없는 매매 적기 — 매도 종목은 잔고에서 보유를 보여 주고, 금액을 적으면 수수료를 수수료율로 채워 POST trades(방향·종목·수량·금액·수수료), 안내와 다시 읽기", async () => {
@@ -613,7 +615,7 @@ describe("확인·건너뜀·되돌리기", () => {
     expect(dialog().textContent).toContain("53,000");
     const readsBefore = isaReads();
     fireEvent.click(submit);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades", { side: "SELL", symbol: "합성화학", quantity: 10, amount: 530_000, fee: 79 }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/trades", { side: "SELL", symbol: "합성화학", quantity: 10, amount: 530_000, fee: 79, requestId: expect.any(String) }, WITHIN));
     expect(await screen.findByText(/지시 없는 매매를 적은 값으로 잔고에 반영했습니다/)).toBeTruthy();
     await waitFor(() => expect(isaReads()).toBeGreaterThan(readsBefore));
   });
@@ -630,7 +632,7 @@ describe("확인·건너뜀·되돌리기", () => {
     fireEvent.change(within(dialog()).getByRole("textbox", { name: "매매 비용(수수료, 원)" }), { target: { value: "" } });
     api.apiPost.mockRejectedValue(apiError(400, "invalid-request", "444440의 평균 단가(체결 금액 ÷ 수량)가 직전 종가의 ±40% 밖입니다"));
     fireEvent.click(within(dialog()).getByRole("button", { name: "잔고에 반영" }));
-    await waitFor(() => expect(lastBody()).toEqual({ side: "BUY", symbol: "444440", quantity: 2, amount: 30_000 }));
+    await waitFor(() => expect(lastBody()).toEqual({ side: "BUY", symbol: "444440", quantity: 2, amount: 30_000, requestId: expect.any(String) }));
     expect((await within(dialog()).findByRole("alert")).textContent).toContain("±40% 밖");
   });
 
@@ -687,7 +689,7 @@ describe("잔고 고치기", () => {
     expect(form.getByText(/매입 금액 = 수량 × 가격/).textContent).toContain("3,000원");
     fireEvent.click(form.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
-    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/positions", { symbol: "합성소재", name: "내 이름", quantity: 3, price: 1000 });
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/positions", { symbol: "합성소재", name: "내 이름", quantity: 3, price: 1000 }, WITHIN);
     expect(await screen.findByText(/잔고를 고쳤습니다/)).toBeTruthy();
   });
 
@@ -723,7 +725,7 @@ describe("잔고 고치기", () => {
     fireEvent.change(input, { target: { value: "0.1" } });
     fireEvent.click(form.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
-    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/commission", { commissionPct: 0.1 });
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/commission", { commissionPct: 0.1 }, WITHIN);
     expect(await screen.findByText(/수수료율을 고쳤습니다/)).toBeTruthy();
   });
 
@@ -735,7 +737,7 @@ describe("잔고 고치기", () => {
     fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "5,000,000" } });
     fireEvent.click(form.getByRole("button", { name: "다시 맞추기" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
-    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/total", { totalAsset: 5_000_000 });
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/total", { totalAsset: 5_000_000 }, WITHIN);
     expect(await screen.findByText(/현금을 다시 셌습니다/)).toBeTruthy();
   });
 });
@@ -970,7 +972,6 @@ describe("장중 스탑 매도 지시·매매 내역 — 5줄씩 쪽 넘김(사�
 
 describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠", () => {
   const TRADES = "/api/manual/isa/trades";
-  const WITHIN = { timeoutMs: 20_000 };
   const timedOut = () => new api.NetworkError("백엔드가 20초 안에 응답하지 않았습니다 (http://backend)", true);
   const tradeCalls = () => api.apiPost.mock.calls.filter(([path]) => path === TRADES);
   const keyOf = (index: number) => (tradeCalls()[index][1] as { requestId: string }).requestId;
@@ -985,7 +986,7 @@ describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠"
     fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결 금액(총액, 원)" }), { target: { value: "530,000" } });
   };
 
-  it.skip("시간 초과 — 창 안에 '처리됐을 수 있음' 안내와 다시 읽기, 같은 창에서 다시 누르면 같은 열쇠, 본문을 고치면 새 열쇠", async () => {
+  it("시간 초과 — 창 안에 '처리됐을 수 있음' 안내와 다시 읽기, 같은 창에서 다시 누르면 같은 열쇠, 본문을 고치면 새 열쇠", async () => {
     await openFilled();
     api.apiPost.mockRejectedValue(timedOut());
     const readsBefore = isaReads();
@@ -1015,7 +1016,7 @@ describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠"
     expect(await screen.findByText(/지시 없는 매매를 적은 값으로 잔고에 반영했습니다/)).toBeTruthy();
   });
 
-  it.skip("창을 닫았다 다시 열면 새 열쇠 — 같은 값을 다시 적어도 다른 요청", async () => {
+  it("창을 닫았다 다시 열면 새 열쇠 — 같은 값을 다시 적어도 다른 요청", async () => {
     await openFilled();
     api.apiPost.mockRejectedValue(timedOut());
     fireEvent.click(submitButton());
@@ -1032,7 +1033,7 @@ describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠"
     expect(keyOf(1)).not.toBe(keyOf(0));
   });
 
-  it.skip("다시 보낸 요청이 이미 처리돼 있었으면(replayed) 한 번만 적혔다고 안내", async () => {
+  it("다시 보낸 요청이 이미 처리돼 있었으면(replayed) 한 번만 적혔다고 안내", async () => {
     await openFilled();
     api.apiPost.mockRejectedValueOnce(timedOut());
     fireEvent.click(submitButton());
@@ -1044,7 +1045,7 @@ describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠"
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it.skip("다른 쓰기도 시간 한도 20초 — 건너뜀이 시간 초과면 '처리됐을 수 있음' 안내와 다시 읽기, 성공 안내는 없음", async () => {
+  it("다른 쓰기도 시간 한도 20초 — 건너뜀이 시간 초과면 '처리됐을 수 있음' 안내와 다시 읽기, 성공 안내는 없음", async () => {
     api.apiPost.mockRejectedValue(timedOut());
     renderIsa();
     fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성화학 222220" }));
@@ -1056,7 +1057,25 @@ describe("QA-1035 쓰기 시간 한도와 지시 없는 매매의 요청 열쇠"
     expect(screen.queryByText(/건너뜀으로 두었습니다/)).toBeNull();
   });
 
-  it.skip("연결하지 못한 실패(timedOut 아님)는 서버가 받지 않았으므로 그 문구 그대로 — '처리됐을 수 있음' 안내 없음", async () => {
+  it("쓰기 11개 모두 시간 한도 20초를 싣고 나간다(apiPost의 셋째 인자)", async () => {
+    const requests = await import("../isaRequests");
+    expect(requests.ISA_WRITE_TIMEOUT_MS).toBe(20_000);
+    await requests.postStart({ totalAsset: 1, positions: [] });
+    await requests.postTotal({ totalAsset: 1 });
+    await requests.postCommission({ commissionPct: 0.1 });
+    await requests.postPosition({ symbol: "111110", quantity: 1, price: 1 });
+    await requests.postDeletePosition("111110");
+    await requests.postApply({ items: [] });
+    await requests.postSkipInstruction(1);
+    await requests.postSkipStopInstruction(2);
+    await requests.postDirectTrade({ side: "BUY", symbol: "111110", quantity: 1, amount: 1 });
+    await requests.postEditTrade(3, { quantity: 1, amount: 1, fee: 0 });
+    await requests.postUndoTrade(3);
+    expect(new Set(postPaths()).size).toBe(11);
+    expect(api.apiPost.mock.calls.map((call) => call[2])).toEqual(Array.from({ length: 11 }, () => WITHIN));
+  });
+
+  it("연결하지 못한 실패(timedOut 아님)는 서버가 받지 않았으므로 그 문구 그대로 — '처리됐을 수 있음' 안내 없음", async () => {
     await openFilled();
     api.apiPost.mockRejectedValue(new api.NetworkError("백엔드에 연결하지 못했습니다 (http://backend)"));
     fireEvent.click(submitButton());
