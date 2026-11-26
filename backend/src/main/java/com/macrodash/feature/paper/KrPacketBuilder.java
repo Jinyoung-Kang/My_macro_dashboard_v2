@@ -430,6 +430,12 @@ final class KrPacketBuilder {
                             || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))), metrics));
             fixed.put(Continuity.SECTION, carried);
         }
+        // 복기의 반복 오류(ADR 0051) — 자유 시점 판이고 한국 스위치를 켠 정기·수동 결정만: 머리의 reviewErrors, 섹션 10c_review. 끄면 이 칸들이
+        // 없어 예전 패킷과 바이트까지 같습니다. 출발 결정에는 넣지 않습니다(그 기준일 이전의 복기가 없음).
+        if (free && !initial && ReviewLessons.on(body, true)) {
+            basis.put("reviewErrors", ReviewLessons.VERSION);
+            fixed.put(ReviewLessons.SECTION, ReviewLessons.section(store, PaperStore.Book.MARKET_KR, asOf));
+        }
         int cut = 0;
         String text = render(fixed, rows, 0);
         if (PacketBuilder.estimateTokens(text) > targetTokens && !universeRows.isEmpty()) {
@@ -496,6 +502,9 @@ final class KrPacketBuilder {
             }
             if (DECISIONS.equals(key) && fixed.containsKey(Continuity.SECTION)) {
                 root.put(Continuity.SECTION, fixed.get(Continuity.SECTION));
+            }
+            if (DECISIONS.equals(key) && fixed.containsKey(ReviewLessons.SECTION)) {
+                root.put(ReviewLessons.SECTION, fixed.get(ReviewLessons.SECTION));
             }
         }
         return mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(PacketBuilder.toNode(root));

@@ -649,6 +649,12 @@ public class PacketBuilder {
         if (continuity) {
             basis.put("continuity", Continuity.VERSION);
         }
+        // 복기의 반복 오류(ADR 0051) — 자유 시점 판이고 스위치를 켠 정기·수동 결정만: 머리의 reviewErrors, 섹션 10c_review. 끄면 이 칸들이 없어
+        // 예전 패킷과 바이트까지 같습니다. 출발 결정에는 넣지 않습니다(그 기준일 이전의 복기가 없음).
+        boolean reviewErrors = !initial && ReviewLessons.on(book, in.settingsBody());
+        if (reviewErrors) {
+            basis.put("reviewErrors", ReviewLessons.VERSION);
+        }
         // 다음 개장 기준 결정(ADR 0039 — 설정 decisionBeforeOpenMinutes): 켠 판의 정기·수동 결정만 머리에 결정 순간과 설명. 끄면 이 칸이 없습니다.
         Map<String, Object> decisionAt = initial ? null
                 : DecisionTiming.basisView(UsMarketCalendar.CALENDAR, asOf, in.settingsBody(), false);
@@ -691,6 +697,9 @@ public class PacketBuilder {
             Map<String, Object> carried = Continuity.carried(Continuity.latestJudged(store, prior), metrics, List.copyOf(macro.keySet()));
             carried.put(Continuity.HOLDING_CHECKS, holdingChecks);
             root.put(Continuity.SECTION, carried);
+        }
+        if (reviewErrors) {
+            root.put(ReviewLessons.SECTION, ReviewLessons.section(store, book.market().code(), asOf));
         }
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());

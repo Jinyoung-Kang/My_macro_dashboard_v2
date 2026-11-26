@@ -581,6 +581,8 @@ public class PaperSettingsService {
         body.put("info", ReadingSection.defaultsBody());
         // 판단 이어받기(ADR 0038) — 꺼짐. 이 키가 없는 지금 행도 꺼짐으로 읽힙니다(Continuity.on — 배포만으로 바뀌지 않음).
         body.put(Continuity.US_KEY, Continuity.DEFAULT);
+        // 복기의 반복 오류(ADR 0051) — 꺼짐. 이 키가 없는 지금 행도 꺼짐으로 읽힙니다(ReviewLessons.on — 배포만으로 바뀌지 않음).
+        body.put(ReviewLessons.US_KEY, ReviewLessons.DEFAULT);
         // 3단계 스위치(2단계 K22·K37, 두 책 공통) — 모두 꺼짐. 한국 책 출발일에 한 번의 저장으로 함께 켭니다.
         body.put("calendar", Map.of("consensus", false));
         Map<String, Object> claude = new LinkedHashMap<>();
@@ -668,6 +670,8 @@ public class PaperSettingsService {
         kr.put("info", ReadingSection.defaultsBody());
         // 판단 이어받기(ADR 0038) — 한국도 꺼짐.
         kr.put("continuity", Continuity.DEFAULT);
+        // 복기의 반복 오류(ADR 0051) — 한국도 꺼짐.
+        kr.put("reviewErrors", ReviewLessons.DEFAULT);
         // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 투자 성향과 장중 확인 스위치(단계 2b).
         Map<String, Object> claude2 = new LinkedHashMap<>();
         claude2.put("riskProfile", Claude2Settings.DEFAULT_KR_RISK_PROFILE);

@@ -1536,6 +1536,60 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("복기의 반복 오류(ADR 0051 — 설정 reviewErrors): 자유 시점 판의 정기 패킷에 1_basis.reviewErrors와 10c_review(가장 최근 정상 복기의 "
+            + "기준일·프레임 판·반복 오류 — 지킬 것·지켜볼 것은 없음)가 실리고 그 밖은 바이트 그대로. 꺼져 있거나 자유 시점 판이 아니면 패킷이 그대로")
+    void reviewErrorsPacket() {
+        activeClaude();
+        // 지난 금요일(10-23) 주의 미국 복기 — 반복 오류 둘. 한국 복기는 미국 패킷에 실리지 않습니다.
+        store.reviews.put(FRI, new PaperStore.Review(FRI, 4, MAPPER.createObjectNode(), "{}", MAPPER.readTree("""
+                {"recurringErrors":["무효화 조건을 진입 값에 바짝 붙임(34·41)","한 날의 지표 변화로 노출을 확대(27)"],
+                 "keep":["스탑은 코드에"],"watchItems":["반등 국면에서 낮은 노출이 뒤처지는지"]}"""), null, "claude-sonnet-5-5", null,
+                PaperStore.Review.OK, null, null, 3, 0, FRI_CLOSE, "US"));
+        store.reviewsOf("KR").put(FRI, new PaperStore.Review(FRI, 4, MAPPER.createObjectNode(), "{}",
+                MAPPER.readTree("{\"recurringErrors\":[\"한국 복기의 오류\"]}"), null, "claude-sonnet-5-5", null,
+                PaperStore.Review.OK, null, null, 3, 0, FRI_CLOSE, "KR"));
+        Packet off = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE_FT,
+                RuleBookService.SCHEDULED, 0);
+
+        ((ObjectNode) store.settings.body()).put(ReviewLessons.US_KEY, true);
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet on = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0);
+        Packet plain = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        // 이어받기와 함께 켜면 10b_carried 다음에 10c_review
+        ((ObjectNode) store.settings.body()).put("continuity", true);
+        List<String> both = new ArrayList<>(builder.assemble(builder.read(MON, false, store.settings),
+                ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0).body().propertyNames());
+        assertThat(both.indexOf(ReviewLessons.SECTION)).isEqualTo(both.indexOf(Continuity.SECTION) + 1);
+        ((ObjectNode) store.settings.body()).put("continuity", false);
+        ((ObjectNode) store.settings.body()).put(ReviewLessons.US_KEY, false);
+        Packet plainOff = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE,
+                RuleBookService.SCHEDULED, 0);
+        assertThat(plain.text()).as("자유 시점 판이 아닌 계좌1 패킷은 스위치와 무관하게 그대로").isEqualTo(plainOff.text());
+
+        JsonNode body = on.body();
+        assertThat(body.get(PacketBuilder.BASIS).get("reviewErrors").asInt()).isEqualTo(ReviewLessons.VERSION);
+        List<String> keys = new ArrayList<>(body.propertyNames());
+        assertThat(keys.indexOf(ReviewLessons.SECTION)).as("10_recentDecisions 바로 다음(이어받기는 꺼짐)")
+                .isEqualTo(keys.indexOf(PacketBuilder.DECISIONS) + 1);
+        JsonNode section = body.get(ReviewLessons.SECTION);
+        assertThat(new ArrayList<>(section.propertyNames())).containsExactly("weekEnding", "frameworkVersion",
+                "recurringErrors", "note");
+        assertThat(section.get("weekEnding").asString()).isEqualTo(FRI.toString());
+        assertThat(section.get("frameworkVersion").asInt()).isEqualTo(3);
+        assertThat(section.get("recurringErrors")).extracting(JsonNode::asString)
+                .containsExactly("무효화 조건을 진입 값에 바짝 붙임(34·41)", "한 날의 지표 변화로 노출을 확대(27)");
+        assertThat(section.get("note").asString()).isEqualTo(ReviewLessons.NOTE);
+        assertThat(on.text()).doesNotContain("스탑은 코드에").doesNotContain("낮은 노출이 뒤처지는지").doesNotContain("한국 복기");
+
+        // 더한 칸을 빼면 끈 스위치의 패킷과 같다.
+        ObjectNode stripped = (ObjectNode) body.deepCopy();
+        ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("reviewErrors");
+        stripped.remove(ReviewLessons.SECTION);
+        assertThat(stripped).isEqualTo(off.body());
+        Golden.assertMatches("packet-us-ft-claude-review-errors-scheduled.json", on.text());
+    }
+
+    @Test
     @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031·0050): 미국 계좌2·계좌1 켠 판의 정기 패킷 — 계좌2 단계 1 패킷과 1_basis 세 칸(variant freeTiming·메뉴 판 5·"
             + "고정 문단 판 ft-3), 12_hardRules의 시점 문장 둘, 13_execution의 판·메뉴(분 단위 지정 시각 09:40~ 하나 — 시가·종가 없음)·atMinute 범위·출처 사실 셋째 줄만 "
             + "다르고 그 밖은 바이트 그대로. "

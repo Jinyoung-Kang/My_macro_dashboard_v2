@@ -1234,6 +1234,45 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("복기의 반복 오류(ADR 0051 — 설정 kr.reviewErrors): 한국 자유 시점 판 패킷에 1_basis.reviewErrors와 10c_review(가장 최근 정상 한국 "
+            + "복기의 반복 오류)가 실리고 그 밖은 바이트 그대로. 끄거나 끈 판이면 그대로")
+    void reviewErrorsPacket() {
+        Packet plainOff = scheduled();
+        Packet off = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        java.time.LocalDate week = D.with(java.time.temporal.TemporalAdjusters.previous(java.time.DayOfWeek.FRIDAY));
+        store.reviewsOf("KR").put(week, new com.macrodash.store.PaperStore.Review(week, 4, MAPPER.createObjectNode(), "{}",
+                MAPPER.readTree("{\"recurringErrors\":[\"외국인 5일 합 하나로 노출을 확대(114·130)\"],\"keep\":[\"단기채 완충\"],"
+                        + "\"watchItems\":[\"같은 업종 묶음의 합산 비중\"]}"), null, "claude-sonnet-5-5", null,
+                com.macrodash.store.PaperStore.Review.OK, null, null, 17, 0, java.time.Instant.parse("2026-11-01T13:00:00Z"), "KR"));
+        store.reviews.put(week, new com.macrodash.store.PaperStore.Review(week, 4, MAPPER.createObjectNode(), "{}",
+                MAPPER.readTree("{\"recurringErrors\":[\"미국 복기의 오류\"]}"), null, "claude-sonnet-5-5", null,
+                com.macrodash.store.PaperStore.Review.OK, null, null, 17, 0, java.time.Instant.parse("2026-11-01T12:00:00Z"), "US"));
+
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        kr.put("reviewErrors", true);
+        Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text())
+                .as("끈 판(자유 시점 판이 아님) 패킷은 스위치와 무관하게 그대로").isEqualTo(plainOff.text());
+
+        JsonNode body = on.body();
+        assertThat(body.get(PacketBuilder.BASIS).get("reviewErrors").asInt()).isEqualTo(ReviewLessons.VERSION);
+        List<String> keys = new ArrayList<>(body.propertyNames());
+        assertThat(keys.indexOf(ReviewLessons.SECTION)).isEqualTo(keys.indexOf(PacketBuilder.DECISIONS) + 1);
+        JsonNode section = body.get(ReviewLessons.SECTION);
+        assertThat(section.get("weekEnding").asString()).isEqualTo(week.toString());
+        assertThat(section.get("frameworkVersion").asInt()).isEqualTo(17);
+        assertThat(section.get("recurringErrors")).extracting(JsonNode::asString)
+                .containsExactly("외국인 5일 합 하나로 노출을 확대(114·130)");
+        assertThat(on.text()).doesNotContain("단기채 완충").doesNotContain("합산 비중").doesNotContain("미국 복기");
+
+        ObjectNode stripped = (ObjectNode) body.deepCopy();
+        ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("reviewErrors");
+        stripped.remove(ReviewLessons.SECTION);
+        assertThat(stripped).as("더한 칸을 빼면 끈 스위치의 자유 시점 판 패킷과 같다").isEqualTo(off.body());
+        Golden.assertMatches("packet-kr-ft-review-errors-scheduled.json", on.text());
+    }
+
+    @Test
     @DisplayName("한국 장중 스탑 감시 ON(kr.stopWatch.mode — ADR 0032): 한국 결정 패킷(켠 판·끈 판)에 1_basis.stopWatch와 12_hardRules의 스탑 줄(5분 감시·"
             + "두 번·장중 시장가·종가 단일가 뒤 종가·밤 대체 개장 10분 뒤)이 실리고 대기 감시 STOP 종목(밤 대체 포함)은 lockedOut — 그 밖은 바이트 그대로. "
             + "SHADOW는 예전 고정본 그대로")

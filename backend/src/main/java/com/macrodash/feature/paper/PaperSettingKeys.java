@@ -294,6 +294,12 @@ final class PaperSettingKeys {
                             + "논거·무효화 조건(positions의 entry)과 직전 결정이 남긴 조건·바라는 노출(10b_carried — 조건은 코드가 지금 값으로 "
                             + "충족 여부를 매김)을 패킷에 돌려주고, 응답이 바라는 노출·계획·조건 칸을 더 받음. 장중 판단 패킷에는 그 세션 결정의 "
                             + "논거와 조건이 실림. 끄면 다음 결정부터 지금 판(프롬프트·스키마·패킷이 바이트까지 같음)"),
+            of(ReviewLessons.US_KEY, Type.BOOLEAN, false,
+                    "미국 Claude 계좌 결정 패킷에 지난 주간 복기의 반복 오류를 넣음(ADR 0051, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 다음 "
+                            + "미국 정기·수동 결정부터 섹션 10c_review(가장 최근 정상 복기의 기준일·프레임 판·반복 오류 최대 "
+                            + ReviewLessons.MAX_ITEMS + "건 — 복기가 " + ReviewLessons.MAX_AGE_DAYS + "일 넘게 묵었으면 빈 목록)와 그 칸을 "
+                            + "설명하는 고정 문단 한 절이 붙음. 자료일 뿐 코드가 주문을 내거나 막지 않고, 응답 스키마·장중 판단 패킷은 그대로. "
+                            + "끄면 다음 결정부터 지금 판(프롬프트·패킷이 바이트까지 같음)"),
             of("info.packet", Type.BOOLEAN, false,
                     "Claude 계좌 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, 해외 블로그·waedge 시황·거장 글의 제목과 앞부분, "
                             + "결정 창의 것만 최대 " + ReadingSection.MAX_ITEMS + "편) — 꺼도 수집은 계속, 패킷에서만 뺌"),
@@ -446,6 +452,10 @@ final class PaperSettingKeys {
                     "한국 Claude 계좌의 판단 이어받기(ADR 0038, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 다음 한국 결정부터 보유 종목의 진입 "
                             + "논거·무효화 조건과 직전 결정이 남긴 조건·바라는 노출(10b_carried)을 패킷에 돌려주고 응답이 그 칸을 더 받음. 끄면 "
                             + "다음 결정부터 지금 판"),
+            of(ReviewLessons.KR_KEY, Type.BOOLEAN, false,
+                    "한국 Claude 계좌 결정 패킷에 지난 한국 주간 복기의 반복 오류를 넣음(ADR 0051, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 "
+                            + "다음 한국 정기·수동 결정부터 섹션 10c_review와 그 칸을 설명하는 고정 문단 한 절이 붙음. 자료일 뿐 코드가 주문을 "
+                            + "내거나 막지 않음. 끄면 다음 결정부터 지금 판"),
             of("kr.info.packet", Type.BOOLEAN, false,
                     "한국 Claude 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, waedge 국내 시장 글의 제목과 앞부분) — 꺼도 수집은 계속"),
             integer("kr.news.maxPerDay", 0, NewsEvents.MAX_PER_DAY_LIMIT, false, "한국 패킷에 싣는 사건 헤드라인 상한"),
