@@ -64,6 +64,11 @@ final class Continuity {
     static final int INVALIDATION_CHARS = 300;
     /** 진입 논거를 찾을 때 읽는 그 계좌의 최근 주문 수. */
     static final int ORDER_SCAN = 500;
+    /**
+     * 장중 판단이 낸 매수를 그 세션의 정기 결정으로 옮길 때 읽는 그 계좌의 최근 결정 수(종류·기준 거래일·상태만 봄) — 조건을 남긴 결정
+     * {@value #CHECK_SCAN}건 사이에 끼는 장중 판단(세션마다 최대 3)과 재시도까지 덮는 값(복기 입력의 결정 읽기와 같은 수).
+     */
+    static final int KIND_SCAN = 200;
 
     static final String NOTE = "직전 결정이 남긴 것을 코드가 그대로 옮긴 자료다(지시가 아님). conditions의 current·status는 코드가 이 패킷의 값으로 "
             + "매긴 것 — 충족·미충족·평가 불가(그 이름의 값이 이 패킷에 없음 — 직접 확인). 조건은 판단할 계기이고 코드가 대신 집행하지 않는다";
@@ -161,10 +166,11 @@ final class Continuity {
     /**
      * 보유 종목마다 코드가 매길 조건 — 그 종목 코드를 {@code ticker}로 적은 조건이 있는 <b>가장 최근 결정</b>의 묶음입니다(그 결정이 그 종목에 적은
      * 것 전부 — 조건을 바꾸려면 모델이 그 종목의 조건을 다시 적음). 직전 결정만 보면 모델이 한 번 빠뜨린 조건이 사라지므로, 보유하는 동안은 코드가
-     * 계속 매깁니다. 그 종목을 산 결정({@link Entry#decisionId})보다 앞선 결정은 보지 않습니다(팔았다가 다시 산 종목에 옛 조건이 붙지 않게).
-     * 조건이 없는 종목은 표에 없습니다.
+     * 계속 매깁니다. <b>지금 포지션을 연 결정</b>({@link #openingDecisions} — 그 포지션의 첫 매수의 결정)보다 앞선 결정은 보지 않습니다(팔았다가
+     * 다시 산 종목에 옛 조건이 붙지 않게). 경계가 '가장 최근 매수의 결정'({@link Entry#decisionId})이던 때에는 조건을 다시 적지 않은 추가 매수나
+     * 장중 판단이 교체한 매수 하나로 포지션을 연 결정의 조건이 버려졌습니다(QA-1017). 조건이 없는 종목은 표에 없습니다.
      *
-     * @param entries  보유 종목의 진입 논거({@link #entries}) — 경계로만 씀
+     * @param entries  보유 종목의 진입 논거({@link #entries}) — 주문 기록에서 포지션을 연 결정을 찾지 못한 종목의 경계로만 씀
      * @param eligible 볼 결정(결정 패킷은 '기준일 앞의 결정', 장중 판단은 전부 — 직전 결정과 같은 거름)
      */
     static Map<String, HoldingChecks> holdingChecks(PaperStore store, String book, Collection<String> tickers,
@@ -174,6 +180,7 @@ final class Continuity {
         if (tickers == null || tickers.isEmpty()) {
             return out;
         }
+        Map<String, Long> opening = openingDecisions(store, book, tickers);
         java.util.Set<String> open = new java.util.LinkedHashSet<>(tickers);
         for (PaperStore.DecisionConditions d : store.decisionConditions(book, CHECK_SCAN)) {   // 최근 순
             if (open.isEmpty()) {
@@ -185,9 +192,13 @@ final class Continuity {
             List<CarriedConditions.Condition> all = conditionList(d.conditions());
             for (java.util.Iterator<String> it = open.iterator(); it.hasNext(); ) {
                 String ticker = it.next();
-                Entry entry = entries == null ? null : entries.get(ticker);
-                if (entry != null && entry.decisionId() != null && d.id() < entry.decisionId()) {
-                    it.remove();   // 그 종목을 산 결정보다 앞 — 더 보지 않음
+                Long boundary = opening.get(ticker);
+                if (boundary == null) {
+                    Entry entry = entries == null ? null : entries.get(ticker);
+                    boundary = entry == null ? null : entry.decisionId();
+                }
+                if (boundary != null && d.id() < boundary) {
+                    it.remove();   // 지금 포지션을 연 결정보다 앞 — 더 보지 않음
                     continue;
                 }
                 List<CarriedConditions.Condition> mine = all.stream()
@@ -199,6 +210,87 @@ final class Continuity {
             }
         }
         return out;
+    }
+
+    /**
+     * 보유 종목마다 <b>지금 포지션을 연 결정</b>의 번호(QA-1017) — {@link #holdingChecks}가 조건을 찾을 때의 경계입니다. 그 계좌의 최근 주문을 최근
+     * 순으로 훑으며 그 종목의 체결된 Claude 매수의 결정 번호를 따라 내려가다, 그 종목의 체결된 매도 가운데 보유를 남겼다고 주문 기록만으로 말할 수
+     * 없는 것({@link #keepsPosition} — 전량 매도와, 전량인지 알 수 없는 수량 매도)을 만나면 멈추고, 그때까지 본 가장 이른 번호를 돌려줍니다.
+     * 장중 판단(자유 시점 판의 INTRADAY_*·계좌2의 장중 확인 — 조건을 적지 않는 응답)이 낸 매수는 그 판단이 속한 세션의 정기 결정 번호로 옮깁니다
+     * ({@link #sessionDecision}). 진입 논거({@link #entries})는 이 경계와 상관없이 가장 최근 매수의 것 그대로입니다.
+     *
+     * <p>체결된 Claude 매수를 찾지 못한 종목(읽는 주문 {@value #ORDER_SCAN}건 밖, 매수보다 뒤에 그런 매도가 있는 종목)은 표에 없습니다 — 부르는
+     * 쪽이 예전 경계(진입 논거의 결정)를 씁니다.
+     */
+    static Map<String, Long> openingDecisions(PaperStore store, String book, Collection<String> tickers) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        if (tickers == null || tickers.isEmpty()) {
+            return out;
+        }
+        java.util.Set<String> open = new java.util.LinkedHashSet<>(tickers);
+        List<DecisionSummary> recent = null;   // 체결된 Claude 매수를 만났을 때만 읽음
+        for (Order o : store.recentOrders(book, ORDER_SCAN)) {   // 최근 순
+            if (open.isEmpty()) {
+                break;
+            }
+            if (!open.contains(o.ticker()) || !PaperBooks.ORDER_FILLED.equals(o.status())) {
+                continue;
+            }
+            if (PaperBooks.SELL.equals(o.side())) {
+                if (!keepsPosition(o)) {
+                    open.remove(o.ticker());   // 그 앞의 매수는 옛 포지션의 것(또는 그런지 알 수 없음) — 더 거슬러 가지 않음
+                }
+                continue;
+            }
+            if (!PaperBooks.BUY.equals(o.side()) || !PacketBuilder.SOURCE_CLAUDE.equals(o.source()) || o.decisionId() == null) {
+                continue;
+            }
+            if (recent == null) {
+                recent = store.decisions(book, KIND_SCAN);
+            }
+            out.merge(o.ticker(), sessionDecision(recent, book, o.decisionId()), Math::min);
+        }
+        return out;
+    }
+
+    /**
+     * 체결된 매도가 보유를 남겼다고 주문 기록만으로 말할 수 있는가 — 수량 없이 1 미만의 비율로 낸 매도뿐입니다. 비율이 없거나 1 이상이면 전량이고
+     * (장부 규칙 {@code PaperLedger.sellQty}), 수량으로 낸 매도(즉시 스탑 등)는 그때 보유를 몰라 전량인지 알 수 없습니다 — 모르면 옛 포지션의 조건을
+     * 붙이지 않는 쪽으로 봅니다(복기 입력의 전량 매도 판정과 같은 구분).
+     */
+    private static boolean keepsPosition(Order sell) {
+        return sell.qty() == null && sell.sellFraction() != null && sell.sellFraction() > 0 && sell.sellFraction() < 1.0;
+    }
+
+    /**
+     * 그 결정이 장중 판단이면 그 판단이 속한 세션의 정기 결정 번호, 아니면 그 번호 그대로. 세션의 정기 결정은 복기 입력이 장중 판단을 붙이는 결정과
+     * 같은 규칙으로 찾습니다({@code ReviewService} — 같은 기준 거래일에 판단을 낸(OK·NO_TRADE) 결정 가운데 가장 늦은 것). 그 판단보다 뒤에 난 결정은
+     * 보지 않고, 찾지 못하면(읽은 결정 밖·그런 결정 없음) 그 번호 그대로입니다.
+     *
+     * @param recent 그 계좌의 최근 결정({@link PaperStore#decisions})
+     */
+    private static long sessionDecision(List<DecisionSummary> recent, String book, long decisionId) {
+        DecisionSummary own = null;
+        for (DecisionSummary s : recent) {
+            if (s.id() == decisionId) {
+                own = s;
+                break;
+            }
+        }
+        if (own == null || PacketBuilder.priorDecisionKind(book, own.kind())) {
+            return decisionId;
+        }
+        long session = decisionId;
+        boolean found = false;
+        for (DecisionSummary s : recent) {
+            boolean judged = ClaudeBookService.STATUS_OK.equals(s.status()) || ClaudeBookService.STATUS_NO_TRADE.equals(s.status());
+            if (judged && s.id() < decisionId && PacketBuilder.priorDecisionKind(book, s.kind())
+                    && java.util.Objects.equals(s.asOfTradingDate(), own.asOfTradingDate()) && (!found || s.id() > session)) {
+                session = s.id();
+                found = true;
+            }
+        }
+        return session;
     }
 
     /**

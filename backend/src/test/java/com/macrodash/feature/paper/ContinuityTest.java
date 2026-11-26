@@ -278,7 +278,6 @@ class ContinuityTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-1017 재현 — 조건을 다시 적지 않은 추가 매수 뒤 포지션을 연 결정의 조건이 버려짐(수정 커밋에서 해제)")
     @DisplayName("보유 종목의 조건(QA-1017): 조건을 다시 적지 않은 추가 매수 뒤에도 포지션을 연 결정의 조건이 남는다 — 부분 매도는 경계가 아니고, "
             + "전량 매도 뒤 다시 산 종목에는 옛 조건이 붙지 않는다(진입 논거는 가장 최근 매수의 것 그대로)")
     void holdingChecksSurviveATopUpBuy() {
@@ -311,7 +310,6 @@ class ContinuityTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-1017 재현 — 장중 판단이 교체한 매수가 체결되면 그 세션 정기 결정의 조건이 버려짐(수정 커밋에서 해제)")
     @DisplayName("보유 종목의 조건(QA-1017): 장중 판단이 그 세션 결정의 매수를 교체(REPLACE)해 체결돼도 그 세션 정기 결정의 조건이 남는다 — "
             + "장중 판단의 매수는 그 판단이 속한 세션의 정기 결정이 경계")
     void holdingChecksSurviveAnIntradayReplaceBuy() {
