@@ -408,6 +408,47 @@ def test_복원_halt는_오늘까지의_ISA_스탑_지시를_건너뜀으로_닫
     assert rows == [(1, "SKIPPED", "restored"), (2, "SKIPPED", "restored"), (3, "PLANNED", None), (4, "RECORDED", None)]
 
 
+def test_D7_복원_halt는_닫은_ISA_스탑_지시의_건수와_잔고_맞추는_방법을_알린다(database_url, scratch_db, tmp_path):
+    """닫힌 지시는 화면에서 확인할 수 없으므로, 닫은 건수(건수만 — 종목·수량 없음)와 이미 판 것을 '지시 없는 매매 적기'로 맞추라는 안내를 찍습니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute("INSERT INTO manual_accounts(code, label, market, source_book, state, started_at, start_cash)"
+                     " VALUES ('isa', 'ISA', 'KR', 'kr_rules', 'ACTIVE', now(), 1000)")
+        conn.execute(
+            "INSERT INTO manual_stop_instructions(account, session, paper_order_id, symbol, quantity, timing, target_at, status) VALUES"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date, 1, '000001', 7, 'MARKET', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date - 1, 2, '000002', 9, 'NEXT_CLOSE', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date + 3, 3, '000003', 1, 'AT_MINUTE', now(), 'PLANNED')")
+    assert _run(BACKUP, env=env).returncode == 0
+
+    result = _run(RESTORE, str(_backups(tmp_path)[0]), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ISA 계좌의 대기 중이던 장중 스탑 지시 2건을 건너뜀(restored)으로 닫았습니다" in result.stdout
+    assert "지시 없는 매매 적기" in result.stdout
+    assert "000001" not in result.stdout and "000002" not in result.stdout, "종목은 찍지 않습니다(건수만)"
+
+
+def test_D7_닫은_ISA_스탑_지시가_없으면_그_안내를_찍지_않는다(database_url, scratch_db, tmp_path):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute("INSERT INTO manual_accounts(code, label, market, source_book, state, started_at, start_cash)"
+                     " VALUES ('isa', 'ISA', 'KR', 'kr_rules', 'ACTIVE', now(), 1000)")
+        conn.execute(
+            "INSERT INTO manual_stop_instructions(account, session, paper_order_id, symbol, quantity, timing, target_at, status) VALUES"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date + 3, 3, '000003', 1, 'AT_MINUTE', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date, 4, '000004', 1, 'MARKET', now(), 'RECORDED')")
+    assert _run(BACKUP, env=env).returncode == 0
+
+    result = _run(RESTORE, str(_backups(tmp_path)[0]), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ISA 계좌의 대기 중이던 장중 스탑 지시" not in result.stdout
+    assert _run(RESTORE, str(_backups(tmp_path)[0]), "--yes", env={**env, "RESTORE_REAL_TRADE": "clear"}).returncode == 0
+
+
 @pytest.mark.parametrize("mode", ["wipe", "HALT", "clear;"])
 def test_RESTORE_REAL_TRADE가_halt·clear가_아니면_시작하지_않는다(database_url, scratch_db, tmp_path, mode):
     name, db_url = scratch_db

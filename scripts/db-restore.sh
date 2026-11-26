@@ -23,7 +23,8 @@
 #               지금 DB에서 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는(백업 뒤에 나간) 것이 있으면 경고 — 둘 다 이 기능이 그 주문을 더
 #               취소하지 않으니 토스증권 앱에서 직접 확인·취소하라는 뜻입니다. 건수·종목은 찍지 않습니다(시장과 상태만).
 #               같은 트랜잭션에서 ISA 계좌의 오늘(KST)까지 PLANNED 장중 스탑 지시(manual_stop_instructions, ADR 0033)도 건너뜀(restored)으로
-#               닫습니다 — 백업 뒤에 이미 알린 스탑을 다시 알리지 않게.
+#               닫습니다 — 백업 뒤에 이미 알린 스탑을 다시 알리지 않게. 닫은 건수를 끝에 한 줄로 알립니다(건수만 — 종목·수량은 찍지 않음).
+#               그 가운데 이미 판 것이 있으면 화면의 '지시 없는 매매 적기'로 그 매도를 적어 잔고를 맞춥니다(닫힌 지시는 확인할 수 없음 — D-7).
 #   clear       real_trade_orders·real_trade_batches·real_trade_events·real_trade_valuation(마지막 운용 평가액, V29)을 비우고 설정은 꺼짐(OFF,
 #               기준 평가액 등 비움)으로. ISA 계좌 표
 #               (manual_trades·manual_positions·manual_balance·manual_ledger·manual_stop_instructions·manual_instructions·manual_sessions·manual_accounts,
@@ -116,6 +117,7 @@ echo "3/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니
 committed_marker="__restore_committed__"
 real_trade_marker="__real_trade_rows__"
 real_trade_off_marker="__real_trade_was_on__"
+isa_stops_marker="__isa_stops_closed__"
 real_trade_lost_marker="__real_trade_lost_open__"
 
 # 스키마를 지우기 전(같은 트랜잭션), 지금 DB의 실제 매매 상태를 임시 표에 옮겨 둡니다(halt만 — OPS-4). 임시 표는 pg_temp라 DROP SCHEMA public의
@@ -144,7 +146,7 @@ SQL
 # 바꾼 설정 행 수를 트랜잭션 안 설정 값으로 넘겨 끝에 \echo로 찍습니다(표가 없으면 0).
 real_trade_sql() {
     # shellcheck disable=SC2016  # $real_trade$는 PostgreSQL의 달러 따옴표입니다
-    printf 'DO $real_trade$\nDECLARE n integer := 0; was_on text; lost boolean := false;\nBEGIN\n'
+    printf 'DO $real_trade$\nDECLARE n integer := 0; was_on text; lost boolean := false; isa_stops integer := 0;\nBEGIN\n'
     if [ "$real_trade_mode" = "clear" ]; then
         # 주문이 묶음을 참조하므로 주문 → 묶음 순서로 지웁니다.
         cat <<'SQL'
@@ -228,7 +230,9 @@ SQL
         UPDATE public.manual_stop_instructions
            SET status = 'SKIPPED', reason = reason || '{"skippedBy":"RESTORE","autoNote":"restored"}'::jsonb, updated_at = now()
          WHERE status = 'PLANNED' AND session <= (now() AT TIME ZONE 'Asia/Seoul')::date;
+        GET DIAGNOSTICS isa_stops = ROW_COUNT;
     END IF;
+    PERFORM set_config('macrodash.isa_stops_closed', isa_stops::text, true);
 SQL
     fi
     printf "    PERFORM set_config('macrodash.real_trade_rows', n::text, true);\nEND\n\$real_trade\$;\n"
@@ -238,6 +242,8 @@ SQL
         printf "SELECT current_setting('macrodash.real_trade_was_on') AS real_trade_was_on, current_setting('macrodash.real_trade_lost') AS real_trade_lost \\\\gset\n"
         printf '\\echo %s :real_trade_was_on\n' "$real_trade_off_marker"
         printf '\\echo %s :real_trade_lost\n' "$real_trade_lost_marker"
+        printf "SELECT current_setting('macrodash.isa_stops_closed') AS isa_stops_closed \\\\gset\n"
+        printf '\\echo %s :isa_stops_closed\n' "$isa_stops_marker"
     fi
 }
 
@@ -280,5 +286,15 @@ if [ "$real_trade_mode" = "halt" ]; then
         echo "경고: 복원 전 DB에서 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것이 있습니다(백업 뒤에 나간 주문 — ADR 0028)."
         echo "   이 기능은 그 주문을 더 추적·취소하지 않습니다. 토스증권 앱에서 미체결 주문을 직접 확인·취소하세요."
     fi
+fi
+# D-7: 닫은 ISA 장중 스탑 지시의 건수(halt만 — 건수만 알리고 종목·수량은 찍지 않습니다).
+if [ "$real_trade_mode" = "halt" ]; then
+    isa_stops_closed="$(sed -n "s/^$isa_stops_marker //p" <<< "$output" | tail -n 1)"
+    case "$isa_stops_closed" in
+        '' | 0 | *[!0-9]*) ;;
+        *)
+            echo "참고: ISA 계좌의 대기 중이던 장중 스탑 지시 ${isa_stops_closed}건을 건너뜀(restored)으로 닫았습니다(ADR 0033) — 다시 알리지 않습니다."
+            echo "   그 가운데 이미 판 것이 있으면 화면 'ISA 계좌'(/paper/kr/isa) 매매 내역의 '지시 없는 매매 적기'로 그 매도를 적어 잔고를 맞추세요(닫힌 지시는 확인을 누를 수 없습니다)." ;;
+    esac
 fi
 echo "   되돌리려면: make restore F=$safety"
