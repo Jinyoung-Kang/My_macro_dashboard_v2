@@ -109,6 +109,10 @@ make smoke ARGS="--no-flows --only /liquidity --block '*/api/liquidity*'"   # �
   통과합니다. 씨앗 즐겨찾기 한 곳의 이름을 고치고 한 곳을 지우며, 씨앗을 다시 넣으면(매번 넣음) 처음 상태로 돌아옵니다.
 - 대상은 QA 스택뿐입니다 — 다른 포트(로컬 3002)·다른 호스트는 스크립트가 끝 코드 2로 거절합니다. 스택이 옛 빌드면 그 뒤에 고친 결함의 흐름은
   실패하는 것이 맞습니다(다시 `up`으로 빌드한 뒤 봅니다). 결과 `smoke.json`은 임시 폴더(`--out`)에 두고 커밋하지 않습니다.
+- 로그인 모드의 흐름(QA-1028 로그아웃)은 계정 표에 `.env.qa`의 계정이 있는 DB에서만 됩니다. 운영 백업을 복원한 QA DB는 계정이 운영 것이라 `.env.qa`로 로그인하지 못하고
+  (운영자 계정은 계정이 하나도 없을 때만 만들어짐) 연기 시험이 '로그인하지 못했습니다'로 끝납니다. 그럴 때는 본 스택을 지우지 말고 잠시 멈춘 뒤 새 DB의 임시 스택에서 흐름만 봅니다 —
+  `bash scripts/qa/qa-stack.sh compose stop` → `QA_PROJECT=my_macrodash_v2_qa_login bash scripts/qa/qa-stack.sh up` → `QA_PROJECT=my_macrodash_v2_qa_login make smoke ARGS="--flows-only"` →
+  `QA_PROJECT=my_macrodash_v2_qa_login bash scripts/qa/qa-stack.sh down`(그 프로젝트의 볼륨만 지움) → 본 스택 `compose start`. 새 DB에는 보안 공지 씨앗이 없어 화면 전체(58개)는 본 스택에서 봅니다.
 - 순수 함수(인자·판정·가드) 시험은 `node --test scripts/qa/ui-smoke.test.js`이고 `make test-frontend`와 CI가 돌립니다.
 
 ### 시험 없는 자리 목록 (`make coverage`)

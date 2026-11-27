@@ -34,7 +34,7 @@
 | QA-262 | S4 | 오류 형식 | JSON이 아닌 오류 본문 세 갈래(Tomcat HTML 400, CORS 평문 403, 수집기 평문 500) | 기록 |
 | QA-263 | S4 | 의존성·이미지 | 컨테이너 이미지에 수정판이 있는 HIGH·CRITICAL(caddy·backend libexpat·frontend npm CLI·postgres gosu) | 수정됨(backend·frontend, 11-05) — caddy·postgres는 공식 이미지 대기 |
 | QA-264 | S4 | 의존성·Maven | `opentelemetry-api` 1.62.0 공시(GHSA-ccrj-gw8r-854m, medium) — 판은 Spring Boot BOM이 정함 | 기록 · 사용자 보류(11-05) |
-| QA-265 | S4 | 인증·CORS | SessionFilter가 직접 쓰는 401·413 등에 CORS 머리글이 없어 교차 출처 로그인 모드에서 만료가 '연결하지 못했습니다'로 보임 | 기록 |
+| QA-265 | S4 | 인증·CORS | SessionFilter가 직접 쓰는 401·413 등에 CORS 머리글이 없어 교차 출처 로그인 모드에서 만료가 '연결하지 못했습니다'로 보임 | 수정됨(2026-11-27 `7ec77eff`) |
 | QA-266 | S4 | 실시간 시세 | SSE 경로의 429·400이 `Accept: text/event-stream`에서는 500 + ERROR 스택 | 기록 |
 | QA-267 | S4 | 화면·사용자 관리 | 역할·등급 선택 상자가 확인 없이 즉시 저장 — 초점을 둔 채 ↑ 한 번이면 회원을 운영자로 올림 | 기록 |
 | QA-268 | S4 | 접근성 | 메모 저장·알림 규칙 만들기 뒤 초점이 body로 빠지고 결과 배너가 라이브 영역이 아님(부분 재현) | 기록 |
@@ -435,7 +435,10 @@
   (403 forbidden)·`:341` capBody(413)에서 직접 쓰고 return. 화면은 `frontend/src/lib/api.ts:121`에서 TypeError를 NetworkError로 바꿈.
 - **영향 범위**: 403 bad_origin(`:247·281·293·318`)은 허용되지 않은 출처라 머리글이 없는 게 맞음(후보 목록에서 뺌). 403 forbidden은 코드로만(MEMBER 계정 없음), 413은 curl로만.
   영향받는 배치는 QA 스택과 문서에 있는 선택지인 로컬 `LOCAL_NO_LOGIN=false`(`frontend/src/lib/api.ts:36` apiBase가 다른 포트).
-- **상태: 기록(S4 — 이번 회차는 수정 안 함)**
+- **상태: 수정됨(2026-11-27, 사용자 승인 — 재현 `4a289ab3` · 수정 `7ec77eff`)** — 아래 제안대로 필터가 직접 쓰는 401·400·403(forbidden·demo_read_only)·413에,
+  요청의 Origin이 허용 목록에 맞을 때만 ACAO(그 Origin)·ACAC·`Vary: Origin`을 붙임(`SessionFilter.exposeToAllowedOrigin`). bad_origin 403·허용하지 않은 출처·
+  출처 없는 요청·통과한 요청은 그대로. 확인: 새 DB의 로그인 모드 QA 스택에서 연기 시험의 QA-1028 흐름(끝난 세션의 로그아웃 → 401 → /login)이 수정 전 실패 → 수정 뒤 통과.
+  (그 전 상태: 기록 — S4, 11-04 회차는 수정 안 함)
 - **재발 방지 제안**: SessionFilter에 공용 `writeError` — 요청 Origin이 `origins.checkOrigin()`을 통과하면 ACAO=그 Origin·ACAC=true·Vary: Origin(bad_origin은 그대로, 허용 목록은
   QA-171과 같은 한 곳). CorsFilter(order 0)로 옮기는 안은 사전 요청 머리글·거절 본문이 바뀌어 기존 시험 기대값을 다시 봐야 함. 인증·CORS 처리 순서라 고칠 때 승인 대상.
   시험: 필터까지 올리는 통합 시험(401·413에 ACAO, 허용 안 된 Origin은 ACAO 없음). 화면 `layoutSession.test`는 jsdom 목이라 못 잡음.
