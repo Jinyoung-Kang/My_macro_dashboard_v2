@@ -184,8 +184,9 @@ realtrade_guard() {
 
 # ---------------------------------------------------------------- 2) 코드 받기
 # 받기 전에 실제 매매 가드를 먼저 봅니다(QA-1015). 가드가 3단계에만 있을 때는 거래 창 안에서 돌리면 서버 폴더가 새 main이 된 뒤에 멈췄습니다 —
-# 컨테이너는 옛 이미지인데 수집기는 호스트의 db/migrations를 그대로 보고(bind mount) 기동할 때 적용하므로, 다시 배포하기 전에 수집기가 다시 뜨면
-# (재부팅·메모리 상한 뒤 자동 재기동) 새 마이그레이션을 옛 코드 아래에서 적용합니다. 새 판으로 다시 도는 길(DEPLOY_REEXEC — 이미 받은 뒤)은 건너뜁니다.
+# 그때는 컨테이너가 옛 이미지인데 수집기가 호스트의 db/migrations를 그대로 보고(bind mount) 기동할 때 적용해, 다시 배포하기 전에 수집기가 다시 뜨면
+# (재부팅·메모리 상한 뒤 자동 재기동) 새 마이그레이션을 옛 코드 아래에서 적용했습니다. 지금은 스키마 파일이 수집기 이미지 안에 있어(QA-1036) 옛 컨테이너는
+# 자기 이미지가 아는 번호만 적용합니다 — 받기 전 가드는 서버 폴더와 도는 판이 갈라지지 않게 그대로 둡니다. 새 판으로 다시 도는 길(DEPLOY_REEXEC — 이미 받은 뒤)은 건너뜁니다.
 # 가드의 상태 질의가 docker compose라 덧붙임 파일과 버전 값을 여기서 먼저 내보냅니다 — 버전은 받기 전 폴더의 것이고 3단계에서 받은 코드의 것으로 다시 정합니다.
 export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
 APP_VERSION="main@$(git rev-parse --short HEAD)"
@@ -258,8 +259,10 @@ docker compose up -d --no-build --wait --wait-timeout 300 || {
     echo "경고: 기동 확인이 실패했습니다(5분 안에 건강해지지 않은 서비스가 있음) — 스키마 적용과 앞단 재생성은 마저 합니다." >&2
 }
 
-# make migrate와 같은 반복. 수집기는 기동할 때만 스키마를 적용해, 스키마와 백엔드만 바뀐 배포에서는 새 스키마가
-# 빠집니다(QA-016). 10번 모두 실패하면 경고와 0이 아닌 값(QA-118). 아홉 번은 조용히 다시 시도하고 열 번째(마지막) 시도는 오류 출력을
+# make migrate와 같은 반복. 스키마 파일은 수집기 이미지 안에 있어(QA-1036) 파일이 바뀐 배포에서는 위 up이 수집기를 새 이미지로 다시 만들고
+# 수집기가 기동하며 적용합니다 — 이 반복은 그 적용이 끝났는지 확인하고(기동 중이면 기다림), 기동할 때 적용하지 못했으면 한 번 더 적용합니다
+# (호스트 폴더가 아니라 도는 컨테이너의 이미지에 든 파일로 — 예전에는 수집기가 다시 만들어지지 않는 배포에서 새 스키마가 빠졌습니다, QA-016).
+# 10번 모두 실패하면 경고와 0이 아닌 값(QA-118). 아홉 번은 조용히 다시 시도하고 열 번째(마지막) 시도는 오류 출력을
 # 버리지 않습니다 — 예전에는 열 번 모두 버려 실패의 원인이 어디에도 남지 않았습니다(이 명령의 출력은 컨테이너 로그에 남지 않음, QA-373).
 ok=
 for i in 1 2 3 4 5 6 7 8 9; do
@@ -323,6 +326,10 @@ echo "✓ 배포했습니다: $APP_VERSION — tailnet 안에서 https://my-macr
 disk_line="$(bash scripts/vultr/disk-check.sh --summary 2>/dev/null)" || disk_line=""
 [ -n "$disk_line" ] || disk_line="   디스크: $( (df -P / | awk 'NR == 2 {print $5}') 2>/dev/null || true) 사용"
 echo "$disk_line"
+# QA-1036: 새 수집기 이미지가 아는 최대 스키마 번호와 DB에 기록된 최대 번호 한 줄(읽기만). DB가 앞서 있으면(되돌림 배포 — 수집기는 경고만 남기고
+# 뜸) `경고:`로 시작합니다. 요약이라 읽지 못해도 배포를 실패로 만들지 않습니다.
+docker compose exec -T collector python -c "from app import store; line = store.schema_line(); print(line if line.startswith('경고') else '   ' + line)" 2>/dev/null ||
+    echo "   스키마: 번호를 읽지 못했습니다(docker compose logs collector)"
 # QA-199: 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 뒤의 나이 — 36시간 넘었거나 기록이 없으면 경고. 판정은 make status와 같이 쓰는
 # backup-age.sh 한 곳에 있습니다(cron이 빠지면 텔레그램 알림도 없어 여기와 make status에서 봄).
 bash scripts/vultr/backup-age.sh

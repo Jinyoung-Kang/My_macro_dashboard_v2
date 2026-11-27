@@ -23,7 +23,12 @@ COPY app ./app
 # root 소유 600이 되고, 아래 USER app은 그 파일을 읽지 못해 수집기가 기동하자마자 PermissionError로 재시작을
 # 반복했습니다(2026-10-08, 빈 __init__.py 두 개). git은 600과 644를 구분하지 않아 CI 빌드에서는 드러나지 않습니다.
 # 누구나 읽기(디렉터리는 들어가기)만 허용하고, 쓰기 권한은 주지 않습니다.
-RUN chmod -R a+rX /app/app
+# 스키마 파일(저장소의 db/migrations)도 이미지에 넣습니다(QA-1036). 빌드 컨텍스트(collector/) 밖이라 compose의
+# build.additional_contexts가 넘기는 이름 붙은 컨텍스트 migrations에서 복사합니다 — compose 없이 빌드하려면
+# `docker build --build-context migrations=db/migrations collector`. 수집기는 기동할 때 이 폴더(MACRO_MIGRATIONS_DIR)에서
+# 기록에 없는 번호만 적용하므로, 이미지가 아는 파일이 곧 적용하는 파일입니다(호스트 폴더를 마운트하지 않음).
+COPY --from=migrations . /app/db/migrations/
+RUN chmod -R a+rX /app/app /app/db
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

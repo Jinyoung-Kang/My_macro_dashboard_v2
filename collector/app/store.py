@@ -131,17 +131,88 @@ def init_schema(path: str | None = None) -> None:
     :param path: 마이그레이션 디렉터리. 파일 경로를 주면 그 파일이 있는 디렉터리를 씁니다
     :raises psycopg.Error: 적용에 실패하면 전부 되돌리고 그대로 올립니다(기동 중단)
     """
+    global _schema_image_max
     directory = _resolve_migrations_dir(path)
     if directory is None:
+        _schema_image_max = None
         logger.warning(
             "마이그레이션 디렉터리를 찾지 못했습니다. MACRO_MIGRATIONS_DIR로 경로를 지정하세요."
         )
         return
 
     found = migrations.discover(directory)
+    _schema_image_max = found[-1].version if found else None
     with connection() as conn:
         migrations.apply_pending(conn, found)
     logger.info("저장 계층 준비 완료: %s (V%d까지)", directory, found[-1].version if found else 0)
+    _warn_if_database_ahead()
+
+
+# 이 프로세스가 아는 스키마 파일의 최대 번호(QA-1036). 컨테이너에서는 이미지에 든 /app/db/migrations의 것입니다 — 호스트 폴더를 보지 않으므로
+# '이 코드가 아는 스키마'와 같습니다. init_schema가 정하고, 스키마를 적용하지 않고 뜬 프로세스는 처음 물을 때 폴더에서 읽습니다.
+_SCHEMA_UNREAD = object()
+_schema_image_max: Any = _SCHEMA_UNREAD
+
+
+def _image_schema_max() -> int | None:
+    global _schema_image_max
+    if _schema_image_max is _SCHEMA_UNREAD:
+        directory = _resolve_migrations_dir(None)
+        found = migrations.discover(directory) if directory is not None else []
+        _schema_image_max = found[-1].version if found else None
+    return _schema_image_max
+
+
+def schema_versions() -> dict:
+    """
+    이미지가 아는 최대 스키마 번호와 DB에 기록된 최대 번호(QA-1036) — 수집기 ``/status``(전체 보기)·``make doctor``·배포 요약이 봅니다.
+
+    읽기만 합니다. 기록 표(schema_migrations)가 없거나 비었으면 ``databaseMax``는 None입니다(0으로 채우지 않음).
+    ``databaseAhead``는 DB가 이미지보다 앞설 때(되돌림 배포 — 이 코드가 모르는 스키마가 적용돼 있음)만 True입니다.
+
+    :returns: ``{"imageMax": int|None, "databaseMax": int|None, "databaseAhead": bool}``
+    """
+    image_max = _image_schema_max()
+    with connection() as conn:
+        database_max = None
+        if conn.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (migrations.TABLE,)).fetchone()["present"]:
+            database_max = conn.execute(f"SELECT max(version) AS top FROM {migrations.TABLE}").fetchone()["top"]
+    return {
+        "imageMax": image_max,
+        "databaseMax": database_max,
+        "databaseAhead": image_max is not None and database_max is not None and database_max > image_max,
+    }
+
+
+def schema_line() -> str:
+    """배포 요약(deploy.sh)이 찍는 한 줄 — 번호 둘, DB가 앞서면 ``경고:``로 시작합니다. 번호를 모르면 ``—``."""
+    versions = schema_versions()
+    image, database = (f"V{v}" if v is not None else "—" for v in (versions["imageMax"], versions["databaseMax"]))
+    line = f"스키마: 이미지 {image} · DB {database}"
+    if versions["databaseAhead"]:
+        return (f"경고: {line} — DB가 이 이미지보다 앞서 있습니다(되돌림 배포?). 이 코드가 모르는 스키마가 적용돼 있으니 "
+                "그 번호를 아는 판으로 다시 배포하세요.")
+    return line
+
+
+def _warn_if_database_ahead() -> None:
+    """
+    DB의 기록이 이미지보다 앞서 있으면 경고만 남깁니다(QA-1036, 계획 D-11) — 기동은 계속합니다.
+
+    멈추면 자동 재시작(restart: unless-stopped)과 겹쳐 재기동 반복이 되고, 수집과 실제 매매 주문 길(수집기 전용 세션)이 함께 섭니다.
+    확인 자체가 실패해도(읽기 한 번) 기동을 막지 않습니다.
+    """
+    try:
+        versions = schema_versions()
+    except psycopg.Error as exc:
+        logger.warning("스키마 번호를 대조하지 못했습니다: %s", exc)
+        return
+    if versions["databaseAhead"]:
+        logger.warning(
+            "경고: DB의 스키마 기록(V%d)이 이 이미지가 아는 번호(V%d)보다 앞서 있습니다 — 되돌림 배포로 보입니다. "
+            "이 코드가 모르는 스키마 위에서 기동을 이어 갑니다(적용·되돌림 없음). 그 번호를 아는 판으로 다시 배포하세요.",
+            versions["databaseMax"], versions["imageMax"],
+        )
 
 
 def _resolve_migrations_dir(path: str | None) -> Path | None:
@@ -150,7 +221,7 @@ def _resolve_migrations_dir(path: str | None) -> Path | None:
 
     배포 형태마다 경로가 다릅니다.
       - 저장소 실행 : <repo>/db/migrations
-      - 컨테이너    : /app/db/migrations (compose가 마운트)
+      - 컨테이너    : /app/db/migrations (이미지에 든 것 — 빌드할 때 복사, 호스트 폴더를 마운트하지 않음. QA-1036)
     명시 인자 → MACRO_MIGRATIONS_DIR → MACRO_SCHEMA_SQL(예전 설정: V1 파일 경로) →
     관례적 위치 순으로 찾고, 없으면 None을 돌려줍니다(잘못된 경로를 조용히 만들어 내지 않습니다).
     """
@@ -1410,6 +1481,8 @@ def store_stats(task_names: Sequence[str] | None = None) -> dict:
         "lastRunStatus": resolve_run_status(last),
         "taskSummary": [_serialize_task(t) for t in read_task_summary(task_names)],
         "missingDatasets": missing_datasets(),
+        # 이미지가 아는 최대 스키마 번호와 DB의 최대 번호(QA-1036) — 칸을 더하기만 함, 가벼운 보기에는 싣지 않음
+        "schema": schema_versions(),
     }
 
 

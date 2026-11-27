@@ -75,7 +75,14 @@ services:
     # pandas·pykrx·yfinance·lxml을 올린 상주 메모리가 637MiB(기동 25분 뒤 실측 — pykrx는 2026-11-11에 뺌)입니다. 768m에서는
     # 13F XML(6MB) 파싱 때 OOM-kill(종료 코드 137) 여지가 있어 1g로 둡니다.
     mem_limit: 1g
-    build: ./collector
+    # 스키마 파일(db/migrations)은 이미지에 넣습니다(QA-1036) — 이름 붙은 컨텍스트 migrations를 collector/Dockerfile이 /app/db/migrations로
+    # 복사합니다. 예전에는 호스트 폴더를 읽기 전용으로 마운트해, 코드를 받은 뒤 새 컨테이너가 뜨기 전에 옛 컨테이너가 다시 뜨면(빌드 실패·
+    # 재부팅·메모리 상한 뒤 자동 재시작) 옛 코드가 새 스키마를 적용했습니다. 이제 이미지가 아는 파일만 적용합니다 — 스키마 파일만 고쳐도
+    # 수집기 이미지를 다시 빌드해야 적용됩니다(make up·deploy.sh·qa-stack.sh up은 늘 빌드함). additional_contexts는 compose 2.17 이상.
+    build:
+      context: ./collector
+      additional_contexts:
+        migrations: ./db/migrations
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,8 +141,6 @@ services:
       DART_API_KEY: "${DART_API_KEY:-}"
       # (선택) 금융위 주식시세 주소 직접 지정 — 기본은 활용가이드의 getStockPriceInfo_V2
       FSC_STOCK_PRICE_URL: "${FSC_STOCK_PRICE_URL:-}"
-    volumes:
-      - ./db/migrations:/app/db/migrations:ro
     ports:
       - "127.0.0.1:${COLLECTOR_PORT:-8000}:8000"
     healthcheck:

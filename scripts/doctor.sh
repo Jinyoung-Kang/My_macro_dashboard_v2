@@ -91,6 +91,17 @@ missing = d.get("missingDatasets") or []
 if missing:
     print("    비어 있는 데이터셋:", ", ".join(missing[:8]),
           ("…" if len(missing) > 8 else ""))
+# 스키마 번호(QA-1036) — 수집기 이미지가 아는 최대 번호와 DB에 기록된 최대 번호. 옛 수집기(칸 없음)면 줄을 내지 않습니다.
+schema = d.get("schema")
+if isinstance(schema, dict):
+    image, database = schema.get("imageMax"), schema.get("databaseMax")
+    show = lambda v: "—" if v is None else "V%s" % v
+    line = "    스키마: 이미지 %s · DB %s" % (show(image), show(database))
+    if schema.get("databaseAhead"):
+        line += " — 경고: DB가 이미지보다 앞서 있습니다(되돌림 배포?) — 그 번호를 아는 판으로 다시 띄우세요(make up)"
+    elif image is not None and (database is None or database < image):
+        line += " — 적용 대기(make migrate)"
+    print(line)
 ' 2>/dev/null || note "(상태 JSON을 해석하지 못했습니다)"
 
   # 실패 작업이 있으면 원인을 로그에서 한 번 더 긁어 옵니다.

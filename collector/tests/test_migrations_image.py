@@ -13,11 +13,13 @@ QA-1036: 옛 수집기 이미지가 새 마이그레이션을 적용하던 결�
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
 
 from app import migrations
@@ -32,8 +34,6 @@ COMPOSE_FILES = [
     "scripts/qa/docker-compose.qa-nologin.yml",
 ]
 IMAGE_DIR = "/app/db/migrations"
-
-pytestmark = pytest.mark.xfail(strict=True, reason="QA-1036: 수집기가 호스트의 db/migrations를 마운트해 봄 — 다음 커밋에서 고침")
 
 
 def _collector(compose_file: str) -> dict:
@@ -129,3 +129,42 @@ def test_QA1036_한_줄_요약은_두_번호를_보이고_DB가_앞서면_경고
     assert line.startswith("경고: 스키마") and "이미지 V3" in line and "DB V5" in line
     monkeypatch.setattr(store, "schema_versions", lambda: {"imageMax": None, "databaseMax": None, "databaseAhead": False})
     assert store.schema_line() == "스키마: 이미지 — · DB —"
+
+
+_FAKE_CURL = """#!/usr/bin/env bash
+case "$*" in
+    */status) cat "$FAKE_STATUS_JSON"; exit 0 ;;
+esac
+exit 7
+"""
+
+
+def _doctor(tmp_path, schema) -> str:
+    """scripts/doctor.sh를 가짜 curl(수집기 /status만 답함)·가짜 docker로 돌린 출력."""
+    fakes = tmp_path / "bin"
+    fakes.mkdir()
+    for name, body in (("curl", _FAKE_CURL), ("docker", "#!/usr/bin/env bash\nexit 1\n")):
+        (fakes / name).write_text(body, encoding="utf-8")
+        (fakes / name).chmod(0o755)
+    status = {"lastRunStatus": "ok", "taskSummary": [], "missingDatasets": []}
+    if schema is not None:
+        status["schema"] = schema
+    (tmp_path / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    env = {**os.environ, "PATH": f"{fakes}:{os.environ['PATH']}", "FAKE_STATUS_JSON": str(tmp_path / "status.json")}
+    done = subprocess.run(["bash", str(ROOT / "scripts/doctor.sh")], env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=60)
+    return done.stdout
+
+
+def test_QA1036_doctor는_스키마_번호_한_줄을_보이고_DB가_앞서면_경고한다(tmp_path):
+    def lines(schema, name):
+        folder = tmp_path / name
+        folder.mkdir()
+        return [line.strip() for line in _doctor(folder, schema).splitlines() if "스키마:" in line]
+
+    assert lines({"imageMax": 45, "databaseMax": 45, "databaseAhead": False}, "same") == ["스키마: 이미지 V45 · DB V45"]
+    ahead = lines({"imageMax": 44, "databaseMax": 45, "databaseAhead": True}, "ahead")
+    assert len(ahead) == 1 and ahead[0].startswith("스키마: 이미지 V44 · DB V45 — 경고: DB가 이미지보다 앞서")
+    behind = lines({"imageMax": 45, "databaseMax": None, "databaseAhead": False}, "behind")
+    assert behind == ["스키마: 이미지 V45 · DB — — 적용 대기(make migrate)"]
+    assert lines(None, "old") == [], "옛 수집기(칸 없음)면 줄을 내지 않습니다"
