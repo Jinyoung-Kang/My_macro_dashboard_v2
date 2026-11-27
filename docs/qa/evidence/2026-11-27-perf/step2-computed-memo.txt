@@ -1,0 +1,71 @@
+# 성능 개선 3차 단계 2 — 작업 B(QA-1040 · QA-1041): 13F 계산 결과는 입력의 판이 같은 동안 기억, 정보 목록은 행 수 세기 없이 (2026-11-27 23:00~23:20 KST)
+
+조건: 같은 QA 스택·같은 DB(2차 씨앗 — 13F 즐겨찾기 19곳 가운데 저장본이 있는 12곳 + 기본 12곳). 고치기 전 = 단계 1의 백엔드(13F·정보 목록 코드는 배포본과 같음),
+고친 뒤 = 이 단계의 백엔드를 QA에 다시 빌드. 값은 첫 바이트 ms. 운영 서버는 이 표에서 부르지 않았다.
+
+========================================================================
+1. 식었을 때 — '쉬었다 첫 호출 · 바로 다음'
+========================================================================
+(가) 고치기 전(단계 0의 3절 (나) — 앞 호출에서 2분 40초 쉬고)
+    467       2  /api/guru/profiles
+    497       3  /api/guru/similarity
+     78      14  /api/info/catalog
+     36       3  /api/sec13f/consensus?minHolders=2&topN=40
+     22       3  /api/sec13f/new-buys?minHolders=3
+     27       3  /api/sec13f/portfolio?cik=0009900001&quarters=8&topN=30
+     12       3  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1
+     50       3  /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1
+    111       3  /api/snapshot/text
+    499          /api/guru/holders?q=NVIDIA  (이 줄만 백엔드를 다시 빌드한 직후의 첫 호출)
+
+(나) 고친 뒤 — 입력이 그대로인 채 6분 18초 쉬고(23:13:15 → 23:19:33)
+      9       4  /api/guru/profiles
+      4       4  /api/guru/similarity
+      6       4  /api/guru/holders?q=NVIDIA
+     32       4  /api/sec13f/consensus?minHolders=2&topN=40
+     33       4  /api/sec13f/new-buys?minHolders=3
+     19      15  /api/info/catalog
+     29       3  /api/sec13f/portfolio?cik=0009900001&quarters=8&topN=30
+     13       3  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1
+     48       3  /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1
+    176       3  /api/snapshot/text
+     13       4  /api/sec13f/institutions
+  * 위에서 교집합(32)·공통 신규 매수(33)가 다시 계산된 것은 시간이 아니라 입력 때문이다 — 23:13:10에 13F 저장본 하나의 수집 시각을 한 번 더 바꾼 뒤 이 둘은
+    부르지 않았다(아래 2절). 입력이 그대로였던 앞 측정(23:01:35 → 23:06:32, 4분 57초 쉼)에서는 둘 다 5 ms:
+      8      11  /api/guru/profiles
+      5       4  /api/guru/similarity
+      7       6  /api/guru/holders?q=NVIDIA
+      5       5  /api/sec13f/consensus?minHolders=2&topN=40
+      5       4  /api/sec13f/new-buys?minHolders=3
+     15      12  /api/info/catalog
+     15       4  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1
+
+받아들임 기준: guru/profiles·guru/similarity 5분 넘게 쉬었다 30 ms 이하 → 9 ms · 4 ms(고치기 전 467 · 497). info/catalog 2분 쉬었다 30 ms 이하 → 19 ms(6분 쉼, 고치기 전 78).
+입력 규칙을 쓰지 않는 경로(포트폴리오 29 · 위험 13 · 스코어카드 48 · 전체 스냅샷 글 176)는 예전 규칙 그대로라 식으면 다시 계산한다.
+
+========================================================================
+2. 입력이 바뀌면 다음 호출에 다시 계산하는가 (QA DB의 씨앗 행을 직접 고침 — 23:06~23:13)
+========================================================================
+# 23:06:48 KST 입력이 바뀌면 다시 계산하는가(QA DB)
+기준: profiles 6 ms · 줄 24
+13F 저장본 하나의 수집 시각을 바꾼 뒤: profiles 497 ms → 바로 다음 4 ms · similarity 556 ms → 4 ms
+13F가 아닌 저장본을 새로 쓴 뒤: profiles 4 ms · similarity 4 ms (다시 계산하지 않음)
+(위의 '뺀 뒤' 줄은 없던 CIK를 지운 것이라 변화가 없었음 — 아래가 실제로 있는 즐겨찾기로 다시 한 것)
+0009900019를 더했다 뺀 뒤(원래대로): profiles 490 ms · 줄 24
+있던 즐겨찾기 0009900012를 표에서 뺀 뒤: profiles 454 ms · 줄 23 → 바로 다음 4 ms
+다시 더한 뒤: profiles 446 ms · 줄 24 → 바로 다음 4 ms
+(끝난 뒤 씨앗 즐겨찾기는 원래대로 19곳 · 성능 씨앗 12곳. 0009900012는 뺐다 다시 넣어 '더한 차례'가 맨 뒤가 됨.)
+보유 색인(guru/holders): 13F 저장본의 수집 시각을 바꾼 뒤 첫 호출 490 ms → 5 ms.
+
+========================================================================
+3. 응답이 고치기 전과 같은가 (열 경로, 시각 칸 제외)
+========================================================================
+같음 9: guru/profiles · guru/similarity · guru/holders?q=NVIDIA · sec13f/consensus(기본·기관을 고른 것) · sec13f/new-buys · sec13f/institutions · sec13f/portfolio · guru/risk
+다름 1: info/catalog — 두 측정 사이에 QA 태스크 둘(equity_history · sec_13f)이 한 번 더 돌아 그 두 줄의 마지막 실행이 달라짐(코드가 아니라 자료).
+  같은 순간의 수집기 전체 상태(/status의 태스크 요약)와 대조: 출처 70줄(실행 기록 있는 41줄)의 speed·lastStatus·lastRunAt·lastDetail이 모두 같음(다른 줄 0), collectorReachable true.
+
+========================================================================
+4. 시험
+========================================================================
+백엔드(작업 폴더에서 단계 1·2 변경 전체, 일회용 postgres): 4,165개 통과.
+커밋마다 관련 시험(일회용 postgres): 568b9ef9 5(2 건너뜀 — @Disabled 재현) · b16e759e 12(1 건너뜀) · 8923d9cb 183 · f4a2dab9 27 · 0699a69b 36 — 모두 통과.

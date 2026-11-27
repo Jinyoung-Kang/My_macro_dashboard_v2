@@ -69,3 +69,32 @@ D-3 차트 시계열의 외부 대기 예산 10초, 받은 결과는 일봉(1개
   - block(출처가 바로 거절): 응답 9/9가 고치기 전과 같음(시각 칸·남은 초 숫자 제외). 정상 응답은 QA에서 만들 수 없어 시험(바꿔 끼운 Yahoo)으로 봄.
 - 남은 확인: 배포 뒤 운영에서 같은 `/api/macro/ticker` 경로를 여섯 번 안에서 불러 둘째부터 30 ms 이하(아래 '전달·배포').
 
+## 단계 2 — 작업 B(QA-1040 · QA-1041 · 알림 규칙 세기)
+
+- B1 입력 확인(코드에서 하나씩): 스타일 요약·유사도·보유 색인은 `InstitutionHistory.entries()`(기본 12곳 상수 + 즐겨찾기 표)와 `read(cik)`(기본 12곳은 q8을 `store.read` —
+  낡으면 `sec_13f`를 깨움, 즐겨찾기는 q30의 앞 8분기, 없으면 q8 — 둘 다 수집 없이)만 읽는다. 교집합·공통 신규 매수도 같은 `history.read`·`history.name`뿐.
+  응답에 '지금 기준' 값이 없다(`putFreshness`는 포트폴리오·위험·스코어카드에만).
+- B1 결정(ADR 0052 결정 5): 응답 캐시에 **입력 규칙**을 더함 — `ComputedCache.get(key, inputs, compute)`. 입력의 판은 `InstitutionHistory.inputVersion`
+  (기본 12곳 q8의 수집 시각 + 즐겨찾기 목록 + 즐겨찾기 q30·q8의 수집 시각 → SHA-256). 판이 같은 동안은 다른 저장본이 새로 쓰여도·60초가 지나도 그대로(상한 하루),
+  판이 null(기본 12곳 가운데 저장본이 없음·DB 장애)이면 예전 규칙. 저장본은 기억하지 않음(결과만).
+  - **수집 깨우기 유지**: 계산을 건너뛰면 `store.read`도 건너뛰므로, 수집 시각을 `StoreReader.collectedAt`로 읽어 `read`와 같은 규칙(하루보다 오래됨·수동 새로고침 기준 —
+    6시간 안에 받은 것은 다시 받지 않음, 30초에 한 번, store_only·조용히 읽기는 요청 없음)으로 `sec_13f`를 요청한다.
+  - **경로마다의 결정**: 입력 규칙 — `guru.profiles`·`guru.similarity`·`guru.holders.index`·`sec13f.consensus`·`sec13f.newBuys`. 예전 규칙 그대로 —
+    `sec13f.portfolio`(응답에 `ageSeconds` — 60초 안에서 맞아야 함, 13F 메뉴 밖 기관의 저장본도 읽음, 식었을 때 QA 5~37 ms), `guru.risk`(가격 저장본·오늘 날짜·`ageSeconds`, 12~15 ms).
+- B2(QA-1041): `InfoService.catalog`가 `collector.statusLight()`(닿는지)와 `StoreRepository.readTaskSummary()`(마지막 실행 — 수집기 표를 읽기만)로. 가벼운 보기에는 태스크 요약이 없어
+  (`store.status_light` — 마지막 실행·그 상태·누락 데이터셋만) 표를 읽는 쪽을 골랐다. 표를 바로 읽으므로 사유를 `SecretRedactor`로 가림. 닿지 못하면 지금처럼 칸을 비우고 표도 읽지 않음.
+- B3(기록만): `stock.scorecard`(가격 저장본 하나 + 오늘 날짜 + 응답의 `ageSeconds`)와 `analytics.regime`·`regime.track`(저장본 여럿 + 누적 시계열 표 + 오늘 날짜)은 같은 방법이
+  그대로 맞지 않는다 — 신선도 칸을 기억 밖에서 다시 매기고 날짜를 판에 넣어야 하며, 식었을 때 QA 15~56 ms(운영 28~143 ms)라 이번에는 두지 않았다. 다음에 한다면 스코어카드부터.
+- B4: `Sec13FFavoriteService.listEntries`의 즐겨찾기마다 세기를 `AlertStore.countInstitutionRulesByCik`(질의 하나)로 — 따로 커밋. 쓰는 곳이 없어진 `countInstitutionRules`는 뺌.
+- 시험: `ComputedCacheInputRuleTest` 8 · `StoreReaderCollectedAtTest` 6 · `InstitutionHistoryInputVersionTest` 7 · `GuruStyleMemoQa1040DbTest` 3(실제 표 — 재현 커밋에서는 둘이 @Disabled) ·
+  `InfoServiceTest`의 새 시험 2(재현 커밋에서는 하나가 @Disabled)와 고친 시험 1 · `Sec13FFavoriteServiceTest`·`Sec13FFavoriteStoreDbTest`(세기).
+  커밋 다섯을 하나씩 내려받아 관련 시험을 일회용 postgres로 돌림(모두 통과 — `568b9ef9` 5개 가운데 2 건너뜀, `b16e759e` 12개 가운데 1 건너뜀, `8923d9cb` 183, `f4a2dab9` 27, `0699a69b` 36).
+- QA 측정(`step2-computed-memo.txt` — 같은 QA·같은 DB, 고치기 전은 단계 1의 백엔드):
+  - 식었을 때(입력이 그대로인 채 앞 호출에서 6분 18초 쉬고 — 교집합·공통 신규 매수는 4분 57초): `guru/profiles` 467 → **9 ms** · `guru/similarity` 497 → **4 ms**(기준 30 ms 이하) · `guru/holders?q=` 499 → 6 ·
+    `sec13f/consensus` 36 → 5 · `new-buys` 22 → 5 · `info/catalog` 78 → **19 ms**(2분 넘게 쉬고 — 기준 30 ms 이하).
+  - 입력이 바뀌면: 13F 저장본 하나의 수집 시각을 바꾸면 다음 호출 497 ms(다시 계산) → 4 ms, 즐겨찾기를 표에서 빼면 454 ms·줄 24 → 23, 다시 더하면 446 ms·줄 24.
+    13F가 아닌 저장본을 새로 쓰면 4 ms(다시 계산하지 않음).
+  - 응답: 열 경로 가운데 아홉이 고치기 전과 같음(시각 칸 제외). `info/catalog`는 두 측정 사이에 QA 태스크 둘(`equity_history`·`sec_13f`)이 한 번 더 돌아 그 두 줄만 달랐고,
+    같은 순간의 수집기 전체 상태(태스크 요약)와 출처 70줄(실행 기록 있는 41줄)을 한 줄씩 대조해 다른 줄 0.
+- 남은 확인: 배포 뒤 운영에서 5분 쉬었다 한 번 불러 50 ms 이하(`guru/profiles`·`guru/similarity`), `info/catalog` 한 번.
+
