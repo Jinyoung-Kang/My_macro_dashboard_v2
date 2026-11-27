@@ -18,6 +18,8 @@
 #   4. 셸의 TEST_DATABASE_URL을 지우고(있으면 포트 설정을 조용히 이김) 계정을 macro/macro(공개 기본값)로 맞춘 뒤
 #      `make <대상> DATABASE_PORT=<포트> COMPOSE=<위 compose 명령>`을 부릅니다. make의 종료 코드를 그대로 돌려줍니다.
 #   5. 끝나거나 INT·TERM으로 중단되면 `down -v`와 임시 폴더 정리.
+#      한계: 이 스크립트를 INT가 무시된 채로 띄우면(비대화형 셸의 `&`, nohup 꼴 등) bash가 INT에 trap을 걸 수 없어
+#      INT로는 멈추지 않습니다 — 그때는 TERM으로 끝냅니다(정리는 똑같이 돕니다).
 #
 # 포트: 25441(칸 1)·25442(칸 2). 이 PC에서 쓰이는 DB 포트는 로컬 스택 5432~5434(v3·v1·v2)와 QA 스택 1543x(v2 QA 15434)이고,
 # 리눅스가 나가는 연결에 임의로 주는 범위는 32768부터라 그 사이의 254xx를 골랐습니다(끝자리는 로컬 5434·QA 15434와 같은 계열).
@@ -160,11 +162,16 @@ fi
 echo "시험 실행: make $* (DATABASE_PORT=$PORT · 화면 일꾼 $VITEST_MAX_WORKERS)"
 make_cmd=(make "$@" "DATABASE_PORT=$PORT" "COMPOSE=${COMPOSE_CMD[*]}")
 # 잠금 fd(8·9)는 자식에게 넘기지 않습니다 — 고아가 된 자식이 칸을 쥐고 있지 않게.
-if command -v setsid >/dev/null 2>&1; then
-    setsid "${make_cmd[@]}" 8>&- 9>&- &
+# 비대화형 셸이 `&`로 띄운 명령은 INT·QUIT을 무시한 채 시작하고 그 상태가 make → pytest·mvn·node → 시험이 띄우는 프로세스까지
+# 물려 내려갑니다(INT를 보내 보는 시험이 멈춤 — 실제로 겪음). 그래서 두 신호를 기본값으로 되돌려 띄웁니다(coreutils env 8.32부터).
+launch=()
+if command -v setsid >/dev/null 2>&1; then launch+=(setsid); fi
+if env --default-signal=INT,QUIT true 2>/dev/null; then
+    launch+=(env --default-signal=INT,QUIT)
 else
-    "${make_cmd[@]}" 8>&- 9>&- &
+    echo "경고: 이 env는 --default-signal을 모릅니다 — 시험 프로세스가 INT를 무시한 채 돕니다(INT를 보내는 시험이 실패할 수 있음)." >&2
 fi
+"${launch[@]}" "${make_cmd[@]}" 8>&- 9>&- &
 CHILD=$!
 wait "$CHILD"
 rc=$?

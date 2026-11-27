@@ -42,6 +42,7 @@ _FAKE_MAKE = """#!/usr/bin/env bash
     echo "env XDG_CACHE_HOME=${XDG_CACHE_HOME-(unset)} YFINANCE_CACHE_DIR=${YFINANCE_CACHE_DIR-(unset)}"
     echo "env VITEST_MAX_WORKERS=${VITEST_MAX_WORKERS-(unset)} TESTDB_PORT=${TESTDB_PORT-(unset)} MAKEFLAGS=${MAKEFLAGS-(unset)}"
     echo "env LOCKFDS=$( [ -e /proc/$$/fd/8 ] && echo 8 )$( [ -e /proc/$$/fd/9 ] && echo 9 )"
+    echo "env SIGIGN=$(grep -s SigIgn /proc/$$/status | tr -d '[:space:]' | cut -d: -f2)"
 } >> "$FAKE_LOG"
 if [ -n "${FAKE_MAKE_SLEEP:-}" ]; then : > "$FAKE_LOG.running"; sleep "$FAKE_MAKE_SLEEP"; fi
 exit "${FAKE_MAKE_RC:-0}"
@@ -89,12 +90,16 @@ class Sandbox:
             "TEST_ISOLATED_WAIT": "0",
         })
 
-    def popen(self, *targets: str, **extra: str) -> subprocess.Popen:
+    # 스크립트는 INT 처리가 기본값인 채로 띄웁니다. 이 pytest가 INT를 무시하는 부모(비대화형 셸의 `&` 등) 아래에서 돌면 그 상태가
+    # 물려 내려가고, bash는 시작할 때 무시돼 있던 신호에는 trap을 걸 수 없어 중단 시험이 부모의 사정에 따라 달라집니다(실제로 겪음).
+    def popen(self, *targets: str, sigint=signal.SIG_DFL, **extra: str) -> subprocess.Popen:
         return subprocess.Popen(["bash", str(SCRIPT), *targets], env={**self.env, **extra}, cwd=self.tmp,
+                                preexec_fn=lambda: signal.signal(signal.SIGINT, sigint),
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
 
-    def run(self, *targets: str, **extra: str) -> subprocess.CompletedProcess:
+    def run(self, *targets: str, sigint=signal.SIG_DFL, **extra: str) -> subprocess.CompletedProcess:
         return subprocess.run(["bash", str(SCRIPT), *targets], env={**self.env, **extra}, cwd=self.tmp,
+                              preexec_fn=lambda: signal.signal(signal.SIGINT, sigint),
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
 
     def lines(self) -> list[str]:
@@ -223,6 +228,40 @@ def test_중단되면_make를_멈추고_down_v를_부른다(box, sig, rc):
             proc.kill()
     assert proc.returncode == rc, out + err
     assert time.monotonic() - started < 20, "가짜 make의 60초를 기다리지 않고 멈춥니다"
+    assert box.docker_calls()[-1].split(" | ")[0].endswith(" down -v --remove-orphans")
+    assert box.leftovers() == []
+
+
+def _ignores_sigint(box) -> bool:
+    return bool(int(box.make_env()["SIGIGN"], 16) & (1 << (signal.SIGINT - 1)))
+
+
+@pytest.mark.parametrize("sigint", [signal.SIG_DFL, signal.SIG_IGN])
+def test_시험_프로세스는_INT를_무시하지_않는_채로_뜬다(box, sigint):
+    # 스크립트가 make를 `&`로 띄우므로 그대로 두면 make 아래 전부가 INT를 무시합니다 — INT를 보내 보는 시험이 멈춥니다.
+    # 스크립트 자신이 INT가 무시된 채 불렸을 때(백그라운드 실행)도 같습니다.
+    if subprocess.run(["env", "--default-signal=INT,QUIT", "true"], capture_output=True).returncode != 0:
+        pytest.skip("이 env는 --default-signal을 모릅니다(coreutils 8.32 미만).")
+    r = box.run(sigint=sigint)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not _ignores_sigint(box)
+
+
+def test_INT가_무시된_채_띄우면_INT로는_멈추지_않고_TERM으로_정리한다(box):
+    # 한계를 고정합니다(스크립트 머리·DEVELOPMENT §2): 백그라운드로 띄운 실행은 TERM으로 끝냅니다.
+    proc = box.popen(FAKE_MAKE_SLEEP="60", sigint=signal.SIG_IGN)
+    try:
+        box.wait_running(proc)
+        proc.send_signal(signal.SIGINT)
+        time.sleep(1.0)
+        assert proc.poll() is None, "INT는 무시됩니다(정리 없이 죽지도 않음)"
+        assert len(box.docker_calls()) == 2, "아직 정리(down)를 부르지 않았습니다"
+        proc.send_signal(signal.SIGTERM)
+        out, err = proc.communicate(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert proc.returncode == 143, out + err
     assert box.docker_calls()[-1].split(" | ")[0].endswith(" down -v --remove-orphans")
     assert box.leftovers() == []
 
