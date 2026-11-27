@@ -189,7 +189,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
 
       await refreshAll(rerender, make, Object.keys(bodies).at(-1) as string);
 
-      expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
+      expect(await within(area).findByText(FAILED)).toBeTruthy();
     });
   }
 });

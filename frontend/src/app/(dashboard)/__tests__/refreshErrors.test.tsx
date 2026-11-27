@@ -7,9 +7,9 @@
  *
  * 시장 화면(매크로·상관·국면 — P5a)의 사례는 갈래별 파일로 옮겼습니다(내용 그대로): macroScreenStates·correlationRegimeStates(.test.tsx).
  */
-import { act, cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
@@ -95,12 +95,10 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-// 대기(findBy·waitFor) 한도 5초, 테스트 하나의 한도 20초(1800bae, 기본 1초·5초). 부하가 높을 때 상태 화면이 가끔 실패한 것은
-// 느려서가 아니라 첫 값을 받기 전에 새로 읽은 탓이라(QA-147) 한도와 무관했습니다. 통과하는 테스트는 30ms 안에 끝나므로 여유로 둡니다.
-describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_000 }, () => {
-  beforeAll(() => configure({ asyncUtilTimeout: 5_000 }));
-  afterAll(() => configure({ asyncUtilTimeout: 1_000 }));
-
+// 대기(findBy·waitFor) 한도 5초·테스트 하나의 한도 20초는 모든 화면 시험의 전역 값입니다(QA-1037 — vitest.config.mts·vitest.setup.ts,
+// 그 전에는 이 묶음만 따로 올려 두었음 1800bae). 부하가 높을 때 상태 화면이 가끔 실패한 것은 느려서가 아니라 첫 값을 받기 전에
+// 새로 읽은 탓이라(QA-147) 한도와 무관했습니다.
+describe("QA-067 자동 갱신 실패를 패널에 표시한다", () => {
   const panels: { name: string; make: () => ReactElement; bodies: Record<string, unknown>; card: string }[] = [
     { name: "현물·선물 카드", make: () => <SpotFuturesCard />, card: "현물·선물 수급 동조 (외국인·기관·개인)",
       bodies: { "/api/krx/spot-futures": { available: true, rows: [] } } },
@@ -180,7 +178,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
 
       await refreshAll(rerender, make, Object.keys(bodies).at(-1) as string);
 
-      expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
+      expect(await within(area).findByText(FAILED)).toBeTruthy();
     });
   }
 });
@@ -202,6 +200,6 @@ describe("QA-147 패널이 첫 값을 받은 뒤에 새로 읽는다(시험 흔�
 
     await refreshAll(rerender, () => <StatusPage />, path);
 
-    expect(await within(section).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
+    expect(await within(section).findByText(FAILED)).toBeTruthy();
   });
 });

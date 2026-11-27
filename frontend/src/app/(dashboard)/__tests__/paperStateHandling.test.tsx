@@ -459,7 +459,7 @@ describe("보유·재진입 금지 표", () => {
       // 개수 줄(작업대 P6 — 표 머리 개수)이 있으면 안내는 그 줄 오른쪽 — 상자 바로 앞 줄 안에서 찾습니다.
       const hint = within(box.previousElementSibling as HTMLElement).getByText("← 표를 좌우로 넘겨 보세요");
       expect(hint.previousElementSibling?.textContent).toBe("1종목");
-      await waitFor(() => expect(hint.className).not.toContain("sm:hidden"), { timeout: 500 });
+      await waitFor(() => expect(hint.className).not.toContain("sm:hidden"));
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;

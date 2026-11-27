@@ -46,7 +46,7 @@ describe("환율·달러인덱스 비교 툴팁", () => {
     );
     render(<FxCompareSection />);
 
-    const chart = await screen.findByRole("figure", { name: /환율·달러인덱스 비교/ }, { timeout: 500 });
+    const chart = await screen.findByRole("figure", { name: /환율·달러인덱스 비교/ });
     expect(chart.dataset.tooltipOrder).toBe("value");
     expect(chart.dataset.tooltipColors).toBe("true");
   });

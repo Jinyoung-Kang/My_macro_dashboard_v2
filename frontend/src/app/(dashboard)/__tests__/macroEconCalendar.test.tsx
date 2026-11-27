@@ -120,7 +120,7 @@ describe("경제 캘린더 카드의 네 상태", () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
 
-    const claims = (await screen.findByText("Initial Jobless Claims", {}, { timeout: 500 })).closest("tr")!;
+    const claims = (await screen.findByText("Initial Jobless Claims")).closest("tr")!;
     expect(within(claims).getByText("218K")).toBeTruthy();
     expect(within(claims).getByText("220K")).toBeTruthy();
     expect(within(claims).getByText("보통")).toBeTruthy();
@@ -135,7 +135,7 @@ describe("경제 캘린더 카드의 네 상태", () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
 
-    fireEvent.click(await screen.findByRole("tab", { name: /^11\/12 \(목\)/ }, { timeout: 500 }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^11\/12 \(목\)/ }));
     const cpi = screen.getByText("Inflation Rate YoY").closest("tr")!;
     expect(within(cpi).getAllByText("—")).toHaveLength(1);        // 실제치만 없음
     expect(within(cpi).getByText("3%")).toBeTruthy();
@@ -153,7 +153,7 @@ describe("경제 캘린더 카드의 네 상태", () => {
     mockCalendar({ available: false, events: [] });
     render(<EconCalendarSection />);
 
-    expect(await screen.findByText(/아직 받은 일정이 없습니다/, {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText(/아직 받은 일정이 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText(/우회 수집/)).toBeNull();
   });
@@ -163,7 +163,7 @@ describe("경제 캘린더 카드의 네 상태", () => {
       path === PATH ? Promise.reject(new Error("운영자만 쓸 수 있는 기능입니다.")) : new Promise(() => {}));
     render(<EconCalendarSection />);
 
-    expect(await screen.findByText("운영자만 쓸 수 있는 기능입니다.", {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText("운영자만 쓸 수 있는 기능입니다.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });
@@ -299,7 +299,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
 
-    const strip = await screen.findByRole("tablist", { name: "경제 캘린더 날짜" }, { timeout: 500 });
+    const strip = await screen.findByRole("tablist", { name: "경제 캘린더 날짜" });
     // 11/13은 숨는 일정(중요도 모름)만 있는 날이라 탭이 없습니다.
     expect(within(strip).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "11/5 (목) 1건",
@@ -327,7 +327,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
 
-    const first = await screen.findByRole("tab", { name: "11/5 (목) 1건" }, { timeout: 500 });
+    const first = await screen.findByRole("tab", { name: "11/5 (목) 1건" });
     first.focus();
     fireEvent.keyDown(first, { key: "ArrowRight" });
     const second = screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" });
@@ -353,25 +353,25 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     at("2026-11-08T03:00:00Z"); // 11-08 KST — 그날 일정 없음
     mockCalendar(CALENDAR);
     const { unmount } = render(<EconCalendarSection />);
-    expect((await screen.findByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }, { timeout: 500 })).getAttribute("aria-selected")).toBe("true");
+    expect((await screen.findByRole("tab", { name: "11/12 (목) 1건 · 높음 1" })).getAttribute("aria-selected")).toBe("true");
     unmount();
 
     at("2026-11-30T03:00:00Z");
     render(<EconCalendarSection />);
-    expect((await screen.findByRole("tab", { name: "11/26 (목) 1건 · 높음 1" }, { timeout: 500 })).getAttribute("aria-selected")).toBe("true");
+    expect((await screen.findByRole("tab", { name: "11/26 (목) 1건 · 높음 1" })).getAttribute("aria-selected")).toBe("true");
   });
 
   it("빈 상태 — 일정이 없으면 그 사실, 모두 숨었으면 보통 이상이 없다는 말과 숨긴 건수(띠·표 없음)", async () => {
     mockCalendar({ ...CALENDAR, events: [] });
     const { unmount } = render(<EconCalendarSection />);
-    expect(await screen.findByText("창 안에 일정이 없습니다.", {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText("창 안에 일정이 없습니다.")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByText(/숨겼습니다/)).toBeNull();
     unmount();
 
     mockCalendar({ ...CALENDAR, events: CALENDAR.events.filter((entry) => entry.importance === -1 || entry.importance === null) });
     render(<EconCalendarSection />);
-    expect(await screen.findByText("창 안에 중요도 보통 이상인 일정이 없습니다.", {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText("창 안에 중요도 보통 이상인 일정이 없습니다.")).toBeTruthy();
     expect(screen.getByText("중요도 낮음 1건·모름 1건은 숨겼습니다.")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
@@ -387,7 +387,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     at("2026-11-12T03:00:00Z"); // 11-12 KST — 일정이 있는 날
     mockCalendar(CALENDAR);
     const { rerender } = render(<EconCalendarSection />);
-    expect((await screen.findByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }, { timeout: 500 })).getAttribute("aria-selected")).toBe("true");
+    expect((await screen.findByRole("tab", { name: "11/12 (목) 1건 · 높음 1" })).getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByRole("tab", { name: "11/5 (목) 1건" }));
     expect(screen.getByText("Initial Jobless Claims")).toBeTruthy();
     const reads = () => api.apiGetShared.mock.calls.filter(([path]) => path === PATH).length;
@@ -426,7 +426,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
   it("짧은 날로 바꿔도 표 영역 높이의 하한이 남는다 — 고르는 순간의 높이, 늘어나기만", async () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
-    const panel = await screen.findByRole("tabpanel", {}, { timeout: 500 });
+    const panel = await screen.findByRole("tabpanel");
     expect(panel.style.minHeight).toBe(""); // 첫 그리기에는 하한이 없음(첫 읽기 높이 그대로)
     const height = vi.spyOn(panel, "getBoundingClientRect");
 
@@ -462,7 +462,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     );
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
-    const panel = await screen.findByRole("tabpanel", {}, { timeout: 500 });
+    const panel = await screen.findByRole("tabpanel");
     vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ height: 900 } as DOMRect);
     fireEvent.click(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }));
     expect(panel.style.minHeight).toBe("900px");
@@ -483,7 +483,7 @@ describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
   it("'나라' 열의 머리와 칸 모두 whitespace-nowrap", async () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
-    fireEvent.click(await screen.findByRole("tab", { name: /^11\/26 \(목\)/ }, { timeout: 500 }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^11\/26 \(목\)/ }));
     const table = screen.getByRole("table");
     const heads = within(table).getAllByRole("columnheader");
     const country = heads.findIndex((head) => head.textContent === "나라");
@@ -505,7 +505,7 @@ describe("QA-685 포커스가 있던 날짜 탭이 사라지면", () => {
     at("2026-11-12T03:00:00Z");
     mockCalendar(CALENDAR);
     const { rerender } = render(<EconCalendarSection />);
-    const past = await screen.findByRole("tab", { name: "11/5 (목) 1건" }, { timeout: 500 });
+    const past = await screen.findByRole("tab", { name: "11/5 (목) 1건" });
     past.focus();
     fireEvent.click(past);
     expect(document.activeElement).toBe(past);

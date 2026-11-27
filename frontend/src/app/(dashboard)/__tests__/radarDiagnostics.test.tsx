@@ -52,7 +52,7 @@ describe("QA-098 레이더 데이터 소스 연결 테스트는 운영자에게�
 
     fireEvent.click(screen.getByRole("button", { name: TOGGLE }));
 
-    expect(await screen.findByText("운영자만 쓸 수 있는 기능입니다.", {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText("운영자만 쓸 수 있는 기능입니다.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });

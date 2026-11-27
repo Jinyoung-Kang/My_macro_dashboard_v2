@@ -11,9 +11,9 @@
  * 도우미 함수는 원래 파일의 것을 글자 그대로 복사했습니다. 세 화면 갈래(매크로 · 순유동성·섹터·COT · 상관·국면)가 화면을 바꿀 때 서로의 시험 파일을
  * 고치지 않게 갈래마다 파일을 나눈 것입니다(나머지 사례는 원래 파일에 남음).
  */
-import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
@@ -163,7 +163,7 @@ describe("QA-099 지표별 단독 차트 — 백엔드가 받지 못한 이유�
 
     render(<SingleChartSection />);
 
-    expect(await screen.findByText(message, {}, { timeout: 500 })).toBeTruthy();
+    expect(await screen.findByText(message)).toBeTruthy();
     expect(screen.queryByText("표시할 시계열이 없습니다.")).toBeNull();
   });
 });
@@ -194,12 +194,10 @@ describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다",
   });
 });
 
-// 대기(findBy·waitFor) 한도 5초, 테스트 하나의 한도 20초(1800bae, 기본 1초·5초). 부하가 높을 때 상태 화면이 가끔 실패한 것은
-// 느려서가 아니라 첫 값을 받기 전에 새로 읽은 탓이라(QA-147) 한도와 무관했습니다. 통과하는 테스트는 30ms 안에 끝나므로 여유로 둡니다.
-describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_000 }, () => {
-  beforeAll(() => configure({ asyncUtilTimeout: 5_000 }));
-  afterAll(() => configure({ asyncUtilTimeout: 1_000 }));
-
+// 대기(findBy·waitFor) 한도 5초·테스트 하나의 한도 20초는 모든 화면 시험의 전역 값입니다(QA-1037 — vitest.config.mts·vitest.setup.ts,
+// 그 전에는 이 묶음만 따로 올려 두었음 1800bae). 부하가 높을 때 상태 화면이 가끔 실패한 것은 느려서가 아니라 첫 값을 받기 전에
+// 새로 읽은 탓이라(QA-147) 한도와 무관했습니다.
+describe("QA-067 자동 갱신 실패를 패널에 표시한다", () => {
   const panels: { name: string; make: () => ReactElement; bodies: Record<string, unknown>; card: string }[] = [
     { name: "스크래핑 시세", make: () => <ScrapedSection />, card: "비공식 스크래핑 시세 비교",
       bodies: { "/api/macro/scraped": { available: true, items: [] } } },
@@ -245,7 +243,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
 
       await refreshAll(rerender, make, Object.keys(bodies).at(-1) as string);
 
-      expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
+      expect(await within(area).findByText(FAILED)).toBeTruthy();
     });
   }
 });

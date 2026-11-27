@@ -1,10 +1,17 @@
 /**
  * 모든 화면 테스트 앞에 한 번 도는 준비(vitest.config.mts의 setupFiles).
  *
- * jsdom 29에 없는 브라우저 API 네 가지의 최소 스텁만 둡니다 — Radix(Dialog·Toast 등)와 움직임 줄이기 확인(matchMedia)이 그릴 때 부르기 때문입니다.
+ * 조건 대기 한도(아래)와, jsdom 29에 없는 브라우저 API 네 가지의 최소 스텁만 둡니다 — Radix(Dialog·Toast 등)와 움직임 줄이기 확인(matchMedia)이 그릴 때 부르기 때문입니다.
  * 이미 있으면 덮지 않고, 동작은 "아무 일도 하지 않음"뿐입니다. 동작을 확인해야 하는 테스트는 지금처럼 그 테스트 안에서
  * vi.stubGlobal·Element.prototype 대입으로 덮어씁니다(그쪽이 이깁니다).
  */
+
+import { configure } from "@testing-library/dom";
+
+// 조건 대기(findBy·waitFor)의 한도 5초(기본 1초 — QA-1037). 조건이 맞으면 바로 지나가므로 통과 시간과 단언의 뜻은 그대로이고,
+// 부하로 그리기가 늦어질 때만 더 기다립니다. '나타나지 않음'은 대기 한도가 아니라 queryBy…로 확인합니다(한도를 줄여 확인하지 않음).
+// @testing-library/react가 쓰는 것과 같은 @testing-library/dom의 설정입니다. 시험 하나의 한도 20초는 vitest.config.mts.
+configure({ asyncUtilTimeout: 5_000 });
 
 if (typeof window.matchMedia !== "function") {
   // 어떤 미디어 쿼리도 맞지 않는다고 답합니다(움직임 줄이기 꺼짐 = 기본 화면).

@@ -181,7 +181,7 @@ describe("본문 팝업", () => {
     fireEvent.click(within(region).getByRole("button", { name: "본문 보기" }));
     const dialog = await screen.findByRole("dialog", { name: "Synthetic Widgets revenue rises" });
     expect(within(dialog).getByRole("status").textContent).toContain("운영 서버가 글을 받는 중입니다");
-    const body = await within(dialog).findByRole("region", { name: "본문" }, { timeout: 2000 });
+    const body = await within(dialog).findByRole("region", { name: "본문" });
     expect(body.getAttribute("lang")).toBe("en");
     // 스크롤은 대화상자 하나만 — 본문 상자는 따로 스크롤하지 않고(높이 상한·스크롤 없음) 탭 정지점도 아님.
     expect(body.getAttribute("tabindex")).toBeNull();
@@ -217,8 +217,7 @@ describe("본문 팝업", () => {
     const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
     expect((retry as HTMLButtonElement).disabled).toBe(true);
     expect(within(dialog).getByText(/약 1초 동안 다시 시도를 잠가 둡니다/)).toBeTruthy();
-    await waitFor(() => expect((within(dialog).getByRole("button", { name: "다시 시도" }) as HTMLButtonElement).disabled).toBe(false),
-      { timeout: 2500 });
+    await waitFor(() => expect((within(dialog).getByRole("button", { name: "다시 시도" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(within(dialog).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(within(dialog).getByLabelText("본문").querySelectorAll("p")).toHaveLength(3));
   });
