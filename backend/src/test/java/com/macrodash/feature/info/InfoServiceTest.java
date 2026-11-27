@@ -158,6 +158,62 @@ class InfoServiceTest {
                 .containsExactly("news", "kr", "global", "filings", "paper", "ops");
     }
 
+    /** 수집기에 닿고(가벼운 상태), 실행 기록 표에 이 줄들이 있음. */
+    private void taskRuns(Map<String, Object>... rows) {
+        when(collector.statusLight()).thenReturn(Optional.of(MAPPER.createObjectNode().put("lastRunStatus", "ok")));
+        when(repository.readTaskSummary()).thenReturn(List.of(rows));
+    }
+
+    /** collector_task_runs 한 행(StoreRepository.readTaskSummary가 돌려주는 모양 — 시각은 Timestamp). */
+    private static Map<String, Object> taskRun(String task, String speed, String status, String startedAt, String detail) {
+        Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("task", task);
+        row.put("speed", speed);
+        row.put("status", status);
+        row.put("started_at", startedAt == null ? null : java.sql.Timestamp.from(java.time.Instant.parse(startedAt)));
+        row.put("duration_ms", 1200);
+        row.put("detail", detail);
+        row.put("run_id", "run-1");
+        return row;
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-1041: 한눈 보기가 수집기의 전체 상태를 불러 행 수 세기를 일으킴")
+    @DisplayName("QA-1041: 한눈 보기는 수집기의 전체 상태(행 수 세기)를 부르지 않는다 — 닿는지는 가벼운 상태로, 마지막 실행은 실행 기록 표에서")
+    @SuppressWarnings("unchecked")
+    void catalogDoesNotCountRows() {
+        taskRuns(taskRun("fred_series", "slow", "ok", "2026-11-11T08:00:00Z", null),
+                taskRun("cot_history", "slow", "fail", "2026-11-11T07:30:00Z", "HTTP 503 https://example.invalid/x?api_key=SECRETVALUE123"));
+
+        Map<String, Object> out = service.catalog();
+
+        org.mockito.Mockito.verify(collector, org.mockito.Mockito.never()).status();
+        org.mockito.Mockito.verify(collector).statusLight();
+        Map<String, Map<String, Object>> byTask = new java.util.HashMap<>();
+        ((List<Map<String, Object>>) out.get("sources")).forEach(row -> byTask.put((String) row.get("task"), row));
+        assertThat(byTask.get("fred_series")).containsEntry("speed", "slow").containsEntry("lastStatus", "ok")
+                .containsEntry("lastRunAt", "2026-11-11 17:00 KST").containsEntry("lastDetail", null);
+        assertThat(byTask.get("cot_history")).containsEntry("lastStatus", "fail").containsEntry("lastRunAt", "2026-11-11 16:30 KST");
+        assertThat((String) byTask.get("cot_history").get("lastDetail")).as("표를 바로 읽으므로 사유의 비밀값을 가림")
+                .startsWith("HTTP 503").doesNotContain("SECRETVALUE123");
+        assertThat(byTask.get("sec_13f")).as("실행 기록이 없는 태스크").containsEntry("lastStatus", null).containsEntry("lastRunAt", null);
+        assertThat(out).containsEntry("collectorReachable", true);
+    }
+
+    @Test
+    @DisplayName("수집기에 닿지 못하면 지금처럼 마지막 실행 칸을 비우고 collectorReachable: false — 실행 기록 표도 읽지 않는다")
+    @SuppressWarnings("unchecked")
+    void catalogWithoutCollector() {
+        when(collector.statusLight()).thenReturn(Optional.empty());
+
+        Map<String, Object> out = service.catalog();
+
+        assertThat(out).containsEntry("collectorReachable", false);
+        assertThat((List<Map<String, Object>>) out.get("sources")).hasSize(InfoSources.ALL.size())
+                .allSatisfy(row -> assertThat(row).containsEntry("lastStatus", null).containsEntry("lastRunAt", null).containsEntry("lastDetail", null));
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).readTaskSummary();
+    }
+
     @Test
     @DisplayName("메커니즘은 수집기의 실제 값에 호스트 상태·다음 실행·알림 기준과 보류 출처를 더한다")
     @SuppressWarnings("unchecked")
