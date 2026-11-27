@@ -270,7 +270,7 @@ make down            # 정지
 ├── deploy/vultr/      Vultr 서버의 앞단 설정(Caddyfile)
 ├── docs/               문서
 └── scripts/            setup · update · version · doctor
-    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · reboot-check(cron) · instance·firewall-pc-ip(PC)
+    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · reboot-check(cron — disk-check도 부름) · instance·firewall-pc-ip(PC)
 ```
 
 ### Docker 없이 개발하기
@@ -345,6 +345,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `POLITE_FETCH_ENABLED` | 비우면 서버에서 켜짐. 차단 통과 수집(polite 속도군 — TradingView 경제 캘린더·정보 수집 19개 태스크(KRX 정보데이터시스템 포함), [ADR 0035](docs/adr/0035-info-collection.md)·[0036](docs/adr/0036-info-hub-krx-packet.md))과 정보 검색 관심 대상 정기 수집(`search_watch`)·화면이 부르는 Finviz 종목 뉴스([ADR 0041](docs/adr/0041-info-search-watch.md))·본문 보기([ADR 0043](docs/adr/0043-search-article-body.md))를 운영 서버에서만 돌림 — 로컬·QA compose는 `"false"`로 고정해 이 PC의 IP로 받지 않음. 서버 `.env`에 `false`를 적으면 그 수집만 멈춤. 같은 서버 전용 줄 `BROWSER_PRESS_CHECKBOX`(비우면 켜짐)는 브라우저 계층이 사람 확인의 입력 없는 체크박스만 한 번 누르는 것을 끌 때 `false` |
 | `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED` | 비우면 꺼짐. 실제 매매([ADR 0028](docs/adr/0028-real-trade-mirror.md))의 서버 스위치 둘 — 수집기 주문 경로(`TOSS_ACCOUNT_ENABLED`도 켜져 있고 서비스 토큰이 있을 때만)와 백엔드 정기 작업. 운영 서버 `.env`에서 둘 다 `true`이고 화면에서 운영자가 켰을 때만 주문이 나감. 로컬·QA compose는 `"false"`로 고정해 `.env`에 적어도 쓰이지 않음 |
 | `TOSS_TRADING_MAX_ORDER_KRW`·`TOSS_TRADING_MAX_ORDERS_PER_DAY`·`TOSS_TRADING_MAX_BUY_KRW_PER_DAY`·`TOSS_TRADING_MAX_EQUITY_KRW` | 실제 매매의 한도(1건 금액·하루 건수·하루 매수 금액·운용 평가액 상한). 하나라도 없거나 정수가 아니거나 범위 밖이면 수집기가 매매를 끔. 운영 서버 `.env`에만 — 로컬·QA 수집기에는 넘기지 않음([.env.vultr.example](.env.vultr.example)) |
+| `BUILD_CACHE_MAX`·`DISK_WARN_PCT`·`DISK_CRIT_PCT` | 비우면 15GB · 80 · 90. 운영 서버 `.env`에만 — 배포 끝에서 Docker 빌드 캐시를 줄일 크기 상한(`scripts/vultr/deploy.sh`)과 디스크·inode 사용률 알림의 경고·위험 임계(`scripts/vultr/disk-check.sh` — 운영 텔레그램 봇으로 하루 한 번, [ADR 0023](docs/adr/0023-vultr-deployment.md) 덧붙임 2026-11-27) |
 | `BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN` | 비우면 꺼짐. 운영 서버 `.env`에 둘 다 있을 때만 차단 통과 수집 계층이 브라우저 컨테이너(계층 2)를 부릅니다([ADR 0026](docs/adr/0026-polite-fetch-layers.md)). 로컬 compose는 빈 값 고정 |
 | `DATA_GO_KR_SERVICE_KEY` | 공공데이터포털 **일반 인증키 하나**로 특일정보·주식시세를 씁니다(서비스별 활용신청 필요). 없으면 시계는 내장 휴일 표(2025~2028)로, 공식 시세·PER·PBR은 비어 있음 |
 | `DART_API_KEY` | 수급 레이더의 재무 체크만 비어 있음 |

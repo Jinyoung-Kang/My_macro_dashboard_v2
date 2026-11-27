@@ -360,10 +360,10 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 ```bash
 # PC(저장소 최상위) — 로컬에서 옮길 줄만 걸러(서버에 적지 않는 이름과 서버 전용 이름을 모두 뺌) Tailscale SSH의 stdin으로 보내고 지웁니다.
 # 서버는 지금 .env를 .env.bak-<UTC 시각>(600)으로 떠 둔 뒤, 받은 줄 뒤에 지금 .env의 서버 전용 줄을 그대로 붙여 한 번에 바꿉니다(mv).
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|ORIGIN_SECRET|GATE_[A-Z0-9_]*|VULTR_[A-Z0-9_]*|TAILSCALE_[A-Z0-9_]*|TAILNET_DOMAIN|COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED)=' .env > "$tmp" \
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|ORIGIN_SECRET|GATE_[A-Z0-9_]*|VULTR_[A-Z0-9_]*|TAILSCALE_[A-Z0-9_]*|TAILNET_DOMAIN|COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED|BUILD_CACHE_MAX|DISK_WARN_PCT|DISK_CRIT_PCT)=' .env > "$tmp" \
   && ssh ubuntu@my-macro-app 'set -eu; cd ~/My_macro_dashboard_v2; [ -f .env ] || { echo "✗ 서버 .env가 없습니다 — 처음 한 번은 아래 뼈대부터 만듭니다" >&2; exit 1; }
 umask 077; b=".env.bak-$(date -u +%Y%m%d-%H%M%S)"; cp -p .env "$b"; cat > .env.new; printf "\n" >> .env.new
-grep -E "^[[:space:]]*(export[[:space:]]+)?(COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED)=" .env >> .env.new || true
+grep -E "^[[:space:]]*(export[[:space:]]+)?(COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED|BUILD_CACHE_MAX|DISK_WARN_PCT|DISK_CRIT_PCT)=" .env >> .env.new || true
 gone=; for n in $(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p" .env | sort -u); do grep -Eq "^[[:space:]]*(export[[:space:]]+)?$n=" .env.new || gone="$gone $n"; done
 chmod 600 .env.new && mv .env.new .env && echo "✓ 서버 .env를 바꿨습니다(이전 판 $b — 배포를 확인한 뒤 지움)"
 [ -z "$gone" ] || echo "경고: 새 .env에 없는 이름:$gone — 서버에만 둔 줄이면 $b에서 그 줄을 다시 붙입니다"' < "$tmp"; rm -f "$tmp"
@@ -378,7 +378,8 @@ printf 'COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\
 - PC가 거르는 이름은 두 갈래입니다. **서버에 적지 않는 이름**(포트 네 줄·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·옛 AWS 공개 주소용 값·PC 전용 `AWS_INSTANCE_ID`·`VULTR_*`·
   `TAILSCALE_*`·`TAILNET_DOMAIN` — `deploy.sh`가 막는 이름)과 **서버 전용 이름** — `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`·`PAPER_KR_START_DATE`(한국 출발일),
   `PAPER_ENABLED`·`COOKIE_SECURE`(로컬의 `false`는 옮기지 않음 — 서버는 비우면 켜짐·Secure, 정비 때 서버에서 일부러 적은 값은 그대로 남음),
-  `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`, `POLITE_FETCH_ENABLED`(차단 통과 수집 멈춤 — ADR 0035).
+  `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`, `POLITE_FETCH_ENABLED`(차단 통과 수집 멈춤 — ADR 0035),
+  `BUILD_CACHE_MAX`·`DISK_WARN_PCT`·`DISK_CRIT_PCT`(빌드 캐시 상한·디스크 알림 임계 — 아래 '디스크').
   서버 전용 이름은 서버의 지금 값을 그대로 이어 붙이므로, 실제 매매를 켠 채 다시 전달해도 서버 스위치·한도·토스 키가 그대로입니다
   (예전 절차는 서버 `.env`를 통째로 덮어써, 로컬의 빈 줄 때문에 토스 키가 빈 값이 되면 수집기가 알림 없이 키 없음(`not-configured`)으로 주문 전에 막힐 수 있었음).
 - 텔레그램 봇은 네 개입니다(2026-11-08) — 운영 `TELEGRAM_BOT_TOKEN`, 미국 모의 `TELEGRAM_US_BOT_TOKEN`, 한국 모의 `TELEGRAM_KR_BOT_TOKEN`, 실제 계좌·ISA `TELEGRAM_ACCOUNT_BOT_TOKEN`. 대화방은 `TELEGRAM_CHAT_ID` 하나를 함께 쓰고, 토큰이 빈 알림은 운영 봇으로 갑니다. 새 봇은 텔레그램에서 시작(Start)을 눌러 둬야 메시지를 받습니다.
@@ -448,6 +449,10 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   다시 만들 때 백엔드는 150초·수집기는 30초까지 정상 종료를 기다립니다(`compose.vultr.yml`의 `stop_grace_period` — 웹 서버 종료 단계 30초, 백엔드 종료 훅이 진행 중인 주기를 60초까지,
   그 안의 주문 읽기 상한 25초, ISA 정기 작업 종료 대기 30초, 수집기 주문 한 건 예산 20초. 기본 10초면 보내던 주문이 SIGKILL로 잘려 결과 모름이 됨 — OPS-2·QA-257).
   열린 실시간 시세 연결(SSE)은 종료가 시작되면 바로 닫으므로 평소에는 종료 단계 30초를 다 쓰지 않습니다.
+- 정리(성공한 배포의 끝에서만): 매달린 이미지를 지우고, 빌드 캐시는 크기 상한까지만 줄입니다 — `docker builder prune -f --max-used-space <상한>`,
+  상한은 `BUILD_CACHE_MAX`(환경변수 → 서버 `.env` → 기본 15GB, 예 `BUILD_CACHE_MAX=25GB bash scripts/vultr/deploy.sh`). 그 정리가 실패하면
+  예전의 나이 기준(`--filter until=168h` — 일주일 넘은 것만)으로 물러납니다. 정리가 실패해도 배포 결과(종료 코드·성공 문구·끝 요약)는 그대로이고
+  '경고:' 한 줄만 찍습니다(QA-1034). 상한이 한 번의 빌드가 쓰는 캐시보다 작으면 다음 배포가 캐시 없는 속도가 됩니다 — 아래 '디스크'.
 - 배포 전 DB 덤프(QA-200): 빌드가 끝나고 기동하기 전에 `backups/pre-deploy-YYYYmmdd-HHMMSS.sql`(서버에만, S3에 올리지 않음, 최근 `BACKUP_KEEP`개 — 기본 10, 하나 약 460 MB)을 뜹니다.
   뜨지 못하면 돌던 컨테이너 그대로 멈춥니다.
 - 되돌리기: 코드는 `main`에 `git revert` 커밋을 push한 뒤 `deploy.sh`(다시 빌드). 배포가 데이터를 망가뜨린 것(잘못된 데이터 변경 마이그레이션 등)을 곧바로 알아챘으면
@@ -597,8 +602,26 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 ### 날마다 볼 것
 
-백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공은 `make status`·`deploy.sh` 끝),
+백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`make status`·`deploy.sh` 끝의 한 줄 — 80% 이상이면 '경고:', 텔레그램으로도 옴 — 아래 '디스크'), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공은 `make status`·`deploy.sh` 끝),
 `tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 예산 `my-macro-monthly-45usd`(계정 전체 — my-macro 자원으로 남은 것은 백업 버킷뿐).
+
+### 디스크 (빌드 캐시 상한과 알림 — [ADR 0023](adr/0023-vultr-deployment.md) 덧붙임 2026-11-27)
+
+서버 디스크(120 GB)는 Docker 빌드 캐시와 `backups/`의 덤프로 찹니다. 두 가지가 지킵니다.
+
+- **빌드 캐시 상한**: `deploy.sh`가 성공한 배포의 끝에서 캐시를 `BUILD_CACHE_MAX`(기본 15GB)까지 줄입니다(위 '배포'의 정리).
+- **알림**: `scripts/vultr/disk-check.sh`가 `df -P /`·`df -Pi /`의 디스크·inode 사용률을 보고 80% 이상이면 '경고', 90% 이상이면 '위험'으로
+  운영 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`)에 알립니다 — 사용률·여유·`docker system df`의 종류별 크기·`backups/` 크기와 할 일 '실행:'.
+  같은 KST 날짜에는 한 번만 보내고(경고로 보낸 날 위험으로 오르면 한 번 더, 보낸 기록 `backups/.disk-check-sent`), 임계 아래면 syslog에만 남깁니다
+  (`journalctl -t my-macro-disk-check`). cron 줄은 따로 없습니다 — 매일 16:10 KST의 `reboot-check.sh` cron이 먼저 이것을 부릅니다(그 cron이 빠지면 함께 빠짐).
+  임계는 `DISK_WARN_PCT`·`DISK_CRIT_PCT`(환경변수 → 서버 `.env` → 기본 80·90)로 바꿉니다. 이 스크립트는 아무것도 지우지 않습니다.
+- 지금 값 보기: `bash scripts/vultr/disk-check.sh --summary`(한 줄 — `make status`와 `deploy.sh` 끝 요약이 같은 줄을 씀, 알리지 않음), 무엇이 쓰는지는 `docker system df`.
+- 알림이 오면: 빌드 캐시(Build Cache)가 크면 배포가 돌지 않을 때(평일 16:00~22:00 KST나 주말 낮) `docker builder prune -f --max-used-space 15GB`.
+  볼륨·쓰는 이미지·`backups/`는 지우지 않습니다(`docker system prune`류를 쓰지 않음 — DB 볼륨이 걸림). `backups/`는 접두어별 최근 `BACKUP_KEEP`개(기본 10)만 남지만
+  덤프가 커지는 만큼 늘어납니다.
+- 남는 한계: 알림은 하루 한 번이라 그 사이에 빠르게 차는 것은 잡지 못합니다. 상한이 한 번의 빌드가 쓰는 캐시보다 작으면 의존성 층이 밀려
+  다음 배포가 캐시 없는 속도가 됩니다(그러면 `BUILD_CACHE_MAX`를 올림). 서버 Docker가 `--max-used-space`를 받는지는 로컬 29.9.3의 도움말로만 확인했습니다 —
+  받지 않으면 배포는 나이 기준으로 물러나고 '경고:'를 찍습니다.
 
 ### 재부팅 뒤 확인 (QA-415)
 
