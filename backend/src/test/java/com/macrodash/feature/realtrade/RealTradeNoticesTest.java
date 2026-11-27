@@ -113,6 +113,25 @@ class RealTradeNoticesTest {
     }
 
     @Test
+    @DisplayName("창 요약의 줄임 구절(ADR 0028 덧붙임 2026-11-27) — 줄임이 0이거나 칸이 없으면 예전 글 그대로, 1 이상이면 건수와 순자산 대비 부족 %만")
+    void windowSummaryReducedPhrase() {
+        String plain = "[실제 매매] 개장 10분 뒤 맞추기\n\n접수 3 · 체결 0 · 놓침 0\n건너뜀 0 · 막힘 0 · 미룸 0";
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3)))).isEqualTo(plain);
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3, "reduced", 0, "reducedPct", 1.5))))
+                .as("0이면 % 칸이 있어도 글 불변").isEqualTo(plain);
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3, "reduced", "둘", "reducedPct", 1.5))))
+                .as("정수가 아니면 0").isEqualTo(plain);
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3, "reduced", 2, "reducedPct", 1.5))))
+                .isEqualTo(plain + "\n현금 부족으로 줄여 낸 매수 2 · 부족 순자산의 1.50%");
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3, "unknown", 1, "reduced", 1,
+                "reducedPct", new java.math.BigDecimal("0.04"))))).endsWith("결과 모름 1\n현금 부족으로 줄여 낸 매수 1 · 부족 순자산의 0.04%");
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "reduced", 1, "reducedPct", "005930 37주"))))
+                .as("%가 숫자가 아니면 건수만 — 다른 글이 실리지 않음").endsWith("\n현금 부족으로 줄여 낸 매수 1");
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "reduced", 1, "reducedPct", 1234567))))
+                .as("범위(0~100) 밖 숫자는 싣지 않음").endsWith("\n현금 부족으로 줄여 낸 매수 1");
+    }
+
+    @Test
     @DisplayName("QA-349: 끄기 알림 — 바로 꺼졌으면(to OFF) '꺼짐'과 미체결 없음, 끄는 중(STOPPING)이거나 to가 없으면 '미체결 취소 중'")
     void disableNoticeFollowsResultingState() {
         assertThat(text(event("DISABLE", Map.of("from", "LIVE", "to", "OFF"))))

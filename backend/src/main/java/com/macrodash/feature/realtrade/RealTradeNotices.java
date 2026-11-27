@@ -4,12 +4,15 @@ import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.RealTradeStore;
 import tools.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * 실제 매매 텔레그램 글(명세 §7.4 — 사용자 결정 2026-11-06 '건수·상태만'). 글은 고정 문구 + 상태 + 건수 + 사유 코드뿐이고 <b>종목·수량·금액·계좌 식별자를
- * 쓰지 않습니다</b> — 이벤트 detail에 무엇이 들어 있든 여기서 읽는 칸은 사유 코드(코드 모양일 때만)·창 이름·건수(정수)뿐입니다. 서식은 모의 알림과 같은
+ * 쓰지 않습니다</b> — 이벤트 detail에 무엇이 들어 있든 여기서 읽는 칸은 사유 코드(코드 모양일 때만)·창 이름·건수(정수)와 창 요약의
+ * 줄임 부족 %(0~100의 숫자일 때만)뿐입니다. 서식은 모의 알림과 같은
  * 텔레그램 MarkdownV2(굵은 제목 — {@code PaperTelegram}이 서식 거절 때 평문으로 다시 보냄). 이모지 없음.
  */
 final class RealTradeNotices {
@@ -112,7 +115,27 @@ final class RealTradeNotices {
         int unknown = count(detail, "unknown");   // 전송 결과를 아직 모르는 주문(재전송·대조 중) — 있을 때만 적음(QA-346)
         return "접수 " + count(detail, "accepted") + " · 체결 " + count(detail, "filled") + " · 놓침 " + count(detail, "missed")
                 + "\n건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred")
-                + (unknown > 0 ? " · 결과 모름 " + unknown : "");
+                + (unknown > 0 ? " · 결과 모름 " + unknown : "") + reduced(detail);
+    }
+
+    /**
+     * 창 요약의 줄임 구절(ADR 0028 덧붙임 2026-11-27) — 현금이 모자라 줄여서 낸 마무리 매수가 있을 때만 한 줄(건수와 순자산 대비 부족 %뿐). 0이거나
+     * 칸이 없으면 빈 글(예전 글 그대로). %는 0 이상 100 이하의 숫자일 때만 적습니다.
+     */
+    private static String reduced(JsonNode detail) {
+        int n = count(detail, RealTradeJob.DETAIL_REDUCED);
+        if (n <= 0) {
+            return "";
+        }
+        JsonNode pct = detail.get(RealTradeJob.DETAIL_REDUCED_PCT);
+        String tail = "";
+        if (pct != null && pct.isNumber()) {
+            BigDecimal value = pct.decimalValue();
+            if (value.signum() >= 0 && value.compareTo(BigDecimal.valueOf(100)) <= 0) {
+                tail = " · 부족 순자산의 " + value.setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
+            }
+        }
+        return "\n현금 부족으로 줄여 낸 매수 " + n + tail;
     }
 
     /**

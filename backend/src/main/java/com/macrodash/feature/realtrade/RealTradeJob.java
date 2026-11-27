@@ -50,6 +50,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -595,6 +596,11 @@ class RealTradeJob {
         /** 창 → 사유 → 건너뛴 대상(종목 또는 모의 주문 뿌리) — 같은 대상은 한 번만 셈. */
         final Map<String, Map<String, Set<String>>> skipped = new HashMap<>();
         final Map<String, Set<String>> missed = new HashMap<>();
+        /**
+         * 마무리 용도로 현금이 모자라 줄여서 낸 매수(보이기만 — ADR 0028 덧붙임 2026-11-27): 종목 → 순자산 대비 부족 %(그 계획의 E 기준). 창 요약이
+         * 건수와 합만 읽습니다. 메모리에만 있어 다시 띄우면 그 전에 센 줄임은 그날 요약에 빠집니다(줄이기 전 수량은 어느 표에도 없음).
+         */
+        final Map<String, BigDecimal> reduced = new TreeMap<>();
         final Set<Long> handledRoots = new HashSet<>();
         /** 놓침을 스탑 매도 알림에 이미 센 스탑 뿌리(같은 놓침을 주기마다 다시 세지 않게). */
         final Set<Long> stopMissCounted = new HashSet<>();
@@ -1014,6 +1020,46 @@ class RealTradeJob {
             return;
         }
         sendBatchOrders(c, sending.orders(), locked.batch(), purpose, timeInForce);
+        noteReduced(c, sending, locked.batch(), purpose);
+    }
+
+    /**
+     * 마무리 용도로 보낸 계획의 '줄임'을 그날 상태에 적습니다(보이기만 — 주문·건너뜀·시도·회전율과 무관, ADR 0028 덧붙임 2026-11-27). 보낸 뒤에 묶음의
+     * 주문 행을 읽어, 계획의 매수와 수량이 같은 그 종목의 마지막 마무리 행이 토스에 접수됐을 때만 그 종목의 값을 이번 계획의 것으로 바꿉니다(줄여 냈으면
+     * 순자산 대비 부족 %, 줄이지 않고 냈으면 지움 — 지나가는 거절 뒤 시도 2가 온전한 수량으로 나간 날을 줄임으로 세지 않게). 시가 단일가 묶음(OPG)은
+     * 세지 않습니다(줄여 낸 OPG 매수는 시가 뒤 마무리가 다른 용도의 시도로 메움). 줄임도 앞서 센 것도 없으면 아무것도 읽지 않고, 행을 읽지 못하면
+     * 그 주기의 줄임만 세지 않습니다(주기의 나머지는 그대로).
+     */
+    private void noteReduced(Cycle c, Plan plan, Batch batch, String purpose) {
+        if (!RealTradeStore.PURPOSE_SYNC_FOLLOWUP.equals(purpose) || (plan.reduced().isEmpty() && c.day.reduced.isEmpty())) {
+            return;
+        }
+        BigDecimal equity = plan.equity();
+        Map<String, RealTradePlanner.Reduced> cut = new HashMap<>();
+        plan.reduced().forEach(r -> cut.put(r.symbol(), r));
+        List<OrderRow> rows;
+        try {
+            rows = store.ordersForBatch(batch.id());
+        } catch (RuntimeException e) {
+            log.warn("줄임 집계용 주문 행을 읽지 못함 — 이번 주기의 줄임은 세지 않음({})", e.getClass().getSimpleName());
+            return;   // 보이기만 하는 집계가 주기의 나머지(마무리 끝 판정·알림)를 막지 않게
+        }
+        for (Order o : plan.orders()) {
+            if (!o.buy() || (!cut.containsKey(o.symbol()) && !c.day.reduced.containsKey(o.symbol()))) {
+                continue;
+            }
+            OrderRow last = rows.stream().filter(row -> purpose.equals(row.purpose()) && o.symbol().equals(row.symbol()))
+                    .max(Comparator.comparingInt(OrderRow::attempt)).orElse(null);
+            if (last == null || last.tossOrderId() == null || !RealTradePlanner.BUY.equals(last.side()) || last.quantity() != o.quantity()) {
+                continue;
+            }
+            RealTradePlanner.Reduced r = cut.get(o.symbol());
+            if (r == null || equity == null || equity.signum() <= 0) {
+                c.day.reduced.remove(o.symbol());
+            } else {
+                c.day.reduced.put(o.symbol(), r.shortfall().multiply(BigDecimal.valueOf(100)).divide(equity, 6, RoundingMode.HALF_UP));
+            }
+        }
     }
 
     private record Locked(Batch batch, Config config) {
@@ -1330,7 +1376,7 @@ class RealTradeJob {
                 true, waiting, null).turnoverAmount();
         Set<String> blocked = new HashSet<>(f.blocked());
         blocked.removeAll(waiting);
-        return new Judged(new Plan(plan.orders(), plan.skipped(), plan.turnoverAmount().add(extra), plan.equity()), blocked);
+        return new Judged(new Plan(plan.orders(), plan.skipped(), plan.turnoverAmount().add(extra), plan.equity(), plan.reduced()), blocked);
     }
 
     // ------------------------------------------------------------------ 매매 제한 대기(시각 맞추기)
@@ -1565,6 +1611,7 @@ class RealTradeJob {
         if (sent == 0 && plan.orders().isEmpty() && !waiting) {
             c.day.followupDone = true;
         }
+        noteReduced(c, plan, batch, RealTradeStore.PURPOSE_SYNC_FOLLOWUP);
     }
 
     /**
@@ -2522,6 +2569,10 @@ class RealTradeJob {
         }
     }
 
+    /** 창 요약 근거의 칸 — 현금이 모자라 줄여서 낸 마무리 매수의 수(0이면 칸 없음)와 그 부족분의 순자산 대비 %(ADR 0028 덧붙임 2026-11-27). */
+    static final String DETAIL_REDUCED = "reduced";
+    static final String DETAIL_REDUCED_PCT = "reducedPct";
+
     private void summarize(Cycle c, String window, List<OrderRow> rows, List<String> tallies, int extraMissed) {
         if (!c.day.summarized.add(window)) {
             return;
@@ -2570,6 +2621,12 @@ class RealTradeJob {
         detail.put("deferred", deferred);
         detail.put("unknown", unknown);
         detail.put("reasons", reasons);
+        if (tallies.contains(RealTradePlanner.WINDOW_FOLLOWUP) && !c.day.reduced.isEmpty()) {
+            // 현금이 모자라 줄여서 낸 마무리 매수(보이기만 — 건수와 순자산 대비 부족 %뿐, 종목·수량·금액 없음). 없으면 칸을 넣지 않음(예전 detail 그대로)
+            detail.put(DETAIL_REDUCED, c.day.reduced.size());
+            detail.put(DETAIL_REDUCED_PCT, c.day.reduced.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP));
+        }
         boolean notify = accepted + blocked + missed + skipped + deferred + unknown > 0;
         store.addEvent(MARKET, RealTradeStore.EVENT_WINDOW_SUMMARY, null, detail, notify);
         log.info("실제 매매 창 요약({}) — 접수 {} · 체결 {} · 놓침 {} · 건너뜀 {} · 막힘 {} · 미룸 {}", window, accepted, filled, missed, skipped,

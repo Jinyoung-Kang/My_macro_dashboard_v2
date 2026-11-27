@@ -736,6 +736,78 @@ class RealTradeJobDbTest {
                 .satisfies(r -> assertThat(r.attempt()).as("미룬 매수는 시도 1 — 시도 번호 규칙 그대로").isEqualTo(1));
     }
 
+    // ------------------------------------------------------------------ 줄임 보이기(ADR 0028 덧붙임 2026-11-27 — 주문은 그대로)
+    @Test
+    @DisplayName("줄임 보이기: 매도 없이 현금이 모자라 줄여 낸 마무리 매수 — 주문은 예전 그대로 나가고, 창 요약 detail에 줄임 1과 순자산 대비 부족 %만 "
+            + "(종목·수량·금액 없음), 알림 글에 한 구절")
+    void windowSummaryCountsACashCutFollowupBuy() {
+        RealTradeFixtures.live(store, true, d("3000000"));
+        timedTargets(Map.of(A, 90.0), List.of(), List.of());
+        // E 3,000,000원 · A 90%(목표 54주, 현재가 50,000 · 상한가 65,000) — 현금 3,000,000원으로는 46주까지: 8주 × 50,000원 = 400,000원(13.33%) 부족
+        preflight("3000000", Map.of(), Map.of(A, "50000"));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).as("주문은 예전처럼 줄여서 나감").containsExactly("BUY " + A + " DAY 46");
+
+        run("09:10:40");
+        assertThat(sentSummaries()).hasSize(1);
+        run("09:14");
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
+            assertThat(e.detail().path("accepted").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("skipped").asInt()).as("줄임은 건너뜀·미룸에 세지 않음").isZero();
+            assertThat(e.detail().path("deferred").asInt()).isZero();
+            assertThat(e.detail().path("reasons").has("deferred-cash")).isFalse();
+            assertThat(e.detail().path("reduced").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("reducedPct").decimalValue()).isEqualByComparingTo("13.33");
+            assertThat(e.detail().toString()).as("건수와 %뿐 — 종목·수량·금액 없음").doesNotContain(A, "400000", "\"46\"", "\"54\"");
+        });
+        assertThat(PaperTelegram.plain(RealTradeNotices.text(events("WINDOW_SUMMARY").getFirst())))
+                .endsWith("\n현금 부족으로 줄여 낸 매수 1 · 부족 순자산의 13.33%").doesNotContain(A);
+    }
+
+    @Test
+    @DisplayName("줄임 보이기: 미뤘던 매수를 매도 대금이 들어온 뒤의 마무리 주기에 현금이 모자라 줄여 낸 날도 창 요약에 줄임 1과 부족 %")
+    void windowSummaryReducedOnlyWhenAFollowupBuyWasCut() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 70.0, B, 20.0), List.of(), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        run("09:10:05");
+        assertThat(sentSummaries()).as("A(목표 140주)는 같은 계획이 C를 팔므로 줄여 보내지 않고 미룸(QA-1018)")
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 100");
+
+        // C 매도·B 매수가 끝나 대금이 들어옴(현금 6,000,000 + 4,000,000 − 2,000,000 = 8,000,000 · E 10,000,000) — A(목표 140주, 상한가 65,000)는
+        // 123주까지: 17주 × 50,000 ÷ 10,000,000 = 8.50% 부족
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", B, "BUY", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("8000000", Map.of(B, new String[]{"100", "20000"}), Map.of(A, "50000"));
+        run("09:11:15");
+        assertThat(sentSummaries()).as("매도가 더 없으면 예전처럼 줄여 보냄")
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 100", "BUY " + A + " DAY 123");
+
+        run("09:14");
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("accepted").asInt()).isEqualTo(3);
+            assertThat(e.detail().path("reduced").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("reducedPct").decimalValue()).isEqualByComparingTo("8.50");
+        });
+    }
+
+    @Test
+    @DisplayName("줄임 보이기: 줄여 낸 매수가 없는 날 — 창 요약 detail의 칸은 예전 열 개 그대로이고 알림 글도 예전 글")
+    void windowSummaryWithoutCashCutIsUnchanged() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        run("09:10:05");   // A는 줄이지 않고 미룸(QA-1018) — 줄여 낸 매수 없음
+        run("09:14");
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().propertyNames()).containsExactlyInAnyOrder("window", "date", "accepted", "filled", "missed", "skipped",
+                    "blocked", "deferred", "unknown", "reasons");
+            assertThat(PaperTelegram.plain(RealTradeNotices.text(e))).isEqualTo("[실제 매매] 개장 10분 뒤 맞추기\n\n접수 2 · 체결 0 · 놓침 0\n건너뜀 0 · 막힘 0 · 미룸 1");
+        });
+    }
+
     // QA-378(고치지 않음 — 경로 확인): 모의 장부가 보류해 목표 세션이 지난 STOP 아닌 대기 주문은 다음 세션 목표에 보이지 않습니다
     // (PaperMirrorServiceTest.heldDecisionOrdersPastTheirSessionAreInvisibleToTheNextSession). 그 목표를 받은 묶음은 어제 따라 한 매매를 되돌립니다 —
     // 뒤에 모의가 원래 세션 값으로 체결하면 다음 묶음이 다시 맞추므로 실제 돈이 왕복합니다. 아래는 지금 동작을 그대로 적은 것입니다(결정 전).
