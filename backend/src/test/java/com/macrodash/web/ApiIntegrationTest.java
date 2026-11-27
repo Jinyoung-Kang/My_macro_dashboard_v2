@@ -598,6 +598,35 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-265 재현 — 필터가 직접 쓰는 401에 CORS 머리글이 없음")
+    @DisplayName("QA-265 허용한 출처에서 온 쿠키 없는 요청의 401에 CORS 머리글이 붙고, 통과한 응답의 머리글은 하나뿐이다")
+    void unauthorizedIsReadableAcrossOrigins() {
+        String origin = "http://localhost:3000";
+        HttpHeaders anonymous = new HttpHeaders();
+        anonymous.add(HttpHeaders.ORIGIN, origin);
+        for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST)) {
+            String path = method == HttpMethod.GET ? "/api/macro/overview" : "/api/auth/logout";
+            ResponseEntity<String> rejected = rest.exchange(url(path), method, new HttpEntity<>(null, anonymous), String.class);
+            assertThat(rejected.getStatusCode()).as(path).isEqualTo(HttpStatus.UNAUTHORIZED);
+            assertThat(rejected.getHeaders().get(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).as(path).containsExactly(origin);
+            assertThat(rejected.getHeaders().get(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS)).as(path).containsExactly("true");
+        }
+
+        HttpHeaders foreign = new HttpHeaders();
+        foreign.add(HttpHeaders.ORIGIN, "https://evil.example");
+        ResponseEntity<String> other = rest.exchange(url("/api/macro/overview"), HttpMethod.GET, new HttpEntity<>(null, foreign), String.class);
+        assertThat(other.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(other.getHeaders().get(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).as("허용하지 않은 출처").isNull();
+
+        HttpHeaders signedIn = new HttpHeaders();
+        signedIn.add(HttpHeaders.COOKIE, sessionCookie);
+        signedIn.add(HttpHeaders.ORIGIN, origin);
+        ResponseEntity<String> ok = rest.exchange(url("/api/macro/overview"), HttpMethod.GET, new HttpEntity<>(null, signedIn), String.class);
+        assertThat(ok.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ok.getHeaders().get(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).as("통과한 응답 — 값이 둘이면 브라우저가 거절").containsExactly(origin);
+    }
+
+    @Test
     @DisplayName("잘못된 비밀번호는 거부된다")
     void rejectsWrongPassword() {
         ResponseEntity<String> response = rest.postForEntity(

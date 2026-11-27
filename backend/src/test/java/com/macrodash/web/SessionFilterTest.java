@@ -9,6 +9,7 @@ import com.macrodash.store.SessionStore;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -799,6 +800,109 @@ class SessionFilterTest {
             return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * QA-265 — 필터가 직접 쓰는 오류 응답(401·400·403·413)에도, 허용한 출처에서 온 요청이면 CORS 머리글을 붙입니다. 화면과 API의 포트가
+     * 다른 배치(QA 스택·로컬 로그인 모드)에서 브라우저가 상태 코드를 읽지 못해, 세션 만료가 '연결하지 못했습니다'로 보이고 끝난 세션의
+     * 로그아웃이 로그인 화면으로 가지 않았습니다(연기 시험의 QA-1028 흐름 — 2026-11-27).
+     */
+    @Nested
+    class CorsOnDirectErrors {
+
+        static final String ALLOWED = "http://localhost:3000";
+
+        private WebConfig.SessionFilter filter() {
+            AppProperties properties = new AppProperties();
+            properties.setDemoViewerToken("test-demo-viewer-token-0123456789abcdef");
+            UserStore users = mock(UserStore.class);
+            when(users.ready()).thenReturn(true);
+            SessionStore sessions = mock(SessionStore.class);
+            when(sessions.findActive(any())).thenAnswer(invocation -> {
+                byte[] hash = invocation.getArgument(0);
+                if (Arrays.equals(hash, sha256("member-cookie"))) {
+                    return Optional.of(new SessionStore.Active(UUID.randomUUID(), 2, "member@test.local", "MEMBER", "FREE",
+                            Instant.now(), Instant.now().plusSeconds(3600)));
+                }
+                return Optional.empty();
+            });
+            AuthService auth = new AuthService(properties, users, sessions, mock(AuditLogStore.class), new PasswordHasher());
+            return new WebConfig.SessionFilter(auth, List.of("http://*:3000"));
+        }
+
+        private MockHttpServletRequest make(String method, String path, String origin, String cookie) {
+            MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+            request.setServletPath(path);
+            if (origin != null) {
+                request.addHeader("Origin", origin);
+            }
+            if (cookie != null) {
+                request.setCookies(new Cookie(AuthService.COOKIE_NAME, cookie));
+            }
+            return request;
+        }
+
+        private MockHttpServletResponse run(MockHttpServletRequest request) throws Exception {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter().doFilter(request, response, (req, res) -> { });
+            return response;
+        }
+
+        private void assertReadable(MockHttpServletResponse response, int status) {
+            assertThat(response.getStatus()).isEqualTo(status);
+            assertThat(response.getHeaders("Access-Control-Allow-Origin")).containsExactly(ALLOWED);
+            assertThat(response.getHeaders("Access-Control-Allow-Credentials")).containsExactly("true");
+            assertThat(response.getHeaders("Vary")).contains("Origin");
+        }
+
+        @Test
+        @Disabled("QA-265 재현 — 필터가 직접 쓰는 오류 응답에 CORS 머리글이 없음")
+        @DisplayName("QA-265 허용한 출처에서 온 요청이면 401·403·400·413에도 CORS 머리글이 붙는다")
+        void directErrorsCarryCorsHeadersForAllowedOrigins() throws Exception {
+            // 401 — 쿠키 없는 읽기와, 끝난 세션의 로그아웃(쓰기)
+            assertReadable(run(make("GET", "/api/paper/overview", ALLOWED, null)), 401);
+            assertReadable(run(make("POST", "/api/auth/logout", ALLOWED, null)), 401);
+            // 403 forbidden — 무료 회원이 운영자 경로를 읽음
+            assertReadable(run(make("GET", "/api/admin/users", ALLOWED, "member-cookie")), 403);
+            // 403 demo_read_only — 데모 열람의 쓰기
+            MockHttpServletRequest demoWrite = make("POST", "/api/alerts/rules", ALLOWED, null);
+            demoWrite.addHeader(DemoViewer.HEADER, "test-demo-viewer-token-0123456789abcdef");
+            assertReadable(run(demoWrite), 403);
+            // 400 — 정규화 전후가 다른 경로
+            MockHttpServletRequest odd = new MockHttpServletRequest("GET", "/api/status/./run/x");
+            odd.setServletPath("/api/status/run/x");
+            odd.addHeader("Origin", ALLOWED);
+            assertReadable(run(odd), 400);
+            // 413 — 로그인 본문 상한, 로그인한 쓰기 본문 상한
+            MockHttpServletRequest hugeLogin = make("POST", "/api/auth/login", ALLOWED, null);
+            hugeLogin.setContent(new byte[(int) WebConfig.SessionFilter.MAX_LOGIN_BODY_BYTES + 1]);
+            assertReadable(run(hugeLogin), 413);
+            MockHttpServletRequest hugeWrite = make("POST", "/api/alerts/rules", ALLOWED, "member-cookie");
+            hugeWrite.setContent(new byte[(int) WebConfig.SessionFilter.MAX_WRITE_BODY_BYTES + 1]);
+            assertReadable(run(hugeWrite), 413);
+        }
+
+        @Test
+        @DisplayName("QA-265 허용하지 않은 출처·출처 없는 요청의 오류와, 통과한 요청에는 필터가 CORS 머리글을 붙이지 않는다")
+        void noCorsHeadersForOthers() throws Exception {
+            MockHttpServletResponse foreignRead = run(make("GET", "/api/paper/overview", "https://evil.example", null));
+            assertThat(foreignRead.getStatus()).isEqualTo(401);
+            assertThat(foreignRead.getHeader("Access-Control-Allow-Origin")).isNull();
+            assertThat(foreignRead.getHeader("Access-Control-Allow-Credentials")).isNull();
+
+            MockHttpServletResponse foreignWrite = run(make("POST", "/api/auth/logout", "https://evil.example", null));
+            assertThat(foreignWrite.getStatus()).as("bad_origin").isEqualTo(403);
+            assertThat(foreignWrite.getHeader("Access-Control-Allow-Origin")).isNull();
+
+            MockHttpServletResponse noOrigin = run(make("GET", "/api/paper/overview", null, null));
+            assertThat(noOrigin.getStatus()).isEqualTo(401);
+            assertThat(noOrigin.getHeader("Access-Control-Allow-Origin")).isNull();
+
+            // 통과한 요청의 머리글은 Spring MVC의 CORS 처리가 붙입니다 — 필터가 또 붙이면 값이 둘이 되어 브라우저가 거절합니다.
+            MockHttpServletResponse passed = run(make("GET", "/api/macro/overview", ALLOWED, "member-cookie"));
+            assertThat(passed.getStatus()).isEqualTo(200);
+            assertThat(passed.getHeader("Access-Control-Allow-Origin")).isNull();
         }
     }
 }
