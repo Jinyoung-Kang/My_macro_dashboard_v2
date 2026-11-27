@@ -65,6 +65,8 @@ bash scripts/test-isolated.sh db-test   # 스크립트를 직접 불러도 같�
   5초 제한 시험이 흔들렸습니다. 같은 작업 폴더에서 두 벌은 바로 거절합니다(`frontend/.next`·`backend/target`이 겹침).
 - 셸의 `TEST_DATABASE_URL`은 지우고(있으면 포트 설정을 조용히 이깁니다) 계정은 `macro`/`macro`(공개 기본값)로 맞춥니다. yfinance 캐시
   (`XDG_CACHE_HOME`·`YFINANCE_CACHE_DIR`)는 벌마다 임시 폴더로, 화면 시험 일꾼 수(`VITEST_MAX_WORKERS`)는 CPU 수를 칸 수로 나눈 값으로 둡니다.
+- 백그라운드로 띄운 실행(비대화형 셸의 `&`·`nohup` 꼴 — INT가 무시된 채 시작함)은 INT로 멈추지 않습니다. **TERM으로 끝냅니다**(정리는 똑같이 돕니다).
+  시험 프로세스(make 아래)는 어느 경우든 INT·QUIT 처리를 기본값으로 되돌려 띄웁니다.
 - 종료 코드는 `make`의 것을 그대로 돌려줍니다. 강제 종료(`kill -9`)로 남은 컨테이너는 같은 칸의 다음 실행이 시작할 때 지웁니다.
 
 ### 테스트는 전용 DB에서 돕니다
