@@ -276,14 +276,29 @@ final class RealTradePlanner {
     }
 
     /**
-     * 계획. {@code turnoverAmount}는 임계값을 넘은 차이(줄이기 전 — 현금·1건 상한으로 줄이거나 미룬 것 포함, 건너뛴 종목·멈춘 매수 제외)의 금액 합,
-     * {@code equity}는 그때의 E.
+     * 현금이 모자라 줄여서 낸 매수 하나(보이기만 — 주문·건너뜀·회전율과 무관). {@code wanted}는 현금을 따지기 직전의 수량(1건 상한까지 적용한 뒤),
+     * {@code quantity}는 계획에 실린 주문 수량, {@code shortfall}은 현금 때문에 못 낸 수량 × 기준가의 어림(하루 한도로 더 줄어든 몫은 넣지 않음 — 그
+     * 몫은 건너뜀 {@value #SKIP_DAILY_CAP}로 남음). 1주도 못 사 미룬 매수({@value #SKIP_DEFERRED_CASH})와 줄이지 않고 미룬 매수는 여기 없습니다.
      */
-    record Plan(List<Order> orders, List<Skip> skipped, BigDecimal turnoverAmount, BigDecimal equity) {
+    record Reduced(String symbol, String name, int wanted, int quantity, BigDecimal shortfall) {
+    }
+
+    /**
+     * 계획. {@code turnoverAmount}는 임계값을 넘은 차이(줄이기 전 — 현금·1건 상한으로 줄이거나 미룬 것 포함, 건너뛴 종목·멈춘 매수 제외)의 금액 합,
+     * {@code equity}는 그때의 E. {@code reduced}는 현금이 모자라 줄여서 낸 매수({@link Reduced} — 건너뜀 목록과 따로 두는 칸: 건너뜀 목록은 ISA
+     * 지시·켜기 창 예상 목록과 남은 몫·대기 판정이 읽으므로 새 사유를 넣지 않음).
+     */
+    record Plan(List<Order> orders, List<Skip> skipped, BigDecimal turnoverAmount, BigDecimal equity, List<Reduced> reduced) {
 
         Plan {
             orders = List.copyOf(orders);
             skipped = List.copyOf(skipped);
+            reduced = reduced == null ? List.of() : List.copyOf(reduced);
+        }
+
+        /** 줄임 목록이 빈 계획. */
+        Plan(List<Order> orders, List<Skip> skipped, BigDecimal turnoverAmount, BigDecimal equity) {
+            this(orders, skipped, turnoverAmount, equity, List.of());
         }
 
         /** 회전율(E 대비 %) — E가 0 이하이면 0. */
@@ -396,8 +411,9 @@ final class RealTradePlanner {
         if (sendable != null) {
             candidates.removeIf(c -> !sendable.contains(c.symbol()));
         }
-        List<Order> orders = limit(order(candidates, rules.cashLike()), account, reservedBuy, rules, skipped);
-        return new Plan(orders, skipped, turnover, equity);
+        List<Reduced> reduced = new ArrayList<>();
+        List<Order> orders = limit(order(candidates, rules.cashLike()), account, reservedBuy, rules, skipped, reduced);
+        return new Plan(orders, skipped, turnover, equity, reduced);
     }
 
     /**
@@ -435,7 +451,7 @@ final class RealTradePlanner {
         }
         BigDecimal funding = stopProceeds == null ? stopSells : stopSells.add(stopProceeds.max(BigDecimal.ZERO));
         BigDecimal counted = plan.turnoverAmount().subtract(stopSells).subtract(cashBuys.min(funding)).max(BigDecimal.ZERO);
-        return new Plan(plan.orders(), plan.skipped(), counted, plan.equity());
+        return new Plan(plan.orders(), plan.skipped(), counted, plan.equity(), plan.reduced());
     }
 
     /** {@link #sync}가 그 종목을 사는 쪽으로 정하는가(차이가 양수 — 회전율에 들어간 종목만 부르므로 차이는 1주 이상 벌어져 있음). */
@@ -493,8 +509,9 @@ final class RealTradePlanner {
             skipped.add(new Skip(symbol, name, SKIP_BUYS_PAUSED));
             return new Plan(List.of(), skipped, BigDecimal.ZERO, equity);
         }
-        List<Order> orders = limit(List.of(d.candidate()), account, reservedBuy, rules, skipped);
-        return new Plan(orders, skipped, d.desiredAmount(), equity);
+        List<Reduced> reduced = new ArrayList<>();
+        List<Order> orders = limit(List.of(d.candidate()), account, reservedBuy, rules, skipped, reduced);
+        return new Plan(orders, skipped, d.desiredAmount(), equity, reduced);
     }
 
     /** 목표 수량 floor(비중% × E ÷ 기준가). */
@@ -591,9 +608,11 @@ final class RealTradePlanner {
      * 안 되면 미룸 — 규칙이 {@link CashCut#DEFER_WITH_SELLS}·{@link CashCut#DEFER}이고 이 계획이 매도를 보내거나 그 묶음에 진행 중인 매도가 있으면 줄이지
      * 않고 미룸, QA-1018), 1건 금액(매수 = 상한가 × 수량, 매도 = 현재가 × 수량 — 수집기 검사와 같은 기준, 매도는 가격 여유 {@link #SELL_PRICE_MARGIN})이 1건
      * 상한을 넘으면 상한까지만(쪼개지 않음). 하루 한도가 있으면 남은 건수만큼만 보내고, 매수의 상한가 × 수량은 남은 하루 매수 금액 안으로 줄입니다(1주도 안
-     * 되거나 건수가 없으면 {@value #SKIP_DAILY_CAP}).
+     * 되거나 건수가 없으면 {@value #SKIP_DAILY_CAP}). 현금이 모자라 줄인 매수가 주문으로 실리면 {@code reduced}에 적습니다(보이기만 — 주문·건너뜀은
+     * 이 목록과 무관).
      */
-    private static List<Order> limit(List<Candidate> candidates, Account account, BigDecimal reservedBuy, Rules rules, List<Skip> skipped) {
+    private static List<Order> limit(List<Candidate> candidates, Account account, BigDecimal reservedBuy, Rules rules, List<Skip> skipped,
+                                     List<Reduced> reduced) {
         List<Order> out = new ArrayList<>();
         BigDecimal reserved = reservedBuy == null ? BigDecimal.ZERO : reservedBuy;
         Integer ordersLeft = rules.remainingOrders();
@@ -648,7 +667,9 @@ final class RealTradePlanner {
             BigDecimal available = account.cash().subtract(reserved);
             BigDecimal maxByCash = available.signum() <= 0 ? BigDecimal.ZERO
                     : available.divide(upper, 0, RoundingMode.FLOOR);
+            BigDecimal wanted = null;   // 현금 때문에 줄였으면 줄이기 전 수량(보이기만)
             if (quantity.compareTo(maxByCash) > 0) {
+                wanted = quantity;
                 // 매도 대금이 올 창이면 줄여 보내지 않음 — 줄인 주문이 전량 체결되면 그 종목의 시도가 닫혀 나머지를 그날 사지 못함(QA-1018)
                 quantity = selling ? BigDecimal.ZERO : maxByCash;
             }
@@ -673,6 +694,9 @@ final class RealTradePlanner {
             BigDecimal reserve = upper.multiply(BigDecimal.valueOf(q));
             reserved = reserved.add(reserve);
             out.add(new Order(c.symbol(), c.name(), BUY, q, c.price(), reserve, capped));
+            if (wanted != null) {
+                reduced.add(new Reduced(c.symbol(), c.name(), clamp(wanted), q, c.price().multiply(wanted.subtract(maxByCash))));
+            }
             if (buyLeft != null) {
                 buyLeft = buyLeft.subtract(reserve);
             }

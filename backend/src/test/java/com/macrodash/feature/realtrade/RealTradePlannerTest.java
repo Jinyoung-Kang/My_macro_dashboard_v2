@@ -268,6 +268,69 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("줄임 목록(보이기만) — 현금이 모자라 줄여서 낸 매수마다 줄이기 전 수량·보낸 수량·부족 금액, 줄이지 않았거나 미룬 매수는 없음, "
+            + "주문·건너뜀·회전율은 줄임 칸과 무관하게 그대로")
+    void reducedListsCashCutBuysWithoutTouchingOrdersOrSkips() {
+        Map<String, Double> weights = Map.of(A, 25.0);
+        // A 25%(목표 35주), 현금 1,000,000원 — 상한가 91,000원 기준 10주까지만: 25주 × 70,000원이 부족
+        Plan cut = sync(weights, new Acct().cash("1000000").quote(A, "70000").build());
+        assertThat(cut.orders()).extracting(o -> o.side() + " " + o.symbol() + " " + o.quantity()).containsExactly("BUY " + A + " 10");
+        assertThat(cut.skipped()).as("줄임은 건너뜀 목록에 새 사유로 넣지 않음").isEmpty();
+        assertThat(cut.reduced()).singleElement().satisfies(r -> {
+            assertThat(r.symbol()).isEqualTo(A);
+            assertThat(r.wanted()).isEqualTo(35);
+            assertThat(r.quantity()).isEqualTo(10);
+            assertThat(r.shortfall()).isEqualByComparingTo("1750000");
+        });
+
+        // 현금이 넉넉하면 줄임 없음 — 그리고 회전율은 현금과 무관(줄이기 전 값)
+        Plan full = sync(weights, new Acct().quote(A, "70000").build());
+        assertThat(full.orders()).singleElement().satisfies(o -> assertThat(o.quantity()).isEqualTo(35));
+        assertThat(full.reduced()).isEmpty();
+        assertThat(cut.turnoverAmount()).isEqualByComparingTo(full.turnoverAmount());
+
+        // 1주도 못 사 미룬 매수는 줄임이 아님(건너뜀 deferred-cash 그대로)
+        Plan deferred = sync(weights, new Acct().cash("50000").quote(A, "70000").build());
+        assertThat(deferred.orders()).isEmpty();
+        assertThat(reasons(deferred)).containsExactly(RealTradePlanner.SKIP_DEFERRED_CASH);
+        assertThat(deferred.reduced()).isEmpty();
+
+        // 마무리 규칙 — 매도와 함께면 줄이지 않고 미루므로 줄임 없음, 매도가 없으면 줄여 내고 줄임에 적음
+        Account selling = new Acct().cash("1000000").hold(C, "10", "40000").quote(A, "70000").build();
+        Rules followup = RULES.withCashCut(RealTradePlanner.CashCut.DEFER_WITH_SELLS);
+        assertThat(RealTradePlanner.sync(weights, E, selling, Set.of(), BigDecimal.ZERO, followup, true).reduced()).isEmpty();
+        Plan basic = RealTradePlanner.sync(weights, E, selling, Set.of(), BigDecimal.ZERO, RULES, true);
+        assertThat(basic.orders()).as("기본 규칙의 주문은 예전 그대로").extracting(o -> o.side() + " " + o.symbol() + " " + o.quantity())
+                .containsExactly("SELL " + C + " 10", "BUY " + A + " 10");
+        assertThat(basic.skipped()).isEmpty();
+        assertThat(basic.reduced()).extracting(r -> r.symbol() + " " + r.wanted() + " " + r.quantity()).containsExactly(A + " 35 10");
+
+        // 1건 상한이 먼저 줄인 수량은 '줄이기 전'에 들지 않음(현금 직전 수량) — 상한 1,000,000원 → 10주, 현금 500,000원 → 5주
+        Rules capped = new Rules(d("1000000"), Set.of(), false, true);
+        Plan both = RealTradePlanner.sync(weights, E, new Acct().cash("500000").quote(A, "70000").build(), Set.of(), BigDecimal.ZERO, capped,
+                true);
+        assertThat(both.orders()).singleElement().satisfies(o -> assertThat(o.quantity()).isEqualTo(5));
+        assertThat(reasons(both)).containsExactly(RealTradePlanner.SKIP_CAPPED);
+        assertThat(both.reduced()).singleElement().satisfies(r -> {
+            assertThat(r.wanted()).isEqualTo(10);
+            assertThat(r.quantity()).isEqualTo(5);
+            assertThat(r.shortfall()).isEqualByComparingTo("350000");
+        });
+
+        // 장중 따라 하기 계획도 같은 칸
+        Plan mirror = RealTradePlanner.mirror(A, RealTradePlanner.BUY, 25.0, E, new Acct().cash("1000000").quote(A, "70000").build(),
+                Set.of(), BigDecimal.ZERO, RULES);
+        assertThat(mirror.reduced()).extracting(r -> r.wanted() + " " + r.quantity()).containsExactly("35 10");
+
+        // 기존 네 칸 생성자는 줄임이 빈 계획(기존 호출자 그대로), 스탑 몫을 뺀 판정 계획은 줄임을 그대로 옮김
+        assertThat(new Plan(List.of(), List.of(), BigDecimal.ZERO, E).reduced()).isEmpty();
+        Plan counted = RealTradePlanner.withoutStops(basic, weights, selling, Set.of(), RULES, true, Set.of(C), BigDecimal.ZERO);
+        assertThat(counted.orders()).isEqualTo(basic.orders());
+        assertThat(counted.skipped()).isEqualTo(basic.skipped());
+        assertThat(counted.reduced()).isEqualTo(basic.reduced());
+    }
+
+    @Test
     @DisplayName("1건 상한을 넘으면 쪼개지 않고 상한까지만(capped) — 매수는 상한가, 매도는 현재가 기준")
     void orderCap() {
         Rules capped = new Rules(d("1000000"), Set.of(), false, true);
