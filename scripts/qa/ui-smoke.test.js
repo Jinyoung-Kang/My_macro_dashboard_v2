@@ -35,7 +35,7 @@ test('인자 — 모르는 인자·값 없는 인자·함께 못 쓰는 인자�
 });
 
 test('.env 읽기 — 쓰는 세 값만, 따옴표를 벗기고 빈 값은 null', () => {
-  const env = smoke.parseEnvText('# 주석\nOWNER_EMAIL=qa-owner@qa.local\nAPP_PASSWORD="abc=def"\nFRONTEND_PORT=13002\nJWT_SECRET=zzz\nFRONTEND_PORT=9\n');
+  const env = smoke.parseEnvText('# 주석\nOWNER_EMAIL=qa-owner@qa.local\nAPP_PASSWORD="abc=def"\nFRONTEND_PORT=13002\nOTHER_LINE=zzz\nFRONTEND_PORT=9\n');
   assert.deepEqual(env, { frontendPort: '13002', ownerEmail: 'qa-owner@qa.local', appPassword: 'abc=def' });
   assert.deepEqual(smoke.parseEnvText('APP_PASSWORD=\n'), { frontendPort: null, ownerEmail: null, appPassword: null });
 });
