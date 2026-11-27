@@ -72,13 +72,13 @@ afterEach(() => cleanup());
 
 describe("QA-1042 정보 검색 첫 화면의 응답 전 자리", () => {
   // 수정 전: 읽는 중 글의 부모가 패널 그대로였습니다('expected [ … ] to include "min-h-dvh"').
-  it.fails("최근 글 읽는 중 자리는 화면 높이 이상 — 목록이 오며 아래 칸을 첫 화면 밖으로 밀지 않게", () => {
+  it("최근 글 읽는 중 자리는 화면 높이 이상 — 목록이 오며 아래 칸을 첫 화면 밖으로 밀지 않게", () => {
     renderScreen("/search");
     expect(tokens(screen.getByText("최근 글을 읽는 중…").parentElement)).toContain("min-h-dvh");
   });
 
   // 수정 전: 관심 대상을 읽는 동안에도 아래 칸이 좁은 화면에 보였습니다('expected [ … ] to include "max-lg:hidden"').
-  it.fails("관심 대상을 읽는 동안 좁은 화면에서는 아래 칸(최근 글·설명)을 보이지 않게 두고, 읽기가 끝나면 함께 보인다", async () => {
+  it("관심 대상을 읽는 동안 좁은 화면에서는 아래 칸(최근 글·설명)을 보이지 않게 두고, 읽기가 끝나면 함께 보인다", async () => {
     renderScreen("/search");
     const column = screen.getByRole("region", { name: /최근 글/ }).parentElement;
     expect(screen.getByText("관심 대상을 읽는 중…")).toBeTruthy();
@@ -107,7 +107,7 @@ describe("QA-1042 정보 검색 대상 화면의 응답 전 자리", () => {
   const PATH = "/search?e=us:NVDA&tab=timeline&range=30d";
 
   // 수정 전: 읽는 중 칸(div)을 결과 목록이 다시 써 같은 DOM 칸이 남았습니다('expected true to be false').
-  it.fails("읽는 중 칸과 결과 목록은 서로 다른 DOM 칸 — 결과 위에 생기는 도구 줄·막대만큼 '밀린 칸'이 남지 않는다", async () => {
+  it("읽는 중 칸과 결과 목록은 서로 다른 DOM 칸 — 결과 위에 생기는 도구 줄·막대만큼 '밀린 칸'이 남지 않는다", async () => {
     reads[endpoints.search.watch] = WATCH;
     const view = renderScreen(PATH);
     const pending = screen.getByText(/결과를 모으는 중/).parentElement as HTMLElement;
@@ -134,7 +134,7 @@ describe("QA-1042 정보 검색 대상 화면의 응답 전 자리", () => {
   });
 
   // 수정 전: 읽는 중에는 좁은 화면 머리 줄에 '받은 시각' 자리가 없었습니다('expected undefined to be truthy').
-  it.fails("읽는 중 좁은 화면 머리 줄에 '받은 시각'과 같은 폭의 보이지 않는 자리", () => {
+  it("읽는 중 좁은 화면 머리 줄에 '받은 시각'과 같은 폭의 보이지 않는 자리", () => {
     renderScreen(PATH);
     const drawerButton = screen.getByRole("button", { name: /거르기 · 기간/ });
     const slot = Array.from(drawerButton.parentElement?.querySelectorAll<HTMLElement>('[aria-hidden="true"]') ?? []).find((element) =>
@@ -145,7 +145,7 @@ describe("QA-1042 정보 검색 대상 화면의 응답 전 자리", () => {
   });
 
   // 수정 전: 읽는 중의 '—'에 폭이 없었습니다('expected [ "text-xs", "text-text-3" ] to include "min-w-11"').
-  it.fails("읽는 중 기간 단추의 건수 자리는 네 자리 건수만큼의 폭 — 건수가 오면 자리 없이 받은 글 그대로", async () => {
+  it("읽는 중 기간 단추의 건수 자리는 네 자리 건수만큼의 폭 — 건수가 오면 자리 없이 받은 글 그대로", async () => {
     renderScreen(PATH);
     const pendingCount = screen.getByRole("button", { name: /^30일/ }).querySelector("span");
     expect(pendingCount?.textContent).toBe("—");

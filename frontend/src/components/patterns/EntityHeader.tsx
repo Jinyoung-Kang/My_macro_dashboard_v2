@@ -51,6 +51,9 @@ function EntityChangeLine({ value }: { value: EntityChange }): JSX.Element | nul
  *   pctDigits, caption }` — 변화 칩 + 12px 캡션, 둘 다 모르면 없음)이나 그린 요소를 받습니다.
  * - 배지 줄(`badges` — 출처·추정·이전 값·장 상태)은 값 줄 아래에 늘 보이고, 비면(그린 것이 없으면) 접힙니다.
  * - 동작(`actions` — 바로가기 링크·신선도·주기 고르기)은 넓은 화면(lg 이상) 오른쪽, 좁은 화면은 아래로 내려갑니다.
+ * - `reserveNameRows`(이름을 아직 받지 못한 동안만 — 기관 상세의 'CIK …' 자리표시): 좁은 화면(sm 미만)에서 이름 줄의 높이를 '두 줄 이름 + 태그 한 줄'(80px)로
+ *   미리 잡습니다. 긴 이름('한글 (English)' 꼴)이 오면 390폭에서 이름이 두 줄로 꺾이고 태그가 다음 줄로 내려가 머리가 52px 자라며 그 아래 본문을 밀었습니다
+ *   (QA-1042). 넓은 화면은 한 줄에 들어가 잡지 않습니다. 이름이 한 줄에 들어가는 대상이면 응답 뒤 24px 줄어듭니다(짧은 쪽이 드묾).
  * - `placeholder`(불러오는 중 Skeleton·오류 글)는 값 줄·배지 줄 자리만 바꿉니다 — 이름·종류·식별자·동작은 그대로 남고 다시 마운트되지 않습니다. 자리표시는
  *   이름 줄 폭이 아니라 머리에서 쓸 수 있는 폭(동작 영역 왼쪽) 전체를 씁니다(QA-591).
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(A1 — 값·태그·아이콘 칸 모두 중립 잉크, lib/__tests__/accentInData.test.ts).
@@ -71,6 +74,7 @@ export function EntityHeader({
   badges,
   actions,
   placeholder,
+  reserveNameRows = false,
 }: {
   kind: EntityKind | EntityKindSpec;
   name: string;
@@ -98,6 +102,8 @@ export function EntityHeader({
   actions?: ReactNode;
   /** 값 줄·배지 줄 대신(불러오는 중·오류). */
   placeholder?: ReactNode;
+  /** 이름을 받기 전에만 — 좁은 화면에서 이름 줄을 두 줄 이름 + 태그 한 줄 높이로 미리 잡음. */
+  reserveNameRows?: boolean;
 }): JSX.Element {
   const { label: kindLabel, icon: Icon } = typeof kind === "string" ? KIND[kind] : kind;
   const Heading = headingLevel === 2 ? "h2" : "h1";
@@ -118,7 +124,7 @@ export function EntityHeader({
           <Icon size={18} />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <div className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1${reserveNameRows ? " max-sm:min-h-20 max-sm:content-start" : ""}`}>
             <Heading className="min-w-0 break-keep wrap-anywhere text-heading text-text">{name}</Heading>
             <Tag>{kindLabel}</Tag>
             {(identifiers ?? []).map((identifier) => (

@@ -240,6 +240,9 @@ export function PriceChartPanel({
       region
       className="min-w-0"
       title={<span className="break-keep wrap-anywhere">{title}</span>}
+      // 좁은 화면은 기간 단추를 늘 제목 아래 줄에 — 제목이 '코드 시세'에서 '종목 이름 시세'로 길어지면(390폭은 한글 네 글자부터) 단추가 아래 줄로 넘어가며
+      // 차트를 32px 밀었습니다(QA-1042, 2차가 남긴 '긴 회사 이름' 몫). 내용·차례는 그대로이고 sm 이상은 제목 옆 그대로입니다.
+      actionsOwnRowOnNarrow
       actions={
         symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} activation="manual" /> : undefined
       }

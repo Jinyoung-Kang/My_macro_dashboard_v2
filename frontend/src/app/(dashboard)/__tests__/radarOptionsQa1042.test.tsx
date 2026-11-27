@@ -54,7 +54,7 @@ function renderPage() {
 }
 
 describe("QA-1042 수급 레이더 조회 조건의 응답 전 선택지", () => {
-  it.fails("선택지 응답이 오기 전에도 네 선택 상자의 목록은 응답 뒤와 같다 — 상자 폭이 달라지지 않음", async () => {
+  it("선택지 응답이 오기 전에도 네 선택 상자의 목록은 응답 뒤와 같다 — 상자 폭이 달라지지 않음", async () => {
     renderPage();
     const before = { 시장: labels("시장"), "투자 주체": labels("투자 주체"), "매매 구분": labels("매매 구분"), "조회 기간": labels("조회 기간") };
     expect(before["시장"]).toEqual(["KOSPI", "KOSDAQ"]);

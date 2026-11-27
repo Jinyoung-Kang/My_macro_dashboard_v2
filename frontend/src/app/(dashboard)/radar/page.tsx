@@ -41,6 +41,16 @@ import { endpoints } from "@/lib/endpoints";
  * 검사 칸은 이 화면이 이미 읽는 응답 셋(수급 지속성·재무·공통 — 아래 패널들과 같은 응답)만 씁니다 — 세 읽기를 화면이 한 번씩 하고 패널과 검사 칸에 함께
  * 넘깁니다(요청 경로·횟수·간격 그대로 — moreWritesKeep, 검사 칸을 열어도 새 요청 0 — radarInspector).
  */
+/**
+ * 조회 조건 선택지의 처음 값 — 선택지 응답(GET /api/radar/options)이 오기 전에 쓰는 목록입니다. 백엔드가 주는 목록과 같은 값(RadarService의
+ * MARKETS·INVESTORS·TRADE_TYPES·INTERVALS 상수)이라, 응답이 와도 선택 상자의 폭이 달라지지 않습니다. 예전에는 한 칸짜리 목록(KOSPI·외국인·순매수·당일)이라
+ * 응답 뒤 상자가 넓어지며 좁은 화면에서 줄바꿈이 바뀌고 그 아래 패널을 밀었습니다(QA-1042). 고를 수 있는지(supportedInvestors)·안내 글·폴백 체인은 응답을 따릅니다.
+ */
+const DEFAULT_MARKETS = ["KOSPI", "KOSDAQ"];
+const DEFAULT_INVESTORS = ["외국인", "기관", "개인", "연기금", "금융투자", "투신"];
+const DEFAULT_TRADE_TYPES = ["순매수", "순매도"];
+const DEFAULT_INTERVALS = ["TODAY", "DAYS_5", "DAYS_20"];
+
 export default function RadarPage() {
   const options = useApi<{
     markets: string[];
@@ -126,13 +136,13 @@ export default function RadarPage() {
             label="시장"
             value={market}
             onChange={setMarket}
-            options={(options.data?.markets ?? ["KOSPI"]).map((value) => ({ value, label: value }))}
+            options={(options.data?.markets ?? DEFAULT_MARKETS).map((value) => ({ value, label: value }))}
           />
           <Select
             label="투자 주체"
             value={investor}
             onChange={setInvestor}
-            options={(options.data?.investors ?? ["외국인"]).map((value) => {
+            options={(options.data?.investors ?? DEFAULT_INVESTORS).map((value) => {
               // 목록에는 남기고 고를 수만 없게 합니다. 조용히 사라지면
               // "원래 있던 항목이 왜 없지?"가 되고, 고를 수 있게 두면
               // "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
@@ -150,7 +160,7 @@ export default function RadarPage() {
             label="매매 구분"
             value={tradeType}
             onChange={setTradeType}
-            options={(options.data?.tradeTypes ?? ["순매수"]).map((value) => ({
+            options={(options.data?.tradeTypes ?? DEFAULT_TRADE_TYPES).map((value) => ({
               value,
               label: value,
             }))}
@@ -159,7 +169,7 @@ export default function RadarPage() {
             label="조회 기간"
             value={interval}
             onChange={setInterval}
-            options={(options.data?.intervals ?? ["TODAY"]).map((value) => ({
+            options={(options.data?.intervals ?? DEFAULT_INTERVALS).map((value) => ({
               value,
               label: radarIntervalLabel(value),
             }))}

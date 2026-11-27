@@ -63,7 +63,7 @@ function renderStock() {
 
 describe("QA-1042 종목 상세 대상 머리의 읽는 중 자리", () => {
   // 수정 전: 읽는 중에는 이름 아래에 보조 글 줄(p)이 없었습니다('expected null to be truthy').
-  it.fails("읽는 중에도 이름 아래 보조 글 한 줄의 자리가 있다(보이지 않는 글 — 낭독 제외)", async () => {
+  it("읽는 중에도 이름 아래 보조 글 한 줄의 자리가 있다(보이지 않는 글 — 낭독 제외)", async () => {
     renderStock();
     const head = (await screen.findByRole("heading", { level: 1, name: "005930" })).closest("header") as HTMLElement;
     const line = head.querySelector("p");
@@ -74,7 +74,7 @@ describe("QA-1042 종목 상세 대상 머리의 읽는 중 자리", () => {
   });
 
   // 수정 전: min-h-[104px] sm:min-h-20(보조 글 줄의 몫을 함께 어림한 값 — 390폭 2px·sm 이상 24px 어긋남).
-  it.fails("읽는 중 자리의 높이는 현재가 줄 + 배지 줄(390폭 102px · sm 이상 56px)", async () => {
+  it("읽는 중 자리의 높이는 현재가 줄 + 배지 줄(390폭 102px · sm 이상 56px)", async () => {
     renderStock();
     const status = await screen.findByRole("status", { name: "시세를 불러오는 중" });
     const box = status.closest("div.min-h-\\[102px\\]") ?? status.parentElement;
@@ -82,7 +82,7 @@ describe("QA-1042 종목 상세 대상 머리의 읽는 중 자리", () => {
   });
 
   // 수정 전: 읽는 중에는 머리 동작 칸에 주기 고르기 자리가 없었습니다('expected undefined to be truthy').
-  it.fails("읽는 중 머리 동작 칸에 주기 고르기와 같은 꼴의 보이지 않는 자리 — 조작·낭독 없음", async () => {
+  it("읽는 중 머리 동작 칸에 주기 고르기와 같은 꼴의 보이지 않는 자리 — 조작·낭독 없음", async () => {
     renderStock();
     const head = (await screen.findByRole("heading", { level: 1, name: "005930" })).closest("header") as HTMLElement;
     const slot = Array.from(head.querySelectorAll<HTMLElement>('[aria-hidden="true"].invisible')).find((element) => element.textContent?.includes("실시간 시세"));
@@ -95,7 +95,7 @@ describe("QA-1042 종목 상세 대상 머리의 읽는 중 자리", () => {
   });
 
   // 수정 전: 배지 줄을 감싼 칸에 좁은 화면 두 줄 높이가 없었습니다('expected null to be truthy').
-  it.fails("시세가 온 뒤 배지 줄은 좁은 화면에서 두 줄 높이를 늘 둔다 — 실시간 시세가 뒤따라 와도 머리가 줄었다 늘지 않게", async () => {
+  it("시세가 온 뒤 배지 줄은 좁은 화면에서 두 줄 높이를 늘 둔다 — 실시간 시세가 뒤따라 와도 머리가 줄었다 늘지 않게", async () => {
     reads["/api/detail/quote"] = QUOTE;
     renderStock();
     const head = (await screen.findByRole("heading", { level: 1, name: "가짜전자" })).closest("header") as HTMLElement;
@@ -108,7 +108,7 @@ describe("QA-1042 종목 상세 대상 머리의 읽는 중 자리", () => {
   });
 
   // 수정 전: 차트 패널 머리의 동작 묶음에 좁은 화면 줄바꿈이 없었습니다('expected [ … ] to include "max-sm:basis-full"').
-  it.fails("차트 칸의 기간 단추는 좁은 화면에서 늘 제목 아래 줄 — 제목이 종목 이름으로 길어져도 차트를 밀지 않게", async () => {
+  it("차트 칸의 기간 단추는 좁은 화면에서 늘 제목 아래 줄 — 제목이 종목 이름으로 길어져도 차트를 밀지 않게", async () => {
     renderStock();
     const tabs = await screen.findByRole("tablist", { name: /차트 기간/ });
     const actions = tabs.closest("header")?.lastElementChild;
@@ -127,7 +127,7 @@ describe("QA-1042 기관 상세 대상 머리의 이름 줄 자리", () => {
   }
 
   // 수정 전: 이름 줄에 좁은 화면 높이가 없었습니다('expected [ … ] to include "max-sm:min-h-20"').
-  it.fails("이름을 받기 전('CIK …')에는 좁은 화면에서 두 줄 이름 + 태그 줄의 높이(80px)를 위로 붙여 잡는다", async () => {
+  it("이름을 받기 전('CIK …')에는 좁은 화면에서 두 줄 이름 + 태그 줄의 높이(80px)를 위로 붙여 잡는다", async () => {
     renderInstitution();
     const heading = await screen.findByRole("heading", { level: 1, name: `CIK ${CIK}` });
     expect(tokens(heading.parentElement)).toEqual(expect.arrayContaining(["max-sm:min-h-20", "max-sm:content-start"]));

@@ -68,6 +68,7 @@ export function Panel({
   children,
   className = "",
   region = false,
+  actionsOwnRowOnNarrow = false,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -77,6 +78,11 @@ export function Panel({
   children: ReactNode;
   className?: string;
   region?: boolean;
+  /**
+   * 좁은 화면(sm 미만)에서 동작 묶음을 늘 제목 아래 줄에 둡니다. 기본은 제목 옆에 두고 자리가 모자랄 때만 넘깁니다 — 제목이 응답 뒤에 길어지는 패널
+   * (종목 상세의 '{종목 이름} 시세' — 읽는 중에는 코드)은 그때 동작이 아래 줄로 넘어가며 패널 본문을 밀어, 처음부터 아래 줄에 둡니다(QA-1042).
+   */
+  actionsOwnRowOnNarrow?: boolean;
 }) {
   const headingId = useId();
   const labelled = region && Boolean(title);
@@ -105,7 +111,7 @@ export function Panel({
             {subtitle && <p className="mt-0.5 break-keep text-[13px] leading-5 text-text-2">{subtitle}</p>}
             {source && <SourceLine>{source}</SourceLine>}
           </div>
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+          {actions && <div className={`flex flex-wrap items-center gap-2${actionsOwnRowOnNarrow ? " max-sm:basis-full" : ""}`}>{actions}</div>}
         </header>
       )}
       {hasBody && <div className="p-3 lg:p-4">{children}</div>}

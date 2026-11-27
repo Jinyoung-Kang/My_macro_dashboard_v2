@@ -33,7 +33,11 @@ export function RecentPanel({ owner, version = 0 }: { owner: boolean; version?: 
     body = recent.error ? (
       <ErrorState message={recent.error} onRetry={() => void recent.reload()} />
     ) : (
-      <Loading label="최근 글을 읽는 중…" />
+      // 첫 적재 자리는 화면 높이 이상(QA-1042 — 대상 화면의 결과 목록 QA-930과 같은 방법): 한 줄이던 때는 최근 글(30~50줄)이 오며 아래의 안내·설명·
+      // 제외 매체 칸을 첫 화면 밖으로 밀었습니다(390폭 CLS 0.37, 1440폭 0.24).
+      <div className="min-h-dvh">
+        <Loading label="최근 글을 읽는 중…" />
+      </div>
     );
   } else if (!data.available) {
     body = <p className="px-3 py-4 text-sm text-text-2">{data.message ?? "최근 글을 받지 못했습니다."}</p>;

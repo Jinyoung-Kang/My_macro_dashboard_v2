@@ -405,7 +405,9 @@ export function FeedPanel({
       <ErrorState message={feed.error} onRetry={() => void feed.reload()} />
     ) : (
       // 첫 적재 자리 — 화면 높이 이상(QA-930, QA-892 순위와 같음): 한 줄이던 때는 결과가 오며 아래 칸(xl 미만은 속성 칸)을 밀었습니다.
-      <div className="min-h-dvh">
+      // key: 결과 목록(아래 key="list")과 다른 칸으로 그립니다 — 같은 자리의 같은 꼴(div)이라 React가 DOM 칸을 다시 쓰면, 결과와 함께 그 위에 생기는
+      // 도구 줄·기간 막대·묶어 보기 줄의 높이만큼 '읽는 중 칸이 아래로 밀린 것'으로 잡혔습니다(1440폭 260px — QA-1042).
+      <div key="pending" className="min-h-dvh">
         <Loading label="결과를 모으는 중… (외부 출처를 부르면 몇 초 걸립니다)" />
       </div>
     );
@@ -434,6 +436,7 @@ export function FeedPanel({
     // 층(relative z-10)으로 올립니다(QA-433 후속). z-10은 아래 시트(z-30)·TOP 단추(z-20)·하단 탭 바(z-40)보다 낮아 그것들을 덮지 않습니다.
     body = empty ? (
       <div
+        key="empty"
         ref={emptyRef}
         role="status"
         tabIndex={-1}
@@ -475,6 +478,7 @@ export function FeedPanel({
       </div>
     ) : (
       <div
+        key="list"
         ref={listRef}
         role="listbox"
         aria-label="결과"
@@ -603,7 +607,8 @@ export function FeedPanel({
               className={`${pillTabClasses(option.key === range)} forced-colors:border`}
             >
               {option.label}{" "}
-              <span className="text-xs text-text-3">{counts ? `${counts[option.key]}건` : EMPTY}</span>
+              {/* 읽는 중의 '—'는 네 자리 건수만큼의 폭 — 건수가 붙으며 단추가 넓어져 줄바꿈이 바뀌고 그 아래 거르기가 밀렸습니다(QA-1042). */}
+              <span className={`text-xs text-text-3${counts ? "" : " inline-block min-w-11"}`}>{counts ? `${counts[option.key]}건` : EMPTY}</span>
             </button>
           ))}
         </div>
@@ -652,7 +657,14 @@ export function FeedPanel({
         <button type="button" className={buttonClasses("default")} aria-expanded={drawer} aria-controls={drawerId} onClick={() => setDrawer((value) => !value)}>
           거르기 · 기간 {SEARCH_RANGES.find((option) => option.key === range)?.label}
         </button>
-        {data?.fetchedAt ? <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span> : null}
+        {data?.fetchedAt ? (
+          <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span>
+        ) : !data && !feed.error ? (
+          // 읽는 중 — 결과가 오면 생기는 '받은 시각' 글의 자리(390폭에서는 단추 아래 줄로 꺾여 이 줄이 24px 자라며 그 아래를 밀었음 — QA-1042).
+          <span aria-hidden="true" className="invisible text-xs">
+            받은 시각 2026-01-01 00:00 KST
+          </span>
+        ) : null}
       </div>
       <div className={ENTITY_GRID}>
         <div className={`lg:border-r lg:border-border ${ENTITY_LEFT}`}>

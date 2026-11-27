@@ -100,16 +100,20 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   // 명령 팔레트의 최근 연 대상 — 이름을 읽은 뒤에만(조회하지 않음·실패·이름 없는 응답은 넣지 않아, 같은 주소의 이름 있는 항목을 코드로 덮지 않음).
   useDetailVisit("ticker", namedHref, readName, readName ? sub : null);
 
+  // 시세를 읽는 중(응답도 실패도 아직) — 머리 동작 칸의 주기 고르기 자리를 미리 잡습니다(아래 actions).
+  const quotePending = !quoteState.data && !quoteState.error;
+
   let placeholder;
   if (!quoteState.data) {
     // 시세 읽기 실패의 다시 시도는 늘 보이는 대상 머리에 하나(지표 상세 QA-588과 같은 자리) — 왼쪽 칸은 좁은 화면에서 처음에 접혀(결정 2) 그 안에
     // 두면 펼치기 전에는 다시 읽을 방법이 보이지 않습니다. 칸의 '핵심 지표'는 까닭 글만(넓은 화면에 다시 시도가 둘이 되지 않게).
     // 읽는 중 자리는 시세가 온 뒤의 현재가 줄·배지 줄 높이만큼 잡습니다(QA-995 — 좁은 화면에서 머리가 자라 그 아래 본문을 밀었음, 모바일 CLS 0.11).
-    // 높이는 QA에서 합성 정상 시세로 잰 값(뼈대 44px에 390 +60px · 768·1440 +36px).
+    // 높이는 QA에서 합성 정상 시세·실시간 시세로 잰 값(QA-1042 — 보조 글 한 줄은 따로 자리를 두므로 뺌): 390폭은 현재가 줄 두 줄 60 + 틈 4 + 배지 두 줄 38 = 102px,
+    // sm 이상은 현재가 줄 36 + 틈 4 + 배지 한 줄 16 = 56px. 2px만 어긋나도 그 프레임에 본문 전체가 함께 움직여 점수가 큽니다.
     placeholder = quoteState.error ? (
       <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
     ) : (
-      <div className="min-h-[104px] sm:min-h-20">
+      <div className="min-h-[102px] sm:min-h-14">
         <Skeleton lines={2} label="시세를 불러오는 중" />
       </div>
     );
@@ -167,7 +171,18 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         name={name}
         // 코드(티커·종목 코드)는 고정폭 식별자 태그(명세 §3-6) — 시세를 못 받아 이름이 코드 그대로면 같은 글을 두 번 적지 않습니다.
         identifiers={name !== code ? [code] : undefined}
-        description={detailSub}
+        // 시세를 읽는 중에는 시세가 오면 이름 아래에 생기는 보조 글 한 줄(거래소 · 종류 · 통화)의 자리를 보이지 않는 글로 미리 잡습니다(낭독 제외 — QA-1042,
+        // 그 줄만큼 머리가 자라 좁은 화면에서 아래 탭·차트를 밀었음, 합성 정상 시세로 390폭 약 24px). 읽기가 끝나면 받은 글만 둡니다 — 이름·거래소가 없는
+        // 응답(출처 실패)까지 빈 줄을 남기면 그 경우의 머리가 예전보다 24px 커집니다. 영문 회사 이름이 긴 미국 종목은 좁은 화면에서 이 줄이 두 줄이 되어
+        // 그만큼(20px)은 남습니다.
+        description={
+          detailSub ||
+          (quotePending ? (
+            <span aria-hidden="true" className="invisible">
+              {code}
+            </span>
+          ) : null)
+        }
         valueLabel="현재가"
         value={price !== null ? formatNumber(price, digits) : null}
         unit={unit}
@@ -175,7 +190,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         placeholder={placeholder}
         badges={
           quote ? (
-            <>
+            // 좁은 화면은 배지 두 줄(실시간 시각 줄 + 출처 줄)의 높이를 늘 둡니다 — 시세가 먼저 오고(장 상태 + 출처 한 줄) 실시간 시세가 뒤따라 오면(두 줄)
+            // 그 사이 머리가 22px 줄었다 다시 늘며 아래 본문이 두 번 움직였습니다(QA-1042). sm 이상은 한 줄이라 그대로.
+            <div className="flex min-h-[38px] w-full min-w-0 flex-wrap content-start items-center gap-1.5 sm:min-h-0">
               {live && shown ? (
                 <span className="text-xs text-text-2" title={`출처 ${live.source}`}>
                   {shown.session ?? "실시간"} {tradedAtText(shown.tradedAt)} KST
@@ -195,12 +212,13 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
                   일부 값을 받지 못했습니다 — {quote.error}
                 </StatusText>
               ) : null}
-            </>
+            </div>
           ) : undefined
         }
         actions={
           <>
-            {quote ? <LiveIntervalSelect /> : null}
+            {/* 읽는 중에는 같은 크기의 보이지 않는 자리 — 시세가 오며 이 상자가 생기면 뒤의 '정보 검색에서 보기'가 옆으로(좁은 화면 155px) 밀렸습니다(QA-1042). */}
+            {quote ? <LiveIntervalSelect /> : quotePending ? <LiveIntervalSelect pending /> : null}
             {entityLink ? (
               <Link href={entityLink.href} className={`${LINK_CLASSES} text-sm`}>
                 {entityLink.label}

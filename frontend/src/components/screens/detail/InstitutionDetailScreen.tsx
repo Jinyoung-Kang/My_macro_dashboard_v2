@@ -172,6 +172,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
         // 같은 규칙 — QA-583).
         identifiers={names?.display ? [`CIK ${cik}`] : undefined}
         description="13F 기관"
+        // 이름을 받기 전('CIK …')에는 좁은 화면에서 응답 뒤 꺾이는 이름 줄(두 줄 이름 + 태그 줄)의 높이를 미리 잡습니다(QA-1042 — 390폭에서 머리가 52px 자랐음).
+        reserveNameRows={!names && !portfolio.error}
         valueLabel="13F 보고 평가액"
         value={total !== null ? formatUsd(total) : null}
         placeholder={placeholder}
