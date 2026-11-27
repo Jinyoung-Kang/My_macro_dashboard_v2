@@ -350,8 +350,7 @@ SLOW_FIND = 1.2
 @pytest.mark.parametrize("stuck_until, find_delay", [
     ("브라우저가 끝날 때까지", 0.0),
     ("드라이버가 끝날 때까지", 0.0),
-    pytest.param("브라우저가 끝날 때까지", SLOW_FIND, id="QA-1037-프로세스_찾기가_느려도_판정이_같다", marks=pytest.mark.xfail(
-        strict=True, reason="QA-1037: '드라이버를 끝내지 않았다'를 걸린 시간으로 판정해, 프로세스 찾기가 늦으면 코드가 맞아도 실패한다")),
+    pytest.param("브라우저가 끝날 때까지", SLOW_FIND, id="QA-1037-프로세스_찾기가_느려도_판정이_같다"),
 ])
 def test_QA416_드라이버_프로세스는_브라우저를_끝내도_안_돌아올_때만_끝낸다(monkeypatch, tmp_path, stuck_until, find_delay):
     """
@@ -359,8 +358,19 @@ def test_QA416_드라이버_프로세스는_브라우저를_끝내도_안_돌아
     멎어 있으면 브라우저를 끝내도 돌아오지 않다가 드라이버를 끝내면 돌아옵니다(같은 실험 — SIGSTOP으로 흉내). 앞의 경우에는 드라이버를 끝내지 않습니다.
 
     ``find_delay``는 프로세스 찾기를 그만큼 늦춥니다(부하 흉내 — QA-1037). 늦어져도 코드가 하는 일(브라우저만 끝냄)은 같으므로 판정도 같아야 합니다.
+    그래서 '드라이버까지 가지 않았다'는 걸린 시간이 아니라 2단계 정리(드라이버 프로세스 고르기 — ``reap.children_of_this_process``)가
+    불렸는지로 봅니다. 걸린 시간에는 정리 대기에 프로세스 찾기·끝내기 시간이 더해져, 부하가 있으면 코드가 맞아도 넘습니다.
     """
     import sidecar.driver as driver
+
+    second_stage: list[set[int]] = []
+    children_of_this_process = driver.reap.children_of_this_process
+
+    def watched_children(launchers):
+        second_stage.append(set(launchers))
+        return children_of_this_process(launchers)
+
+    monkeypatch.setattr(driver.reap, "children_of_this_process", watched_children)
 
     if find_delay:
         find_browser = driver.reap.find_browser
@@ -421,10 +431,11 @@ def test_QA416_드라이버_프로세스는_브라우저를_끝내도_안_돌아
         assert _settled(lambda: not _threads("sidecar-fetch"))
         if stuck_until == "브라우저가 끝날 때까지":
             assert _alive(launcher), "브라우저를 끝내 호출이 돌아왔으면 드라이버 프로세스는 건드리지 않습니다(스스로 닫힘)"
-            assert elapsed < cap + cleanup / 2, "정리 대기의 절반(드라이버까지 끝내는 때)을 넘기지 않습니다"
+            assert second_stage == [], "브라우저를 끝내 돌아왔으면 2단계 정리(드라이버 고르기)까지 가지 않습니다"
         else:
             assert _settled(lambda: not _alive(launcher)), "브라우저를 끝내도 안 돌아오면 그 브라우저를 띄운 드라이버를 끝냅니다"
             assert elapsed >= cap + cleanup / 2, "드라이버는 브라우저를 끝내고 기다린 뒤에만 끝냅니다"
+            assert len(second_stage) == 1, "2단계 정리는 한 번입니다"
     finally:
         _stop_launcher(launcher, made["argument"])
 
