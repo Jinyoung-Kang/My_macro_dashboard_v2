@@ -111,6 +111,27 @@ make smoke ARGS="--no-flows --only /liquidity --block '*/api/liquidity*'"   # �
   실패하는 것이 맞습니다(다시 `up`으로 빌드한 뒤 봅니다). 결과 `smoke.json`은 임시 폴더(`--out`)에 두고 커밋하지 않습니다.
 - 순수 함수(인자·판정·가드) 시험은 `node --test scripts/qa/ui-smoke.test.js`이고 `make test-frontend`와 CI가 돌립니다.
 
+### 시험 없는 자리 목록 (`make coverage`)
+
+```bash
+make coverage                                   # 세 묶음을 커버리지를 재며 돌리고 목록을 냄
+make coverage PARTS="frontend"                  # 묶음 고르기 — collector · backend · frontend
+make coverage PARTS="report"                    # 시험 없이, 남아 있는 보고서로 목록만 다시
+make coverage PARTS="collector" PYTEST_ARGS="tests/test_store.py"   # 일부만(백엔드는 MVN_ARGS="-Dtest=…", 화면은 VITEST_ARGS="src/lib")
+```
+
+문턱값으로 막는 용도가 아니라 다음 시험을 어디에 쓸지 고르는 자료입니다 — `make test`와 CI는 부르지 않습니다.
+'파일 · 안 지난 줄 범위'를 안 지난 줄이 많은 순서로 화면에 위 40개(`TOP=`)를 보이고, 전체는 `coverage-out/uncovered.md`에
+적습니다(커밋하지 않음). 줄 커버리지가 못 보는 자리 — 모듈을 통째로 목으로 바꾼 화면 시험, 자기 시험 파일이 없는 훅 — 은
+정적 목록으로 함께 냅니다.
+
+- 수집기는 `coverage`(개발 의존성 — `requirements-dev.txt`), 화면은 `@vitest/coverage-v8`(vitest와 **같은 판**이어야 함 — vitest를 올릴 때 함께 올림),
+  백엔드는 pom을 고치지 않고 JaCoCo를 명령줄 좌표로 부릅니다(판은 `scripts/coverage.sh`의 `JACOCO_VERSION`).
+- 재지 못하는 것: 시험이 띄운 다른 프로세스 안의 코드(수집기), `npm run check`의 순수 함수 검사(vitest 밖).
+- 커버리지를 재면 시험이 느려져 시간에 기대는 시험이 평소보다 흔들릴 수 있습니다. 시험이 실패한 묶음이 있으면 목록은 내되
+  그 사실을 알리고 0이 아닌 코드로 끝납니다. 보고서가 없는 묶음은 '재지 않음'으로 적습니다.
+- 시험 DB(`macrodash_test`)만 씁니다 — 주소의 DB 이름이 `_test`로 끝나지 않으면 시작하지 않습니다.
+
 ### 테스트가 고정하는 것
 
 단순 커버리지가 아니라 **한 번씩 틀렸던 규칙**을 고정합니다.

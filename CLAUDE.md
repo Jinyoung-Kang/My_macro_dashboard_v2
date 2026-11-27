@@ -25,7 +25,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 
 ## 명령 (전부 `make`, 저장소 최상위에서)
 - 기동·진단: `make up` · `make doctor` · `make status` · `make logs S=backend`
-- 테스트: `make test` (= `test-collector` + `test-backend` + `test-frontend`). CI와 같은 명령.
+- 테스트: `make test` (= `test-collector` + `test-backend` + `test-frontend`). CI와 같은 명령. 시험 없는 자리 목록은 `make coverage`(문턱값 없음·CI 밖, `PARTS="frontend"`로 묶음 고르기 — DEVELOPMENT §2).
   여러 작업 폴더에서 함께 돌릴 때는 `make test-isolated [T=<대상>]`(벌마다 일회용 postgres, 동시에 둘까지 — [docs/DEVELOPMENT.md §2](docs/DEVELOPMENT.md)).
 - 백업·복원: `make backup` · `make restore F=backups/….sql` (ADR 0003)
 - 코드 받기는 `make update`. `git pull`은 쓰지 않는다(다른 브랜치의 작업을 조용히 놓침).
