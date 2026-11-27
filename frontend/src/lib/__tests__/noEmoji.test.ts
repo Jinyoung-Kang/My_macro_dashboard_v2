@@ -4,7 +4,8 @@
  * 화면은 이모지 대신 components/ui/icons의 인라인 SVG 아이콘과 글을 씁니다(원칙 A7). 이 시험은 TypeScript AST
  * (createSourceFile)로 src의 .ts·.tsx(시험·자가 검증 폴더 제외)에서 화면에 나갈 수 있는 글 — 문자열 리터럴·템플릿 조각·
  * JSX 글 — 만 봅니다. 주석과 정규식 리터럴은 건너뜁니다(날 스캐너는 정규식과 나눗셈을 가르지 못함). 서버·DB에서 오는 글은
- * 여기서 지킬 수 없어 화면이 lib/format.withoutLeadingIcon으로 정리합니다.
+ * 여기서 지킬 수 없어 화면이 lib/format.withoutLeadingIcon으로 정리합니다. 원문에 그림 문자도 이스케이프도 없는 파일은 파싱하지 않습니다
+ * (mayHoldPictograph — 판정은 같음).
  *
  * 찾는 글자: 그림 문자(Extended_Pictographic — 이형 선택자 없는 경고 삼각형 U+26A0도 포함), 지역 표시 문자(국기),
  * 이형 선택자 U+FE0F, 결합자 U+200D. 글자 기호로 쓰는 것(▲▼·화살표·체크·⌘·↔·↕·▪·©)은 허용합니다.
@@ -25,8 +26,25 @@ const PICTOGRAPH = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{FE0F}\u{2
 /** 그림 문자 속성이 있거나 비슷해 보여도 글자 기호로 쓰는 것. */
 const ALLOWED = new Set([..."▲▼↑↓↕→←↻✓✗⌘↔▪©"]);
 
+const PICTOGRAPH_ALL = new RegExp(PICTOGRAPH.source, "gu");
+/** 원문에 없는 글자를 글 값에 만들 수 있는 표기 — 문자열 이스케이프(\u·\x·8진)와 문자 참조(&#…;·&이름;). */
+const ESCAPE = /\\[ux0-7]|&[#A-Za-z]/;
+
+/**
+ * 파싱해 볼 까닭이 있는 원문인가 (QA-1037). 원문에 허용 목록 밖의 그림 문자가 하나도 없고 그런 글자를 만들 표기도 없으면 문자열·템플릿·
+ * JSX 글에도 있을 수 없으므로 파싱을 건너뜁니다 — 판정은 같고, src 전체를 파싱하던 CPU 일만 줄어듭니다(전체 시험을 여러 벌 돌릴 때 한도에 걸리던 자리).
+ */
+function mayHoldPictograph(text: string): boolean {
+  return ESCAPE.test(text) || (text.match(PICTOGRAPH_ALL) ?? []).some((char) => !ALLOWED.has(char));
+}
+
 /** 한 파일의 글에서 허용 목록 밖의 그림 문자를 찾습니다 — "줄: 코드 포인트 · 글 앞부분". */
 function pictographsIn(fileName: string, text: string): string[] {
+  return mayHoldPictograph(text) ? parsedPictographs(fileName, text) : [];
+}
+
+/** 미리 거르지 않고 늘 파싱하는 판 — 검사기 자체 시험이 pictographsIn과 대조합니다. */
+function parsedPictographs(fileName: string, text: string): string[] {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
   const found: string[] = [];
@@ -85,6 +103,24 @@ describe("화면 소스에 이모지가 없다", () => {
     expect(hits.map((hit) => hit.split(":")[0])).toEqual(["3", "4", "7", "7"]);
     expect(hits[0]).toContain("U+26A0");
     expect(hits[1]).toContain("U+1F1FA,U+1F1F8");
+  });
+
+  it("검사기 자체 — 원문에 그림 문자도 이스케이프도 없는 파일만 파싱을 건너뛰고, 판정은 늘 파싱한 것과 같다(QA-1037)", () => {
+    const cases: [text: string, parses: boolean][] = [
+      ["const plain = \"정상 ▲ 1.2% ✓\";\nexport const View = () => <p>글 {a && b}</p>;", false],   // 허용한 글자 기호뿐
+      ["const warn = \"\\u26A0 바로\";", true],                    // 원문에는 없고 이스케이프가 만드는 글자
+      ["const mark = \"\\xAE\";", true],
+      ["const flag = `\\u{1F1FA}\\u{1F1F8} ${name}`;", true],
+      ["const lock = \"\u{1F512}\";", true],
+      ["// 주석의 \u{1F512}\nconst a = 1;", true],                  // 주석뿐이어도 원문에 있으면 파싱(결과는 없음)
+      ["export const View = () => <p title=\"&#x1F512;\">&reg;</p>;", true],
+      ["export const View = () => <p>\u{1F9EA} 실험</p>;", true],
+    ];
+    for (const [text, parses] of cases) {
+      expect(mayHoldPictograph(text), text).toBe(parses);
+      expect(pictographsIn("sample.tsx", text), text).toEqual(parsedPictographs("sample.tsx", text));
+    }
+    expect(cases.map(([text]) => pictographsIn("sample.tsx", text).length)).toEqual([0, 1, 1, 1, 1, 0, 0, 1]);
   });
 });
 
