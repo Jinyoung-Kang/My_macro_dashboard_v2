@@ -270,7 +270,7 @@ make down            # 정지
 ├── deploy/vultr/      Vultr 서버의 앞단 설정(Caddyfile)
 ├── docs/               문서
 └── scripts/            setup · update · version · doctor
-    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · reboot-check(cron — disk-check도 부름) · instance·firewall-pc-ip(PC)
+    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · restore-check(cron — 주 1회 복원 확인) · reboot-check(cron — disk-check도 부름) · instance·firewall-pc-ip(PC)
 ```
 
 ### Docker 없이 개발하기

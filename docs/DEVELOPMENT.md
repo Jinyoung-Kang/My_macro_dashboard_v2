@@ -109,6 +109,7 @@ cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrod
 | `useApi.test.ts` | 자동 갱신 한 번 실패로 화면이 비는 것, 수동 새로고침이 세션 확인까지 다시 돌려 화면 상태가 초기화되는 것, 늦게 온 이전 응답이 화면을 되돌리는 것, 같은 문구로 연달아 실패하면 실패를 한 번씩 받지 못하는 것(`failedAt`, QA-163) |
 | `ArchitectureRulesTest` | 계산 패키지가 스프링·JSON을 알게 되는 것, 컨트롤러가 저장소·수집기를 직접 부르는 것, 패키지 사이 순환(기반 패키지 포함, [ADR 0001](adr/0001-feature-modules-and-dependency-rules.md)) |
 | `test_db_scripts.py` | 백업·복원이 실패를 성공으로 알리는 것, 복원이 반만 되는 것([ADR 0003](adr/0003-backup-and-restore.md)) |
+| `test_restore_check.py` | 주 1회 복원 확인이 운영 컨테이너·볼륨에 닿거나 일회용 컨테이너를 남기는 것, 끊긴 덤프·빈 표·옛 자료를 정상으로 알리는 것, 실제 계좌 표의 건수·psql 오류 글이 알림·syslog에 실리는 것([ADR 0023](adr/0023-vultr-deployment.md) 덧붙임 2026-11-27) |
 | `test_vultr_scripts.py` | 서버 배포가 한꺼번에 빌드하거나 실패를 성공으로 알리는 것, 서버 `.env`에 로컬 포트·PC 전용 값이 섞이는 것, 지난 백업을 다시 올리는 것, 방화벽 IP를 바꾸다 비상용 22 규칙이 사라지거나 API 키가 프로세스 인자에 남는 것([ADR 0023](adr/0023-vultr-deployment.md)) |
 | `endpoints.test.ts` | 화면이 만든 API 주소가 깨지거나(인코딩) 문서에 없는 경로를 부르는 것 |
 | `chartData.test.ts`·`SpreadSection.test.tsx` | 모르는 값을 0으로 채워 막대·변화량을 만드는 것 |
@@ -626,9 +627,50 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 - `db/` 수명주기에는 '최근 N개 보존'이 없어, 실패를 60일 넘게 놓치면 `db/vultr/`의 서버 밖 사본이 모두 만료됩니다. 만료 없는 주간 사본은 `db/` 밖 접두어
   (예: `archive/vultr-weekly/`)여야 하고 IAM 사용자 권한을 넓혀야 해(저장소 밖 자원) 이번에는 두지 않았습니다.
 
+### 백업 복원 확인 (cron, 주 1회 — [ADR 0023](adr/0023-vultr-deployment.md) 덧붙임 2026-11-27)
+
+올린 덤프가 실제로 복원되는지는 `scripts/vultr/restore-check.sh`가 봅니다. `backups/.last-s3-ok`가 가리키는 S3 객체를 받아 **운영과 떨어진 일회용
+postgres 컨테이너**(이름 `my-macro-restore-check` — 망 없음·포트 게시 없음·메모리 768MB·CPU 1, 운영 postgres와 같은 이미지, 끝·중단 때 익명 볼륨까지 지움)에
+적재하고 판정합니다. 운영 DB·운영 컨테이너·운영 볼륨에는 쓰지 않습니다.
+
+```bash
+# 서버(ubuntu) — 토요일 00:30 UTC = 09:30 KST(08:00 정기 백업 뒤, 두 시장 모두 닫힘). 기존 줄을 지우고 다시 넣어 여러 번 돌려도 같음
+(crontab -l 2>/dev/null | grep -v 'scripts/vultr/restore-check.sh'; echo '30 0 * * 6 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/restore-check.sh >/dev/null 2>&1') | crontab -
+journalctl -t my-macro-restore-check --since '8 days ago'   # 결과(실패는 err, 건너뜀은 warning)
+```
+
+- 판정: 받은 파일의 끝 표시·크기 → 적재(`ON_ERROR_STOP`)와 덧붙인 끝 표시 → 꼭 있어야 하는 표·스키마 번호 → 주요 표 여덟의 행 수(0보다 크고 직전 성공보다
+  10% 넘게 줄지 않음) → 최근 자료 시각(`snapshots.collected_at`의 최댓값이 덤프 시각 앞 24시간 안) → 실제 계좌 표 13개(`real_trade_*`·`manual_*`)는 `count(*)`만.
+- 정상이면 알리지 않고 syslog 한 줄과 `backups/.last-restore-ok`(권한 600 — 첫 줄 유닉스 초·UTC 시각·키, 다음 줄부터 다음 실행이 견줄 크기·행 수)만 남깁니다.
+  실제 계좌 표의 건수는 이 파일에만 있고 알림·syslog에는 '읽힘'만 실립니다. psql·aws의 오류 글은 어디에도 싣지 않습니다(행 값·버킷 이름이 섞일 수 있음).
+- 실패하면 운영 봇으로 'my-macro 서버 — 백업 복원 확인 실패: <사유 코드> (<키>)'와 할 일('실행:')을 보내고 1로 끝납니다. 사유 코드:
+
+  | 코드 | 뜻 |
+  |---|---|
+  | `no_backup_record`·`no_bucket` | `backups/.last-s3-ok`가 없거나 키가 `db/vultr/<이름>.sql` 모양이 아님 · `.env`에 `AWS_BACKUP_BUCKET` 없음 |
+  | `download_failed`·`timeout_download` | S3에서 받지 못함(객체 없음·권한·네트워크) · 시간 상한 |
+  | `dump_empty`·`dump_incomplete`·`size_dropped` | 받은 파일이 비었음 · pg_dump 끝 표시 없음 · 직전 성공보다 10% 넘게 작음 |
+  | `image_unknown`·`container_start_failed`·`container_not_ready` | 운영 postgres 컨테이너에서 이미지를 읽지 못함 · 일회용 컨테이너가 뜨지 않음 · 2분 안에 준비되지 않음 |
+  | `load_failed`·`timeout_load`·`load_incomplete` | 적재 중 한 문장이 실패 · 시간 상한(전체 30분) · psql이 입력을 끝까지 읽지 않음 |
+  | `out_of_memory` | 일회용 컨테이너가 메모리 상한(768MB)에 걸림 |
+  | `query_failed`·`tables_missing:<표>`·`schema_unreadable` | 판정 질의 실패 · 꼭 있어야 하는 표가 없음 · `schema_migrations`에서 번호를 읽지 못함 |
+  | `rows_zero:<표>`·`rows_dropped:<표>` | 주요 표가 비었음 · 직전 성공보다 10% 넘게 줄었음 |
+  | `data_stale`·`data_after_dump`·`fresh_unreadable` | 가장 최근 스냅숏이 덤프 시각보다 24시간 넘게 앞 · 한 시간 넘게 뒤(받은 파일이 그 덤프가 아님) · 읽지 못함 |
+  | `real_tables_unreadable:<개수>` | 실제 계좌 표 가운데 세어지지 않은 것의 수(표 이름·건수는 싣지 않음) |
+
+  `rows_dropped`·`size_dropped`가 실제로 줄어든 것이 맞으면(보존 기간 정리 등) `bash scripts/vultr/restore-check.sh --rebase` — 직전 기록과 견주지 않고 확인해
+  정상이면 기록을 새로 씁니다(다른 사유는 넘어가지 않음).
+- 건너뜀(3으로 끝남): 평일 08:45~16:35 KST(실제 매매 창과 그 뒤 한 시간 — 알고 진행할 때만 `RESTORE_CHECK_ANYTIME=1`), 다른 실행이 잠금을 쥠,
+  여유 디스크 6 GB 미만(`low_disk`)·여유 메모리 1 GB 미만(`low_memory`) — 뒤의 둘만 운영 봇으로 알립니다.
+- 서버의 `make status`와 `deploy.sh` 끝 요약이 '마지막 백업 복원 확인: N일 전'을 찍습니다 — 9일을 넘거나 기록이 없으면 '경고:'(cron이 빠진 것을 잡는 유일한 신호).
+- 손으로 보기: `bash scripts/vultr/restore-check.sh --file backups/<파일>.sql` — 받지 않고 그 파일을 확인합니다(알리지 않고 기록을 읽지도 쓰지도 않음, 덤프 시각은
+  파일 시각). PC에서는 `RESTORE_CHECK_IMAGE=postgres:16-alpine`으로 이미지를 주고, 옛 덤프면 `RESTORE_CHECK_FRESH_HOURS`로 허용 폭을 넓힙니다.
+- 남는 한계: 보는 것은 '읽히고 최근 자료가 있음'까지입니다 — 값이 옳은지, `make restore`의 뒤처리(실제 매매 멈춤 등), 앱 기동은 보지 않습니다.
+  장 시간 변경일의 옮긴 거래 창은 보지 않습니다(cron은 토요일). 버킷 자체가 지워지는 것은 막지 못합니다(계획 D-6 — 버킷 버전 관리·삭제 거부 정책은 AWS 설정).
+
 ### 날마다 볼 것
 
-백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`make status`·`deploy.sh` 끝의 한 줄 — 80% 이상이면 '경고:', 텔레그램으로도 옴 — 아래 '디스크'), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공은 `make status`·`deploy.sh` 끝),
+백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`make status`·`deploy.sh` 끝의 한 줄 — 80% 이상이면 '경고:', 텔레그램으로도 옴 — 아래 '디스크'), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공과 마지막 복원 확인은 `make status`·`deploy.sh` 끝),
 `tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 예산 `my-macro-monthly-45usd`(계정 전체 — my-macro 자원으로 남은 것은 백업 버킷뿐).
 
 ### 디스크 (빌드 캐시 상한과 알림 — [ADR 0023](adr/0023-vultr-deployment.md) 덧붙임 2026-11-27)
