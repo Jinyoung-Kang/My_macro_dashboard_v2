@@ -32,7 +32,6 @@ from tests.test_yahoo_budget import blackhole  # noqa: F401 — 무응답 프록
 BUDGET = 3.0          # 시험용 예산(초) — 운영은 app.http.LIVE_BUDGET_SECONDS(10초)
 SLACK = 1.5           # 예산 + 남김(0.5초) 위로 허용하는 여유(시험 기계의 흔들림)
 
-FIX = pytest.mark.xfail(strict=True, reason="QA-1039: /live/ticker에 화면 조회 예산과 짧은 기억이 없음")
 
 
 def _frame(close: float = 101.0) -> pd.DataFrame:
@@ -93,7 +92,6 @@ def client(monkeypatch):
     return TestClient(main.app, raise_server_exceptions=False)
 
 
-@FIX
 def test_QA1039_차트_시계열은_Yahoo가_먹통이어도_예산_안에_받지_못함으로_끝난다(client, blackhole, monkeypatch):  # noqa: F811
     monkeypatch.setattr(app_http, "LIVE_BUDGET_SECONDS", BUDGET)
     box: dict = {}
@@ -116,7 +114,6 @@ def test_QA1039_차트_시계열은_Yahoo가_먹통이어도_예산_안에_받�
     assert body["symbol"] == "NVDA" and body["period"] == "1y"
 
 
-@FIX
 def test_QA1039_같은_심볼_기간은_기억_시간_안에_Yahoo를_다시_부르지_않는다(client, yahoo, clock):
     first = client.get("/live/ticker/NVDA?period=1y").json()
     clock.now += 299.0
@@ -130,7 +127,6 @@ def test_QA1039_같은_심볼_기간은_기억_시간_안에_Yahoo를_다시_부
     assert later["points"][-1]["close"] != first["points"][-1]["close"], "기억 시간이 지나면 새로 받은 값"
 
 
-@FIX
 def test_QA1039_분봉_기간은_60초만_기억한다(client, yahoo, clock):
     client.get("/live/ticker/NVDA?period=5d")
     clock.now += 59.0
@@ -144,7 +140,6 @@ def test_QA1039_분봉_기간은_60초만_기억한다(client, yahoo, clock):
     assert len(yahoo.calls) == 4, "기간·심볼이 다르면 따로"
 
 
-@FIX
 def test_QA1039_받지_못한_결과는_기억하지_않는다(client, yahoo, clock):
     yahoo.fail = "Yahoo 응답 없음 — 시험"
     failed = client.get("/live/ticker/NVDA?period=1y").json()
@@ -160,7 +155,6 @@ def test_QA1039_받지_못한_결과는_기억하지_않는다(client, yahoo, cl
     assert len(yahoo.calls) == 2, "받은 결과는 기억"
 
 
-@FIX
 def test_QA1039_기억은_크기_상한을_넘지_않는다(yahoo, clock):
     limit = market.LIVE_TICKER_CACHE_LIMIT
     for n in range(limit + 20):
@@ -171,7 +165,6 @@ def test_QA1039_기억은_크기_상한을_넘지_않는다(yahoo, clock):
     assert len(yahoo.calls) == limit + 20, "가장 최근에 받은 것은 남아 있음"
 
 
-@FIX
 def test_QA1039_같은_심볼_기간을_함께_물으면_Yahoo를_한_번만_부른다(monkeypatch):
     calls: list[str] = []
     gate = threading.Event()

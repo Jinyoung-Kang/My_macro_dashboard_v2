@@ -594,6 +594,9 @@ EQUITY_MAP = {
 | 네이버 증권 해외주식(`api.stock.naver.com/stock/{로이터 코드}/overview`, 로이터 코드는 자동완성 `target=stock,worldstock`) | 미국 주식·ETF의 한국어 기업 개요·업종·한글 이름 | 시세와 함께 5분(로이터 코드 하루 — 실시간 시세와 같은 조회 하나, 묻지 못하면 1분) | 비공식. 자동완성은 `BRK-B`를 `BRK B`로만 찾아 '-'를 공백으로 바꿔 물음(QA-188). 자동완성에 없는 종목·ETF 일부는 영문 개요 그대로 |
 | WISEfn 기업개요(네이버 증권 기업분석의 원자료 — `navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={code}`, 2026-11-03) | 국내 주식의 한국어 기업 개요(몇 줄 요약 — 항목마다 한 줄)·WICS 업종·기준일 | 12시간(실패 1분) | 비공식 HTML(`div.cmp_comment` 목록)이라 모양이 바뀌면 개요만 빠지고 사유(`profileKoError`)를 냄. ETF는 이 페이지가 없어(302) 부르지 않음 — 국내 ETF 개요는 네이버 `integration`의 `description`(주식에는 비어 있음) |
 
+- 차트 시계열(`/api/macro/ticker` → 수집기 `/live/ticker` — Yahoo `Ticker.history`, 종목·지표 상세와 단일 지표 차트): 저장하지 않고, 받은 결과만 같은 심볼·기간에 일봉(1개월 이상) 5분·
+  분봉(1일·5일) 60초 기억합니다(받지 못한 결과는 기억하지 않음, 64 조합까지 — QA-1039, [ADR 0052](adr/0052-perf-round3.md)). 정기 수집 태스크는 이 기억을 거치지 않습니다.
+  이 조회와 종목 찾기·실시간 시세·수급 랭킹의 지금 받기도 시세·뉴스처럼 요청 하나에 10초 안에 끝납니다(넘으면 '받지 못함').
 - robots.txt가 막는 출처(Yahoo·구글 뉴스 검색·WISEfn 등)도 씁니다 — 개인·비상업 프로젝트라 사용자가 허락했습니다([decisions.md](decisions.md) 2026-11-01). 출처 링크와
   받은 시각을 함께 내고, 실패는 출처별로(`errors`) 보이며, 실패한 응답은 1분만 캐시합니다. 모의매매 사건 헤드라인(`news_headlines`)의 출처 규칙은 그대로입니다.
 

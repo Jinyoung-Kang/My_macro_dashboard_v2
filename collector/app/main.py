@@ -625,6 +625,9 @@ def live_radar(
 
     저장도 함께 합니다. 화면이 기다린 수집 결과를 버리면 다음 사용자가 또
     기다리게 되기 때문입니다.
+
+    화면이 기다리는 조회라 공용 세션으로 부르는 출처(다음·네이버)는 요청 하나에 http.LIVE_BUDGET_SECONDS 안에 끝납니다(QA-1039 — 먹통이면 62초
+    붙잡혔음). 예산이 끝나면 지금의 '받지 못함' 꼴(누적 이력 대체, 그것도 없으면 rows 빈 목록과 사유) 그대로입니다. 증권사 API 세션(KIS)은 그 가드 밖입니다.
     """
     _check_token(x_service_token)
     market = _normalize_market(market)
@@ -633,9 +636,9 @@ def live_radar(
     _require_one_of("intervalType", intervalType, tuple(radar_service.INTERVAL_LABELS))
     requested = _parse_date(targetDate)
     day = requested or datetime.now(KST).date()
-    result = radar_service.collect_radar_ranking(
+    result = http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: radar_service.collect_radar_ranking(
         day, market, investor, tradeType, topN, intervalType
-    )
+    ))
 
     # 저장은 스케줄러와 같은 조건(오늘·상위 30)일 때만 합니다. 백엔드는 topN≠30이나
     # 과거 날짜 요청이면 저장본을 건너뛰지만, 그 결과를 기본 이름에 저장하면 다음
@@ -686,11 +689,15 @@ def live_ticker(
     period: str = "1mo",
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """저장 대상이 아닌 개별 티커 차트(단일 지표 조회 화면)용. 심볼은 야후 형식(^VIX, ZT=F, BRK-B)만."""
+    """
+    저장 대상이 아닌 개별 티커 차트(단일 지표 조회 화면·상세 차트)용. 심볼은 야후 형식(^VIX, ZT=F, BRK-B)만.
+    Yahoo가 응답하지 않아도 요청 하나에 http.LIVE_BUDGET_SECONDS 안에 '받지 못함'(빈 points + error)으로 끝나고, 받은 결과는 같은 심볼·기간에
+    일봉 5분·분봉(1d·5d) 60초 동안 기억해 Yahoo를 다시 부르지 않습니다(QA-1039 — services.market.live_ticker).
+    """
     _check_token(x_service_token)
     if not _TICKER_SYMBOL.match(symbol):
         raise HTTPException(status_code=400, detail="심볼 형식이 올바르지 않습니다 (영문·숫자·^=.- 24자 이내).")
-    return market_service.collect_ticker(symbol, period)
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: market_service.live_ticker(symbol, period))
 
 
 def _detail_target(market: str, code: str) -> tuple[str, str]:
@@ -730,13 +737,17 @@ def live_prices(
     items: str = Query(..., max_length=1200),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """화면 실시간 시세(ADR 0024) — 'US:AAPL,KR:005930'(최대 60개). 저장하지 않고 3초 캐시(services/live_prices.py)."""
+    """
+    화면 실시간 시세(ADR 0024) — 'US:AAPL,KR:005930'(최대 60개). 저장하지 않고 3초 캐시(services/live_prices.py).
+    출처 사슬(네이버 → 다음·Yahoo …)이 응답하지 않아도 요청 하나에 http.LIVE_BUDGET_SECONDS 안에 못 받은 종목을 missing으로 두고 끝납니다
+    (QA-1039 — 먹통이면 100초 붙잡혔음). 마지막 대체인 토스 1분봉(증권사 API 세션)은 그 가드 밖입니다.
+    """
     _check_token(x_service_token)
     try:
         targets = live_prices_service.parse_items(items)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    return live_prices_service.prices(targets)
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: live_prices_service.prices(targets))
 
 
 @app.get("/live/news")
@@ -764,9 +775,13 @@ def live_symbols(
     q: str = Query(..., min_length=1, max_length=40),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """종목 찾기(네이버 자동완성 + Yahoo 검색) — 통합 검색이 저장된 색인 밖의 종목을 찾을 때. 1시간 캐시."""
+    """
+    종목 찾기(네이버 자동완성 + Yahoo 검색) — 통합 검색이 저장된 색인 밖의 종목을 찾을 때. 1시간 캐시.
+    두 출처가 응답하지 않아도 요청 하나에 http.LIVE_BUDGET_SECONDS 안에 출처별 실패로 끝납니다(QA-1039 — 먹통이면 120초 넘게 붙잡혔음).
+    """
     _check_token(x_service_token)
-    return detail_service.symbols(q.strip())
+    text = q.strip()
+    return http.run_with_budget(http.LIVE_BUDGET_SECONDS, lambda: detail_service.symbols(text))
 
 
 def _search_input(check, value):

@@ -1,0 +1,46 @@
+# 성능 개선 3차 단계 1 — 작업 A(QA-1039): 화면 조회 넷의 외부 예산과 차트 시계열의 짧은 기억 (2026-11-27 22:44~22:57 KST)
+
+조건: 같은 QA 스택·같은 DB. 고치기 전 = 배포본 main@c167f149의 이미지, 고친 뒤 = 이 단계의 수집기·백엔드를 QA에 다시 빌드(qa-stack.sh up — 화면은 그대로).
+먹통(hang)은 경로마다 QA 수집기·백엔드를 다시 띄워 기억·호스트 잠금을 비운 뒤 잼(FRESH=each). 운영 서버는 이 표에서 부르지 않았다.
+
+========================================================================
+1. 프록시 hang — 백엔드 경유 (초)
+========================================================================
+경로                                                         고치기 전    고친 뒤
+/api/macro/ticker?symbol=^TNX&period=1y                        70.07       9.58
+/api/macro/ticker?symbol=NVDA&period=5d                        70.07       9.56
+/api/detail/symbols?q=NVDA                                     90.11       9.56     (전: 백엔드 읽기 상한 90초에서 끊김)
+/api/radar/ranking?…&topN=17 (저장하지 않는 조합)               62.13       7.21
+받아들임 기준(예산 10초 + 2초 안): 넷 모두 충족.
+
+========================================================================
+2. 프록시 hang — 수집기를 바로 (초)
+========================================================================
+/live/ticker/^TNX?period=1y                                    70.02       9.51
+/live/ticker/NVDA?period=1y                                    70.02       9.51
+/live/ticker/005930.KS?period=5d                               70.02       9.51
+/live/symbols?q=NVDA                                          120 넘음     9.51
+/live/prices?items=US:NVDA,KR:005930                          100.10       8.92
+/live/radar?market=KOSPI&investor=외국인&tradeType=순매수       62.08       7.15
+
+========================================================================
+3. 프록시 block(출처가 바로 거절) — 수집기·백엔드를 다시 띄운 뒤 같은 차례로 한 번씩 (초 · 응답 비교)
+========================================================================
+/api/macro/ticker?symbol=%5ETNX&period=1y                          0.08     0.09   같음
+/api/macro/ticker?symbol=NVDA&period=5d                            0.01     0.01   같음
+/api/macro/ticker?symbol=005930.KS&period=1y                       0.01     0.01   같음
+/api/macro/ticker?symbol=%5EVIX&period=1y                          0.07     0.07   같음
+/api/detail/symbols?q=NVDA                                         1.01     0.01   같음
+/api/detail/symbols?q=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90         1.01     0.36   같음
+/api/radar/ranking?market=KOSPI&investor=%EC%99%B8%EA%B5%AD%EC%9D%B8&tradeType=%EC%88%9C%EB%A7%A4%EC%88%98&topN=17     2.03     0.03   같음
+/api/radar/ranking                                                 0.01     0.01   같음
+/live/prices(수집기)                                                  4.02     0.29   같음
+응답 9/9가 고치기 전과 같음(시각 칸과 '남은 초' 숫자만 빼고 견줌 — 받지 못함의 사유 글까지). 걸린 시간이 준 것은 예산 가드 아래에서 공용 세션이 거절된 요청을 다시 보내지 않아서다.
+정상 응답(출처가 답함)은 QA에서 만들 수 없어(외부 차단) 시험으로 본다 — collector/tests/test_live_ticker.py(바꿔 끼운 Yahoo: 응답 모양·기억 시간·받지 못한 결과는 기억하지 않음),
+test_live_budget_rest.py(바로 답하면 예산을 건 결과 = 걸지 않은 결과).
+
+========================================================================
+4. 시험
+========================================================================
+수집기: tests/test_live_ticker.py 10 · tests/test_live_budget_rest.py 4 — 고치기 전 코드에서 예상 실패 9·통과 4(재현 커밋), 고친 뒤 모두 통과. test_live_budget.py·test_yahoo_budget.py(2차·QA-255) 그대로 통과.
+백엔드: CollectorClientLiveFetchTimeoutTest 3(응답하지 않는 소켓 — 차트 시계열·종목 찾기가 화면 조회 읽기 한도에서 포기).

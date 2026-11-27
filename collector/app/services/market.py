@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time as _time
 from contextlib import contextmanager
 from datetime import date, time, timedelta
 from zoneinfo import ZoneInfo
@@ -103,6 +104,86 @@ def collect_ticker(symbol: str, period: str = "1mo") -> dict:
         "error": None,
         "points": _frame_to_points(frame),
     }
+
+
+# ------------------------------------------------------------------ 화면의 차트 시계열 조회(/live/ticker)의 짧은 기억
+# 화면이 단일 지표 차트·상세 차트를 열 때마다 같은 심볼·기간으로 Yahoo를 새로 부르던 것을 줄입니다(QA-1039, ADR 0052 — 사용자 결정 D-3).
+# 받은 결과만 기억합니다: 일봉(1개월 이상) 5분, 분봉(1일·5일) 60초. 받지 못한 결과(빈 points)는 기억하지 않아 출처가 돌아오면 다음 요청이 바로 받습니다.
+# 정기 수집(tasks.series·매크로 카드·교차 검증)은 collect_ticker를 그대로 불러 이 기억을 거치지 않습니다 — 태스크의 Yahoo 호출·잠금·간격은 그대로입니다.
+LIVE_TICKER_TTL_DAILY = 300.0
+LIVE_TICKER_TTL_INTRADAY = 60.0
+_INTRADAY_PERIODS = ("1d", "5d")
+# 심볼·기간 조합 수의 상한 — 한 항목이 1년 일봉이면 약 250점, 5년이면 약 1,250점(사전 목록으로 수백 kB)이라 조합이 끝없이 늘지 않게 합니다.
+# 넘으면 기한이 지난 것부터, 그래도 넘으면 가장 먼저 끝나는 것부터 버립니다. 혼자 쓰는 화면이 한 번에 여는 조합은 수십 개 안쪽입니다.
+LIVE_TICKER_CACHE_LIMIT = 64
+_live_ticker_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_live_ticker_lock = threading.Lock()
+_live_ticker_flights: dict[tuple[str, str], threading.Lock] = {}
+_live_now = _time.monotonic          # 시험이 시계를 바꿔 끼우는 자리
+
+
+def _live_ticker_hit(key: tuple[str, str]) -> dict | None:
+    with _live_ticker_lock:
+        hit = _live_ticker_cache.get(key)
+        if hit is None:
+            return None
+        if hit[0] > _live_now():
+            return hit[1]
+        _live_ticker_cache.pop(key, None)
+        return None
+
+
+def live_ticker(symbol: str, period: str = "1mo") -> dict:
+    """
+    화면의 차트 시계열 조회(수집기 /live/ticker) — :func:`collect_ticker`와 같은 응답이고, 받은 결과만 짧게 기억합니다(위 설명).
+
+    같은 심볼·기간을 함께 묻는 요청(한 화면의 차트 둘)은 먼저 온 하나만 Yahoo를 부르고 나머지는 그 결과를 씁니다. 기다림은 요청의 남은 예산까지만
+    (http.run_with_budget — 가드가 없으면 예산 값)이고, 그 안에 끝나지 않으면 스스로 묻습니다(그때는 예산이 거의 없어 '받지 못함'으로 끝남).
+    돌려주는 사전은 기억과 공유합니다 — 받은 쪽에서 바꾸지 않습니다(직렬화만).
+    """
+    key = (symbol, period)
+    hit = _live_ticker_hit(key)
+    if hit is not None:
+        return hit
+    with _live_ticker_lock:
+        flight = _live_ticker_flights.setdefault(key, threading.Lock())
+    left = http.time_left()
+    acquired = flight.acquire(timeout=max(0.0, left if left is not None else http.LIVE_BUDGET_SECONDS))
+    try:
+        hit = _live_ticker_hit(key)          # 기다리는 사이 앞선 요청이 받아 두었으면 그것
+        if hit is not None:
+            return hit
+        payload = collect_ticker(symbol, period)
+        if payload.get("points") and not payload.get("isSynthetic"):
+            ttl = LIVE_TICKER_TTL_INTRADAY if period in _INTRADAY_PERIODS else LIVE_TICKER_TTL_DAILY
+            now = _live_now()
+            with _live_ticker_lock:
+                _live_ticker_cache[key] = (now + ttl, payload)
+                if len(_live_ticker_cache) > LIVE_TICKER_CACHE_LIMIT:
+                    for stale in [k for k, (until, _) in _live_ticker_cache.items() if until <= now]:
+                        _live_ticker_cache.pop(stale, None)
+                    while len(_live_ticker_cache) > LIVE_TICKER_CACHE_LIMIT:
+                        _live_ticker_cache.pop(min(_live_ticker_cache, key=lambda k: _live_ticker_cache[k][0]), None)
+        return payload
+    finally:
+        if acquired:
+            flight.release()
+        with _live_ticker_lock:
+            if not flight.locked():
+                _live_ticker_flights.pop(key, None)
+
+
+def live_ticker_cache_size() -> int:
+    """기억한 심볼·기간 조합 수(관측·시험용)."""
+    with _live_ticker_lock:
+        return len(_live_ticker_cache)
+
+
+def reset_live_ticker_cache() -> None:
+    """시험용 — 차트 시계열 기억을 비웁니다."""
+    with _live_ticker_lock:
+        _live_ticker_cache.clear()
+        _live_ticker_flights.clear()
 
 
 def _download(symbol: str, period: str) -> tuple[pd.DataFrame | None, bool, str | None]:

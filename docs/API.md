@@ -122,7 +122,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/macro/scraped` | 비공식 참고 시세 |
 | `GET /api/macro/spread?longId=DGS10&shortId=DGS2` | 공식 일별 스프레드 시계열 |
 | `GET /api/macro/fred/{seriesId}?years=10` | FRED 시리즈 원본 |
-| `GET /api/macro/ticker?symbol=^VIX&period=1y` | 개별 지표 차트 |
+| `GET /api/macro/ticker?symbol=^VIX&period=1y` | 개별 지표 차트(`^VIX`·`^MOVE`는 저장본, 그 밖은 수집기 `/live/ticker` — 외부 대기 10초 예산·일봉 5분·분봉 60초 기억, QA-1039) |
 | `GET /api/macro/econ-calendar` | **운영자 전용.** 경제 캘린더(미국·한국 지표 일정·예상치·이전치·실제치·중요도 — TradingView, 비공식). 수집기가 차단 통과 수집 계층으로 받아 둔 저장본만 읽고 수집을 요청하지 않음([ADR 0026](adr/0026-polite-fetch-layers.md)). `{available, collectedAtKst, ageSeconds, source, sourceUrl, sourceNote, fetchTier, window, events: [{country, title, at, atKst, importance(-1·0·1·null), actual, forecast, previous, unit, scale, period, …}]}` — 없는 값은 null, 저장본이 없으면 `available: false` |
 
 ### 나머지 메뉴
@@ -455,13 +455,13 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `POST /collect?group=fast\|slow\|weekly\|all&wait=true` | 작업군 실행 |
 | [토큰] `POST /collect/task/{taskName}` | 태스크 1건 실행 |
 | [토큰] `POST /refresh?scope=global` | 새로고침 기준 시각 갱신 |
-| [토큰] `GET /live/radar?...` | 수급 랭킹 즉시 수집 (폴백 체인 전체) |
-| [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 |
+| [토큰] `GET /live/radar?...` | 수급 랭킹 즉시 수집 (폴백 체인 전체 — 공용 세션으로 부르는 출처는 요청 하나에 10초 예산, QA-1039·[ADR 0052](adr/0052-perf-round3.md)) |
+| [토큰] `GET /live/ticker/{symbol}?period=` | 티커 시계열 즉시 수집 — 요청 하나에 10초 예산(넘으면 빈 `points`와 `error`), 받은 결과는 같은 심볼·기간에 일봉 5분·분봉(`1d`·`5d`) 60초 기억(받지 못한 결과는 기억하지 않음 — QA-1039·ADR 0052). 응답 모양은 그대로 |
 | [토큰] `GET /live/daum-intraday?minutes=30` | 장중 수급 가속도 |
 | [토큰] `GET /live/quote?market=us\|kr&code=` | 검색 상세의 시세·핵심 지표·개요(Yahoo·네이버, 5분 캐시) |
-| [토큰] `GET /live/prices?items=US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, `TV:` TradingView global/scan, `NI:` 네이버 해외 지수, 종목마다 지연·시간 외 가격, 3초 캐시, 저장 안 함, 60개까지) |
+| [토큰] `GET /live/prices?items=US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, `TV:` TradingView global/scan, `NI:` 네이버 해외 지수, 종목마다 지연·시간 외 가격, 3초 캐시, 저장 안 함, 60개까지. 요청 하나에 10초 예산 — 못 받은 종목은 `missing`, 토스 1분봉은 그 가드 밖, QA-1039) |
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
-| [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
+| [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시, 요청 하나에 10초 예산 — QA-1039) |
 | [토큰] `GET /live/search/suggest?q=&owner=&external=` | 정보 검색 — 치는 동안의 후보(로컬 색인만, 외부 호출 없음) |
 | [토큰] `GET /live/search/resolve?q=&owner=&external=` | 정보 검색 — Enter의 후보(로컬 + Wikidata, 1시간 캐시) |
 | [토큰] `GET /live/search/entity?e=&owner=&external=` | 정보 검색 — 대상 풀기(Wikidata·SEC·DART 표, 하루 캐시) |

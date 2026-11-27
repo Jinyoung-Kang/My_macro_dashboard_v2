@@ -25,7 +25,6 @@ from tests.test_yahoo_budget import blackhole  # noqa: F401 — 무응답 프록
 BUDGET = 3.0          # 시험용 예산(초) — 운영은 app.http.LIVE_BUDGET_SECONDS(10초)
 SLACK = 1.5
 
-FIX = pytest.mark.xfail(strict=True, reason="QA-1039: /live/prices·/live/symbols·/live/radar에 화면 조회 예산이 없음")
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +58,6 @@ def _timed(get, server=None, started_threads: list | None = None):
     return finished, took, box.get("res")
 
 
-@FIX
 def test_QA1039_실시간_시세는_출처_사슬이_먹통이어도_예산_안에_못_받은_종목으로_끝난다(client, hang, monkeypatch):  # noqa: F811
     monkeypatch.setattr(live_prices, "NAVER_POLLING", hang.base + "/api/realtime")
     monkeypatch.setattr(live_prices, "DAUM_QUOTES", hang.base + "/api/quotes")
@@ -76,7 +74,6 @@ def test_QA1039_실시간_시세는_출처_사슬이_먹통이어도_예산_안�
     assert hang.accepted <= 3, f"먹통 출처에 보낸 요청 {hang.accepted}건 — 예산 안에서는 다시 보내지 않음"
 
 
-@FIX
 def test_QA1039_종목_찾기는_두_출처가_먹통이어도_예산_안에_출처별_실패로_끝난다(client, hang, blackhole, monkeypatch):  # noqa: F811
     detail.reset_cache()
     monkeypatch.setattr(detail, "NAVER_AC", hang.base + "/ac")
@@ -90,7 +87,6 @@ def test_QA1039_종목_찾기는_두_출처가_먹통이어도_예산_안에_출
     detail.reset_cache()
 
 
-@FIX
 def test_QA1039_수급_랭킹은_다음_네이버가_먹통이어도_예산_안에_받지_못함으로_끝난다(client, hang, monkeypatch):  # noqa: F811
     monkeypatch.setattr(radar_service, "DAUM_RANKING_URL", hang.base + "/api/trend/investor_purchase/")
     monkeypatch.setattr(radar_service, "NAVER_RANKING_URL", hang.base + "/api/domestic/market/trend/trendForeignOrg")

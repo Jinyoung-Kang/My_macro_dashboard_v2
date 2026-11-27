@@ -67,9 +67,11 @@ public class CollectorClient {
     static final Duration FAVORITE_COLLECT_READ_TIMEOUT = Duration.ofSeconds(65);
 
     /**
-     * 화면이 열 때 수집기가 외부를 부르는 조회 셋({@link #liveQuote}·{@link #liveNews}·{@link #daumIntraday})의 읽기 타임아웃(QA-993) — 수집기가 요청 하나에
-     * 10초 예산(collector {@code app.http.LIVE_BUDGET_SECONDS} — 사용자 결정 D-3)을 걸고 그 안에 '받지 못함'으로 답하므로 예산 + 여유 5초. 일반 호출의 90초를
-     * 쓰면 수집기가 예산을 지키지 못하는 일(배포 차이 등)에 요청 스레드가 그만큼 묶입니다.
+     * 화면이 열 때 수집기가 외부를 부르는 조회({@link #liveQuote}·{@link #liveNews}·{@link #daumIntraday}, QA-993 · {@link #liveTicker}·{@link #liveSymbols},
+     * QA-1039)의 읽기 타임아웃 — 수집기가 요청 하나에 10초 예산(collector {@code app.http.LIVE_BUDGET_SECONDS} — 사용자 결정 D-3)을 걸고 그 안에
+     * '받지 못함'으로 답하므로 예산 + 여유 5초. 일반 호출의 90초를 쓰면 수집기가 예산을 지키지 못하는 일(배포 차이 등)에 요청 스레드가 그만큼 묶입니다.
+     * 수급 랭킹({@link #liveRadar})·실시간 시세({@link #livePrices})도 수집기가 같은 예산을 걸지만(QA-1039) 증권사 API 세션(KIS·토스 — 그 가드 밖)을
+     * 거치는 대체 경로가 있어 예산을 넘겨 답할 수 있으므로 일반 한도 그대로입니다.
      */
     static final Duration LIVE_FETCH_READ_TIMEOUT = Duration.ofSeconds(15);
 
@@ -82,13 +84,19 @@ public class CollectorClient {
     private final RestClient liveFetchClient;
     private final AppProperties properties;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public CollectorClient(AppProperties properties) {
+        this(properties, LIVE_FETCH_READ_TIMEOUT);
+    }
+
+    /** 시험이 화면 조회의 읽기 한도를 줄여 끼웁니다(응답하지 않는 서버로 그 한도를 쓰는 호출을 가릴 때 15초씩 기다리지 않게). */
+    CollectorClient(AppProperties properties, Duration liveFetchReadTimeout) {
         this.properties = properties;
         this.client = build(properties, Duration.ofSeconds(properties.getCollectorTimeoutSeconds()));
         this.controlClient = build(properties, CONTROL_READ_TIMEOUT);
         this.accountClient = build(properties, ACCOUNT_READ_TIMEOUT);
         this.suggestClient = build(properties, SEARCH_SUGGEST_READ_TIMEOUT);
-        this.liveFetchClient = build(properties, LIVE_FETCH_READ_TIMEOUT);
+        this.liveFetchClient = build(properties, liveFetchReadTimeout);
         this.secLookupClient = build(properties, SEC13F_LOOKUP_READ_TIMEOUT);
         this.favoriteCollectClient = build(properties, FAVORITE_COLLECT_READ_TIMEOUT);
     }
@@ -226,10 +234,14 @@ public class CollectorClient {
                 .build(), "/live/radar");
     }
 
+    /**
+     * 저장하지 않는 티커의 차트 시계열(수집기 /live/ticker — Yahoo, 받은 결과는 수집기가 일봉 5분·분봉 60초 기억). 수집기가 요청 하나에 10초 예산 안에
+     * 답하므로 읽기 한도는 {@link #LIVE_FETCH_READ_TIMEOUT}(QA-1039 — 예전에는 일반 호출의 90초).
+     */
     public Optional<JsonNode> liveTicker(String symbol, String period) {
         // 티커는 경로에 들어가고 '^VIX'처럼 그냥 쓸 수 없는 글자가 섞입니다.
         // 문자열로 이어 붙이지 않고 템플릿 변수로 넘겨 한 번만 인코딩되게 합니다.
-        return get(uri -> uri.path("/live/ticker/{symbol}")
+        return get(liveFetchClient, uri -> uri.path("/live/ticker/{symbol}")
                 .queryParam("period", period)
                 .build(symbol), "/live/ticker");
     }
@@ -259,7 +271,7 @@ public class CollectorClient {
      * 중괄호를 템플릿 변수로 읽어 요청이 나가지 않습니다(QA-1033).
      */
     public Optional<JsonNode> liveSymbols(String q) {
-        return get(uri -> uri.path("/live/symbols")
+        return get(liveFetchClient, uri -> uri.path("/live/symbols")
                 .queryParam("q", "{q}")
                 .build(Map.of("q", q)), "/live/symbols");
     }

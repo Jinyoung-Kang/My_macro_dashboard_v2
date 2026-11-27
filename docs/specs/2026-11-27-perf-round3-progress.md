@@ -49,3 +49,23 @@ D-3 차트 시계열의 외부 대기 예산 10초, 받은 결과는 일봉(1개
     (백엔드의 읽기 상한에서 끊김) · `/api/radar/ranking`(저장하지 않는 조합) 62.13초.
 - 커밋: 단계 0 한 커밋(도구·씨앗·문구·기록 — 아래 '전달'에 번호). 배포 없음(QA 도구와 문서만). 시험: `node --check`·`bash -n`·`python3 -m py_compile`, 화면 묶음의 이모지 검사
   (`noEmoji.test.ts` — 스크립트·문서를 읽음)와 스크립트 시험(`node --test scripts/qa/*.test.js`)은 단계 1 끝의 전체 `make test`에 포함.
+
+## 단계 1 — 작업 A(QA-1039)
+
+- 범위: 지시문의 차트 시계열(`/live/ticker`)에 더해, 단계 0의 표에서 예산 + 2초를 넘고 설계 값이 문서에 없는 셋(`/live/symbols`·`/live/prices`·`/live/radar`)도 같은 방법으로(지시문 A1).
+- A1 예산: 수집기 `main.py`의 네 경로를 `http.run_with_budget(http.LIVE_BUDGET_SECONDS …)`로 감쌈 — 새 장치 없음(2차의 가드 그대로, yfinance는 `app.yahoo`의 예산 세션이 같은 가드를 봄).
+  남길 시간(`reserve_seconds`)은 2차가 고친 화면 조회 값(0.5초)을 그대로 타서 10초 예산에서 Yahoo로 보낸다(시험 — 먹통 프록시가 요청을 받음).
+  증권사 API 세션(KIS 장중 가집계·토스 1분봉)은 그 가드 밖이라 그 대체 경로를 타는 수급 랭킹·실시간 시세는 예산을 넘겨 답할 수 있다 — 그래서 백엔드의 읽기 한도는
+  차트 시계열·종목 찾기만 15초(`liveFetchClient`)로 바꾸고 그 둘은 일반 한도 그대로 둠.
+- A2 짧은 기억: 수집기 `services.market.live_ticker`(화면 조회 경로에만) — 일봉 5분·분봉(`1d`·`5d`) 60초, 받지 못한 결과(빈 `points`·자리표시)는 기억하지 않음, 64 조합 상한
+  (기한 지난 것부터, 그래도 넘으면 가장 먼저 끝나는 것부터), 같은 심볼·기간을 함께 물으면 한 번만 Yahoo를 부름. `collect_ticker`에 두지 않은 까닭: 정기 수집
+  (`tasks/series.py`·매크로 카드·교차 검증)이 같은 함수를 써서 거기에 두면 태스크가 묵은 값을 받는다 — 결정은 ADR 0052.
+- 시험: `collector/tests/test_live_ticker.py` 10 · `test_live_budget_rest.py` 4(고치기 전 예상 실패 9 · 통과 4 — 재현 커밋), 백엔드 `CollectorClientLiveFetchTimeoutTest` 3.
+  재현 시험은 끝나지 않은 요청을 먹통 서버를 닫아 끝낸 뒤 정리한다(바꿔 끼운 주소가 풀린 뒤 남은 사슬이 실제 출처로 나가지 않게).
+- QA 측정(`step1-live-budget.txt` — 같은 QA·같은 DB, hang은 경로마다 다시 띄움):
+  - 백엔드 경유 hang: `/api/macro/ticker` 70.07 → **9.58초**(다른 심볼 9.56) · `/api/detail/symbols` 90.11 → 9.56 · `/api/radar/ranking`(저장하지 않는 조합) 62.13 → 7.21 —
+    받아들임 기준(예산 + 2초 = 12초 안) 충족.
+  - 수집기 직접 hang: `/live/ticker` 70.02 → 9.51 · `/live/symbols` 120초 넘음 → 9.51 · `/live/prices` 100.10 → 8.92 · `/live/radar` 62.08 → 7.15.
+  - block(출처가 바로 거절): 응답 9/9가 고치기 전과 같음(시각 칸·남은 초 숫자 제외). 정상 응답은 QA에서 만들 수 없어 시험(바꿔 끼운 Yahoo)으로 봄.
+- 남은 확인: 배포 뒤 운영에서 같은 `/api/macro/ticker` 경로를 여섯 번 안에서 불러 둘째부터 30 ms 이하(아래 '전달·배포').
+
