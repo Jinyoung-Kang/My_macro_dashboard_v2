@@ -68,3 +68,26 @@
   1. 이 폴더에 다음 번호 파일을 둡니다.
   2. `store`에 저장소 클래스를 둡니다.
   3. 기능 서비스가 `SchemaCheck`로 준비 여부를 봅니다.
+
+## 덧붙임 (2026-11-27) — 스키마 파일은 수집기 이미지 안에 (QA-1036)
+
+결정 2(스키마 파일은 `db/migrations/` 한 곳, 수집기가 기동할 때 적용)는 그대로이고, **수집기가 그 파일을 보는 길**만 바꿉니다
+([계획 §6·D-11](../improve/2026-11-27-quality-plan.md), 사용자 승인 2026-11-27).
+
+- **문제:** 수집기 이미지에는 파일이 없고 compose가 호스트의 `db/migrations`를 읽기 전용으로 마운트했습니다. 코드를 받은 뒤 새 컨테이너가 뜨기 전에
+  옛 수집기 컨테이너가 다시 뜨면(빌드 실패·가드에서 멈춤·덤프 실패·재부팅·메모리 상한 뒤 자동 재시작, 정상 배포의 빌드 몇 분) 옛 코드가 새 스키마를 적용했습니다.
+  QA-1015는 실제 매매 창 안에서 받기 전에 멈추게만 했습니다.
+- **결정:** 폴더를 이미지에 넣고 마운트를 없앱니다 — compose의 수집기 `build.additional_contexts`(이름 `migrations` → `./db/migrations`)를
+  `collector/Dockerfile`이 `COPY --from=migrations`로 `/app/db/migrations`에 복사합니다. 이미지가 아는 파일이 곧 적용하는 파일이라 부르는 쪽이 지킬
+  약속이 없습니다. postgres의 `V1__init.sql` 마운트(새 DB의 최초 초기화)는 그대로입니다.
+- **DB가 이미지보다 앞설 때**(되돌림 배포): 수집기는 `경고` 로그만 남기고 기동을 계속합니다. 멈추면 자동 재시작과 겹쳐 재기동 반복이 되고,
+  수집과 실제 매매 주문 길(수집기 전용 세션)이 함께 섭니다. 이미지의 최대 번호와 DB의 최대 번호는 수집기 `/status`(전체 보기)의
+  `schema{imageMax, databaseMax, databaseAhead}`에 싣고(`schema_migrations`를 읽기만 함), `make doctor`와 `deploy.sh` 끝 요약이 한 줄로 보입니다.
+- **버린 대안:** 상한 번호를 빌드 인자로 이미지에 새기기(모든 빌드 길이 인자를 넘겨야 하고 번호만 봄), 적용기를 따로 떼기(배포·복원·QA 순서와 이 ADR의 결정을 바꿈).
+- **지키는 방법:** `collector/tests/test_migrations_image.py`(수집기 서비스에 그 마운트가 없음·이름 붙은 컨텍스트 복사·경고·상태 칸)와 CI 이미지 job의
+  '수집기 이미지 안의 스키마 파일 대조'(파일 수·이름·sha256).
+- **남는 한계:** 스키마 파일만 고쳐도 수집기 이미지를 다시 빌드해야 적용됩니다(`make up`·`deploy.sh`·`qa-stack.sh up`은 늘 빌드 — 빌드 없는
+  `docker compose up`·`make migrate`만으로는 안 됨). 옛 백엔드와 새 스키마가 함께 있는 순간(`up`이 두 컨테이너를 바꾸는 사이)은 그대로입니다.
+  compose 없이 수집기 이미지를 빌드하려면 `docker build --build-context migrations=db/migrations collector`. `additional_contexts`를 받는 compose가
+  필요합니다(로컬 v5.7.1에서 확인, 서버는 배포 전에 `docker compose version`으로 확인).
+- **처음 배포하는 한 번:** 돌던 컨테이너는 만들 때의 마운트를 유지하므로 이 변경을 배포하는 그 한 번은 옛 위험이 그대로입니다 — 새 마이그레이션 없이 배포합니다.

@@ -117,8 +117,10 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   프로젝트 `my_macrodash_v2_test_<칸>`, 동시에 둘까지 — 셋부터는 화면 5초 제한 시험이 흔들림). 셸에 `TEST_DATABASE_URL`이 있으면 `make test-*`의 포트 설정을 조용히 이긴다.
 - 수집기 `/health`는 DB까지 확인한다(없으면 503). `/health`를 공개 경로 예시로 쓰는 테스트는 `store.ping`을
   스텁한다 — CI에는 운영 DB가 없어 로컬에서만 통과하는 테스트가 된다.
-- 스키마 파일(`db/migrations`)은 수집기가 기동할 때만 적용된다. `make up`은 `make migrate`로 늘 적용하지만, `docker compose up`을
-  직접 쓰면 백엔드만 바뀐 배포에서 새 테이블이 안 생긴다(QA-016) — `make migrate`를 부른다.
+- 스키마 파일(`db/migrations`)은 수집기 이미지 안에 있고(QA-1036 — 호스트 폴더를 마운트하지 않음) 수집기가 기동할 때만 적용된다. 파일을 고치면
+  수집기 이미지를 다시 빌드해야 적용된다 — `make up`(빌드 → 기동 → `make migrate`로 확인)·`deploy.sh`·`qa-stack.sh up`은 늘 그렇게 하지만,
+  `docker compose up`을 빌드 없이 직접 쓰면 새 테이블이 안 생기고 `make migrate`만으로도 안 된다(도는 이미지의 파일만 봄). 수집기 `/status`의
+  `schema`(이미지·DB 최대 번호)와 `make doctor`의 '스키마' 줄로 확인한다 — DB가 이미지보다 앞서면(되돌림 배포) 경고만 하고 기동은 계속한다.
 - `docker kill`로 멈춘 컨테이너는 `restart: unless-stopped`가 다시 띄우지 않는다(수동 정지로 간주). 크래시 시험에
   쓰면 안 된다.
 - 외부 패키지를 올릴 때는 Maven Central·npm에서 **실제 GA 버전을 확인**한다(마일스톤은 운영에 올리지 않음).

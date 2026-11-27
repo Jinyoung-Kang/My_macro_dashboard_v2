@@ -449,7 +449,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | 경로 | 설명 |
 |---|---|
 | `GET /health` | 헬스체크 |
-| `GET /status?view=full\|light` | 기본(`full`): 저장 현황 + 키 보유 + 수집 주기 + 차단 통과 수집(관심 대상 정기 수집 포함)이 켜졌는지(`politeEnabled`) — 행 수(`timeseriesRows`·`observationRows`)는 센 그대로의 정확한 값을 60초 동안 기억해 다시 씀. `light`: `{lastRun, lastRunStatus, missingDatasets}`만(행 수 세기·태스크 요약 없음 — 백엔드 `/api/status/issues`와 새로고침 기준 실행 번호가 씀, [ADR 0047](adr/0047-status-and-prefetch-performance.md)). 그 밖의 값은 422 |
+| `GET /status?view=full\|light` | 기본(`full`): 저장 현황 + 키 보유 + 수집 주기 + 차단 통과 수집(관심 대상 정기 수집 포함)이 켜졌는지(`politeEnabled`) + 스키마 번호 `schema{imageMax(수집기 이미지가 아는 최대 번호), databaseMax(`schema_migrations`의 최대 번호 — 표가 없으면 null), databaseAhead(DB가 앞섬 — 되돌림 배포)}`(QA-1036, `make doctor`·배포 요약이 봄 — 백엔드 `/api/status`는 싣지 않음) — 행 수(`timeseriesRows`·`observationRows`)는 센 그대로의 정확한 값을 60초 동안 기억해 다시 씀. `light`: `{lastRun, lastRunStatus, missingDatasets}`만(행 수 세기·태스크 요약 없음 — 백엔드 `/api/status/issues`와 새로고침 기준 실행 번호가 씀, [ADR 0047](adr/0047-status-and-prefetch-performance.md)). 그 밖의 값은 422 |
 | `GET /tasks` | 태스크 목록 |
 | `GET /task-history?task=&limit=` | 실행 이력 |
 | [토큰] `POST /collect?group=fast\|slow\|weekly\|all&wait=true` | 작업군 실행 |

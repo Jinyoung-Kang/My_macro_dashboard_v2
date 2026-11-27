@@ -139,7 +139,9 @@ pandas DataFrame을 JSON 문자열로 저장하면 **dtype을 따로 실어야**
 ### 3-2. 스키마 변경은 번호 붙은 파일로
 
 `db/migrations/V{번호}__{설명}.sql`을 **수집기가 기동할 때** 번호 순서로 한 번씩 적용하고
-`schema_migrations`에 기록합니다(`collector/app/migrations.py`). 백엔드가 쓰는 테이블(`regime_log` 등)도
+`schema_migrations`에 기록합니다(`collector/app/migrations.py`). 컨테이너의 수집기는 호스트 폴더가 아니라 **이미지를 빌드할 때 복사한 파일**
+(`/app/db/migrations`)만 봅니다 — 옛 이미지가 새 파일을 적용하지 않게(QA-1036, [ADR 0008](adr/0008-backend-owned-tables-and-scheduled-jobs.md) 덧붙임).
+백엔드가 쓰는 테이블(`regime_log` 등)도
 같은 폴더·같은 번호 체계를 씁니다 — 백엔드에는 마이그레이션 도구를 두지 않고, 자기 테이블이 아직 없으면
 그 기능만 "준비 중"으로 둡니다([ADR 0008](adr/0008-backend-owned-tables-and-scheduled-jobs.md)).
 초기 스키마를 기동할 때마다 다시 실행하는 방식으로는 이미 있는 DB를 바꾸는 변경(예: 인덱스 삭제)을
