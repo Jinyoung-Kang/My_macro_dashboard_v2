@@ -89,6 +89,28 @@ cd collector && TEST_DATABASE_URL=postgresql://macro:macro@localhost:5434/macrod
 `src/**/__tests__/*.test.ts(x)`(`npm test`, vitest + Testing Library + jsdom — 개발 의존성이라
 운영 이미지에는 없습니다).
 
+### 브라우저 연기 시험 (`make smoke`)
+
+`make test`의 화면 시험은 모두 jsdom입니다. 실제 크롬으로 화면을 여는 확인은 **QA 스택**에서 따로 돌립니다
+(품질 개선 계획 2026-11-27 P1 — `make test`·CI에는 넣지 않음, 새 의존성 없음: `scripts/qa/ui-audit.js`의 크롬 구동 코드를 씀).
+
+```bash
+bash scripts/qa/qa-stack.sh up        # 로그인 모드(기본) — 흐름 다섯 모두. QA_NO_LOGIN=1이면 로그아웃 흐름만 '해당 없음'
+make smoke                            # 씨앗(scripts/qa/smoke-seed.sql)을 넣고 화면 58개 + 흐름, 어긋나면 끝 코드 1
+make smoke ARGS="--only /paper --no-flows"          # 일부 화면만, 쓰기 없이
+make smoke ARGS="--no-flows --only /liquidity --block '*/api/liquidity*'"   # 음성 대조 — 실패로 끝나야 함
+```
+
+- 화면마다 보는 것: 문서 200 · 다른 주소(특히 `/login`)로 밀려나지 않음 · 콘솔 오류와 예외 0 · 예상 밖 HTTP 400 이상 0 · 네트워크 실패 0 ·
+  오류 경계와 '찾을 수 없는 화면' 문구 없음 · `main h1` 있음 · 본문이 비지 않음. 값이 맞는지는 보지 않습니다. 경로 목록은
+  `scripts/qa/ui-audit-routes.txt`, 경로별 예외는 `ui-smoke.js`의 `ROUTE_RULES` 한 곳(이유와 함께).
+- 흐름: 13F 즐겨찾기 상한의 409 문구, QA-1031 (가)(다), QA-1008 '쓰기 뒤 다시 읽기' 순서, QA-1028 끝난 세션의 로그아웃(로그인 모드에서만).
+  쓰기는 주소의 포트가 `.env.qa`의 화면 포트와 같고 화면의 빌드 정보가 `qa@`로 시작할 때만, 그때그때 여는 경로(로그인·로그아웃·가짜 CIK 즐겨찾기)만
+  통과합니다. 씨앗 즐겨찾기 한 곳의 이름을 고치고 한 곳을 지우며, 씨앗을 다시 넣으면(매번 넣음) 처음 상태로 돌아옵니다.
+- 대상은 QA 스택뿐입니다 — 다른 포트(로컬 3002)·다른 호스트는 스크립트가 끝 코드 2로 거절합니다. 스택이 옛 빌드면 그 뒤에 고친 결함의 흐름은
+  실패하는 것이 맞습니다(다시 `up`으로 빌드한 뒤 봅니다). 결과 `smoke.json`은 임시 폴더(`--out`)에 두고 커밋하지 않습니다.
+- 순수 함수(인자·판정·가드) 시험은 `node --test scripts/qa/ui-smoke.test.js`이고 `make test-frontend`와 CI가 돌립니다.
+
 ### 테스트가 고정하는 것
 
 단순 커버리지가 아니라 **한 번씩 틀렸던 규칙**을 고정합니다.

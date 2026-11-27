@@ -290,6 +290,7 @@ make test              # 세 가지 전부
 make test-collector    # pytest
 make test-backend      # JUnit (실제 DB 사용)
 make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(타입 검사)
+make smoke             # 브라우저 연기 시험 — QA 스택이 떠 있을 때만(make test에는 없음, docs/DEVELOPMENT.md §2)
 ```
 
 > 주의: **테스트는 전용 DB(`macrodash_test`)에서 돕니다.** 백엔드 통합 테스트는
