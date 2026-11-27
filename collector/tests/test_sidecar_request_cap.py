@@ -342,13 +342,34 @@ def _gone(pid: int) -> bool:
     return stat[stat.rindex(b")") + 2:stat.rindex(b")") + 3] in (b"Z", b"X")
 
 
-@pytest.mark.parametrize("stuck_until", ["브라우저가 끝날 때까지", "드라이버가 끝날 때까지"])
-def test_QA416_드라이버_프로세스는_브라우저를_끝내도_안_돌아올_때만_끝낸다(monkeypatch, tmp_path, stuck_until):
+# 프로세스 찾기에 넣는 지연(초) — 아래 시험의 정리 대기 절반(1초)보다 깁니다. 전체 시험을 여러 벌 함께 돌릴 때 /proc 훑기와 끝내기가
+# 늦어지는 것을 흉내 냅니다(QA-1037).
+SLOW_FIND = 1.2
+
+
+@pytest.mark.parametrize("stuck_until, find_delay", [
+    ("브라우저가 끝날 때까지", 0.0),
+    ("드라이버가 끝날 때까지", 0.0),
+    pytest.param("브라우저가 끝날 때까지", SLOW_FIND, id="QA-1037-프로세스_찾기가_느려도_판정이_같다", marks=pytest.mark.xfail(
+        strict=True, reason="QA-1037: '드라이버를 끝내지 않았다'를 걸린 시간으로 판정해, 프로세스 찾기가 늦으면 코드가 맞아도 실패한다")),
+])
+def test_QA416_드라이버_프로세스는_브라우저를_끝내도_안_돌아올_때만_끝낸다(monkeypatch, tmp_path, stuck_until, find_delay):
     """
     실제 구조는 '이 프로세스 → 드라이버(node) → Chrome'입니다. 브라우저만 끝내면 호출이 돌아오는 것이 보통이고(이미지에서 확인), 드라이버가
     멎어 있으면 브라우저를 끝내도 돌아오지 않다가 드라이버를 끝내면 돌아옵니다(같은 실험 — SIGSTOP으로 흉내). 앞의 경우에는 드라이버를 끝내지 않습니다.
+
+    ``find_delay``는 프로세스 찾기를 그만큼 늦춥니다(부하 흉내 — QA-1037). 늦어져도 코드가 하는 일(브라우저만 끝냄)은 같으므로 판정도 같아야 합니다.
     """
     import sidecar.driver as driver
+
+    if find_delay:
+        find_browser = driver.reap.find_browser
+
+        def slow_find(proxy_url: str):
+            time.sleep(find_delay)
+            return find_browser(proxy_url)
+
+        monkeypatch.setattr(driver.reap, "find_browser", slow_find)
 
     api = types.ModuleType("patchright.sync_api")
     api.Error = type("Error", (Exception,), {})
