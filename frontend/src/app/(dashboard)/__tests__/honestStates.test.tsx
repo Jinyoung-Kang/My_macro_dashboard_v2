@@ -4,7 +4,7 @@
  *
  * 시장 화면(매크로·COT — P5a)의 사례는 갈래별 파일로 옮겼습니다(내용 그대로): macroScreenStates·liquiditySectorCotStates(.test.tsx).
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -66,6 +66,8 @@ describe("QA-102 상태 화면 오류·경고 로그 — 수집기에 닿지 못
     const section = (await screen.findByRole("heading", { name: "수집 오류·경고 로그" })).closest("section") as HTMLElement;
     await within(section).findByText("누락 데이터셋");
     // P7: KPI 띠 타일(이름 있는 묶음) — 값은 '—'(읽기 '값 없음')와 사유, 숫자(0개)가 아닙니다.
+    // QA-1037: 불러오는 중인 타일에도 같은 이름이 있어 위 줄이 먼저 지나갑니다 — 값이 채워질 때까지 기다립니다.
+    await waitFor(() => expect(within(section).getByRole("group", { name: "누락 데이터셋" }).textContent).not.toMatch(/불러오는 중/));
     const tile = within(section).getByRole("group", { name: "누락 데이터셋" });
 
     expect(tile.textContent).toBe("누락 데이터셋—값 없음확인 못 함");
