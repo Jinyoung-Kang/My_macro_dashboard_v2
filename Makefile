@@ -36,7 +36,7 @@ PAPER_ENABLED ?= $(shell grep -s '^PAPER_ENABLED=' .env | tail -n 1 | cut -d= -f
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up migrate down restart logs ps collect collect-all status verify \
-        doctor test test-isolated db-test test-collector test-backend test-frontend smoke \
+        doctor test test-isolated db-test test-collector test-backend test-frontend smoke coverage \
         dev-collector dev-backend dev-frontend db infra backup restore reset constraints
 
 # 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
@@ -214,6 +214,17 @@ test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 �
 smoke: ## 브라우저 연기 시험 — QA 스택의 화면 58개를 열어 단언 + 흐름 다섯(QA 스택이 떠 있어야 함)
 	bash scripts/qa/qa-stack.sh exec postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/qa/smoke-seed.sql
 	node scripts/qa/ui-smoke.js --strict-flows $(ARGS)
+
+# 시험 없는 자리 목록(품질 개선 계획 P6-다). 문턱값으로 막지 않고 목록만 냅니다 — `make test`·CI는 이 목표를 부르지 않습니다.
+# 묶음 고르기: make coverage PARTS="frontend" (collector · backend · frontend, report = 시험 없이 남아 있는 보고서로 목록만).
+# 일부만 돌려 보기: PYTEST_ARGS="tests/test_x.py" · MVN_ARGS="-Dtest=SomeTest" · VITEST_ARGS="src/lib". 산출물은 coverage-out/(커밋하지 않음).
+PARTS ?= collector backend frontend
+coverage: ## 시험 없는 자리 목록 — 세 묶음의 커버리지를 재서 '파일 · 안 지난 줄 범위'를 큰 순서로 (PARTS="frontend"로 묶음 고르기)
+	@$(if $(filter collector backend,$(PARTS)),$(MAKE) --no-print-directory db-test,true)
+	@COLLECTOR_PY=$(if $(filter $(VENV_PY),$(PY)),$(CURDIR)/$(VENV_PY),python3) \
+	COLLECTOR_TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql://$${DATABASE_USER:-macro}:$${DATABASE_PASSWORD:-macro}@localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
+	BACKEND_TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
+		bash scripts/coverage.sh $(PARTS)
 
 # ------------------------------------------------------------- 네이티브 개발
 # 수집기는 토큰이 비면 기동을 거부하고(COLLECTOR_ALLOW_NO_TOKEN=1일 때만 경고 후 기동), 백엔드는 같은 토큰을
