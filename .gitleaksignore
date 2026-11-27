@@ -106,3 +106,8 @@ d4da1cb3883ac6e82d0d6a8625e17728b709b801:backend/src/test/resources/paper/golden
 # 2026-11-27 복기의 반복 오류 스위치(ADR 0051, 794bc4f0): 한국 켠 판 결정 패킷 고정본을 새로 만든 커밋 — 위와 같은 매크로 카드 항목 키
 # ("kospi200_night_scraped", KrPacketBuilder.CARD_KEYS)다(.env·.env.qa 값과 일치 0건).
 794bc4f0a7a29c3003be50b9e858a161b5d8c6f8:backend/src/test/resources/paper/golden/packet-kr-ft-review-errors-scheduled.json:generic-api-key:1
+
+# 2026-11-27 ISA 지시 없는 매매의 요청 열쇠(QA-1035, e0d006ac): 재현 시험이 쓰는 지어낸 UUID 상수 둘(KEY_1·KEY_2)이다
+# (시험 안에서만 쓰는 요청 열쇠 — 키·토큰이 아니고 .env·.env.qa 값과 무관).
+e0d006ac338a72b15c378751b02c0a5987afb9c9:backend/src/test/java/com/macrodash/feature/realtrade/ManualAccountServiceDbTest.java:generic-api-key:1038
+e0d006ac338a72b15c378751b02c0a5987afb9c9:backend/src/test/java/com/macrodash/feature/realtrade/ManualAccountServiceDbTest.java:generic-api-key:1039
