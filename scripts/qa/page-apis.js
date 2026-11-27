@@ -3,11 +3,17 @@
 // ui-audit.js의 Chrome·CDP 부분을 씀). 성능 개선 2차(2026-11-24)의 재측정·전후 비교에 씁니다.
 //
 // 사용: node scripts/qa/page-apis.js --base http://127.0.0.1:13002 --out <결과 JSON> [--routes <파일 — 기본 scripts/qa/ui-audit-routes.txt>]
-//   [--forms desktop,mobile] [--block '*/api/info/sources*'] [--rate <CPU 감속 배수 — 기본 1>] [--chrome <실행 파일>]
+//   [--forms desktop,mobile] [--block '*/api/info/sources*'] [--rate <CPU 감속 배수 — 기본 1>] [--fulfill <JSON 파일>] [--local 'k=v,k=v']
+//   [--chrome <실행 파일>]
 //   --block: 쉼표로 나눈 주소 무늬(CDP Network.setBlockedURLs)의 요청을 막습니다 — 출처 경고 띠 없는 상태를 잴 때.
 // 한 경로: 디스크 캐시를 비우고 열어 load 뒤 EventSource 밖의 요청이 2초 동안 0이 될 때까지(최대 30초) 기다린 다음 값을 읽습니다.
 //   --rate: CPU 감속(CDP Emulation.setCPUThrottlingRate) — 4면 Lighthouse 모바일과 같은 4배. 긴 작업·그리기 시간을 느린 기기 기준으로 볼 때
 //     (성능 개선 3차 작업 C — 검색 피드). CLS·DOM 수는 감속과 상관없습니다. 출력의 줄 끝과 결과의 rate에 적습니다.
+//   --fulfill: 일부 API 응답을 브라우저에서 바꿔 끼웁니다(CDP Fetch.fulfillRequest) — 외부가 막힌 QA에서 '출처가 정상으로 답할 때'의 화면을 볼 때
+//     (종목 상세의 시세·시계열·실시간 시세, 레이더 선택지). 파일은 [{ "pattern": "*/api/detail/quote?market=kr*", "body": {…}, "delayMs": 150 }, …] —
+//     주소가 무늬('*' = 아무 글)에 맞는 첫 항목의 body를 200 JSON으로 답합니다. 합성 값은 `python3 scripts/qa/perf-seed.py detail`이 냅니다.
+//     화면과 API의 출처가 달라(QA 13002 ↔ 18082) CORS 머리글을 함께 싣습니다 — 빠지면 화면이 '백엔드 연결 실패'를 그려 엉뚱한 값을 잽니다(2차의 함정).
+//   --local: 화면을 열기 전에 localStorage에 넣을 값(예 'live.priceRefreshSeconds=0' — 실시간 시세를 SSE 대신 한 번의 GET으로 받게 해 --fulfill로 답함).
 // 폼: desktop 1440x900(DPR 1), mobile 390x844(DPR 2, 모바일·터치 에뮬레이션). 감속은 --rate를 줄 때만.
 // CLS: 레이아웃 이동(layout-shift)을 모두 더합니다 — hadRecentInput을 보지 않습니다. 이 도구는 입력을 보내지 않는데, 모바일 에뮬레이션
 //   (Emulation.setDeviceMetricsOverride mobile: true)에서는 크롬이 첫 수십 ms에 입력이 있었다고 표시해(lastInputTime) 모든 이동이 hadRecentInput=true가
@@ -25,7 +31,7 @@ const { launchChrome, Cdp, sleep } = require('./ui-audit.js');
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i].replace(/^--/, '');
-  if (!['base', 'out', 'routes', 'forms', 'block', 'rate', 'chrome'].includes(key)) throw new Error(`모르는 인자: ${process.argv[i]}`);
+  if (!['base', 'out', 'routes', 'forms', 'block', 'rate', 'fulfill', 'local', 'chrome'].includes(key)) throw new Error(`모르는 인자: ${process.argv[i]}`);
   args[key] = process.argv[i + 1];
 }
 if (!args.base || !args.out) throw new Error('--base와 --out이 필요합니다(머리 설명).');
@@ -34,6 +40,11 @@ const routes = fs.readFileSync(args.routes || path.join(__dirname, 'ui-audit-rou
 const forms = (args.forms || 'desktop,mobile').split(',');
 const rate = args.rate ? Number(args.rate) : 1;
 if (!(rate >= 1)) throw new Error('--rate는 1 이상의 수입니다.');
+const fulfill = args.fulfill ? JSON.parse(fs.readFileSync(args.fulfill, 'utf8')) : [];
+if (!Array.isArray(fulfill) || fulfill.some((f) => !f || typeof f.pattern !== 'string' || !('body' in f))) throw new Error('--fulfill 파일은 [{ pattern, body, delayMs? }] 꼴입니다.');
+const globRegExp = (pattern) => new RegExp('^' + pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+const fulfillRules = fulfill.map((f) => ({ ...f, test: globRegExp(f.pattern) }));
+const local = (args.local || '').split(',').filter(Boolean).map((pair) => { const at = pair.indexOf('='); return [pair.slice(0, at), pair.slice(at + 1)]; });
 const FORM = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
   mobile: { width: 390, height: 844, deviceScaleFactor: 2, mobile: true },
@@ -82,6 +93,22 @@ const OBSERVER = `(() => {
     await send('Page.addScriptToEvaluateOnNewDocument', { source: OBSERVER });
     if (args.block) await send('Network.setBlockedURLs', { urls: args.block.split(',') });
     if (rate > 1) await send('Emulation.setCPUThrottlingRate', { rate });
+    if (local.length > 0) {
+      await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { ${local.map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join(' ')} } catch (e) {}` });
+    }
+    if (fulfillRules.length > 0) {
+      const origin = new URL(base).origin;
+      await send('Fetch.enable', { patterns: fulfillRules.map((f) => ({ urlPattern: f.pattern })) });
+      browser.on('Fetch.requestPaused', sessionId, async (p) => {
+        const rule = fulfillRules.find((f) => f.test.test(p.request.url));
+        if (!rule) { send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => {}); return; }
+        if (rule.delayMs) await sleep(rule.delayMs);
+        send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200, responseHeaders: [
+          { name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: origin },
+          { name: 'Access-Control-Allow-Credentials', value: 'true' }, { name: 'Vary', value: 'Origin' }],
+          body: Buffer.from(JSON.stringify(rule.body)).toString('base64') }).catch(() => {});
+      });
+    }
     const evaluate = async (expression) => (await send('Runtime.evaluate', { expression, returnByValue: true })).result.value;
 
     for (const form of forms) {
@@ -103,7 +130,7 @@ const OBSERVER = `(() => {
           bytes: r.bytes ?? null, failed: r.failed ?? null, pending: !r.t1,
         }));
         const scripts = all.filter((r) => r.type === 'Script');
-        out.push({ form, route, rate, settleMs, stillInflight: inflight.size, metrics: JSON.parse(m || '{}'), apis,
+        out.push({ form, route, rate, fulfilled: fulfillRules.length, settleMs, stillInflight: inflight.size, metrics: JSON.parse(m || '{}'), apis,
           scriptCount: scripts.length, scriptBytes: scripts.reduce((s, r) => s + (r.bytes || 0), 0),
           rsc: all.filter((r) => /[?&]_rsc=/.test(r.url)).length, requests: all.length });
         const slow = apis.filter((a) => !a.sse).sort((a, b) => (b.total || 0) - (a.total || 0))[0];

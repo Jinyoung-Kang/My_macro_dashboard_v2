@@ -29,6 +29,11 @@ QA 스택 전용입니다. 운영 DB(로컬 3002 스택·Vultr 서버)와 시험
     적습니다(최근 사건을 읽는 패킷 창 밖 — 다만 QA DB가 오래된 복원본이면 /info/news의 앞쪽에 이 줄이 보입니다). 검색 첫 화면의
     '새 피드 묶음 최근 30건'과 /info/news?set=world에도 이 씨앗의 묶음 줄이 보입니다.
     첫 운영자의 관심 대상에 us:NVDA를 더합니다(백엔드 표 search_watches — 이미 있으면 그대로).
+  python3 scripts/qa/perf-seed.py detail > <작업 폴더>/detail-normal.json
+  - detail: DB에 넣는 씨앗이 아니라 scripts/qa/page-apis.js --fulfill에 줄 합성 정상 응답(JSON) — 외부가 막힌 QA는 종목 상세의 시세·시계열·실시간 시세가
+    늘 '받지 못함'이라, 출처가 정상으로 답할 때의 화면(레이아웃 밀림)을 재려면 응답을 바꿔 끼워야 합니다. 국내 005930·미국 NVDA의 시세(이름·지표·개요는
+    지어낸 값 — '가짜전자'·'QA Fake Corporation'), 일봉 약 180점(오늘까지), 실시간 시세 한 벌, 레이더 선택지(여섯 주체 모두 받을 수 있는 운영의 꼴).
+    쓰는 법: node scripts/qa/page-apis.js … --fulfill <그 파일> --local live.priceRefreshSeconds=0
 지우기(QA): DELETE FROM security_notices WHERE ntt_id BETWEEN 910001 AND 910135; DELETE FROM distro_cve_status WHERE cve LIKE 'CVE-2098-%';
   DELETE FROM sec13f_favorites WHERE description = '[QA 성능 씨앗]';
   DELETE FROM snapshots WHERE name ~ '^sec\\.13f\\.00099000'; 버전 목록은 security-inventory.tsv를 다시 넣으면 원래대로.
@@ -39,8 +44,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SEED = 20261124
@@ -273,6 +280,61 @@ def _observation_row(dataset: str, ident: str, payload: dict, seconds: int, *, l
             f"{body}::jsonb || jsonb_build_object('publishedAt', {stamp}, 'fetchedAt', {stamp}))")
 
 
+# ---------------------------------------------------------------------------------------------------------------------------------
+# 합성 정상 응답(detail) — page-apis.js --fulfill용. 값은 모두 지어낸 것이고 실제 종목의 시세가 아닙니다.
+def detail_fulfill() -> list[dict]:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    stamp = now.isoformat()
+
+    def quote(market: str, code: str) -> dict:
+        kr = market == "kr"
+        return {"available": True, "quote": {
+            "market": market, "code": code, "yahooSymbol": f"{code}.KS" if kr else code, "name": "가짜전자" if kr else "QA Fake Corporation",
+            "nameKo": None if kr else "가짜전자", "exchange": "KOSPI" if kr else "NasdaqGS", "currency": "KRW" if kr else "USD", "kind": "EQUITY",
+            "price": 70000 if kr else 123.45, "previousClose": 69000 if kr else 121.0, "change": 1000 if kr else 2.45, "changePct": 1.45 if kr else 2.02,
+            "asOf": stamp, "marketState": "REGULAR",
+            "stats": [{"key": f"k{i}", "label": label, "value": 100 + i, "text": None, "unit": "count" if i < 2 else "x"}
+                      for i, label in enumerate(("시가총액", "거래량", "PER", "PBR", "52주 최고", "52주 최저", "배당수익률", "베타"))],
+            "profile": {"sector": "기술", "industry": "반도체", "country": "대한민국" if kr else "미국", "website": "https://example.invalid", "employees": 12345,
+                        "summary": "QA synthetic summary. " * 20, "summaryKo": "합성 기업 개요입니다. " * 20, "industryKo": "반도체",
+                        "koSource": {"label": "네이버 증권", "url": "https://example.invalid/ko"}},
+            "consensus": {"targetMean": 80000 if kr else 150, "recommendation": "buy", "analysts": 40}, "research": [],
+            "source": {"label": "네이버 증권" if kr else "Yahoo Finance", "url": "https://example.invalid/q"}, "error": None, "fetchedAt": stamp}}
+
+    def series(symbol: str) -> dict:
+        points, value = [], 100.0
+        for back in range(250, -1, -1):
+            day = now - timedelta(days=back)
+            if day.weekday() >= 5:
+                continue
+            value += math.sin(back / 7) * 1.5 + 0.1
+            points.append({"date": day.strftime("%Y-%m-%dT00:00:00-05:00"), "open": round(value - 0.5, 2), "high": round(value + 1, 2),
+                           "low": round(value - 1, 2), "close": round(value, 2), "volume": 1000000})
+        return {"available": True, "symbol": symbol, "period": "1y", "isProxy": False, "sourceLabel": None, "points": points}
+
+    def live(key: str) -> dict:
+        market, code = key.split(":")
+        kr = market == "KR"
+        item = {"market": market, "code": code, "price": 70100 if kr else 123.5, "prevClose": 69000 if kr else 121, "change": 1100 if kr else 2.5,
+                "changePct": 1.59 if kr else 2.07, "currency": "KRW" if kr else "USD", "tradedAt": stamp, "status": "OPEN", "source": "네이버", "delayMinutes": 0,
+                "overPrice": None, "overChange": None, "overChangePct": None, "overTradedAt": None, "overSession": None}
+        return {"available": True, "prices": {"fetchedAt": stamp, "items": {key: item}, "missing": [], "errors": {}}}
+
+    investors = ["외국인", "기관", "개인", "연기금", "금융투자", "투신"]
+    return [
+        {"pattern": "*/api/detail/quote?*market=kr*", "body": quote("kr", "005930"), "delayMs": 150},
+        {"pattern": "*/api/detail/quote?*market=us*", "body": quote("us", "NVDA"), "delayMs": 150},
+        {"pattern": "*/api/macro/ticker?*symbol=005930*", "body": series("005930.KS"), "delayMs": 150},
+        {"pattern": "*/api/macro/ticker?*symbol=NVDA*", "body": series("NVDA"), "delayMs": 150},
+        {"pattern": "*/api/live/prices?*KR%3A005930*", "body": live("KR:005930"), "delayMs": 150},
+        {"pattern": "*/api/live/prices?*US%3ANVDA*", "body": live("US:NVDA"), "delayMs": 150},
+        {"pattern": "*/api/radar/options*", "delayMs": 150, "body": {
+            "markets": ["KOSPI", "KOSDAQ"], "investors": investors, "supportedInvestors": investors, "unsupportedInvestorNote": "합성 안내",
+            "fallbackChain": ["KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"],
+            "tradeTypes": ["순매수", "순매도"], "intervals": ["TODAY", "DAYS_5", "DAYS_20"]}},
+    ]
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     rng = random.Random(SEED)
@@ -282,8 +344,10 @@ def main() -> int:
         print("\n".join(inventory_tsv(rng)))
     elif mode == "feed":
         print("\n".join(feed_sql(random.Random(FEED_SEED))))
+    elif mode == "detail":
+        print(json.dumps(detail_fulfill(), ensure_ascii=False))
     else:
-        print("사용: perf-seed.py sql | perf-seed.py inventory | perf-seed.py feed (자세한 것은 파일 머리 설명)", file=sys.stderr)
+        print("사용: perf-seed.py sql | inventory | feed | detail (자세한 것은 파일 머리 설명)", file=sys.stderr)
         return 2
     return 0
 
