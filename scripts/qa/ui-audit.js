@@ -306,6 +306,9 @@ class PageSession {
     this.cdp = cdp;
     this.sessionId = sessionId;
     this.allowHosts = allowHosts; // null이면 모든 호스트 허용
+    // 쓰기 요청(GET·HEAD·OPTIONS 밖)을 통과시킬지 묻는 함수 (method, URL) => boolean. 기본 null = 모두 막음(감사는 늘 null).
+    // 연기 시험(ui-smoke.js)의 흐름 단계만 허용 목록에 든 경로를 엽니다.
+    this.allowWrite = null;
     this.state = this.freshState();
     this.wire();
   }
@@ -375,7 +378,7 @@ class PageSession {
     const method = (p.request && p.request.method) || 'GET';
     let url;
     try { url = new URL(p.request.url); } catch { url = null; }
-    if (!READ_METHODS.has(method)) {
+    if (!READ_METHODS.has(method) && !(this.allowWrite && url && this.allowWrite(method, url))) {
       if (p.networkId) s.blockedNetworkIds.add(p.networkId);
       s.blockedWrites.push({ method, path: url ? url.pathname : '?' });
       this.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'BlockedByClient' }).catch(() => {});
@@ -1156,4 +1159,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { choosePageScroller, launchChrome, Cdp, sleep };
+// 아래 줄부터는 연기 시험(ui-smoke.js)이 같은 크롬 구동·기다림 규칙을 쓰려고 가져갑니다.
+module.exports = {
+  choosePageScroller, launchChrome, Cdp, sleep,
+  PageSession, openPage, settle, setViewport, blank, loadRoutes, kstNow, UsageError, SETTLE,
+};
