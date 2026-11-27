@@ -14,6 +14,8 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst } from "@/lib/format";
 import type { ReaderEntry } from "@/lib/info";
 import {
+  FEED_WINDOW_INITIAL_ROWS,
+  FEED_WINDOW_STEP_ROWS,
   NO_FILTERS,
   SEARCH_RANGES,
   applyFilters,
@@ -27,6 +29,8 @@ import {
   feedEmptyState,
   feedEntryGroups,
   feedPendingText,
+  feedWindowGroupCount,
+  feedWindowRowCount,
   hasFilters,
   httpUrl,
   isDateOnly,
@@ -89,6 +93,12 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 지날 때 시트가 커지지만, 열린 동안 줄지는 않으므로(sheetStyle) 다음 줄로 옮길 때 본문 높이가 줄어 고른 줄이 움직이지 않습니다.
  * 누르기(터치·마우스)로 고른 묶음 줄은 펼치기·접기만 하고 미리 보기를 열지 않습니다(열려 있던 미리 보기는 닫힘) — 누르기의 목적은 펼친 줄을 보는
  * 것인데, 열린 시트가 누른 줄을 시트 위로 옮기면 바로 밑에 펼친 줄이 시트에 덮였습니다. 고른 줄은 남아 ↑↓가 거기서 이어 갑니다.
+ *
+ * 이어 그리기(성능 3차 작업 C, ADR 0052 결정 8): 목록은 날짜 묶음 단위로 앞(최근)에서부터 약 60줄만 그리고, 아래로 내려 끝에 가까워지면(IntersectionObserver)
+ * 약 120줄씩 이어 그립니다 — 받은 줄이 수천 건일 때 한 번에 그리는 DOM이 1만 개를 넘었습니다(2,089줄에 12,679개). 건수·기간 단추·거르기·막대·같은 사건 묶기와
+ * ↑↓·Home·End·요약의 근거 단추는 받은 전체를 기준으로 하고, 아직 그리지 않은 줄로 가면 그 줄의 묶음까지 먼저 그린 뒤 옮깁니다(End는 끝까지 그림).
+ * 목록 아래 '이어서 보기' 단추가 같은 일을 합니다(스크롤 없이 키보드·낭독기로도 끝까지). 기간·거르기·막대 좁히기·묶어 보기를 바꾸면 처음 크기로 돌아가고,
+ * 받은 자료만 바뀔 때(다시 받기·받는 중 다시 읽기)와 묶음을 펼칠 때는 그린 만큼을 그대로 둡니다(보던 자리가 당겨지지 않게).
  *
  * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
  *
@@ -229,6 +239,19 @@ export function FeedPanel({
   const clusterCount = useMemo(() => feedClusterCount(narrowed), [narrowed]);
   const groups = useMemo(() => feedEntryGroups(narrowed, { grouped, expanded, all: data?.items ?? [] }), [narrowed, grouped, expanded, data]);
   const flat = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
+  // 이어 그리기 — 그릴 줄 수의 목표(날짜 묶음 단위로 올림). 목록의 틀을 바꾸는 조작(기간·거르기·막대 좁히기·묶어 보기)이면 처음 크기로.
+  const windowKey = `${range}|${grouped ? 1 : 0}|${period ? `${period.unit}:${period.start}` : ""}|${filters.kind.join(",")}|${filters.source.join(",")}|${filters.lang.join(",")}`;
+  const [feedWindow, setFeedWindow] = useState({ key: windowKey, rows: FEED_WINDOW_INITIAL_ROWS });
+  if (feedWindow.key !== windowKey) setFeedWindow({ key: windowKey, rows: FEED_WINDOW_INITIAL_ROWS });
+  const windowRows = feedWindow.key === windowKey ? feedWindow.rows : FEED_WINDOW_INITIAL_ROWS;
+  const shownGroupCount = useMemo(() => feedWindowGroupCount(groups, windowRows), [groups, windowRows]);
+  const shownRowCount = useMemo(() => feedWindowRowCount(groups, shownGroupCount), [groups, shownGroupCount]);
+  const hasMoreRows = shownGroupCount < groups.length;
+  /** 적어도 `rows`줄까지 그리게 — 줄이는 일은 없습니다. */
+  const showRows = useCallback((rows: number) => setFeedWindow((current) => (rows > current.rows ? { ...current, rows } : current)), []);
+  // 아직 그리지 않은 줄을 골랐을 때 — 그 줄이 그려진 뒤에 옮깁니다(아래 효과).
+  const scrollPending = useRef<string | null>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
   const selectedIndex = selectedKey === null ? -1 : flat.findIndex((entry) => entry.key === selectedKey);
   const selectedEntry = selectedIndex >= 0 ? flat[selectedIndex] : null;
   const selected = selectedEntry?.type === "item" ? selectedEntry.item : null;
@@ -272,8 +295,40 @@ export function FeedPanel({
     if (!entry) return;
     setSelectedKey(entry.key);
     setPointerCluster(null);
+    if (index >= shownRowCount) {
+      // 아직 그리지 않은 줄(↓로 그린 끝을 넘음·End·요약의 근거 단추) — 그 줄의 묶음까지 그리고, 그려진 뒤에 옮깁니다.
+      scrollPending.current = entry.key;
+      showRows(index + 1);
+      return;
+    }
     document.getElementById(optionId(index))?.scrollIntoView({ block: "nearest" });
   };
+
+  useEffect(() => {
+    const key = scrollPending.current;
+    if (key === null) return;
+    const index = flat.findIndex((entry) => entry.key === key);
+    const row = index >= 0 ? document.getElementById(`${baseId}-row-${index}`) : null;
+    if (index >= 0 && !row) return; // 아직 그려지지 않음 — 그린 묶음이 늘면 다시
+    scrollPending.current = null;
+    row?.scrollIntoView({ block: "nearest" });
+  }, [flat, shownGroupCount, baseId]);
+
+  // 목록 끝이 화면에 가까워지면 이어 그립니다. 스크롤하는 상자는 넓은 화면(lg)에서는 본문 main, 좁은 화면에서는 창입니다.
+  useEffect(() => {
+    const node = moreRef.current;
+    if (!node || !hasMoreRows || typeof IntersectionObserver === "undefined") return;
+    const main = document.getElementById("main");
+    const scrolls = main !== null && /auto|scroll/.test(window.getComputedStyle(main).overflowY);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) showRows(shownRowCount + FEED_WINDOW_STEP_ROWS);
+      },
+      { root: scrolls ? main : null, rootMargin: "0px 0px 800px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreRows, shownRowCount, showRows]);
 
   /** 요약의 근거 단추 — 그 줄을 목록에서 고르고 포커스를 목록에 둡니다(↑↓로 이어 감). 접힌 같은 사건 묶음의 줄이면 펼친 뒤에. */
   const revealRow = (id: string) => {
@@ -295,10 +350,16 @@ export function FeedPanel({
     if (id === null) return;
     const index = flat.findIndex((entry) => entry.key === id);
     if (index < 0) return;
+    const row = document.getElementById(`${baseId}-row-${index}`);
+    if (!row) {
+      // 펼친 줄이 아직 그리지 않은 묶음에 있음 — 거기까지 그린 뒤 다시(그린 묶음 수가 바뀌면 이 효과가 다시 돎).
+      showRows(index + 1);
+      return;
+    }
     revealPending.current = null;
-    document.getElementById(`${baseId}-row-${index}`)?.scrollIntoView({ block: "nearest" });
+    row.scrollIntoView({ block: "nearest" });
     listRef.current?.focus({ preventScroll: true });
-  }, [flat, baseId]);
+  }, [flat, baseId, shownGroupCount, showRows]);
 
   const closeSummary = () => {
     summary.clear();
@@ -501,7 +562,7 @@ export function FeedPanel({
           <span>매체</span>
           <span>제목</span>
         </div>
-        {groups.map((group) => {
+        {groups.slice(0, shownGroupCount).map((group) => {
           const headingId = `${baseId}-date-${group.date || "none"}`;
           const start = flat.indexOf(group.entries[0]);
           return (
@@ -787,6 +848,26 @@ export function FeedPanel({
             </div>
           ) : null}
           {body}
+          {/* 이어 그리기의 끝 — 이 줄이 화면에 가까워지면 다음 날짜 묶음들을 이어 그립니다(위 효과). 단추는 스크롤 없이도(키보드·낭독기) 끝까지 가는 길이고,
+              마지막 묶음까지 그려 단추가 사라질 때는 포커스를 결과 목록으로 옮깁니다(WCAG 2.4.3). 목록(listbox) 밖의 줄이라 ↑↓ 대상이 아닙니다. */}
+          {selectable && hasMoreRows ? (
+            <div ref={moreRef} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-xs text-text-3">
+              <button
+                type="button"
+                className={buttonClasses("default")}
+                onClick={() => {
+                  const next = shownRowCount + FEED_WINDOW_STEP_ROWS;
+                  showRows(next);
+                  if (next >= flat.length) listRef.current?.focus({ preventScroll: true });
+                }}
+              >
+                이어서 보기
+              </button>
+              <span>
+                {shownRowCount}줄까지 그렸습니다 · 남은 {flat.length - shownRowCount}줄 — 아래로 내리면 날짜 묶음 단위로 이어 그립니다(건수·거르기는 받은 전체 기준)
+              </span>
+            </div>
+          ) : null}
         </div>
         {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄(묶음 줄 포함)의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴
             옆(셸 변수 --shell-nav-w — 기본 220px·끌어서 206~320px, 접으면 48px), 본문 스크롤 막대 옆까지). */}

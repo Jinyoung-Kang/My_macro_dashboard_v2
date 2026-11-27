@@ -2065,6 +2065,34 @@ export function holdingsWindow(reportDates: readonly string[], today: string): {
   return { recent: reportDates.filter((date) => date >= start), latest };
 }
 
+// ------------------------------------------------------------------ 결과 목록의 이어 그리기(성능 3차 작업 C — ADR 0052)
+
+/** 처음 그리는 줄 수의 목표 — 날짜 묶음 단위로 올림(좁은 화면 44px 줄이면 화면 세 장 남짓). */
+export const FEED_WINDOW_INITIAL_ROWS = 60;
+/** 이어 그릴 때마다 더하는 줄 수의 목표(날짜 묶음 단위로 올림). */
+export const FEED_WINDOW_STEP_ROWS = 120;
+
+/**
+ * 결과 목록에서 지금 그릴 날짜 묶음 수 — 앞(최근)에서부터 줄 수가 `rows` 이상이 될 때까지의 묶음(묶음을 자르지 않음, 줄이 있으면 적어도 하나).
+ * 받은 줄이 수천 건이면 한 번에 다 그리는 DOM이 1만 개를 넘어(2,089줄에 12,679개), 화면은 이만큼만 그리고 아래로 내리거나 ↑↓·End로 닿을 때 이어 그립니다.
+ * 건수·기간 단추·거르기·막대·같은 사건 묶기는 이것과 상관없이 받은 전체로 셉니다.
+ */
+export function feedWindowGroupCount(groups: readonly { entries: readonly unknown[] }[], rows: number): number {
+  let total = 0;
+  for (let index = 0; index < groups.length; index += 1) {
+    total += groups[index].entries.length;
+    if (total >= rows) return index + 1;
+  }
+  return groups.length;
+}
+
+/** 앞에서부터 `count`개 묶음의 줄 수 합. */
+export function feedWindowRowCount(groups: readonly { entries: readonly unknown[] }[], count: number): number {
+  let total = 0;
+  for (let index = 0; index < Math.min(count, groups.length); index += 1) total += groups[index].entries.length;
+  return total;
+}
+
 // ------------------------------------------------------------------ 키보드·링크·원문 팝업
 
 /** ↑↓로 고른 줄 옮기기 — 끝에서 멈춤, 고른 줄이 없으면 첫 줄. 줄이 없으면 -1. */
