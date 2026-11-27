@@ -3,3 +3,5 @@
 pytest==9.1.1
 httpx==0.28.1
 ruff==0.8.6
+# make coverage 전용(시험 없는 자리 목록 — 평소 시험·CI는 쓰지 않습니다). 간접 의존성이 없어 constraints.txt에는 적지 않습니다.
+coverage==7.17.3
