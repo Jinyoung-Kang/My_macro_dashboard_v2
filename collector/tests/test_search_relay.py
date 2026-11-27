@@ -7,7 +7,8 @@ tests/test_search_relay.py
   1. 옛 모양 ID(풀린 바이트 안에 주소가 통째로)는 요청 없이 풂.
   2. 경유 쪽에 원문 주소가 바로 있으면(data-n-au·meta refresh·구글 밖 canonical·noscript 링크) 요청 한 건.
   3. 새 모양은 서명·시각을 읽어 내부 경로에 한 번 더(요청 두 건, 양식 f.req의 garturlreq).
-  4. 동의 화면으로 옮겨지면(3xx)·모양이 바뀌면·풀린 주소가 구글이면 풀지 못함.
+  4. 동의 화면으로 옮겨지면(3xx)·모양이 바뀌면·풀린 주소가 구글이면 풀지 못함. 3xx 가운데 같은 호스트·같은 경로에 지역 인자(hl·gl·ceid)만
+     붙인 것만 한 번 다시 묻고(QA-1038 — 요청·예산 한 건 더), 그 밖의 3xx와 다시 물은 답의 3xx는 풀지 못함.
   5. 요청마다 하루 예산 한 건(news.google.com/article, 60건), 읽지 못하면 보내지 않음. 거부(공용 래치)는 '풀지 못함'.
 """
 from __future__ import annotations
@@ -65,14 +66,14 @@ def test_옛_모양_경유_id는_요청_없이_푼다(monkeypatch, calls):
     f'<html><body><a href="https://policies.google.com/x">p</a><noscript><a href="{OLD_TARGET}">open</a></noscript></body></html>',
 ])
 def test_경유_쪽에_원문_주소가_있으면_요청_한_번(monkeypatch, calls, page):
-    monkeypatch.setattr(relay, "_get", lambda url: calls["get"].append(url) or (200, page.encode()))
+    monkeypatch.setattr(relay, "_get", lambda url: calls["get"].append(url) or (200, page.encode(), None))
     monkeypatch.setattr(relay, "_post", lambda form: pytest.fail("두 번째 요청은 없음"))
     assert relay.resolve(RELAY) == relay.Resolved(OLD_TARGET, 1)
     assert calls["get"] == [f"https://news.google.com/rss/articles/{NEW_ID}"] and len(calls["budget"]) == 1
 
 
 def test_새_모양은_서명을_읽고_한_번_더_묻는다(monkeypatch, calls):
-    monkeypatch.setattr(relay, "_get", lambda url: calls["get"].append(url) or (200, _signed_page()))
+    monkeypatch.setattr(relay, "_get", lambda url: calls["get"].append(url) or (200, _signed_page(), None))
     monkeypatch.setattr(relay, "_post", lambda form: calls["post"].append(form) or (200, _batch_reply(OLD_TARGET)))
     assert relay.resolve(RELAY) == relay.Resolved(OLD_TARGET, 2)
     assert len(calls["budget"]) == 2, "요청마다 예산 한 건"
@@ -84,7 +85,7 @@ def test_새_모양은_서명을_읽고_한_번_더_묻는다(monkeypatch, calls
 
 
 def test_동의_화면으로_옮겨지면_풀지_못함(monkeypatch, calls):
-    monkeypatch.setattr(relay, "_get", lambda url: (302, b""))
+    monkeypatch.setattr(relay, "_get", lambda url: (302, b"", None))
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
     assert "동의 화면" in caught.value.message and caught.value.requests == 1 and caught.value.retryable is False
@@ -92,14 +93,14 @@ def test_동의_화면으로_옮겨지면_풀지_못함(monkeypatch, calls):
 
 @pytest.mark.parametrize("page", ["<html><body>nothing here</body></html>", "<html><div data-n-a-sg='x' data-n-a-ts='abc'></div></html>"])
 def test_모양이_바뀌면_풀지_못함(monkeypatch, calls, page):
-    monkeypatch.setattr(relay, "_get", lambda url: (200, page.encode()))
+    monkeypatch.setattr(relay, "_get", lambda url: (200, page.encode(), None))
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
     assert "모양이 바뀜" in caught.value.message
 
 
 def test_내부_경로_답의_모양이_바뀌어도_풀지_못함(monkeypatch, calls):
-    monkeypatch.setattr(relay, "_get", lambda url: (200, _signed_page()))
+    monkeypatch.setattr(relay, "_get", lambda url: (200, _signed_page(), None))
     monkeypatch.setattr(relay, "_post", lambda form: (200, ")]}'\n\n[[\"wrb.fr\",\"Fbv4je\",null]]"))
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
@@ -109,7 +110,7 @@ def test_내부_경로_답의_모양이_바뀌어도_풀지_못함(monkeypatch, 
 @pytest.mark.parametrize("target", ["https://www.google.com/url?q=x", "https://consent.google.com/m", "https://news.google.com/x",
                                     "javascript:alert(1)", "ftp://example.com/a"])
 def test_풀린_주소가_구글이면_쓰지_않는다(monkeypatch, calls, target):
-    monkeypatch.setattr(relay, "_get", lambda url: (200, _signed_page()))
+    monkeypatch.setattr(relay, "_get", lambda url: (200, _signed_page(), None))
     monkeypatch.setattr(relay, "_post", lambda form: (200, _batch_reply(target)))
     with pytest.raises(relay.RelayUnresolved):
         relay.resolve(RELAY)
@@ -215,9 +216,56 @@ def _with_session(monkeypatch, replies: list[_FakeReply]) -> _FakeSession:
 
 # 운영 서버(2026-11-27 실측): 경유 쪽 GET이 같은 호스트·같은 경로에 hl·gl·ceid만 붙인 주소로 302. 수정 전에는 3xx를 모두 '동의 화면'으로 보고
 # 멈춰, 구글 경유 줄의 본문 보기가 모두 '풀지 못함'이었습니다.
-@pytest.mark.xfail(strict=True, reason="QA-1038 재현 — 지역 인자만 붙인 같은 쪽 302를 따라가지 않아 풀지 못함")
 def test_QA_1038_지역_인자만_붙인_같은_쪽_302는_한_번_따라간다(monkeypatch, calls):
     session = _with_session(monkeypatch, [_FakeReply(302, location=f"{PAGE}?hl=ko&gl=KR&ceid=KR:ko"), _FakeReply(200, _direct_page())])
     assert relay.resolve(RELAY) == relay.Resolved(OLD_TARGET, 2)
     assert session.seen == [PAGE, f"{PAGE}?ceid=KR%3Ako&gl=KR&hl=ko"], "두 번째 주소는 받은 글이 아니라 검사한 인자로 다시 만든 것"
     assert len(calls["budget"]) == 2, "따라간 요청도 하루 예산 한 건"
+
+
+def test_QA_1038_다시_물은_답이_서명_쪽이면_내부_경로까지_요청_세_건(monkeypatch, calls):
+    session = _with_session(monkeypatch, [_FakeReply(302, location=f"/rss/articles/{NEW_ID}?hl=ko&gl=KR&ceid=KR:ko"), _FakeReply(200, _signed_page())])
+    monkeypatch.setattr(relay, "_post", lambda form: calls["post"].append(form) or (200, _batch_reply(OLD_TARGET)))
+    assert relay.resolve(RELAY) == relay.Resolved(OLD_TARGET, 3)
+    assert len(session.seen) == 2 and len(calls["post"]) == 1 and len(calls["budget"]) == 3
+
+
+def test_QA_1038_다시_물은_답이_또_3xx면_풀지_못함(monkeypatch, calls):
+    again = f"{PAGE}?hl=ko&gl=KR&ceid=KR:ko"
+    session = _with_session(monkeypatch, [_FakeReply(302, location=again), _FakeReply(302, location=again), _FakeReply(200, _direct_page())])
+    with pytest.raises(relay.RelayUnresolved) as caught:
+        relay.resolve(RELAY)
+    assert "동의 화면" in caught.value.message and caught.value.requests == 2 and caught.value.retryable is False
+    assert len(session.seen) == 2, "한 번만 따라감"
+
+
+@pytest.mark.parametrize("location", [
+    None,                                                                   # Location 없음
+    "",
+    "https://consent.google.com/m?continue=https://news.google.com/rss/articles/x&gl=KR",   # 동의 화면
+    f"https://news.google.com.example.org/rss/articles/{NEW_ID}?hl=ko",    # 다른 호스트
+    f"http://news.google.com/rss/articles/{NEW_ID}?hl=ko",                 # https 아님
+    f"https://news.google.com:8443/rss/articles/{NEW_ID}?hl=ko",           # 포트
+    f"https://user@news.google.com/rss/articles/{NEW_ID}?hl=ko",           # 사용자 정보
+    f"https://news.google.com/articles/{NEW_ID}?hl=ko",                    # 다른 경로
+    "https://news.google.com/home?hl=ko&gl=KR&ceid=KR:ko",
+    f"https://news.google.com/rss/articles/{NEW_ID}",                      # 인자 없음(같은 주소로 되돌림)
+    f"https://news.google.com/rss/articles/{NEW_ID}?hl=ko&continue=https://example.org/",   # 모르는 인자
+    f"https://news.google.com/rss/articles/{NEW_ID}?hl=ko&hl=en",          # 겹친 이름
+    f"https://news.google.com/rss/articles/{NEW_ID}?hl=ko%0d%0aX",         # 값 모양
+    f"https://news.google.com/rss/articles/{NEW_ID}?hl=",
+    f"https://news.google.com/rss/articles/{NEW_ID}?hl=ko#frag",           # 조각
+    "https://[bad",                                                         # 주소가 아님
+])
+def test_QA_1038_그_밖의_3xx는_따라가지_않는다(monkeypatch, calls, location):
+    assert relay.region_redirect(PAGE, location) is None
+    session = _with_session(monkeypatch, [_FakeReply(302, location=location), _FakeReply(200, _direct_page())])
+    with pytest.raises(relay.RelayUnresolved) as caught:
+        relay.resolve(RELAY)
+    assert caught.value.requests == 1 and session.seen == [PAGE] and len(calls["budget"]) == 1
+
+
+def test_QA_1038_다시_물을_주소는_검사한_인자로_새로_만든다():
+    assert relay.region_redirect(PAGE, f"{PAGE}?hl=ko&gl=KR&ceid=KR:ko") == f"{PAGE}?ceid=KR%3Ako&gl=KR&hl=ko"
+    assert relay.region_redirect(PAGE, "?hl=en-US") == f"{PAGE}?hl=en-US"
+    assert relay.region_redirect(f"{PAGE}?hl=ko", f"{PAGE}?hl=ko&gl=KR") is None, "이미 인자를 붙여 보낸 주소는 다시 따라가지 않음"

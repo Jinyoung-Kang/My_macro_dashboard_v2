@@ -7,7 +7,8 @@ app/services/search_relay.py
   1. 요청 0건 — 옛 모양: ``<ID>``를 base64url로 풀어 그 안에 http(s) 주소가 통째로 들어 있으면 그 주소(protobuf 필드 머리 ``08 13 22`` + 길이 + 주소).
   2. 요청 1건 — 경유 쪽 ``GET https://news.google.com/rss/articles/<ID>``(HTML, 1MB까지): 원문 주소가 바로 있으면(``data-n-au`` 속성·
      ``meta refresh``·구글 밖을 가리키는 ``link rel=canonical``·``noscript`` 안의 구글 밖 링크) 끝. 없으면 같은 쪽에서 서명(``data-n-a-sg``)·
-     시각(``data-n-a-ts``)을 읽어 3으로.
+     시각(``data-n-a-ts``)을 읽어 3으로. 답이 **같은 호스트·같은 경로에 지역 인자(``hl``·``gl``·``ceid``)만 붙인 주소**로 보내는 3xx면 그 주소로
+     한 번만 다시 묻습니다(요청 1건 더 — QA-1038, :func:`region_redirect`. 운영 서버에서는 늘 이 302가 먼저 옵니다).
   3. 요청 1건 더 — 구글 내부 경로 ``POST https://news.google.com/_/DotsSplashUi/data/batchexecute``(양식 ``f.req`` — ``garturlreq`` 묶음에 ID·시각·
      서명), 답의 머리 ``)]}'``를 떼고 ``garturlres`` 다음 글자를 원문 주소로.
 2·3은 공개 문서가 없는 구글 내부 모양이라(공개 디코더들이 쓰는 모양 — 코드는 가져오지 않고 요청 모양만 참고) 바뀌면 그날부터 '풀지 못함'입니다.
@@ -16,7 +17,8 @@ app/services/search_relay.py
 - 세션은 공용 HTTP 층의 재시도 없는 세션(``http.get_relay_session`` — 래치·간격·거부 판정). news.google.com이 닫혀 있으면 보내지 않고, 이 요청이
   거부되면 그 호스트를 5분 닫습니다(구글 RSS 검색도 5분 멈춤 — 같은 IP라 어차피 함께 막힘).
 - 하루 예산: ``fetch_budgets(news.google.com, article)`` :data:`DAILY_BUDGET`건(요청마다 한 건, KST). 읽지 못하면 보내지 않음.
-- 리다이렉트는 따라가지 않습니다 — 2의 답이 3xx(동의 화면 등)면 '풀지 못함'.
+- 리다이렉트는 세션이 따라가지 않습니다 — 2의 답이 3xx면 위의 '지역 인자만 붙인 같은 쪽'일 때만 코드가 한 번 다시 묻고(받은 글을 그대로 쓰지 않고
+  검사한 인자로 주소를 다시 만듦), 그 밖의 3xx(동의 화면·다른 호스트·다른 경로·다른 인자)와 다시 물은 답의 3xx는 '풀지 못함'.
 - 풀린 주소는 http(s)이고 구글이 아닌 호스트여야 합니다(부르는 쪽이 받지 않는 매체·주소 검사를 처음부터 다시 함 — 구글이 준 주소도 믿지 않음).
 - 로그에는 호스트·상태만(ID·주소 없음).
 """
@@ -29,7 +31,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -50,6 +52,9 @@ _ID = re.compile(r"^/(?:rss/)?articles/([A-Za-z0-9_\-]{8,4096})/?$")
 _REFRESH = re.compile(r"url\s*=\s*['\"]?([^'\";]+)", re.IGNORECASE)
 _GARTURL = re.compile(r'garturlres\\*",\\*"(https?:[^"\\]+)')
 
+REGION_KEYS = frozenset({"hl", "gl", "ceid"})          # 구글이 경유 쪽에 붙여 되돌려 보내는 지역 인자(이 셋 말고 다른 것이 있으면 따라가지 않음)
+_REGION_VALUE = re.compile(r"^[A-Za-z0-9:_\-]{1,16}$")
+
 UNRESOLVED = "구글 경유 주소를 원문 주소로 풀지 못했습니다 — 원문 열기는 브라우저가 옮겨 줍니다"
 
 
@@ -69,7 +74,7 @@ class RelayUnresolved(Exception):
 
 @dataclass(frozen=True)
 class Resolved:
-    """풀린 원문 주소와 그때 보낸 요청 수(0~2)."""
+    """풀린 원문 주소와 그때 보낸 요청 수(0~3 — 지역 인자 302를 한 번 따라가면 한 건 더)."""
     url: str
     requests: int
 
@@ -225,6 +230,35 @@ def _today():
     return datetime.now(timezone.utc).astimezone(kst.KST).date()
 
 
+def region_redirect(page_url: str, location: str | None) -> str | None:
+    """
+    경유 쪽의 3xx가 '같은 쪽에 지역 인자만 붙인 것'이면 다시 물을 주소, 아니면 None(QA-1038).
+
+    조건을 모두 채워야 합니다: https · 호스트가 news.google.com(포트·사용자 정보 없음) · 경로가 보낸 것과 같음 · 조각 없음 · 인자가 하나 이상이고
+    이름이 ``hl``·``gl``·``ceid`` 안에서 겹치지 않음 · 값이 짧은 영숫자(``:``·``_``·``-``). 돌려주는 주소는 받은 글이 아니라 ``page_url``에
+    검사한 인자를 이름순으로 다시 붙인 것입니다(동의 화면·다른 호스트·다른 경로로는 가지 않음).
+    """
+    if not location:
+        return None
+    try:
+        sent = urlsplit(page_url)
+        target = urlsplit(urljoin(page_url, location.strip()))
+        port = target.port
+    except ValueError:
+        return None
+    if target.scheme != "https" or (target.hostname or "").lower() != HOST or port is not None or target.username or target.password:
+        return None
+    if target.path != sent.path or target.fragment or sent.query:
+        return None
+    pairs = parse_qsl(target.query, keep_blank_values=True)
+    names = [name for name, _ in pairs]
+    if not pairs or len(set(names)) != len(names) or not set(names) <= REGION_KEYS:
+        return None
+    if any(not _REGION_VALUE.match(value) for _, value in pairs):
+        return None
+    return f"{page_url}?{urlencode(sorted(pairs))}"
+
+
 def _take_budget() -> bool:
     return store.take_search_budget(HOST, PURPOSE, _today(), DAILY_BUDGET)
 
@@ -257,13 +291,16 @@ def _read_limited(response, limit: int) -> bytes:
     return b"".join(chunks)
 
 
-def _get(url: str) -> tuple[int, bytes]:
-    """경유 쪽 한 번(네트워크 — 시험이 바꿔 끼우는 자리). 리다이렉트를 따라가지 않습니다."""
+def _get(url: str) -> tuple[int, bytes, str | None]:
+    """
+    경유 쪽 한 번(네트워크 — 시험이 바꿔 끼우는 자리) → (상태, 본문, Location). 리다이렉트를 따라가지 않습니다 — 3xx면 Location만 돌려주고
+    따라갈지는 부르는 쪽이 정합니다(:func:`region_redirect`).
+    """
     response = http.get_relay_session().get(url, timeout=TIMEOUT, allow_redirects=False, stream=True)
     try:
         if response.status_code != 200:
-            return response.status_code, b""
-        return 200, _read_limited(response, PAGE_MAX_BYTES)
+            return response.status_code, b"", response.headers.get("Location")
+        return 200, _read_limited(response, PAGE_MAX_BYTES), None
     finally:
         response.close()
 
@@ -296,7 +333,7 @@ def _call(step, sent: int):
 
 def resolve(url: str) -> Resolved:
     """
-    경유 주소 → 원문 주소(요청 0~2건). 부르는 쪽이 시간 상한(``http.run_guarded``)을 건 작업 스레드에서 부릅니다.
+    경유 주소 → 원문 주소(요청 0~3건). 부르는 쪽이 시간 상한(``http.run_guarded``)을 건 작업 스레드에서 부릅니다.
 
     :raises RelayUnresolved: 풀지 못함(모양이 다름·동의 화면·거부·예산·전송 실패)
     """
@@ -307,10 +344,18 @@ def resolve(url: str) -> Resolved:
     if offline is not None:
         return Resolved(offline, 0)
     sent = 0
+    page_url = PAGE_URL.format(id=article_id)
     _spend(sent)
-    status, raw = _call(lambda: _get(PAGE_URL.format(id=article_id)), sent)
+    status, raw, location = _call(lambda: _get(page_url), sent)
     sent += 1
     logger.info("구글 경유 풀기: %s HTTP %d", HOST, status)
+    if 300 <= status < 400:
+        again = region_redirect(page_url, location)
+        if again is not None:                     # 같은 쪽에 지역 인자만 붙인 302 — 한 번만 다시(그 답이 또 3xx면 아래에서 '풀지 못함')
+            _spend(sent)
+            status, raw, _ = _call(lambda: _get(again), sent)
+            sent += 1
+            logger.info("구글 경유 풀기: %s HTTP %d(지역 인자를 붙여 다시)", HOST, status)
     if status != 200:
         raise RelayUnresolved(UNRESOLVED if not 300 <= status < 400 else f"{UNRESOLVED}(동의 화면 등으로 옮겨짐)",
                               retryable=status >= 500, requests=sent)

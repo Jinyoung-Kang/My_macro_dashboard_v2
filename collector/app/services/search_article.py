@@ -12,7 +12,7 @@ app/services/search_article.py
 - 받기(:func:`request`): 순서는 서버 스위치(POLITE_FETCH_ENABLED — 로컬·QA는 꺼짐, 그러면 기억표·DB·네트워크 0건) → 프록시 환경 → 캐시 → 받는 중 →
   (start가 거짓이면 not_cached) → 기억표 → 받지 않는 매체 → 호스트 닫힘 → 줄 상한(:data:`QUEUE_LIMIT`) → 하루 전체 예산(fetch_budgets ``*``/article,
   :data:`DAILY_BUDGET`) → 작업자 하나(한 번에 한 건, 작업 상한 :data:`JOB_DEADLINE`초)에 넘기고 ``pending``·``queued``.
-- 작업자: 구글 경유면 원문 주소로 풀기(services/search_relay — 요청 0~2건) → 한 건 받기(app/fetch/article — 홉마다 주소 검사·고정 주소·리다이렉트 3번·
+- 작업자: 구글 경유면 원문 주소로 풀기(services/search_relay — 요청 0~3건) → 한 건 받기(app/fetch/article — 홉마다 주소 검사·고정 주소·리다이렉트 3번·
   3MB·HTML만) → 본문 추출(:func:`extract` — trafilatura 2.4.0, 처음 쓸 때 가져옴, 여는 태그 :data:`MAX_TAGS`개 넘으면 하지 않음) → 메모리 캐시(성공 24시간, 실패는 사유별 — :func:`_ttl`).
 - 사유 글·로그에는 호스트·상태·사유 코드만(경로·인자·제목·본문·꼬리표 없음).
 """
