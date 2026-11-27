@@ -10,6 +10,7 @@ import com.macrodash.store.InfoStore.Item;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
 import com.macrodash.support.InvalidRequestException;
+import com.macrodash.support.SecretRedactor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
@@ -253,15 +254,42 @@ public class InfoService {
     }
 
     /**
+     * 수집기 실행 기록의 한 줄(태스크의 가장 최근 실행) — 한눈 보기가 쓰는 칸만.
+     *
+     * @param detail 사유(내보내기 직전에 비밀값을 가림 — 수집기가 저장 전에 가리지만 표를 바로 읽는 길이라 한 번 더, 상태 화면과 같은 규칙)
+     */
+    record TaskRun(String speed, String status, Instant startedAt, String detail) {
+
+        static TaskRun of(Map<String, Object> row) {
+            Object started = row.get("started_at");
+            Object detail = row.get("detail");
+            return new TaskRun(text(row.get("speed")), text(row.get("status")),
+                    started instanceof java.sql.Timestamp timestamp ? timestamp.toInstant() : null,
+                    detail instanceof String reason ? SecretRedactor.redact(reason) : null);
+        }
+
+        private static String text(Object value) {
+            return value == null ? null : value.toString();
+        }
+    }
+
+    /**
      * 모든 출처의 한눈 보기 — 탭(큰 분류)마다 출처 카드(접근 방식·기관·링크·화면)와 마지막 실행(수집기 실행 기록), polite 출처는 판정·다음
      * 실행·끊김을 더합니다. 수집기에 닿지 못하면 마지막 실행 칸은 비고 {@code collectorReachable: false}.
+     *
+     * <p>수집기에 닿는지는 가벼운 상태({@code /status?view=light} — 행 수 세기·태스크 요약 없음, ADR 0047)로 보고, 마지막 실행은 수집기의 실행 기록
+     * 표를 읽기만 합니다({@link StoreRepository#readTaskSummary} — 상태 화면이 수집기 없이 읽는 것과 같은 질의). 예전에는 전체 상태를 불러 그 안의
+     * 태스크 요약만 썼고, 전체 상태가 시계열·관측치 행 수를 세어(60초만 기억) 정보 화면 일곱 곳이 열 때마다 약 0.2초를 썼습니다(QA-1041).
      */
     public Map<String, Object> catalog() {
         Instant now = clock.instant();
-        Map<String, JsonNode> runs = new LinkedHashMap<>();
-        Optional<JsonNode> status = collector.status();
-        status.map(node -> node.get("taskSummary")).filter(JsonNode::isArray)
-                .ifPresent(list -> list.forEach(row -> runs.put(row.path("task").asText(""), row)));
+        Map<String, TaskRun> runs = new LinkedHashMap<>();
+        Optional<JsonNode> status = collector.statusLight();
+        if (status.isPresent()) {
+            for (Map<String, Object> row : repository.readTaskSummary()) {
+                runs.put(String.valueOf(row.get("task")), TaskRun.of(row));
+            }
+        }
         Map<String, InfoStore.SourceState> states = store.ready() ? states() : Map.of();
         Map<String, Instant> schedule = fetchState.ready() ? fetchState.schedule() : Map.of();
         Map<String, InfoStore.SourceCount> counts = store.ready()
@@ -282,11 +310,11 @@ public class InfoService {
             row.put("origin", source.origin());
             row.put("access", source.access());
             row.put("screen", source.screen());
-            JsonNode run = runs.get(source.task());
-            row.put("speed", run == null ? null : run.path("speed").asText(null));
-            row.put("lastStatus", run == null ? null : run.path("status").asText(null));
-            row.put("lastRunAt", run == null ? null : kstText(run.path("startedAt").asText(null)));
-            row.put("lastDetail", run == null ? null : run.path("detail").asText(null));
+            TaskRun run = runs.get(source.task());
+            row.put("speed", run == null ? null : run.speed());
+            row.put("lastStatus", run == null ? null : run.status());
+            row.put("lastRunAt", run == null || run.startedAt() == null ? null : Kst.stamp(run.startedAt()));
+            row.put("lastDetail", run == null ? null : run.detail());
             InfoStore.SourceState state = states.get(source.task());
             row.put("politeStatus", state == null ? null : state.status());
             row.put("streak", state == null ? null : state.streak());
@@ -322,7 +350,7 @@ public class InfoService {
      * 카드의 색 — 끊김 사건이면 위험(차단·형식 바뀜) 또는 주의, 수집기 실행 기록이 실패·거부면 위험, 수집 결과 없음·일부면 주의, 성공이면 정상,
      * 기록이 없으면(보류·로컬에서 돌지 않는 polite·처음) 회색.
      */
-    static String tone(InfoSources.Source source, JsonNode run, InfoStore.SourceState state, SourceIncidents.Incident incident) {
+    static String tone(InfoSources.Source source, TaskRun run, InfoStore.SourceState state, SourceIncidents.Incident incident) {
         if (InfoSources.DEFERRED.equals(source.access())) {
             return "neutral";
         }
@@ -332,7 +360,7 @@ public class InfoService {
         if (state != null) {
             return "ok".equals(state.status()) ? "ok" : "warn";
         }
-        String status = run == null ? null : run.path("status").asText(null);
+        String status = run == null ? null : run.status();
         if (status == null) {
             return "neutral";
         }
@@ -488,18 +516,6 @@ public class InfoService {
             out.put("body", item.body());
         }
         return out;
-    }
-
-    /** 수집기가 준 ISO 시각을 KST 글로 — 읽지 못하면 그대로. */
-    private static String kstText(String iso) {
-        if (iso == null || iso.isBlank()) {
-            return null;
-        }
-        try {
-            return Kst.stamp(java.time.OffsetDateTime.parse(iso).toInstant());
-        } catch (java.time.format.DateTimeParseException e) {
-            return iso;
-        }
     }
 
     /** 쪽 나누기 — page는 1부터, size는 1~{@value #MAX_SIZE}(기본 {@value #DEFAULT_SIZE}). */

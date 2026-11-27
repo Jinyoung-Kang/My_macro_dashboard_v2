@@ -130,11 +130,7 @@ class InfoServiceTest {
     @DisplayName("한눈 보기는 모든 출처를 탭으로 묶고 마지막 실행·판정·끊김에 따라 색을 매긴다 — 보류한 saveticker는 회색")
     @SuppressWarnings("unchecked")
     void catalog() {
-        tools.jackson.databind.node.ObjectNode status = MAPPER.createObjectNode();
-        tools.jackson.databind.node.ArrayNode summary = status.putArray("taskSummary");
-        summary.addObject().put("task", "fred_series").put("speed", "slow").put("status", "ok").put("startedAt", "2026-11-11T08:00:00+00:00");
-        summary.addObject().put("task", "cot_history").put("speed", "slow").put("status", "fail").put("detail", "HTTP 503");
-        when(collector.status()).thenReturn(Optional.of(status));
+        taskRuns(taskRun("fred_series", "slow", "ok", "2026-11-11T08:00:00Z", null), taskRun("cot_history", "slow", "fail", null, "HTTP 503"));
         when(store.states()).thenReturn(List.of(new InfoStore.SourceState("info_blog_wolfstreet", "blocked", 1, "HTTP 403",
                 NOW.minus(Duration.ofHours(2)), NOW.minus(Duration.ofMinutes(3)), 1440, NOW.minus(Duration.ofDays(1)))));
         when(store.counts()).thenReturn(List.of(new InfoStore.SourceCount("blog.wolfstreet", 12, NOW.minusSeconds(600))));
@@ -178,7 +174,6 @@ class InfoServiceTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-1041: 한눈 보기가 수집기의 전체 상태를 불러 행 수 세기를 일으킴")
     @DisplayName("QA-1041: 한눈 보기는 수집기의 전체 상태(행 수 세기)를 부르지 않는다 — 닿는지는 가벼운 상태로, 마지막 실행은 실행 기록 표에서")
     @SuppressWarnings("unchecked")
     void catalogDoesNotCountRows() {
