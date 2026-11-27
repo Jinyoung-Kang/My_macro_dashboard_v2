@@ -403,6 +403,17 @@ describe("표기", () => {
     expect(eventDetailText(null)).toBeNull();
   });
 
+  it("창 요약의 줄임(ADR 0028 덧붙임 2026-11-27) — 줄여 낸 매수가 있을 때만 건수와 순자산 대비 부족 %, 없으면 지금 글 그대로", () => {
+    const base = { window: "SYNC_AT", accepted: 3, filled: 3, missed: 0, skipped: 0, blocked: 0, deferred: 0, unknown: 0 };
+    const plain = "개장 10분 뒤 맞추기 · 접수 3 · 체결 3 · 놓침 0 · 건너뜀 0 · 막힘 0 · 미룸 0 · 결과 모름 0";
+    expect(eventDetailText(base, "WINDOW_SUMMARY")).toBe(plain);
+    expect(eventDetailText({ ...base, reduced: 0, reducedPct: 0 }, "WINDOW_SUMMARY")).toBe(plain);
+    expect(eventDetailText({ ...base, reduced: 1, reducedPct: 0.8 }, "WINDOW_SUMMARY")).toBe(
+      `${plain} · 현금 부족으로 줄여 낸 매수 1(부족 순자산의 0.80%)`,
+    );
+    expect(eventDetailText({ ...base, reduced: 2 }, "WINDOW_SUMMARY")).toBe(`${plain} · 현금 부족으로 줄여 낸 매수 2`);
+  });
+
   it("주문 상태는 토스 상태가 먼저, 없으면 보낸 결과 — 모르는 값은 원문", () => {
     expect(orderStatusText({ brokerStatus: "FILLED", sendOutcome: "ACCEPTED" })).toBe("체결 완료");
     expect(orderStatusText({ brokerStatus: null, sendOutcome: "UNKNOWN" })).toBe("결과 모름");

@@ -871,7 +871,8 @@ const EVENT_PCTS: readonly [string, string][] = [
  * 이벤트 detail → 한 줄("시가 맞추기 · 사유 unknown-order · 접수 5 · 체결 5"). 용도·사유 코드·건수·책만 적고 그 밖의 칸은 적지 않습니다.
  * 이상 멈춤(HALT) 이벤트의 사유는 멈춤 사유 이름표와 코드로 적습니다("사유 수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)").
  * 회전율 멈춤에 재선정 예외 판정 코드가 있으면 "재선정 예외 아님: 이름표(코드)"를 사유 뒤에, 그 뒤 % 칸({@link EVENT_PCTS} — 숫자일 때만, "회전율 80.0%")과
- * 하루 한도로 밀리는 매도 수(0보다 클 때만, "밀리는 매도 4")를 적습니다. 아무것도 없으면 null.
+ * 하루 한도로 밀리는 매도 수(0보다 클 때만, "밀리는 매도 4")를 적습니다. 창 요약에 줄임 칸(`reduced` — 0보다 클 때만)이 있으면 건수 뒤에
+ * "현금 부족으로 줄여 낸 매수 1(부족 순자산의 0.80%)"를 적습니다. 아무것도 없으면 null.
  */
 export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTradeEvent["kind"]): string | null {
   if (!detail || typeof detail !== "object") {
@@ -901,6 +902,12 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
   for (const [key, label] of EVENT_COUNTS) {
     const count = toNumber(detail[key]);
     if (count !== null) parts.push(`${label} ${formatNumber(count, 0)}`);
+  }
+  // 창 요약의 줄임(ADR 0028 덧붙임 2026-11-27) — 현금이 모자라 줄여서 낸 마무리 매수의 수와 그 부족분의 순자산 대비 %. 0이거나 칸이 없으면 적지 않습니다.
+  const reduced = toNumber(detail.reduced);
+  if (reduced !== null && reduced > 0) {
+    const pct = toNumber(detail.reducedPct);
+    parts.push(`현금 부족으로 줄여 낸 매수 ${formatNumber(reduced, 0)}${pct !== null ? `(부족 순자산의 ${formatNumber(pct, 2)}%)` : ""}`);
   }
   return parts.length > 0 ? parts.join(" · ") : null;
 }
