@@ -36,7 +36,7 @@ PAPER_ENABLED ?= $(shell grep -s '^PAPER_ENABLED=' .env | tail -n 1 | cut -d= -f
 
 .DEFAULT_GOAL := help
 .PHONY: help setup update version up migrate down restart logs ps collect collect-all status verify \
-        doctor test test-isolated db-test test-collector test-backend test-frontend \
+        doctor test test-isolated db-test test-collector test-backend test-frontend smoke \
         dev-collector dev-backend dev-frontend db infra backup restore reset constraints
 
 # 네이티브 개발용 파이썬. collector/.venv가 있으면 그것을 씁니다.
@@ -203,10 +203,17 @@ test-backend: db-test ## 백엔드 테스트 (PostgreSQL 필요)
 	cd backend && TEST_DATABASE_URL=$${TEST_DATABASE_URL:-jdbc:postgresql://localhost:$(DATABASE_PORT)/$(TEST_DB_NAME)} \
 		mvn -B verify
 
-# 마지막 줄은 화면 감사 스크립트(scripts/qa/ui-audit.js)의 순수 함수 시험 — Node 내장 node:test라 의존성이 없고, CI 프런트엔드 job도 같은 명령을 돌립니다.
-test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 검사 포함) + 화면 감사 스크립트 시험
+# 마지막 줄은 화면 감사·연기 시험 스크립트(scripts/qa/ui-audit.js·ui-smoke.js)의 순수 함수 시험 — Node 내장 node:test라 의존성이 없고, CI 프런트엔드 job도 같은 명령을 돌립니다.
+test-frontend: ## 화면 자가검증 + 훅 테스트 + 린트 + 빌드(타입 검사 포함) + 화면 감사·연기 시험 스크립트 시험
 	cd frontend && npm run check && npm test && npm run lint && npm run build
-	node --test scripts/qa/ui-audit.test.js
+	node --test scripts/qa/ui-audit.test.js scripts/qa/ui-smoke.test.js
+
+# 브라우저 연기 시험(품질 개선 계획 2026-11-27 P1) — 떠 있는 QA 스택(.env.qa의 화면 포트, 기본 13002)의 화면을 실제 크롬으로 열어 단언합니다.
+# make test에 넣지 않습니다(스택과 크롬이 필요, CI job도 아직 없음). 로컬 스택(3002)·운영 서버는 대상이 아닙니다 — 스크립트가 포트로 거절합니다.
+# 먼저 씨앗(가짜 CIK 즐겨찾기로 상한을 채움)을 QA DB에 넣습니다. 인자는 ARGS로: make smoke ARGS="--only /paper --no-flows"
+smoke: ## 브라우저 연기 시험 — QA 스택의 화면 58개를 열어 단언 + 흐름 다섯(QA 스택이 떠 있어야 함)
+	bash scripts/qa/qa-stack.sh exec postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < scripts/qa/smoke-seed.sql
+	node scripts/qa/ui-smoke.js --strict-flows $(ARGS)
 
 # ------------------------------------------------------------- 네이티브 개발
 # 수집기는 토큰이 비면 기동을 거부하고(COLLECTOR_ALLOW_NO_TOKEN=1일 때만 경고 후 기동), 백엔드는 같은 토큰을
