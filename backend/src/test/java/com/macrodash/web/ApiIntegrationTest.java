@@ -598,7 +598,6 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-265 재현 — 필터가 직접 쓰는 401에 CORS 머리글이 없음")
     @DisplayName("QA-265 허용한 출처에서 온 쿠키 없는 요청의 401에 CORS 머리글이 붙고, 통과한 응답의 머리글은 하나뿐이다")
     void unauthorizedIsReadableAcrossOrigins() {
         String origin = "http://localhost:3000";

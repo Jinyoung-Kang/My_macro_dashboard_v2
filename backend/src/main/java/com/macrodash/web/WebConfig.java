@@ -239,6 +239,7 @@ public class WebConfig implements WebMvcConfigurer {
             addSecurityHeaders(response);
 
             if (nonNormalized(request)) {
+                exposeToAllowedOrigin(request, response);
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write(
@@ -252,6 +253,7 @@ public class WebConfig implements WebMvcConfigurer {
             }
 
             if (demoForbidden(request)) {
+                exposeToAllowedOrigin(request, response);
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write(
@@ -260,7 +262,7 @@ public class WebConfig implements WebMvcConfigurer {
             }
 
             if (isLoginPost(request)) {
-                HttpServletRequest capped = capBody(request, response, MAX_LOGIN_BODY_BYTES);
+                HttpServletRequest capped = capBody(request, response, MAX_LOGIN_BODY_BYTES, this::exposeToAllowedOrigin);
                 if (capped != null) {
                     chain.doFilter(capped, response);
                 }
@@ -286,6 +288,7 @@ public class WebConfig implements WebMvcConfigurer {
             }
             Optional<CurrentUser> user = authService.resolve(token, request.getHeader(DemoViewer.HEADER), localRequest, tailnetOwner);
             if (user.isEmpty()) {
+                exposeToAllowedOrigin(request, response);
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write(
@@ -298,6 +301,7 @@ public class WebConfig implements WebMvcConfigurer {
             }
             AccessPolicy.Access required = AccessPolicy.required(request.getMethod(), pathOf(request));
             if (!AccessPolicy.allows(required, user.get().role(), user.get().tier())) {
+                exposeToAllowedOrigin(request, response);
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.setContentType("application/json;charset=UTF-8");
                 String message = required == AccessPolicy.Access.OWNER
@@ -308,13 +312,38 @@ public class WebConfig implements WebMvcConfigurer {
             }
             request.setAttribute(CurrentUser.ATTRIBUTE, user.get());
             if (hasBody(request)) {
-                HttpServletRequest capped = capBody(request, response, MAX_WRITE_BODY_BYTES);
+                HttpServletRequest capped = capBody(request, response, MAX_WRITE_BODY_BYTES, this::exposeToAllowedOrigin);
                 if (capped != null) {
                     chain.doFilter(capped, response);
                 }
                 return;
             }
             chain.doFilter(request, response);
+        }
+
+        /**
+         * 필터가 직접 쓰는 오류 응답(401·400·403·413)을 허용한 출처의 화면이 읽을 수 있게 합니다(QA-265). Spring MVC의 CORS 처리
+         * ({@link WebConfig#addCorsMappings})는 컨트롤러까지 간 요청에만 머리글을 붙이므로, 여기서 끝나는 응답에는 머리글이 없어
+         * 화면과 API의 포트가 다른 배치(QA 스택·로컬 로그인 모드)의 브라우저가 상태 코드를 읽지 못했습니다 — 세션 만료가
+         * '연결하지 못했습니다'로 보이고 끝난 세션의 로그아웃이 로그인 화면으로 가지 않았습니다.
+         *
+         * <p>요청의 Origin이 허용 목록(CORS 설정과 같은 {@link #origins})에 맞을 때만 그 Origin 하나를 되돌려 줍니다. Origin이 없거나
+         * 허용하지 않은 출처면 아무것도 붙이지 않습니다. {@code bad_origin} 403과 통과한 요청에는 부르지 않습니다 — 통과한 요청은
+         * Spring MVC가 붙이므로 여기서 또 붙이면 값이 둘이 되어 브라우저가 거절합니다. 같은 출처 배치(운영)는 Origin이 화면 주소라
+         * 머리글이 붙어도 브라우저가 쓰지 않습니다.
+         */
+        void exposeToAllowedOrigin(HttpServletRequest request, HttpServletResponse response) {
+            String origin = request.getHeader("Origin");
+            if (origin == null) {
+                return;
+            }
+            String allowed = origins.checkOrigin(origin);
+            if (allowed == null) {
+                return;
+            }
+            response.setHeader("Access-Control-Allow-Origin", allowed);
+            response.setHeader("Access-Control-Allow-Credentials", "true");
+            response.addHeader("Vary", "Origin");
         }
 
         private static void writeBadOrigin(HttpServletResponse response) throws IOException {
@@ -337,10 +366,18 @@ public class WebConfig implements WebMvcConfigurer {
          */
         static HttpServletRequest capBody(HttpServletRequest request, HttpServletResponse response, long limit)
                 throws IOException {
+            return capBody(request, response, limit, (req, res) -> { });
+        }
+
+        /** 위와 같되, 413을 쓰기 전에 {@code onReject}를 부릅니다(필터가 CORS 머리글을 붙이는 자리 — QA-265). */
+        static HttpServletRequest capBody(HttpServletRequest request, HttpServletResponse response, long limit,
+                                          java.util.function.BiConsumer<HttpServletRequest, HttpServletResponse> onReject)
+                throws IOException {
             byte[] body = request.getContentLengthLong() > limit
                     ? null
                     : request.getInputStream().readNBytes((int) limit + 1);
             if (body == null || body.length > limit) {
+                onReject.accept(request, response);
                 response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
                 response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write(

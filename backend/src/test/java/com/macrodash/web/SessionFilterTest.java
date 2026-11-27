@@ -9,7 +9,6 @@ import com.macrodash.store.SessionStore;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -857,7 +856,6 @@ class SessionFilterTest {
         }
 
         @Test
-        @Disabled("QA-265 재현 — 필터가 직접 쓰는 오류 응답에 CORS 머리글이 없음")
         @DisplayName("QA-265 허용한 출처에서 온 요청이면 401·403·400·413에도 CORS 머리글이 붙는다")
         void directErrorsCarryCorsHeadersForAllowedOrigins() throws Exception {
             // 401 — 쿠키 없는 읽기와, 끝난 세션의 로그아웃(쓰기)
