@@ -74,6 +74,22 @@ def test_QA1036_수집기_이미지는_이름_붙은_컨텍스트에서_마이�
     assert _collector("docker-compose.yml")["environment"]["MACRO_MIGRATIONS_DIR"] == IMAGE_DIR
 
 
+def test_QA1036_CI_이미지_잡은_빌드한_수집기_이미지_안의_스키마_파일을_저장소와_대조한다():
+    """이미지에 폴더가 빠지거나 일부만 들어가면 수집기는 경고 한 줄만 남기고 스키마 없이 뜹니다 — 빌드한 이미지로 확인합니다."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    runs = [s.get("run") or "" for s in workflow["jobs"]["images"]["steps"]]
+    build_at = next(i for i, run in enumerate(runs) if run.strip() == "docker compose build")
+    checks = [i for i, run in enumerate(runs) if IMAGE_DIR in run]
+    assert checks == [build_at + 1], "이미지 빌드 바로 다음 단계에서 한 번 봅니다"
+    script = runs[checks[0]]
+    assert "config --images collector" in script, "compose가 만든 이미지 이름을 물어 그 이미지로"
+    run = script[script.index("docker run"):].splitlines()[0]
+    assert "--rm" in run and "--network none" in run and "--entrypoint sh" in run and '"$collector_image"' in run
+    assert "cd db/migrations && sha256sum" in script and f"cd {IMAGE_DIR} && sha256sum" in script, "개수만이 아니라 이름·내용까지"
+    assert 'diff "$RUNNER_TEMP/migrations.repo" "$RUNNER_TEMP/migrations.image"' in script
+    assert 'test -s "$RUNNER_TEMP/migrations.repo"' in script, "빈 목록끼리 같은 것은 통과가 아닙니다"
+
+
 def test_QA1036_DB의_기록이_이미지보다_앞서_있으면_경고하고_기동을_이어_간다(store, tmp_path, caplog):
     """되돌림 배포 — 새 판이 적용한 번호를 옛 이미지는 모릅니다. 멈추지 않고 알리기만 합니다."""
     known = migrations.discover(REPO_MIGRATIONS)

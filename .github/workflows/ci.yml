@@ -375,6 +375,19 @@ jobs:
       - name: 이미지 빌드 (docker compose build)
         run: docker compose build
 
+      - name: 수집기 이미지 안의 스키마 파일 대조 (QA-1036)
+        # 스키마 파일(db/migrations)은 수집기 이미지에 들어갑니다(compose build.additional_contexts → Dockerfile COPY --from=migrations,
+        # 호스트 폴더를 마운트하지 않음). 폴더가 빠지거나 일부만 들어가면 수집기는 경고 한 줄만 남기고 스키마 없이 뜨므로, 방금 빌드한 이미지 안의
+        # 파일 수·이름·내용(sha256)이 저장소와 같은지 봅니다. compose는 의존 서비스(postgres)의 이미지도 함께 찍어 수집기 것만 고릅니다.
+        run: |
+          collector_image="$(docker compose config --images collector | grep -- '-collector$')"
+          (cd db/migrations && sha256sum -- * | LC_ALL=C sort -k 2) > "$RUNNER_TEMP/migrations.repo"
+          docker run --rm --network none --entrypoint sh "$collector_image" -c 'cd /app/db/migrations && sha256sum -- *' \
+            | LC_ALL=C sort -k 2 > "$RUNNER_TEMP/migrations.image"
+          echo "저장소 $(wc -l < "$RUNNER_TEMP/migrations.repo")개 · 이미지 $(wc -l < "$RUNNER_TEMP/migrations.image")개"
+          test -s "$RUNNER_TEMP/migrations.repo"
+          diff "$RUNNER_TEMP/migrations.repo" "$RUNNER_TEMP/migrations.image"
+
   secrets:
     name: 비밀값 검사 (gitleaks)
     runs-on: ubuntu-latest
