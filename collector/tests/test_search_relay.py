@@ -167,3 +167,57 @@ def test_경유_세션은_재시도_없는_공용_층():
     adapter = session.get_adapter("https://news.google.com/")
     assert isinstance(adapter, http._GuardedAdapter) and adapter.max_retries.total == 0
     assert adapter.min_interval == http.DEFAULT_HOST_INTERVAL
+
+
+# ------------------------------------------------------------------ QA-1038: 지역 인자만 붙여 같은 쪽으로 보내는 302
+
+class _FakeReply:
+    def __init__(self, status: int, body: bytes = b"", location: str | None = None) -> None:
+        self.status_code = status
+        self.headers = {"Location": location} if location is not None else {}
+        self._body = body
+
+    def iter_content(self, chunk_size: int = 65536):
+        yield self._body
+
+    def close(self) -> None:
+        pass
+
+
+class _FakeSession:
+    """경유 세션 자리 — 주는 순서대로 답하고 받은 주소를 적습니다(네트워크 없음)."""
+
+    def __init__(self, replies: list[_FakeReply]) -> None:
+        self.replies = list(replies)
+        self.seen: list[str] = []
+
+    def get(self, url, **kwargs):
+        assert kwargs.get("allow_redirects") is False, "세션이 리다이렉트를 스스로 따라가면 안 됨"
+        self.seen.append(url)
+        return self.replies.pop(0)
+
+
+def _direct_page() -> bytes:
+    return f'<html><body><div data-n-au="{OLD_TARGET}"></div></body></html>'.encode()
+
+
+PAGE = f"https://news.google.com/rss/articles/{NEW_ID}"
+REAL_GET = relay._get          # conftest가 시험마다 예외로 바꿔 두는 자리 — 가짜 세션을 끼운 시험만 진짜 함수로 되돌립니다(네트워크는 세션이 막음)
+
+
+def _with_session(monkeypatch, replies: list[_FakeReply]) -> _FakeSession:
+    session = _FakeSession(replies)
+    monkeypatch.setattr(relay.http, "get_relay_session", lambda: session)
+    monkeypatch.setattr(relay.http, "latch_remaining", lambda host: None)
+    monkeypatch.setattr(relay, "_get", REAL_GET)
+    return session
+
+
+# 운영 서버(2026-11-27 실측): 경유 쪽 GET이 같은 호스트·같은 경로에 hl·gl·ceid만 붙인 주소로 302. 수정 전에는 3xx를 모두 '동의 화면'으로 보고
+# 멈춰, 구글 경유 줄의 본문 보기가 모두 '풀지 못함'이었습니다.
+@pytest.mark.xfail(strict=True, reason="QA-1038 재현 — 지역 인자만 붙인 같은 쪽 302를 따라가지 않아 풀지 못함")
+def test_QA_1038_지역_인자만_붙인_같은_쪽_302는_한_번_따라간다(monkeypatch, calls):
+    session = _with_session(monkeypatch, [_FakeReply(302, location=f"{PAGE}?hl=ko&gl=KR&ceid=KR:ko"), _FakeReply(200, _direct_page())])
+    assert relay.resolve(RELAY) == relay.Resolved(OLD_TARGET, 2)
+    assert session.seen == [PAGE, f"{PAGE}?ceid=KR%3Ako&gl=KR&hl=ko"], "두 번째 주소는 받은 글이 아니라 검사한 인자로 다시 만든 것"
+    assert len(calls["budget"]) == 2, "따라간 요청도 하루 예산 한 건"
