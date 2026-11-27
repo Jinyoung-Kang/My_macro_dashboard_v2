@@ -120,11 +120,11 @@ class Sec13FFavoriteStoreDbTest {
             jdbc.update("INSERT INTO alert_rules (user_id, kind, params) VALUES (?, 'INSTITUTION_NEW', ?::jsonb)", user, "{\"cik\":\"" + B + "\"}");
             jdbc.update("INSERT INTO alert_rules (user_id, kind, params) VALUES (?, 'REGIME_CHANGE', '{}'::jsonb)", user);
             AlertStore alerts = new AlertStore(jdbc, new ObjectMapper(), new SchemaCheck(jdbc));
-            assertThat(alerts.countInstitutionRules(A)).isEqualTo(1);
+            jdbc.update("INSERT INTO alert_rules (user_id, kind, params) VALUES (?, 'INSTITUTION_NEW', ?::jsonb)", user, "{\"cik\":\"" + B + "\",\"minWeight\":1}");
+            assertThat(alerts.countInstitutionRulesByCik()).containsEntry(A, 1).containsEntry(B, 2);
             assertThat(alerts.deleteInstitutionRules(A)).isEqualTo(1);
-            assertThat(alerts.countInstitutionRules(A)).isZero();
-            assertThat(alerts.countInstitutionRules(B)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM alert_rules WHERE user_id = ?", Integer.class, user)).isEqualTo(2);
+            assertThat(alerts.countInstitutionRulesByCik()).doesNotContainKey(A).containsEntry(B, 2);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM alert_rules WHERE user_id = ?", Integer.class, user)).isEqualTo(3);
         } finally {
             jdbc.update("DELETE FROM users WHERE email LIKE 'sec13f-fav-test-%@example.invalid'");
         }

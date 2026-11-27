@@ -10,6 +10,7 @@ import java.sql.Date;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -90,11 +91,16 @@ public class AlertStore {
         return count != null && count > 0;
     }
 
-    /** 13F 신규 편입 알림 규칙 가운데 그 기관(CIK)의 것 수 — 모든 사용자(13F 즐겨찾기를 지울 때 확인 창에 보임, ADR 0048 단계 3). */
-    public int countInstitutionRules(String cik) {
-        Integer count = jdbc.queryForObject("SELECT count(*) FROM alert_rules WHERE kind = 'INSTITUTION_NEW' AND params->>'cik' = ?",
-                Integer.class, cik);
-        return count == null ? 0 : count;
+    /**
+     * 13F 신규 편입 알림 규칙 수를 기관(CIK)마다 — 모든 사용자, 규칙이 있는 기관만(없는 기관은 결과에 없음). 13F 즐겨찾기를 지울 때 확인 창에
+     * 보이는 수입니다(ADR 0048 단계 3). 기관 목록이 즐겨찾기마다 한 번씩 세던 것을 질의 하나로 줄였습니다(즐겨찾기 19곳이면 19문장 → 1문장).
+     */
+    public Map<String, Integer> countInstitutionRulesByCik() {
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        jdbc.query("SELECT params->>'cik' AS cik, count(*) AS rules FROM alert_rules WHERE kind = 'INSTITUTION_NEW' "
+                        + "AND params->>'cik' IS NOT NULL GROUP BY 1",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> out.put(rs.getString("cik"), rs.getInt("rules")));
+        return out;
     }
 
     /** 13F 신규 편입 알림 규칙 가운데 그 기관(CIK)의 것을 모든 사용자에게서 지움 — 지운 수(13F 즐겨찾기를 지울 때). 받은 알림함 기록은 그대로. */

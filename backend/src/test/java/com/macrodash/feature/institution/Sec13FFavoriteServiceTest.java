@@ -255,7 +255,7 @@ class Sec13FFavoriteServiceTest {
     void removeDeletesAlertRules() {
         com.macrodash.store.AlertStore alerts = org.mockito.Mockito.mock(com.macrodash.store.AlertStore.class);
         when(alerts.ready()).thenReturn(true);
-        when(alerts.countInstitutionRules(CIK)).thenReturn(3);
+        when(alerts.countInstitutionRulesByCik()).thenReturn(java.util.Map.of(CIK, 3, "0009999999", 7));
         when(alerts.deleteInstitutionRules(CIK)).thenReturn(3);
         Sec13FFavoriteService withAlerts = new Sec13FFavoriteService(new InstitutionCatalog(store), store, reader, collector, cache, alerts);
         rows.add(new Sec13FFavoriteStore.Favorite(CIK, "FAKE", null, null, Instant.now()));

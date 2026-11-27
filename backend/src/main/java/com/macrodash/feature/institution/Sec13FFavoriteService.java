@@ -98,6 +98,8 @@ public class Sec13FFavoriteService {
             names.add(Datasets.sec13f(row.cik(), Datasets.MAX_TRACKED_QUARTERS));
         }
         Map<String, StoreRepository.SnapshotHead> heads = store.readStoredHeads(names);
+        // 알림 규칙 수는 기관마다 따로 세지 않고 한 번에(규칙이 없는 기관은 0).
+        Map<String, Integer> alertRules = withAlertRules && alerts != null && alerts.ready() ? alerts.countInstitutionRulesByCik() : Map.of();
         List<Map<String, Object>> out = new ArrayList<>();
         for (Sec13FFavoriteStore.Favorite row : rows) {
             StoreRepository.SnapshotHead q30 = heads.get(Datasets.sec13f(row.cik(), Datasets.TRACK_RECORD_QUARTERS));
@@ -113,7 +115,7 @@ public class Sec13FFavoriteService {
             entry.put("source", q30 != null ? "q30" : q8 != null ? "q8" : null);
             entry.put("latestReportDate", head == null ? null : head.firstReportDate());
             if (withAlertRules) {
-                entry.put("alertRules", alertRuleCount(row.cik()));
+                entry.put("alertRules", alertRules.getOrDefault(row.cik(), 0));
             }
             out.add(entry);
         }
@@ -304,10 +306,6 @@ public class Sec13FFavoriteService {
         body.put("message", "즐겨찾기에서 지웠습니다" + (removedRules > 0 ? "(13F 신규 편입 알림 규칙 " + removedRules + "개도 함께)" : "")
                 + ". 13F 저장본은 남겨 둡니다(다시 더하면 바로 보입니다).");
         return new Result(200, body);
-    }
-
-    private int alertRuleCount(String cik) {
-        return alerts != null && alerts.ready() ? alerts.countInstitutionRules(cik) : 0;
     }
 
     private boolean hasStored(String cik) {
