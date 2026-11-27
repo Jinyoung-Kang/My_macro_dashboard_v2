@@ -134,7 +134,7 @@ collect-all: ## 전체 수집 (13F 포함 — 10분 이상)
 		| python3 -m json.tool --no-ensure-ascii 2>/dev/null || echo "수집기에 연결하지 못했습니다."
 	@echo "백그라운드로 실행 중입니다. 'make status'로 진행 상황을 확인하세요."
 
-status: ## 수집 현황 (구버전 collector.py --status · 서버면 마지막 S3 백업 나이·재부팅 필요 여부·디스크 사용률도)
+status: ## 수집 현황 (구버전 collector.py --status · 서버면 마지막 S3 백업 나이·복원 확인 나이·재부팅 필요 여부·디스크 사용률도)
 	@curl -fsS $(TOKEN_HEADER) "http://localhost:$(COLLECTOR_PORT)/status" \
 		| python3 -c "import json,sys; d=json.load(sys.stdin); \
 print('마지막 실행:', d.get('lastRunStatus')); \
@@ -144,6 +144,8 @@ print('누락 데이터셋:', len(d.get('missingDatasets') or [])); \
 	@# QA-199: 서버(backups/.last-s3-ok가 있을 때)만 마지막 S3 백업 나이 — 36시간 넘으면 '경고:'. 수집기가 꺼져 있어도 찍도록 윗줄과
 	@# 따로 두고, 판정은 deploy.sh와 같은 스크립트 한 곳. PC에는 S3 cron이 없어 기록이 없으므로 아무것도 찍지 않습니다.
 	@bash scripts/vultr/backup-age.sh --if-present
+	@# 서버면 그 사본이 실제로 복원되는지 본 마지막 날(주 1회 cron — restore-check.sh) — 9일 넘었거나 기록이 없으면 '경고:'(판정은 deploy.sh 끝 요약과 같은 곳).
+	@[ ! -f scripts/vultr/restore-check.sh ] || bash scripts/vultr/restore-check.sh --summary-if-server
 	@# 서버(.env의 COMPOSE_FILE에 compose.vultr.yml)면 재부팅 필요·Livepatch 상태 한 줄(판정은 deploy.sh·cron과 같은 reboot-check.sh).
 	@bash scripts/vultr/reboot-check.sh --summary-if-server
 	@# 서버면 디스크·inode 사용률 한 줄 — 80% 이상이면 '경고:'(판정은 deploy.sh 끝 요약·cron 알림과 같은 disk-check.sh). PC의 디스크는 보지 않습니다.

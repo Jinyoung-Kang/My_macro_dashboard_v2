@@ -31,7 +31,7 @@
 #   7. 매달린 이미지 정리와 빌드 캐시를 크기 상한까지 줄이기(BUILD_CACHE_MAX — 환경변수 → .env → 기본 15GB, 그 정리가 실패하면 일주일 넘은 것만).
 #      정리가 실패해도 배포 결과는 그대로이고 '경고:' 한 줄만 찍습니다(QA-1034). 끝 요약에 디스크·inode 사용률(scripts/vultr/disk-check.sh — 80% 이상이면 '경고:',
 #      같은 판정을 make status·cron 알림이 씀)과 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
-#      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)과 재부팅 필요·Livepatch 상태(scripts/vultr/reboot-check.sh — 같은 판정을 make status·cron이 씀)
+#      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)과 마지막 백업 복원 확인(scripts/vultr/restore-check.sh --summary — 9일 넘었거나 없으면 경고)과 재부팅 필요·Livepatch 상태(scripts/vultr/reboot-check.sh — 같은 판정을 make status·cron이 씀)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
 set -euo pipefail
@@ -333,6 +333,9 @@ docker compose exec -T collector python -c "from app import store; line = store.
 # QA-199: 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 뒤의 나이 — 36시간 넘었거나 기록이 없으면 경고. 판정은 make status와 같이 쓰는
 # backup-age.sh 한 곳에 있습니다(cron이 빠지면 텔레그램 알림도 없어 여기와 make status에서 봄).
 bash scripts/vultr/backup-age.sh
+# 그 사본이 실제로 복원되는지 본 마지막 날(주 1회 cron — restore-check.sh) — 9일 넘었거나 기록이 없으면 경고(cron이 빠진 것을 잡는 유일한 신호).
+# 판정은 make status와 같은 스크립트 한 곳. 요약이라 없거나 실패해도 배포를 실패로 만들지 않습니다.
+[ ! -f scripts/vultr/restore-check.sh ] || bash scripts/vultr/restore-check.sh --summary || true
 # 재부팅이 필요한지·Livepatch가 도는지(ADR 0023 개정 2026-11-12) — 판정은 make status·cron과 같은 reboot-check.sh. 요약이라 실패해도 배포를 실패로 만들지 않습니다.
 bash scripts/vultr/reboot-check.sh --summary || true
 # browser 이미지의 Chrome을 언제 것으로 받았는지 — 이 값(ISO 주)이 바뀐 뒤 첫 배포에서 새로 받습니다(QA-1004). Chrome 판 자체는 찍지 않습니다

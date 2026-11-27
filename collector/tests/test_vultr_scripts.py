@@ -1,6 +1,6 @@
 """
 tests/test_vultr_scripts.py
-Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,disk-check,inventory,instance,firewall-pc-ip}.sh
+Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,disk-check,restore-check(문법만 — 동작은 tests/test_restore_check.py),inventory,instance,firewall-pc-ip}.sh
 와 make status의 마지막 S3 백업 나이(QA-199)·재부팅 필요 여부(ADR 0023 개정 2026-11-12).
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
@@ -31,7 +31,7 @@ from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "disk-check.sh",
-           "inventory.sh", "instance.sh", "firewall-pc-ip.sh"]
+           "restore-check.sh", "inventory.sh", "instance.sh", "firewall-pc-ip.sh"]
 SECRET = tools.SECRET
 
 
