@@ -54,6 +54,14 @@ public class GuruService {
         this.history = new InstitutionHistory(store, catalog);
     }
 
+    /**
+     * 스타일 요약·유사도·보유 색인이 읽는 입력의 판({@link InstitutionHistory#inputVersion}) — 컨트롤러가 응답 캐시의 입력 규칙에 넘깁니다(QA-1040).
+     * 위험 분석({@link #risk})은 가격 저장본·오늘 날짜에 기대고 응답에 {@code ageSeconds}가 있어 이 판을 쓰지 않습니다.
+     */
+    public String inputVersion() {
+        return history.inputVersion();
+    }
+
     // ==================================================== 스타일 프로파일
     /**
      * 기관별 성격 요약.

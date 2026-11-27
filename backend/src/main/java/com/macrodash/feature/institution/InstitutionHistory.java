@@ -4,9 +4,15 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Sec13FFavoriteStore;
 import com.macrodash.store.Snapshot;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +94,57 @@ public class InstitutionHistory {
             return q30;
         }
         return store.quietly(() -> store.read(Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS), Datasets.MAX_AGE_SLOW, "sec_13f"));
+    }
+
+    /**
+     * 13F 계열 계산(스타일 요약·유사도·보유 색인·교집합·공통 신규 매수)이 읽는 입력의 판 — 응답 캐시의 입력 규칙({@code ComputedCache.get(key, inputs, …)},
+     * QA-1040)에 넘깁니다. 같은 입력이면 같은 글이고, 아래 가운데 하나라도 바뀌면 달라집니다.
+     * <ul>
+     *   <li>기본 12곳의 13F 저장본(q{@value Datasets#MAX_TRACKED_QUARTERS}) 수집 시각 — {@link #read}가 {@code store.read}로 읽는 것.
+     *       수집 시각을 볼 때 그 읽기와 같은 규칙으로 낡은 저장본의 수집을 요청합니다({@link StoreReader#collectedAt} — 계산을 건너뛰어도 화면이
+     *       수집을 깨우던 동작이 남게).</li>
+     *   <li>즐겨찾기 목록(더한 차례의 CIK·보일 이름·설명)과 그 기관마다 두 저장본(q{@value Datasets#TRACK_RECORD_QUARTERS}·q8)의 수집 시각 —
+     *       {@link #read}가 q30을, 없으면 q8을 수집 없이 읽습니다. 저장본이 아직 없으면(모으는 중) '없음'으로 적혀, 생기면 판이 바뀝니다.</li>
+     * </ul>
+     * 기본 12곳의 이름·설명은 코드 상수라 프로세스 안에서 바뀌지 않습니다. 13F 저장본의 본문은 수집기가 새로 쓸 때마다 수집 시각도 새로 적습니다
+     * (수집기 {@code store.put_snapshot} — ADR 0049 결정 5와 같은 근거).
+     *
+     * @return 판(16진 글), 또는 null — 기본 12곳 가운데 저장본이 없는 곳이 있거나(계산이 수집을 기다리는 경우 — 예전 규칙대로 60초만 기억) DB를 읽지 못함
+     */
+    public String inputVersion() {
+        try {
+            List<String> defaults = Institutions.ciks().stream()
+                    .map(cik -> Datasets.sec13f(cik, Datasets.MAX_TRACKED_QUARTERS)).toList();
+            Map<String, Instant> tracked = store.collectedAt(defaults, Datasets.MAX_AGE_SLOW, "sec_13f");
+            if (tracked.size() < defaults.size()) {
+                return null;
+            }
+            List<Sec13FFavoriteStore.Favorite> favorites = catalog.favorites().stream()
+                    .filter(favorite -> !Institutions.isKnownCik(favorite.cik())).toList();
+            List<String> favoriteNames = new ArrayList<>();
+            for (Sec13FFavoriteStore.Favorite favorite : favorites) {
+                favoriteNames.add(Datasets.sec13f(favorite.cik(), Datasets.TRACK_RECORD_QUARTERS));
+                favoriteNames.add(Datasets.sec13f(favorite.cik(), Datasets.MAX_TRACKED_QUARTERS));
+            }
+            Map<String, Instant> stored = store.readStoredCollectedAt(favoriteNames);
+
+            StringBuilder text = new StringBuilder("13f-inputs-1");
+            for (String name : defaults) {
+                text.append('\n').append(name).append('=').append(tracked.get(name));
+            }
+            for (Sec13FFavoriteStore.Favorite favorite : favorites) {
+                text.append("\nfav ").append(favorite.cik())
+                        .append('\u001f').append(favorite.name())
+                        .append('\u001f').append(favorite.description() == null ? "" : favorite.description())
+                        .append('\u001f').append(stored.get(Datasets.sec13f(favorite.cik(), Datasets.TRACK_RECORD_QUARTERS)))
+                        .append('\u001f').append(stored.get(Datasets.sec13f(favorite.cik(), Datasets.MAX_TRACKED_QUARTERS)));
+            }
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toString().getBytes(StandardCharsets.UTF_8)));
+        } catch (DataAccessException e) {
+            return null;
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256을 쓸 수 없습니다", e);
+        }
     }
 
     private static Entry favoriteEntry(Sec13FFavoriteStore.Favorite favorite) {

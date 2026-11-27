@@ -56,6 +56,15 @@ public class Sec13FService {
         this.history = new InstitutionHistory(store, catalog);
     }
 
+    /**
+     * 교집합·공통 신규 매수가 읽는 입력의 판({@link InstitutionHistory#inputVersion}) — 컨트롤러가 응답 캐시의 입력 규칙에 넘깁니다(QA-1040).
+     * 고른 기관이 일부여도 13F 계열 전체의 판을 씁니다(넉넉한 쪽). 포트폴리오({@link #portfolio})는 응답에 {@code ageSeconds}가 있고 13F 메뉴 밖
+     * 기관의 저장본도 읽어 이 판을 쓰지 않습니다.
+     */
+    public String inputVersion() {
+        return history.inputVersion();
+    }
+
     /** 13F 메뉴 밖 기관의 CIK 모양(SEC CIK 10자리). */
     private static final java.util.regex.Pattern CIK_FORMAT = java.util.regex.Pattern.compile("\\d{10}");
 

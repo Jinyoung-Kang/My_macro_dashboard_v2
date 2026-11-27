@@ -41,6 +41,13 @@ import java.util.function.Supplier;
  * 항목 수는 {@value #MAX_ENTRIES}개까지(가장 오래 안 쓴 것부터 버림) — 스코어카드처럼 파라미터 조합이 많은 경로가
  * 메모리를 끝없이 늘리지 않게 합니다. 계산이 예외를 던지면 아무것도 저장하지 않습니다.
  *
+ * <p><b>입력 규칙</b>(QA-1040, ADR 0052 — {@link #get(String, String, Supplier)}) — 위 두 조건은 넉넉하게 잡은 것이라, 혼자 쓰는 운영에서는 화면을 열 때
+ * 거의 매번 다시 계산했습니다(5분 주기 태스크가 저장본 어느 하나를 새로 쓸 때마다 모두 무효, 그리고 60초). 13F 계열처럼 <b>읽는 입력을 다 적을 수 있고
+ * 응답에 '지금 기준' 값이 없는</b> 계산은 컨트롤러가 그 입력의 판(입력 저장본들의 수집 시각·즐겨찾기 목록을 한 글로 줄인 것 — 서비스가 만듦)을 함께 넘깁니다.
+ * 그 항목은 판이 같은 동안 {@value #INPUT_MAX_AGE_SECONDS}초(하루 — 판에 적지 못한 입력이 있을 때를 위한 상한)까지 그대로 쓰고, 다른 저장본이 새로
+ * 쓰여도 버리지 않습니다. 판이 null이면(입력을 다 알 수 없음 — 저장본이 아직 없거나 DB 장애) 위의 두 조건으로 돌아갑니다. 같은 키는 한 번만 계산·동시
+ * 실행 상한·429 규칙은 두 길이 같습니다. '지금 기준' 값({@code ageSeconds}·{@code stale})이나 오늘 날짜에 기대는 응답은 이 규칙을 쓰지 않습니다.
+ *
  * <p><b>동시 실행 상한</b>(QA-131) — 캐시를 놓쳐 다시 계산하는 요청은 동시에 {@code dashboard.compute.max-concurrent}개
  * (0이면 자동: 코어 수의 절반, 최소 1)까지만 돕니다. 상한이 없을 때 QA 스택에서 캐시에 없는 서로 다른 조합을 초당
  * 50건 부르자 {@code /api/health}까지 20초 안에 답하지 못했습니다. 자리가 없으면 공정한 순서(먼저 온 요청 먼저)로
@@ -86,6 +93,11 @@ public class ComputedCache {
     private static final Logger log = LoggerFactory.getLogger(ComputedCache.class);
 
     public static final long MAX_AGE_SECONDS = 60;
+    /**
+     * 입력 규칙({@link #get(String, String, Supplier)})의 항목을 들고 있는 시간 상한 — 13F 저장본을 신선하다고 보는 시간({@code Datasets.MAX_AGE_SLOW})과
+     * 같은 하루. 입력의 판이 같으면 결과도 같으므로 평소에는 판이 먼저 바뀌고, 이 상한은 판에 적지 못한 입력이 있었을 때 옛 결과가 남는 시간을 묶습니다.
+     */
+    public static final long INPUT_MAX_AGE_SECONDS = 24 * 60 * 60;
     public static final int MAX_ENTRIES = 256;
 
     /** 자리가 날 때까지 기다리는 시간. 상한이 1개일 때 한 화면의 비싼 요청 2–3개가 줄 서도 거절되지 않을 만큼. */
@@ -115,7 +127,18 @@ public class ComputedCache {
     /** 거절 경고 로그 간격 — 부하 중 요청마다 찍어 로그(json-file 10m×3)를 넘기지 않게 묶습니다. */
     private static final long WARN_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(60);
 
-    private record Cached(Instant version, Instant storedAt, Object value) {
+    /** @param version 저장본 전체의 최신 수집 시각({@link Instant}) 또는 입력의 판({@link InputVersion}) — 두 규칙의 항목은 서로 같다고 보지 않습니다 */
+    private record Cached(Object version, Instant storedAt, Object value) {
+    }
+
+    /** 입력 규칙의 버전 — 서비스가 넘긴 판 글. {@link Instant}(저장본 버전)와 종류가 달라 같은 키라도 섞이지 않습니다. */
+    private record InputVersion(String text) {
+
+        /** 계산 중 표의 키에 붙일 글 — '@'를 바꿔 적어(되돌릴 수 있게) 마지막 '@'로 키와 버전이 갈리는 약속을 지킵니다. */
+        @Override
+        public String toString() {
+            return "in:" + text.replace("%", "%25").replace("@", "%40");
+        }
     }
 
     /**
@@ -233,18 +256,38 @@ public class ComputedCache {
      *         얻지 못해 다시 시도한 경우 포함) 대기열이 가득 참, 따르는 요청이 이미 {@value #MAX_FOLLOWERS}건임, 또는 따르던
      *         앞선 계산이 {@value #FOLLOW_TIMEOUT_SECONDS}초 안에 끝나지 않음(→ 429)
      */
-    @SuppressWarnings("unchecked")
     public <T> T get(String key, Supplier<T> compute) {
         Instant version = currentVersion();
         if (version == null) {
             return compute.get();
         }
-        Cached hit = fresh(key, version, clock.instant());
+        return resolve(key, version, MAX_AGE_SECONDS, compute);
+    }
+
+    /**
+     * 입력 규칙(클래스 설명) — {@code inputs}(그 계산이 읽는 입력의 판)가 같은 동안 {@value #INPUT_MAX_AGE_SECONDS}초까지 저장된 값을 돌려주고, 다른
+     * 저장본이 새로 쓰여도 다시 계산하지 않습니다. {@code inputs}가 null이면 {@link #get(String, Supplier)}와 같습니다.
+     *
+     * <p>판은 계산이 읽는 것을 <b>빠짐없이</b> 담아야 합니다 — 빠진 입력이 바뀌면 상한까지 옛 결과가 남습니다. 응답에 '지금 기준' 값이 있으면 쓰지 마세요.
+     *
+     * @param inputs 입력의 판(서비스가 만든 글 — 같은 입력이면 같은 글). null이면 저장본 버전·60초 규칙
+     * @throws ComputeBusyException {@link #get(String, Supplier)}와 같은 경우
+     */
+    public <T> T get(String key, String inputs, Supplier<T> compute) {
+        if (inputs == null) {
+            return get(key, compute);
+        }
+        return resolve(key, new InputVersion(inputs), INPUT_MAX_AGE_SECONDS, compute);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T resolve(String key, Object version, long maxAgeSeconds, Supplier<T> compute) {
+        Cached hit = fresh(key, version, maxAgeSeconds, clock.instant());
         if (hit != null) {
             return (T) hit.value();
         }
-        // 키에 버전을 붙여, 새 저장본을 본 요청이 옛 버전 계산을 따르지 않게 합니다. Instant 문자열에는 '@'가 없어
-        // 마지막 '@'로 둘이 갈리므로 서로 다른 (키, 버전)이 같은 문자열이 되지 않습니다.
+        // 키에 버전을 붙여, 새 저장본을 본 요청이 옛 버전 계산을 따르지 않게 합니다. Instant 문자열과 입력 판의 글(InputVersion.toString)에는
+        // '@'가 없어 마지막 '@'로 둘이 갈리므로 서로 다른 (키, 버전)이 같은 문자열이 되지 않습니다.
         String flightKey = key + '@' + version;
         // 이 요청이 자리를 기다릴 수 있는 시한(도착 뒤 wait). 따르던 앞선 계산이 자리를 얻지 못해 다시 시도할 때도 이 안에서만.
         long deadline = nanoTime.getAsLong() + wait.toNanos();
@@ -252,7 +295,7 @@ public class ComputedCache {
             CompletableFuture<Outcome> flight = new CompletableFuture<>();
             CompletableFuture<Outcome> ahead = inflight.putIfAbsent(flightKey, flight);
             if (ahead == null) {
-                return (T) unwrap(lead(key, version, flightKey, flight, compute, deadline));
+                return (T) unwrap(lead(key, version, maxAgeSeconds, flightKey, flight, compute, deadline));
             }
             Outcome outcome = follow(ahead);
             if (outcome.noSlot() && nanoTime.getAsLong() - deadline < 0) {
@@ -269,14 +312,14 @@ public class ComputedCache {
     }
 
     /** 이 키·버전의 계산을 맡습니다. 결과(값·예외)는 {@code flight}로 따르는 요청에게도 같은 것을 넘깁니다. */
-    private Outcome lead(String key, Instant version, String flightKey, CompletableFuture<Outcome> flight,
+    private Outcome lead(String key, Object version, long maxAgeSeconds, String flightKey, CompletableFuture<Outcome> flight,
                          Supplier<?> compute, long deadline) {
         Outcome outcome;
         boolean acquired = false;
         try {
             // 놓친 뒤 여기까지 오는 사이 앞선 계산이 끝나 채워 두었으면 자리 없이 그 값을 씁니다. 자리를 얻은 뒤에는 다시
             // 볼 필요가 없습니다 — 같은 키·같은 버전은 이 요청만 계산하고, 다른 요청은 이 결과를 기다립니다.
-            Cached filled = fresh(key, version, clock.instant());
+            Cached filled = fresh(key, version, maxAgeSeconds, clock.instant());
             if (filled != null) {
                 outcome = Outcome.of(filled.value());
             } else if (acquire(deadline)) {
@@ -379,10 +422,10 @@ public class ComputedCache {
         return followers.get();
     }
 
-    private Cached fresh(String key, Instant version, Instant now) {
+    private Cached fresh(String key, Object version, long maxAgeSeconds, Instant now) {
         Cached hit = entries.get(key);
         if (hit != null && version.equals(hit.version())
-                && Duration.between(hit.storedAt(), now).getSeconds() < MAX_AGE_SECONDS) {
+                && Duration.between(hit.storedAt(), now).getSeconds() < maxAgeSeconds) {
             return hit;
         }
         return null;

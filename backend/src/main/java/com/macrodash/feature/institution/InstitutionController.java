@@ -102,7 +102,8 @@ public class InstitutionController {
                                          @RequestParam(defaultValue = "8") int quarters,
                                          @RequestParam(defaultValue = "30") int topN) {
         // 비중 추이가 8분기 전체 보유를 증권 단위로 묶어(QA-112·121) 요청마다 계산이 커서, 같은 저장본이면 다시 계산하지 않습니다.
-        // 추적하지 않는 CIK는 예외(400)라 캐시에 남지 않습니다.
+        // 추적하지 않는 CIK는 예외(400)라 캐시에 남지 않습니다. 응답에 수집 뒤 지난 시간(ageSeconds)이 있어 입력 규칙(QA-1040)이 아니라
+        // 저장본 버전·60초 규칙 그대로입니다.
         return cache.get("sec13f.portfolio:" + cik + ":" + quarters + ":" + topN,
                 () -> sec13f.portfolio(cik, quarters, topN));
     }
@@ -114,7 +115,8 @@ public class InstitutionController {
             @RequestParam(defaultValue = "2") int minHolders,
             @RequestParam(defaultValue = "30") int topN) {
         List<String> selected = selectedCiks(ciks);
-        return cache.get("sec13f.consensus:" + selected + ":" + reportDate + ":" + minHolders + ":" + topN,
+        // 13F 저장본과 즐겨찾기 목록만 읽고 '지금 기준' 값이 없어, 그 입력이 그대로인 동안 다시 계산하지 않습니다(입력 규칙 — QA-1040).
+        return cache.get("sec13f.consensus:" + selected + ":" + reportDate + ":" + minHolders + ":" + topN, sec13f.inputVersion(),
                 () -> sec13f.consensus(selected, reportDate, minHolders, topN));
     }
 
@@ -125,21 +127,26 @@ public class InstitutionController {
             @RequestParam(required = false) String reportDate,
             @RequestParam(defaultValue = "3") int minHolders) {
         List<String> selected = selectedCiks(ciks);
-        return cache.get("sec13f.newBuys:" + selected + ":" + reportDate + ":" + minHolders,
+        return cache.get("sec13f.newBuys:" + selected + ":" + reportDate + ":" + minHolders, sec13f.inputVersion(),
                 () -> sec13f.newBuys(selected, reportDate, minHolders));
     }
 
     // ------------------------------------------------- 기관 스타일·위험
-    /** 기관별 성격 요약 (집중도·유효 종목 수·회전율). */
+    /**
+     * 기관별 성격 요약 (집중도·유효 종목 수·회전율).
+     *
+     * <p>스타일 요약·유사도·보유 색인은 13F 저장본과 즐겨찾기 목록만 읽고 응답에 '지금 기준' 값이 없습니다. 그 입력의 판이 같은 동안은 다른 저장본이
+     * 새로 수집돼도, 60초가 지나도 다시 계산하지 않습니다(입력 규칙 — QA-1040, ADR 0052. 예전에는 화면을 열 때 거의 매번 13F 저장본을 DB에서 다시 읽음).
+     */
     @GetMapping("/guru/profiles")
     public Map<String, Object> guruProfiles() {
-        return cache.get("guru.profiles", guru::profiles);
+        return cache.get("guru.profiles", guru.inputVersion(), guru::profiles);
     }
 
     /** 기관 간 유사도 행렬 (겹침 비중 + 코사인). */
     @GetMapping("/guru/similarity")
     public Map<String, Object> guruSimilarity() {
-        return cache.get("guru.similarity", guru::similarity);
+        return cache.get("guru.similarity", guru.inputVersion(), guru::similarity);
     }
 
     /** 이 종목을 누가 들고 있나 (13F 공시 이름 일부로 검색). */
@@ -150,7 +157,7 @@ public class InstitutionController {
         // 다시 풀었습니다(QA-133). 빈 검색어는 안내 문구만 내므로 목록을 만들지 않습니다.
         List<GuruService.HoldingRow> index = q == null || q.isBlank()
                 ? List.of()
-                : cache.get("guru.holders.index", guru::holdersIndex);
+                : cache.get("guru.holders.index", guru.inputVersion(), guru::holdersIndex);
         return guru.holders(index, q);
     }
 
@@ -165,6 +172,7 @@ public class InstitutionController {
             @RequestParam String cik,
             @RequestParam(defaultValue = "SPY") String benchmark,
             @RequestParam(defaultValue = "1") int years) {
+        // 가격 저장본·오늘 날짜에 기대고 응답에 수집 뒤 지난 시간(ageSeconds)이 있어 저장본 버전·60초 규칙 그대로입니다.
         return cache.get("guru.risk:" + cik + ":" + benchmark + ":" + years, () -> guru.risk(cik, benchmark, years));
     }
 

@@ -10,7 +10,6 @@ import com.macrodash.store.Sec13FFavoriteStore;
 import com.macrodash.store.StoreRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -114,7 +113,6 @@ class GuruStyleMemoQa1040DbTest {
     }
 
     @Test
-    @Disabled("QA-1040: 다른 저장본이 새로 수집되면 13F 계산 결과까지 버려 다시 계산함")
     @DisplayName("QA-1040: 13F와 상관없는 저장본이 새로 수집돼도 스타일 요약·유사도는 다시 계산하지 않는다")
     void unrelatedCollectionDoesNotRecompute() {
         Map<String, Object> profiles = controller.guruProfiles();
@@ -147,7 +145,6 @@ class GuruStyleMemoQa1040DbTest {
     }
 
     @Test
-    @Disabled("QA-1040: 응답 캐시가 즐겨찾기 표를 몰라, 서비스가 캐시를 비워 주지 않는 변경(다른 프로세스·직접 고침)은 60초까지 옛 목록")
     @DisplayName("즐겨찾기를 더하거나 빼면 다음 호출에 다시 계산한다 — 저장본이 그대로여도")
     void favoriteChangesRecompute() {
         assertThat(rows(controller.guruProfiles())).hasSize(Institutions.ciks().size());

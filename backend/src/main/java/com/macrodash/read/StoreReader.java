@@ -191,6 +191,49 @@ public class StoreReader {
     }
 
     /**
+     * 저장본 여러 개의 수집 시각만 읽되, <b>낡은 저장본을 보면 {@link #read}와 같은 규칙으로 수집을 요청합니다</b>(기다리지 않음). 계산 결과를 입력이 바뀔
+     * 때까지 기억하는 경로(QA-1040 — {@code ComputedCache}의 입력 규칙)가 계산을 건너뛰어도, 화면을 열면 낡은 저장본의 수집을 깨우던 지금의 동작이
+     * 그대로 남게 하려는 것입니다. 본문은 읽지 않습니다.
+     * <ul>
+     *   <li>store_only·{@link #quietly} 안: 읽기만.</li>
+     *   <li>auto: 있는 저장본 가운데 하나라도 {@code maxAgeSeconds}보다 오래됐거나 수동 새로고침 기준보다 앞서면 {@code taskName}을 요청
+     *       (같은 태스크는 {@link #TRIGGER_COOLDOWN_MS} 동안 한 번). live_only: 신선해도 요청.</li>
+     *   <li>없는 이름은 결과에 없고 여기서는 아무것도 하지 않습니다 — 저장본이 없을 때 수집을 기다리는 것은 계산이 {@link #read}로 읽을 때의 일입니다
+     *       (부르는 쪽은 없는 이름이 있으면 결과를 오래 기억하지 않아야 합니다).</li>
+     * </ul>
+     *
+     * @return 있는 이름 → 수집 시각
+     */
+    public java.util.Map<String, Instant> collectedAt(java.util.Collection<String> names, long maxAgeSeconds, String taskName) {
+        java.util.Map<String, Instant> stored = repository.readCollectedAt(names);
+        AppProperties.ReadMode mode = readMode();
+        if (mode == AppProperties.ReadMode.STORE_ONLY || QUIET.get() || taskName == null || stored.isEmpty()) {
+            return stored;
+        }
+        boolean stale = mode != AppProperties.ReadMode.AUTO;
+        if (!stale) {
+            for (java.util.Map.Entry<String, Instant> entry : stored.entrySet()) {
+                Snapshot head = new Snapshot(entry.getKey(), null, null, null, null, entry.getValue());
+                if (!head.isFresh(maxAgeSeconds) || supersededByRefresh(head, maxAgeSeconds)) {
+                    stale = true;
+                    break;
+                }
+            }
+        }
+        if (stale && shouldTrigger(taskName)) {
+            log.info("저장본이 오래됐습니다(수집 시각 확인 {}건). 수집기에 '{}'를 요청하고, 화면에는 기존 값을 먼저 보여 줍니다.",
+                    stored.size(), taskName);
+            collector.runTask(taskName, false);
+        }
+        return stored;
+    }
+
+    /** 저장본 여러 개의 수집 시각만 — 수집을 요청하지 않습니다({@link StoreRepository#readCollectedAt}). */
+    public java.util.Map<String, Instant> readStoredCollectedAt(java.util.Collection<String> names) {
+        return repository.readCollectedAt(names);
+    }
+
+    /**
      * 태스크 수집이 끝날 때까지 기다립니다. 같은 태스크를 이미 기다리는 요청이 있으면
      * 새로 요청하지 않고 그 수집에 합류합니다(첫 화면에서 여러 카드가 동시에 비어 있을 때).
      *

@@ -159,6 +159,21 @@ public class StoreRepository {
         return out;
     }
 
+    /**
+     * 저장본 여러 개의 수집 시각만 — 본문도 기준일도 읽지 않고(질의 하나, 인덱스의 이름과 한 칸), 있는 이름만 돌려줍니다. 계산 결과 기억의 입력 판
+     * ({@code read.ComputedCache}의 입력 규칙 — QA-1040)이 '그 계산이 읽는 저장본이 새로 수집됐는가'를 볼 때 씁니다. 기억하지 않습니다.
+     */
+    public Map<String, Instant> readCollectedAt(Collection<String> names) {
+        Map<String, Instant> out = new LinkedHashMap<>();
+        if (names.isEmpty()) {
+            return out;
+        }
+        jdbc.query("SELECT name, collected_at FROM snapshots WHERE name = ANY (?)",
+                (RowCallbackHandler) rs -> out.put(rs.getString("name"), toInstant(rs.getTimestamp("collected_at"))),
+                (Object) names.toArray(String[]::new));
+        return out;
+    }
+
     /** 기억한 머리가 이 수집 시각의 것인가. */
     private static boolean sameCollected(SnapshotHead head, Instant collectedAt) {
         return head != null && java.util.Objects.equals(head.collectedAt(), collectedAt);
