@@ -3,10 +3,12 @@
 // ui-audit.js의 Chrome·CDP 부분을 씀). 성능 개선 2차(2026-11-24)의 재측정·전후 비교에 씁니다.
 //
 // 사용: node scripts/qa/page-apis.js --base http://127.0.0.1:13002 --out <결과 JSON> [--routes <파일 — 기본 scripts/qa/ui-audit-routes.txt>]
-//   [--forms desktop,mobile] [--block '*/api/info/sources*'] [--chrome <실행 파일>]
+//   [--forms desktop,mobile] [--block '*/api/info/sources*'] [--rate <CPU 감속 배수 — 기본 1>] [--chrome <실행 파일>]
 //   --block: 쉼표로 나눈 주소 무늬(CDP Network.setBlockedURLs)의 요청을 막습니다 — 출처 경고 띠 없는 상태를 잴 때.
 // 한 경로: 디스크 캐시를 비우고 열어 load 뒤 EventSource 밖의 요청이 2초 동안 0이 될 때까지(최대 30초) 기다린 다음 값을 읽습니다.
-// 폼: desktop 1440x900(DPR 1), mobile 390x844(DPR 2, 모바일·터치 에뮬레이션). 감속 없음.
+//   --rate: CPU 감속(CDP Emulation.setCPUThrottlingRate) — 4면 Lighthouse 모바일과 같은 4배. 긴 작업·그리기 시간을 느린 기기 기준으로 볼 때
+//     (성능 개선 3차 작업 C — 검색 피드). CLS·DOM 수는 감속과 상관없습니다. 출력의 줄 끝과 결과의 rate에 적습니다.
+// 폼: desktop 1440x900(DPR 1), mobile 390x844(DPR 2, 모바일·터치 에뮬레이션). 감속은 --rate를 줄 때만.
 // CLS: 레이아웃 이동(layout-shift)을 모두 더합니다 — hadRecentInput을 보지 않습니다. 이 도구는 입력을 보내지 않는데, 모바일 에뮬레이션
 //   (Emulation.setDeviceMetricsOverride mobile: true)에서는 크롬이 첫 수십 ms에 입력이 있었다고 표시해(lastInputTime) 모든 이동이 hadRecentInput=true가
 //   되어 예전 판은 모바일 CLS가 늘 0이었습니다(2026-11-24 확인 — 같은 화면을 mobile: false 390폭으로 열면 같은 값이 나오고 Lighthouse 모바일 값과 가까움).
@@ -23,13 +25,15 @@ const { launchChrome, Cdp, sleep } = require('./ui-audit.js');
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i].replace(/^--/, '');
-  if (!['base', 'out', 'routes', 'forms', 'block', 'chrome'].includes(key)) throw new Error(`모르는 인자: ${process.argv[i]}`);
+  if (!['base', 'out', 'routes', 'forms', 'block', 'rate', 'chrome'].includes(key)) throw new Error(`모르는 인자: ${process.argv[i]}`);
   args[key] = process.argv[i + 1];
 }
 if (!args.base || !args.out) throw new Error('--base와 --out이 필요합니다(머리 설명).');
 const base = args.base.replace(/\/$/, '');
 const routes = fs.readFileSync(args.routes || path.join(__dirname, 'ui-audit-routes.txt'), 'utf8').split('\n').map((l) => l.replace(/#.*$/, '').trim()).filter(Boolean);
 const forms = (args.forms || 'desktop,mobile').split(',');
+const rate = args.rate ? Number(args.rate) : 1;
+if (!(rate >= 1)) throw new Error('--rate는 1 이상의 수입니다.');
 const FORM = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false },
   mobile: { width: 390, height: 844, deviceScaleFactor: 2, mobile: true },
@@ -77,6 +81,7 @@ const OBSERVER = `(() => {
     await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable');
     await send('Page.addScriptToEvaluateOnNewDocument', { source: OBSERVER });
     if (args.block) await send('Network.setBlockedURLs', { urls: args.block.split(',') });
+    if (rate > 1) await send('Emulation.setCPUThrottlingRate', { rate });
     const evaluate = async (expression) => (await send('Runtime.evaluate', { expression, returnByValue: true })).result.value;
 
     for (const form of forms) {
@@ -98,11 +103,11 @@ const OBSERVER = `(() => {
           bytes: r.bytes ?? null, failed: r.failed ?? null, pending: !r.t1,
         }));
         const scripts = all.filter((r) => r.type === 'Script');
-        out.push({ form, route, settleMs, stillInflight: inflight.size, metrics: JSON.parse(m || '{}'), apis,
+        out.push({ form, route, rate, settleMs, stillInflight: inflight.size, metrics: JSON.parse(m || '{}'), apis,
           scriptCount: scripts.length, scriptBytes: scripts.reduce((s, r) => s + (r.bytes || 0), 0),
           rsc: all.filter((r) => /[?&]_rsc=/.test(r.url)).length, requests: all.length });
         const slow = apis.filter((a) => !a.sse).sort((a, b) => (b.total || 0) - (a.total || 0))[0];
-        process.stdout.write(`${form.padEnd(7)} ${route.padEnd(52)} api=${String(apis.length).padStart(3)} 최장=${slow ? String(slow.total).padStart(5) + 'ms ' + slow.url.slice(0, 60) : '-'}\n`);
+        process.stdout.write(`${form.padEnd(7)} ${route.padEnd(52)} api=${String(apis.length).padStart(3)} 최장=${slow ? String(slow.total).padStart(5) + 'ms ' + slow.url.slice(0, 60) : '-'}${rate > 1 ? ` (CPU ${rate}배 감속 · 긴 작업 ${Math.round(out[out.length - 1].metrics.long || 0)}ms · DOM ${out[out.length - 1].metrics.dom})` : ''}\n`);
       }
     }
   } finally {

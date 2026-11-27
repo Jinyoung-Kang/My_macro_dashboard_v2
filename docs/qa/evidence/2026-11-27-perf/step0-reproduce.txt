@@ -1,0 +1,138 @@
+# 성능 개선 3차 단계 0 — 측정 도구·재현 자료·다시 잰 기준선 (2026-11-27 22:10~22:52 KST, 실행 세션)
+
+조건
+- QA 스택(이 PC WSL2, compose 프로젝트 my_macrodash_v2_qa, 로그인 없는 모드, 외부 호출 차단 프록시) — 코드는 배포본 main@c167f149와 같음(이미지 그대로).
+  2차의 합성 씨앗(보안 공지·13F 즐겨찾기 19곳)에 3차의 검색 피드 씨앗(scripts/qa/perf-seed.py feed)을 더 넣은 상태.
+- 22:08~22:40에는 로컬 스택의 시험 DB로 make test 기준선이 함께 돌았다(같은 PC의 CPU를 나눠 씀). 아래 3~6절의 시간 값은 그것이 끝난 뒤(22:40~)에 쟀다.
+- 운영 서버는 이 단계에서 부르지 않았다.
+
+========================================================================
+1. 검색 피드 재현 자료 (scripts/qa/perf-seed.py feed — 넣은 뒤 QA /api/search/feed?e=us:NVDA&tab=timeline)
+========================================================================
+줄 2,764(씨앗 2,756 + QA에 있던 사건 뉴스 8) · rangeCounts 7d 1,480 · 30d 2,089 · 1y 2,343 · 2y 2,764 · 원본 1,895 KB(gzip 256 KB) · 한 줄 평균 715 B
+출처별: 모은 글(watch) 1,000줄('최근 1000건까지만 읽음' — 1,050행을 넣음) · 피드 묶음(feeds) 480 · 사건 뉴스(event_news) 1,284
+같은 사건 묶음 191개(묶인 줄 842, 가장 큰 묶음 8줄) · 종류 news 1,480 · headline 1,284 · 언어 표시 en 2,189 · ko 575 · 본문 꼬리표(bodyRef) 2,756
+운영 2026-11-27: 2,756줄 · 7d 1,647 · 30d 2,079 · 1y 2,334 · 원본 1,630 KB(gzip 428 KB) · 한 줄 평균 598 B
+
+========================================================================
+2. 모든 /live/* 경로 — QA 프록시 hang, 경로마다 수집기·백엔드를 다시 띄운 뒤(FRESH=each) 수집기를 바로(TARGET=collector)
+========================================================================
+# 2026-11-27 22:15:55 KST hang-test 모드=hang 비움=each 대상=collector 02071150 경로 20개
+ 120.00초  /live/symbols?q=NVDA
+ 100.10초  /live/prices?items=US:NVDA,KR:005930
+  70.02초  /live/ticker/%5ETNX?period=1y
+  70.02초  /live/ticker/005930.KS?period=5d
+  70.02초  /live/ticker/NVDA?period=1y
+  62.08초  /live/radar?market=KOSPI&investor=%EC%99%B8%EA%B5%AD%EC%9D%B8&tradeType=%EC%88%9C%EB%A7%A4%EC%88%98
+  45.21초  /live/search/feed?e=us%3ANVDA&tab=timeline&owner=true
+  45.01초  /live/search/links?e=us%3ANVDA&owner=true
+  15.06초  /live/search/resolve?q=NVDA&owner=true
+  15.00초  /live/search/entity?e=us%3ANVDA&owner=true
+  10.01초  /live/news?market=us&code=NVDA
+   9.50초  /live/quote?market=us&code=NVDA
+   7.14초  /live/news?q=National%20Pension%20Service
+   4.76초  /live/news?market=kr&code=005930
+   4.76초  /live/daum-intraday?minutes=30
+   4.76초  /live/quote?market=kr&code=005930
+0.5초 미만: 4개 / 전체 20개
+   0.06초  /live/search/suggest?q=NVDA&owner=true
+   0.00초  /live/search/article?ref=0123456789abcdef0123456789abcdef&start=true
+   0.01초  /live/search/recent?owner=true
+   0.00초  /live/search/excludes
+(/live/symbols는 재는 쪽의 120초 상한에 걸려 끊김 — 그보다 김)
+
+판정
+  경로                         걸린 시간   설계 값(문서)                                            3차에서
+  /live/ticker                 70초       없음                                                     고침(작업 A — 예산 10초 + 짧은 기억)
+  /live/symbols                120초 넘음  없음                                                     고침(작업 A — 예산 10초)
+  /live/prices                 100초      없음(ADR 0024에 시간 상한 없음)                           고침(작업 A — 예산 10초)
+  /live/radar                  62초       없음                                                     고침(작업 A — 예산 10초)
+  /live/search/feed · links    45초       ADR 0041: 대상 풀기 15초 + 출처 30초(search.py SOURCE_DEADLINE) 그대로
+  /live/search/resolve · entity 15초      ADR 0041: Wikidata 단계 15초                              그대로
+  /live/news · quote · daum-intraday 4.8~10초  ADR 0049 결정 6(예산 10초)                           그대로(2차)
+  /live/search/suggest · article · recent · excludes  0.06초 이하(바깥 호출 없음)                    —
+
+========================================================================
+3. 식은 계산 경로 (QA 백엔드 — 첫 바이트 ms, '쉬었다 첫 호출 · 바로 다음')
+========================================================================
+(가) 백엔드를 다시 띄운 지 약 7분, 그 뒤 첫 호출(JVM도 식음)
+   1215       5  /api/guru/profiles
+    539       4  /api/guru/similarity
+    303      15  /api/info/catalog
+     80       4  /api/sec13f/consensus?minHolders=2&topN=40
+     41       3  /api/sec13f/new-buys?minHolders=3
+    290       5  /api/sec13f/portfolio?cik=0009900001&quarters=8&topN=30
+      7       4  /api/sec13f/portfolio?cik=0001067983&quarters=8&topN=30
+    198       4  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1
+     94       3  /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1
+     51       4  /api/analytics/regime?years=5
+     47       4  /api/analytics/regime/track-record?asset=SPY
+    401       4  /api/snapshot/text
+    148       8  /api/sec13f/institutions
+   2739     226  /api/search/feed?e=us%3ANVDA&tab=timeline
+(나) 그 2분 40초 뒤(guru 둘은 그 사이 부르지 않음 — 60초 기억이 식은 값)
+    467       2  /api/guru/profiles
+    497       3  /api/guru/similarity
+     78      14  /api/info/catalog
+     36       3  /api/sec13f/consensus?minHolders=2&topN=40
+     22       3  /api/sec13f/new-buys?minHolders=3
+     27       3  /api/sec13f/portfolio?cik=0009900001&quarters=8&topN=30
+      5       3  /api/sec13f/portfolio?cik=0001067983&quarters=8&topN=30
+     12       3  /api/guru/risk?cik=0001067983&benchmark=SPY&years=1
+     50       3  /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1
+     15       3  /api/analytics/regime?years=5
+     17       3  /api/analytics/regime/track-record?asset=SPY
+    111       3  /api/snapshot/text
+      8       9  /api/sec13f/institutions
+    256     202  /api/search/feed?e=us%3ANVDA&tab=timeline
+
+========================================================================
+4. 검색 화면이 그리는 양 (QA, 씨앗을 넣은 뒤 — scripts/qa/page-apis.js --rate 4, 출처 경고 요청 막음, 세 번)
+========================================================================
+폼      경로                                          DOM    긴 작업(50 ms 넘는 몫의 합) 중앙·[세 번]   긴 작업 수  LCP ms  CLS
+desktop /search?e=us:NVDA&tab=timeline&range=30d     12,679   683 [779, 683, 519]                     7           900    0.083
+desktop /search?e=us:NVDA&tab=timeline&range=2y      17,781   372 [486, 367, 372]                     5           336    0.083
+desktop /search?e=us:NVDA&tab=timeline&range=7d       9,008   222 [249, 222, 118]                     5           380    0.070
+mobile  /search?e=us:NVDA&tab=timeline&range=30d     12,679   208 [228, 208, 145]                     5           428    0.192
+mobile  /search?e=us:NVDA&tab=timeline&range=2y      17,781   348 [348, 304, 404]                     5           288    0.192
+mobile  /search?e=us:NVDA&tab=timeline&range=7d       9,008    99 [129, 88, 99]                       5           304    0.192
+scripts/qa/render-profile.js(모바일 390폭 · CPU 4배, 30일): 커밋 23개 · 긴 작업 7개의 길이 합 869 ms(이 도구는 50 ms를 빼지 않은 합).
+  목록의 줄 컴포넌트가 여섯 커밋에 걸쳐 6,405번 그려짐. (그리기 시간은 프로파일 빌드가 아니라 재지 못함.)
+계획 세션(모은 글 없음): DOM 828.
+기준(지시문 C2 — 모바일 CPU 4배에서 긴 작업 합 600 ms 초과 또는 DOM 5,000개 초과): DOM이 넘음 → 단계 3에서 고침.
+
+검색 피드 응답 약 200 ms의 내역 (QA 수집기 안에서 함수마다 다섯 번 중앙값)
+  모은 글 읽기 14 ms(1,000줄) · 피드 묶음 찾기 11 ms(480줄) · 사건 뉴스 찾기 47 ms(1,284줄) — 뒤 둘은 15분 출처 캐시라 평소 응답에는 들지 않음
+  규칙 적용 29 ms · 합치기 12 ms(2,764줄) · 같은 사건 묶기 59 ms · 본문 꼬리표 58 ms · 기간 건수 1 ms · JSON 직렬화 13 ms(1,934 KB)
+  search.feed 전체(저장 출처 캐시 적중) 205 ms · 수집기 직접 196~198 ms · 백엔드 경유 첫 바이트 198~272 ms
+
+========================================================================
+5. 모바일 레이아웃 밀림 — 고치기 전 (QA, page-apis.js, 출처 경고 요청 막음, 감속 없음)
+========================================================================
+화면                                          CLS 데  CLS 모   DOM   가장 큰 밀림(모바일 — 때 · 크기 · 밀린 요소)
+/s/kr/005930                                  0.057  0.136    380  96ms 0.136 div.flex.min-w-0,section.rounded-card.border
+/search?e=us:NVDA&tab=timeline&range=30d      0.093  0.192  12679  506ms 0.192 div.lg:grid.lg:grid-cols-[13rem_mi,div.@container.focus-visible:relat
+/s/us/NVDA                                    0.101  0.163    377  105ms 0.136 div.flex.min-w-0,section.rounded-card.border | 1121ms 0.028 div.flex.min-w-0,div.flex.min-w-0
+/institutions/0001608046                      0.000  0.114   1716  165ms 0.114 div.flex.min-w-0,div.flex.min-w-0
+/radar                                        0.056  0.108   3534  151ms 0.108 section.rounded-card.border,label.flex.min-w-0
+/search                                       0.242  0.482    639  88ms 0.482 div.flex.min-w-0,section.rounded-card.border
+/paper/kr/real                                0.035  0.091    338  131ms 0.091 div#paper-tabpanel.flex.flex-col,button.inline-flex.min-h-11
+/scorecard                                    0.005  0.191    629  113ms 0.191 section.rounded-card.border,div.flex.items-start
+/markets/i/us10y                              0.053  0.061    465  128ms 0.06 div.min-w-0,section.rounded-card.border
+계획 세션의 값과 다른 곳: /search 0.101 → 0.482(데스크톱 0.004 → 0.242)와 /search?e=… 0.148 → 0.192는 씨앗으로 '최근 글'·결과 목록이 채워져서,
+/scorecard 0.071 → 0.191은 스코어카드 응답이 식어 있던 때라 뼈대가 더 오래 보여서(추정).
+
+========================================================================
+6. 고친 sql-replay.sh의 세기 (식은 계산 경로 13개를 두 번씩 — 그 직전 측정으로 모두 기억된 상태)
+========================================================================
+기억된 호출 하나: 실행 문장 3 · 기록 줄 7(parse·bind·execute가 따로 남음). /api/info/catalog 31문장 · 43줄 · DB 3.7~3.9 ms, /api/sec13f/institutions 23문장 · 48줄 · 0.9 ms.
+전체 13경로: 실행 문장 수 합 처음 87 · 다시 88.
+
+========================================================================
+7. 백엔드 경유 — QA 프록시 hang, 경로마다 수집기·백엔드를 다시 띄운 뒤(FRESH=each) (고치기 전, 22:44~22:50)
+========================================================================
+  90.11초  /api/detail/symbols?q=NVDA                      (백엔드의 수집기 읽기 상한 90초에서 끊김 — 수집기는 120초 넘게 붙잡힘)
+  70.07초  /api/macro/ticker?symbol=^TNX&period=1y
+  70.07초  /api/macro/ticker?symbol=NVDA&period=5d
+  62.13초  /api/radar/ranking?market=KOSPI&investor=외국인&tradeType=순매수&topN=17   (저장하지 않는 조합 — 지금 받는 길)
+계획 세션(수집기·백엔드를 한 번만 다시 띄우고 15경로를 이어 부름): /api/macro/ticker ^TNX 59.98초, 그 뒤의 NVDA·005930.KS는 앞 호출이 잠근 Yahoo 때문에 0.01초.

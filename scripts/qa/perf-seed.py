@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/qa/perf-seed.py — 성능 재현용 QA 씨앗(성능 개선 2차, 2026-11-24): 운영 규모의 합성 보안 공지·버전 목록과 13F 즐겨찾기 12곳.
+3차(2026-11-27)에 검색 피드 재현 자료(feed)를 더했습니다 — 관심 대상 한 곳(us:NVDA)의 타임라인에 합성 글 약 2,750줄.
 
 QA 스택 전용입니다. 운영 DB(로컬 3002 스택·Vultr 서버)와 시험 DB(macrodash_test)에 넣지 않습니다 — 아래 쓰는 법은 QA 스택의 컨테이너에만 닿습니다.
 값은 모두 지어낸 것입니다: 글 번호 910001~910135, CVE-2098-*·CVE-2099-*, 버전은 실제로 없는 큰 숫자, 주소는 example.invalid.
@@ -16,12 +17,27 @@ QA 스택 전용입니다. 운영 DB(로컬 3002 스택·Vultr 서버)와 시험
     (백엔드 표 sec13f_favorites — 설명 칸 '[QA 성능 씨앗]'으로 가림). 여러 번 넣어도 같은 번호를 지우고 다시 넣습니다.
   - inventory: 버전 목록 한 벌(수집기의 받기 길 app.inventory로 — ADR 0046 결정 2·ADR 0008). scripts/qa/security-inventory.tsv의 줄을 앞에 그대로
     두어 기존 씨앗 다섯 공지의 기대 판정(security-seed.sql 머리)은 바뀌지 않습니다.
+  python3 scripts/qa/perf-seed.py feed | bash scripts/qa/qa-stack.sh exec postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+  - feed: 검색 피드 재현(2026-11-27 운영의 /api/search/feed?e=us:NVDA&tab=timeline — 2,756줄·7일 1,647·30일 2,079·1년 2,334). 수집기의 읽기 상한
+    (services/search_store — 모은 글 1000·피드 묶음 500)은 그대로 두고 세 출처로 나눠 넣습니다: 모은 글 search_watch_items 1,050행(상한에 걸려
+    1,000줄 — 운영처럼 '최근 1000건까지만 읽음'), 새 피드 묶음 observations search_feed_headline 480행, 사건 뉴스 observations news_headline 1,276행.
+    합쳐 약 2,756줄이고 최근 30일에 약 75%(7일 1,480·30일 2,080·1년 2,335)입니다. 시각은 넣는 순간 기준이라 날이 지나면 다시 넣어야 같은 분포입니다.
+    줄의 약 4분의 1은 같은 사건을 여러 가짜 매체가 쓴 꼴(제목 낱말이 겹침 — 같은 글 묶기가 일함)이고, 제목은 영어·한국어가 섞입니다.
+    모두 지어낸 글입니다: 제목은 낱말 주머니에서 뽑은 조합에 'NVIDIA'(QA가 푸는 us:NVDA의 이름 — 피드 묶음·사건 뉴스는 이름으로 찾음)를 넣은 것,
+    매체는 '[QA] 가짜 매체 NN', 주소는 https://mediaNN.example.invalid/qa-perf/…, 요약은 '[QA 성능 씨앗]'으로 시작합니다.
+    사건 뉴스(news_headline)는 모의 매매 패킷·정보 화면도 읽는 표라, 그쪽에 섞이지 않게 **8일보다 오래된 날짜로만** 넣고 feed 칸을 'qa_perf_seed'로
+    적습니다(최근 사건을 읽는 패킷 창 밖 — 다만 QA DB가 오래된 복원본이면 /info/news의 앞쪽에 이 줄이 보입니다). 검색 첫 화면의
+    '새 피드 묶음 최근 30건'과 /info/news?set=world에도 이 씨앗의 묶음 줄이 보입니다.
+    첫 운영자의 관심 대상에 us:NVDA를 더합니다(백엔드 표 search_watches — 이미 있으면 그대로).
 지우기(QA): DELETE FROM security_notices WHERE ntt_id BETWEEN 910001 AND 910135; DELETE FROM distro_cve_status WHERE cve LIKE 'CVE-2098-%';
   DELETE FROM sec13f_favorites WHERE description = '[QA 성능 씨앗]';
   DELETE FROM snapshots WHERE name ~ '^sec\\.13f\\.00099000'; 버전 목록은 security-inventory.tsv를 다시 넣으면 원래대로.
+  feed: DELETE FROM search_watch_items WHERE item_id LIKE 'qaperf%'; DELETE FROM observations WHERE entity LIKE 'qaperf%';
+  DELETE FROM search_watches WHERE entity_key = 'us:NVDA' AND name = '[QA 성능 씨앗] NVIDIA';
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import sys
@@ -129,6 +145,134 @@ def inventory_tsv(rng: random.Random) -> list[str]:
     return lines + comps + pending + changelog
 
 
+# ---------------------------------------------------------------------------------------------------------------------------------
+# 검색 피드 재현(feed) — 3차. 운영 응답의 건수와 기간 분포만 본뜨고 글은 모두 지어냅니다.
+FEED_SEED = 20261127
+FEED_ENTITY = "us:NVDA"
+FEED_NAME = "NVIDIA"                    # QA가 us:NVDA를 풀 때의 이름(별칭) — 피드 묶음·사건 뉴스는 제목·요약에서 이 이름을 찾음
+FEED_WATCH_NAME = "[QA 성능 씨앗] NVIDIA"
+FEED_ID_PREFIX = "qaperf"
+WATCH_ROWS, BUNDLE_ROWS, EVENT_ROWS = 1050, 480, 1276
+PUBLISHERS = [(f"[QA] 가짜 매체 {n:02d}", f"media{n:02d}.example.invalid") for n in range(1, 41)]
+EN_WORDS = ("chip", "demand", "revenue", "forecast", "supply", "export", "datacenter", "margin", "guidance", "order", "backlog", "shipment",
+            "analyst", "target", "upgrade", "downgrade", "rally", "selloff", "earnings", "quarter", "outlook", "capacity", "foundry",
+            "packaging", "memory", "server", "cloud", "contract", "partnership", "regulator", "tariff", "license", "inventory", "pricing",
+            "roadmap", "launch", "delay", "recall", "lawsuit", "settlement", "buyback", "dividend", "stake", "filing", "insider",
+            "valuation", "multiple", "benchmark", "index", "weighting", "options", "volatility", "hedge", "fund", "pension", "sovereign",
+            "startup", "acquisition", "merger", "antitrust", "probe", "subsidy", "factory", "energy", "cooling", "network", "software",
+            "robotics", "automotive", "gaming", "workstation", "laptop", "handset", "telecom", "utility", "grid", "copper", "wafer")
+KO_WORDS = ("반도체", "수요", "매출", "전망", "공급", "수출", "데이터센터", "마진", "가이던스", "주문", "수주", "출하", "애널리스트", "목표가",
+            "상향", "하향", "급등", "급락", "실적", "분기", "증설", "파운드리", "패키징", "메모리", "서버", "클라우드", "계약", "협력", "규제",
+            "관세", "허가", "재고", "가격", "로드맵", "출시", "지연", "소송", "합의", "자사주", "배당", "지분", "공시", "밸류에이션", "지수",
+            "옵션", "변동성", "헤지", "연기금", "국부펀드", "스타트업", "인수", "합병", "조사", "보조금", "공장", "전력", "냉각", "네트워크",
+            "소프트웨어", "로봇", "자동차", "게임", "통신", "구리", "웨이퍼", "경쟁", "점유율", "투자", "설비", "고객", "납품", "차세대")
+
+
+def _feed_titles(rng: random.Random, count: int) -> list[tuple[str, str, int | None]]:
+    """(제목, 언어, 사건 번호|None) ``count``개 — 약 4분의 1은 같은 사건의 변주(낱말 한둘만 다름), 나머지는 서로 낱말이 거의 겹치지 않는 조합."""
+    out: list[tuple[str, str, int | None]] = []
+    seen: set[str] = set()
+    story = 0
+
+    def make(words: list[str], lang: str, tag: int) -> str:
+        body = " ".join(words)
+        return f"{FEED_NAME} {body} {tag}" if lang == "en" else f"{FEED_NAME} {body} {tag}건"
+
+    while len(out) < count:
+        lang = "en" if rng.random() < 0.6 else "ko"
+        pool = EN_WORDS if lang == "en" else KO_WORDS
+        base = rng.sample(pool, rng.randint(5, 8))
+        tag = rng.randint(1000, 9999)
+        if rng.random() < 0.09:                           # 같은 사건 — 2~7줄(매체만 다르고 제목 낱말 하나쯤 바뀜)
+            story += 1
+            for _ in range(rng.randint(2, 7)):
+                words = list(base)
+                if rng.random() < 0.7:
+                    words[rng.randrange(len(words))] = rng.choice(pool)
+                rng.shuffle(words)
+                title = make(words, lang, tag)
+                if title not in seen and len(out) < count:
+                    seen.add(title)
+                    out.append((title, lang, story))
+        else:
+            title = make(base, lang, tag)
+            if title not in seen:
+                seen.add(title)
+                out.append((title, lang, None))
+    return out
+
+
+def _age_seconds(rng: random.Random, low_days: float, high_days: float) -> int:
+    return int(rng.uniform(low_days, high_days) * 86400)
+
+
+def feed_sql(rng: random.Random) -> list[str]:
+    total = WATCH_ROWS + BUNDLE_ROWS + EVENT_ROWS
+    titles = _feed_titles(rng, total)
+    # 사건 묶음이 48시간 창 안에 들게, 같은 사건의 줄은 첫 줄의 시각에서 몇 시간 안에 둡니다.
+    story_age: dict[tuple[str, int], int] = {}
+
+    def age(kind: str, story: int | None, low: float, high: float) -> int:
+        if story is None:
+            return _age_seconds(rng, low, high)
+        first = story_age.setdefault((kind, story), _age_seconds(rng, low + 0.5, max(low + 0.6, high - 0.5)))
+        return max(int(low * 86400) + 60, first - rng.randint(0, 6 * 3600))
+
+    def row_url(n: int, domain: str) -> str:
+        return f"https://{domain}/qa-perf/{n:05d}"
+
+    def row_id(url: str) -> str:
+        return FEED_ID_PREFIX + hashlib.sha1(url.encode("utf-8")).hexdigest()[:18]
+
+    def summary(n: int, title: str) -> str:
+        return f"[QA 성능 씨앗] 지어낸 요약 {n}번입니다. {title} — 실제 기사가 아니며 주소는 example.invalid입니다. " + "가짜 문장을 이어 붙입니다. " * (n % 5)
+
+    out = ["BEGIN;",
+           f"DELETE FROM search_watch_items WHERE item_id LIKE '{FEED_ID_PREFIX}%';",
+           f"DELETE FROM observations WHERE entity LIKE '{FEED_ID_PREFIX}%';"]
+    watch, bundle, event = [], [], []
+    for n, (title, lang, story) in enumerate(titles):
+        publisher, domain = PUBLISHERS[rng.randrange(len(PUBLISHERS))]
+        url = row_url(n, domain)
+        ident = row_id(url)
+        text = summary(n, title) if n % 4 else None        # 운영처럼 요약이 없는 줄도 섞음
+        if n < WATCH_ROWS:                                  # 모은 글 — 가장 최근 7일(상한에 걸리는 50행은 그보다 조금 오래됨)
+            seconds = age("w", story, 0.01, 6.9) if n < 1000 else _age_seconds(rng, 6.95, 6.99)
+            origin = ("google_en", "bing", "yahoo", "finviz")[n % 4] if lang == "en" else ("google_ko", "bing", "infomax")[n % 3]
+            watch.append(f"({q(FEED_ENTITY)}, {q(ident)}, 'news', {q(title)}, {q(url)}, {q(publisher)}, {q(domain)}, {q(origin)}, {q(lang)}, "
+                         f"{q(text)}, now() - make_interval(secs => {seconds}), now() - make_interval(secs => {max(0, seconds - 900)}))")
+        elif n < WATCH_ROWS + BUNDLE_ROWS:                  # 새 피드 묶음 — 최근 7일
+            seconds = age("b", story, 0.01, 6.9)
+            payload = {"title": title, "summary": text, "url": url, "publisher": publisher, "publisherDomain": domain, "feed": "qa_perf_seed",
+                       "timeBasis": "published", "lang": lang}
+            bundle.append(_observation_row("search_feed_headline", ident, payload, seconds, link_key=None))
+        else:                                               # 사건 뉴스 — 8일보다 오래된 것만(패킷 창·정보 화면 첫 쪽 밖)
+            k = n - WATCH_ROWS - BUNDLE_ROWS
+            low, high = (8.0, 29.5) if k < 600 else ((30.5, 360.0) if k < 855 else (366.0, 720.0))
+            seconds = age("e", story, low, high)
+            payload = {"title": title, "summary": text, "link": url, "source": publisher, "feed": "qa_perf_seed", "feeds": ["qa_perf_seed"]}
+            event.append(_observation_row("news_headline", ident, payload, seconds, link_key="link"))
+    out.append("INSERT INTO search_watch_items (entity_key, item_id, kind, title, url, publisher, publisher_domain, source, lang, summary,\n"
+               "                                published_at, first_seen_at) VALUES\n  " + ",\n  ".join(watch) + ";")
+    for rows in (bundle, event):
+        out.append("INSERT INTO observations (dataset, obs_date, entity, payload) VALUES\n  " + ",\n  ".join(rows) + ";")
+    out.append(f"""INSERT INTO search_watches (user_id, entity_key, kind, name, aliases, ids)
+SELECT id, {q(FEED_ENTITY)}, 'company', {q(FEED_WATCH_NAME)}, '[]'::jsonb, '{{"ticker": "NVDA", "market": "us"}}'::jsonb
+FROM users WHERE role = 'OWNER' ORDER BY id LIMIT 1
+ON CONFLICT (user_id, entity_key) DO NOTHING;""")
+    out.append("COMMIT;")
+    return out
+
+
+def _observation_row(dataset: str, ident: str, payload: dict, seconds: int, *, link_key: str | None) -> str:
+    """observations 한 행 — 작성 시각·처음 받은 시각은 넣는 순간에서 ``seconds`` 전(UTC ISO)으로 SQL이 채웁니다."""
+    moment = f"now() - make_interval(secs => {seconds})"
+    stamp = f"to_char(({moment}) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"+00:00\"')"
+    body = q(json.dumps(payload, ensure_ascii=False))
+    return (f"({q(dataset)}, (({moment}) AT TIME ZONE 'UTC')::date, {q(ident)}, "
+            f"{body}::jsonb || jsonb_build_object('publishedAt', {stamp}, 'fetchedAt', {stamp}))")
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     rng = random.Random(SEED)
@@ -136,8 +280,10 @@ def main() -> int:
         print("\n".join(notice_sql(rng)))
     elif mode == "inventory":
         print("\n".join(inventory_tsv(rng)))
+    elif mode == "feed":
+        print("\n".join(feed_sql(random.Random(FEED_SEED))))
     else:
-        print("사용: perf-seed.py sql | perf-seed.py inventory (자세한 것은 파일 머리 설명)", file=sys.stderr)
+        print("사용: perf-seed.py sql | perf-seed.py inventory | perf-seed.py feed (자세한 것은 파일 머리 설명)", file=sys.stderr)
         return 2
     return 0
 

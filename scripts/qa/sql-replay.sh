@@ -4,7 +4,10 @@
 # 사용: bash scripts/qa/sql-replay.sh <GET 목록> <출력 폴더>
 #   GET 목록: hang-test.sh와 같음(한 줄에 '/api/…' 하나, 또는 page-apis.js의 결과 JSON).
 # 출력: 폴더에 sql-times.tsv(번호·회차·'초 상태'·경로)와 sql-log.txt(그동안의 postgres 로그 — 'QMARK 번호 회차 begin/end' 표시 사이가 그 호출의 문장).
-#   표준출력에 경로마다 회차별 문장 수·문장 시간 합(ms) 상위 30줄.
+#   표준출력에 경로마다 회차별 실행 문장 수·기록 줄 수·문장 시간 합(ms) 상위 30줄과 전체 합.
+#   '문장'은 실행 줄(execute·statement)만 센 값입니다. JDBC의 확장 프로토콜은 문장 하나가 parse·bind·execute 세 줄로 남아, 기록 줄 수('줄')는
+#   실행 문장의 약 2.4배입니다(2026-11-27 /api/guru/profiles 206줄 대 71문장). 2026-11-24 기준선의 합 653 · 417은 실행 문장 수입니다.
+#   DB ms는 세 단계의 시간을 모두 더한 값입니다.
 # 안전: GET만, 경로마다 두 번. QA 스택에만 쓰세요 — 로컬 스택·운영 서버에는 쓰지 않습니다(CLAUDE.md). 로그에 질의 인자 값이 남으니 sql-log.txt를
 #   저장소에 넣지 마세요(표로 정리한 값만 docs/qa/evidence/).
 set -uo pipefail
@@ -59,11 +62,17 @@ for line in open(f"{out}/sql-log.txt", encoding="utf-8", errors="replace"):
     if m:
         cur = (m.group(1), m.group(2)) if m.group(3) == "begin" else None
         continue
-    d = re.search(r"duration: ([0-9.]+) ms", line)
+    d = re.search(r"duration: ([0-9.]+) ms(?:\s+(parse|bind|execute|statement)\b)?", line)
     if cur and d:
-        s = stats.setdefault(cur, [0, 0.0]); s[0] += 1; s[1] += float(d.group(1))
-rows = sorted(((paths[k][0], k[1], v[0], v[1], paths[k][1]) for k, v in stats.items() if k in paths), key=lambda r: -r[3])
-print(f"{'문장':>4} {'DB ms':>8} {'응답 초':>7} 회차 경로")
-for u, p, cnt, ms, t in rows[:30]:
-    print(f"{cnt:>4} {ms:>8.1f} {float(t):>7.3f} {p:>4} {u[:100]}")
+        s = stats.setdefault(cur, [0, 0, 0.0])
+        s[0] += 1 if d.group(2) in ("execute", "statement") else 0
+        s[1] += 1
+        s[2] += float(d.group(1))
+rows = sorted(((paths[k][0], k[1], v[0], v[1], v[2], paths[k][1]) for k, v in stats.items() if k in paths), key=lambda r: -r[4])
+print(f"{'문장':>4} {'줄':>4} {'DB ms':>8} {'응답 초':>7} 회차 경로")
+for u, p, cnt, lines, ms, t in rows[:30]:
+    print(f"{cnt:>4} {lines:>4} {ms:>8.1f} {float(t):>7.3f} {p:>4} {u[:100]}")
+first = sum(v[0] for k, v in stats.items() if k in paths and k[1] == "1")
+again = sum(v[0] for k, v in stats.items() if k in paths and k[1] == "2")
+print(f"전체 {len({k[0] for k in paths})}경로: 실행 문장 수 합 처음 {first} · 다시 {again}")
 PY
