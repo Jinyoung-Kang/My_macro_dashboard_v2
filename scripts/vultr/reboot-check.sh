@@ -49,6 +49,17 @@ if [ "$mode" = "" ] && [ -f scripts/vultr/disk-check.sh ]; then
         logger -t my-macro-disk-check -p user.warning "disk-check.sh가 실패함(reboot-check.sh의 cron 길이 부름)" || true
 fi
 
+# 주간 유지보수(maintenance.sh, ADR 0053)가 보내지 못한 보고(backups/.maintenance-unsent — 이름 조회가 깨져 실패 알림조차 못 나갔을 때 등)를
+# 다시 보냅니다. 보내면 지웁니다. 이 스크립트의 판정·알림·종료 코드와는 따로입니다.
+if [ "$mode" = "" ] && [ -s "$BACKUP_DIR/.maintenance-unsent" ] && [ -f scripts/vultr/notify-common.sh ]; then
+    # shellcheck source=scripts/vultr/notify-common.sh
+    source scripts/vultr/notify-common.sh
+    if notify_telegram "지난 주간 유지보수 보고를 보내지 못해 다시 보냅니다(reboot-check.sh):"$'\n'"$(cat "$BACKUP_DIR/.maintenance-unsent")"; then
+        rm -f "$BACKUP_DIR/.maintenance-unsent"
+        logger -t my-macro-maintenance "보내지 못했던 보고를 reboot-check.sh가 다시 보냄" || true
+    fi
+fi
+
 reasons=()
 needs_reboot=""
 

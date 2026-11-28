@@ -31,7 +31,8 @@ from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "disk-check.sh",
-           "restore-check.sh", "inventory.sh", "instance.sh", "firewall-pc-ip.sh"]
+           "restore-check.sh", "inventory.sh", "instance.sh", "firewall-pc-ip.sh",
+           "maintenance.sh"]   # 주간 유지보수(동작은 tests/test_maintenance_script.py — ADR 0053)
 SECRET = tools.SECRET
 
 
