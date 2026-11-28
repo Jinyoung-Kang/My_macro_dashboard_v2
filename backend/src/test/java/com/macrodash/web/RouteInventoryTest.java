@@ -62,8 +62,9 @@ class RouteInventoryTest {
             "GET /api/info/catalog", "GET /api/info/mechanism", "GET /api/info/items", "GET /api/info/items/{id}",
             "GET /api/info/headlines", "GET /api/info/sources", "GET /api/info/flows", "GET /api/info/gurus", "GET /api/info/krx",
             "POST /api/info/translate",
-            // 보안 공지(ADR 0046 — 운영자 전용, 읽기만)
+            // 보안 공지(ADR 0046 — 운영자 전용, 쓰기는 '확인함' 표시 둘뿐 — 덧붙임 2026-11-28)
             "GET /api/security/notices", "GET /api/security/notices/{nttId}", "GET /api/security/inventory",
+            "POST /api/security/notices/{nttId}/ack", "DELETE /api/security/notices/{nttId}/ack",
             "GET /api/sector/rotation", "GET /api/sector/momentum",
             // 13F · 기관 스타일
             "GET /api/sec13f/institutions", "GET /api/sec13f/favorites/search", "POST /api/sec13f/favorites",

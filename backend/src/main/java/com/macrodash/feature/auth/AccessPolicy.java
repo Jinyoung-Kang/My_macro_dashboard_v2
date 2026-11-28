@@ -115,7 +115,8 @@ public final class AccessPolicy {
         // 정보 수집 글의 한국어 번역(ADR 0037) — 유료 API(Claude Haiku)를 부르고 번역을 저장함. 수집은 일으키지 않음
         owner("POST /api/info/translate");
         // 보안 공지(메뉴 더보기 '보안 공지', ADR 0046) — 운영자 화면 전용, 수집기가 받아 둔 공지·서버 버전 목록(운영 환경의 실제 버전)을 읽기만 함. 쓰기 경로 없음
-        owner("GET /api/security/notices", "GET /api/security/notices/{nttId}", "GET /api/security/inventory");
+        owner("GET /api/security/notices", "GET /api/security/notices/{nttId}", "GET /api/security/inventory",
+                "POST /api/security/notices/{nttId}/ack", "DELETE /api/security/notices/{nttId}/ack");
         // 사용자 관리
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
         // 실제 계좌(토스증권, ADR 0025) — 운영자 개인 자산을 읽기만 함(주문 경로 없음, 저장하지 않음, 운영자의 토스 키로 외부 조회)

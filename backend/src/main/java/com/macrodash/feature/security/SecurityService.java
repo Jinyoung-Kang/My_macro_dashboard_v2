@@ -5,6 +5,7 @@ import com.macrodash.feature.security.Verdict.Match;
 import com.macrodash.feature.security.Verdict.ProductVerdict;
 import com.macrodash.feature.security.Verdict.Reason;
 import com.macrodash.feature.security.Verdict.Status;
+import com.macrodash.store.SecurityAckStore;
 import com.macrodash.store.SecurityStore;
 import com.macrodash.store.SecurityTrackerStore;
 import com.macrodash.support.InvalidRequestException;
@@ -49,6 +50,11 @@ import java.util.stream.Collectors;
  * <p>버전 목록이 없으면(로컬·QA, 서버에서 아직 받지 않음) 판정에 {@code null}을 넘겨 제품이 맞는 공지는 모두 확인 필요({@code NO_INVENTORY})가
  * 됩니다(결정 8). 모르는 값은 null로 내립니다(지어내지 않음). 시각은 ISO(UTC, 초까지) 글자, 날짜는 {@code yyyy-MM-dd}입니다.
  * 설치 버전 문자열은 운영자 화면의 응답에만 싣고 로그에 남기지 않습니다.
+ *
+ * <p><b>확인함 표시</b>(ADR 0046 덧붙임 2026-11-28): 운영자가 '확인 필요' 공지를 손으로 확인했다고 적는 기록({@link SecurityAckStore})을 판정 위에 얹습니다.
+ * 판정 계산은 그대로이고(기억한 판정도 그대로 씀 — 기록은 부를 때마다 따로 읽음), 확인할 때의 판정·사유가 지금과 같을 때만 그 확인이 유효합니다
+ * ({@link #ackValid}). 판정이나 사유가 달라지면 무효가 되어 다시 '남은 것'으로 셉니다(행은 그대로 — 예전 메모를 보여 줌). 알림 작업은 이 기록을 보지 않습니다
+ * ('해당'이 되면 확인 여부와 무관하게 알림). 메모는 응답에만 싣고 로그에 남기지 않습니다.
  */
 @Service
 public class SecurityService {
@@ -82,19 +88,36 @@ public class SecurityService {
                             List<Judged> judged, Instant computedAt) {
     }
 
+    /** 확인 메모 상한(글자) — 표의 CHECK와 같습니다. */
+    static final int MAX_ACK_NOTE = 500;
+    static final String ACK_OPEN = "open";
+    static final String ACK_ACKED = "acked";
+
     private final SecurityStore store;
+    /** 확인함 기록 — null이면(시험의 옛 생성자) 기록이 없는 것으로 봅니다. */
+    private final SecurityAckStore acks;
     private final ProductAliases aliases;
     private final Clock clock;
     private final Object judgementLock = new Object();
     private volatile Judgement judgement;
 
     @Autowired
+    public SecurityService(SecurityStore store, SecurityAckStore acks) {
+        this(store, acks, ProductAliases.defaults(), Clock.systemUTC());
+    }
+
+    /** 확인함 기록 없이(읽기만 보는 시험·측정). */
     public SecurityService(SecurityStore store) {
-        this(store, ProductAliases.defaults(), Clock.systemUTC());
+        this(store, null, ProductAliases.defaults(), Clock.systemUTC());
     }
 
     SecurityService(SecurityStore store, ProductAliases aliases, Clock clock) {
+        this(store, null, aliases, clock);
+    }
+
+    SecurityService(SecurityStore store, SecurityAckStore acks, ProductAliases aliases, Clock clock) {
         this.store = store;
+        this.acks = acks;
         this.aliases = aliases;
         this.clock = clock;
     }
@@ -274,6 +297,17 @@ public class SecurityService {
      * @param query   제목·공지 제품명·CVE·판정 제품 이름 검색(대소문자 무시)
      */
     public Map<String, Object> notices(String verdict, String reason, String query, Integer page, Integer size) {
+        return notices(verdict, reason, null, query, page, size);
+    }
+
+    /**
+     * 공지 목록 — 확인함 거르기까지. {@code counts}에는 확인 필요를 둘로 나눈 {@code checkOpen}(남은 것)·{@code checkAcked}(유효한 확인이 있는 것)도 싣습니다
+     * ({@code check}는 둘의 합 그대로).
+     *
+     * @param ack open(유효한 확인이 없는 것)·acked(유효한 확인이 있는 것 — 확인 필요 판정에만 있음), 비면 전부. 판정 거르기와 함께 걸립니다.
+     */
+    public Map<String, Object> notices(String verdict, String reason, String ack, String query, Integer page, Integer size) {
+        String wantedAck = parseAck(ack);
         Status wanted = parseVerdict(verdict);
         Reason wantedReason = parseReason(reason);
         String q = normalizeQuery(query);
@@ -301,9 +335,17 @@ public class SecurityService {
         for (Status status : Status.values()) {
             counts.put(status.code(), searched.stream().filter(j -> j.verdict().status() == status).count());
         }
+        Map<Long, SecurityAckStore.Ack> ackMap = ackMap();
+        long acked = searched.stream().filter(j -> ackValid(j.verdict(), ackMap.get(j.notice().nttId()))).count();
+        counts.put("checkOpen", (long) counts.get(Status.CHECK.code()) - acked);
+        counts.put("checkAcked", acked);
         counts.put("total", searched.size());
 
-        List<Judged> byVerdict = wanted == null ? searched : searched.stream().filter(j -> j.verdict().status() == wanted).toList();
+        List<Judged> byVerdict = searched.stream()
+                .filter(j -> wanted == null || j.verdict().status() == wanted)
+                .filter(j -> wantedAck == null
+                        || ackValid(j.verdict(), ackMap.get(j.notice().nttId())) == ACK_ACKED.equals(wantedAck))
+                .toList();
         Map<String, Object> reasonCounts = new LinkedHashMap<>();
         for (Reason r : Reason.values()) {
             reasonCounts.put(r.name(), byVerdict.stream().filter(j -> j.verdict().reasons().contains(r)).count());
@@ -317,7 +359,7 @@ public class SecurityService {
         out.put("reasonCounts", reasonCounts);
         int from = Math.min(paging.offset(), filtered.size());
         int to = Math.min(from + paging.size(), filtered.size());
-        out.put("items", filtered.subList(from, to).stream().map(this::summary).toList());
+        out.put("items", filtered.subList(from, to).stream().map(j -> summary(j, ackMap.get(j.notice().nttId()))).toList());
         paging.put(out, filtered.size());
         return out;
     }
@@ -341,7 +383,7 @@ public class SecurityService {
         Verdict verdict = judge(notice, rows, inventory);
         Judged judged = new Judged(notice, rows, verdict);
 
-        Map<String, Object> detail = summary(judged);
+        Map<String, Object> detail = summary(judged, ackMap().get(nttId));
         detail.put("listNo", notice.listNo());
         detail.put("firstSeenAt", iso(notice.firstSeenAt()));
         detail.put("detailFetchedAt", iso(notice.detailFetchedAt()));
@@ -360,6 +402,66 @@ public class SecurityService {
         out.put("rows", rows.stream().map(row -> rowJson(row, verdict)).toList());
         out.put("generalMatches", verdict.matches().stream().filter(m -> m.rowIndex() == null).map(this::matchJson).toList());
         return out;
+    }
+
+    // ------------------------------------------------------------------ POST·DELETE /api/security/notices/{nttId}/ack
+
+    /**
+     * 공지를 '확인함'으로 표시합니다 — 지금 판정이 확인 필요일 때만(해당은 업데이트로 풀 것이라 덮지 않고, 패치됨·무관은 확인할 것이 없음 → 409).
+     * 지금의 판정·사유를 함께 적어 두어, 나중에 달라지면 이 확인이 무효가 됩니다. 이미 확인한 공지면 시각·메모를 새로 적습니다.
+     *
+     * @param note 선택 메모(앞뒤 공백을 떼고, 비면 없음) — {@value #MAX_ACK_NOTE}자까지
+     * @return 그 공지의 한 건 응답({@link #notice})
+     */
+    public Map<String, Object> ack(long nttId, String note) {
+        requireAcks();
+        SecurityStore.Notice notice = store.notice(nttId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "그 번호의 보안 공지가 없습니다."));
+        String memo = note == null || note.isBlank() ? null : note.strip();
+        if (memo != null && memo.length() > MAX_ACK_NOTE) {
+            throw new InvalidRequestException("메모는 " + MAX_ACK_NOTE + "자까지 적을 수 있습니다");
+        }
+        Verdict verdict = judge(notice, store.rows(nttId), judgement().inventory());
+        if (verdict.status() != Status.CHECK) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "확인 필요 판정인 공지만 확인함으로 표시할 수 있습니다.");
+        }
+        acks.save(new SecurityAckStore.Ack(nttId, clock.instant().truncatedTo(ChronoUnit.SECONDS), memo, verdict.status().code(),
+                reasonSignature(verdict.reasons())));
+        return notice(nttId);
+    }
+
+    /** '확인함' 표시를 지웁니다(없어도 그대로 통과). @return 그 공지의 한 건 응답 */
+    public Map<String, Object> unack(long nttId) {
+        requireAcks();
+        if (store.notice(nttId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "그 번호의 보안 공지가 없습니다.");
+        }
+        acks.delete(nttId);
+        return notice(nttId);
+    }
+
+    private void requireAcks() {
+        if (!store.ready() || acks == null || !acks.ready()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "확인함 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 됩니다.");
+        }
+    }
+
+    private Map<Long, SecurityAckStore.Ack> ackMap() {
+        return acks == null ? Map.of() : acks.all();
+    }
+
+    /** 사유 코드를 글자순으로 쉼표로 이은 글(확인할 때 적어 두는 모양). */
+    static String reasonSignature(Collection<Reason> reasons) {
+        return reasons.stream().map(Reason::name).sorted().collect(Collectors.joining(","));
+    }
+
+    /**
+     * 그 확인이 지금도 유효한가 — 지금 판정이 확인 필요이고, 확인할 때의 판정·사유가 지금과 같을 때만. 설치 버전만 바뀌고 판정·사유가 그대로면
+     * 유효합니다(커널이 오를 때마다 이름만 맞은 공지가 다시 열리지 않게).
+     */
+    static boolean ackValid(Verdict verdict, SecurityAckStore.Ack ack) {
+        return ack != null && verdict.status() == Status.CHECK && Status.CHECK.code().equals(ack.verdict())
+                && reasonSignature(verdict.reasons()).equals(ack.reasons());
     }
 
     // ------------------------------------------------------------------ GET /api/security/inventory
@@ -426,6 +528,25 @@ public class SecurityService {
     }
 
     // ------------------------------------------------------------------ JSON 조각
+
+    /**
+     * 목록 한 줄. {@code ack}는 확인 기록이 있을 때만 — {@code valid}가 false면 확인한 뒤 판정·사유가 달라진 것(그때의 판정·사유를 함께 실음).
+     */
+    private Map<String, Object> summary(Judged judged, SecurityAckStore.Ack ack) {
+        Map<String, Object> row = summary(judged);
+        if (ack == null) {
+            row.put("ack", null);
+            return row;
+        }
+        Map<String, Object> mark = new LinkedHashMap<>();
+        mark.put("ackedAt", iso(ack.ackedAt()));
+        mark.put("note", ack.note());
+        mark.put("valid", ackValid(judged.verdict(), ack));
+        mark.put("verdict", ack.verdict());
+        mark.put("reasons", ack.reasons().isEmpty() ? List.of() : List.of(ack.reasons().split(",")));
+        row.put("ack", mark);
+        return row;
+    }
 
     private Map<String, Object> summary(Judged judged) {
         SecurityStore.Notice notice = judged.notice();
@@ -685,6 +806,17 @@ public class SecurityService {
             }
         }
         throw new InvalidRequestException("verdict는 " + String.join(" · ", STATUS_CODES) + " 가운데 하나여야 합니다");
+    }
+
+    private static String parseAck(String ack) {
+        if (ack == null || ack.isBlank()) {
+            return null;
+        }
+        String code = ack.strip();
+        if (ACK_OPEN.equals(code) || ACK_ACKED.equals(code)) {
+            return code;
+        }
+        throw new InvalidRequestException("ack는 " + ACK_OPEN + " · " + ACK_ACKED + " 가운데 하나여야 합니다");
     }
 
     private static Reason parseReason(String reason) {

@@ -72,19 +72,23 @@ class AccessPolicyTest {
     }
 
     @Test
-    @DisplayName("보안 공지 경로(/api/security, ADR 0046)는 모두 운영자만이고 GET뿐이다 — 운영 환경의 실제 버전 목록을 보여 줌, 쓰기 경로 없음")
-    void securityRoutesAreOwnerOnlyAndGetOnly() throws ClassNotFoundException {
+    @DisplayName("보안 공지 경로(/api/security, ADR 0046)는 모두 운영자만이다 — 운영 환경의 실제 버전 목록을 보여 줌, 쓰기는 '확인함' 표시 둘뿐")
+    void securityRoutesAreOwnerOnly() throws ClassNotFoundException {
         java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/security/")).toList();
         java.util.List<String> listed = AccessPolicy.routes().keySet().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/security/")).toList();
         assertThat(declared).as("컨트롤러가 여는 보안 공지 경로").containsExactlyInAnyOrder("GET /api/security/notices",
-                "GET /api/security/notices/{nttId}", "GET /api/security/inventory");
+                "GET /api/security/notices/{nttId}", "GET /api/security/inventory",
+                "POST /api/security/notices/{nttId}/ack", "DELETE /api/security/notices/{nttId}/ack");
         assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
         listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
         for (String path : java.util.List.of("/api/security/notices", "/api/security/notices/72310", "/api/security/inventory")) {
             assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.OWNER);
             assertThat(AccessPolicy.required("HEAD", path)).as("HEAD " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+        for (String method : java.util.List.of("POST", "DELETE")) {
+            assertThat(AccessPolicy.required(method, "/api/security/notices/72310/ack")).as(method + " ack").isEqualTo(AccessPolicy.Access.OWNER);
         }
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 봄").isFalse();
     }

@@ -97,6 +97,7 @@
       "q": {
         "verdict": "str",
         "reason": "str",
+        "ack": "str",
         "q": "str"
       }
     },
@@ -106,6 +107,22 @@
       "path": {
         "nttId": "int"
       }
+    },
+    {
+      "m": "POST",
+      "p": "/api/security/notices/{nttId}/ack",
+      "path": {
+        "nttId": "int"
+      },
+      "mutating": true
+    },
+    {
+      "m": "DELETE",
+      "p": "/api/security/notices/{nttId}/ack",
+      "path": {
+        "nttId": "int"
+      },
+      "mutating": true
     },
     {
       "m": "GET",
