@@ -12,6 +12,7 @@ Tailscale은 다른 패키지·이미지 뒤·재부팅 앞에 따로, 복구는
 from __future__ import annotations
 
 import fcntl
+import os
 import shutil
 import time
 from pathlib import Path
@@ -523,3 +524,15 @@ def test_ADR0053_재부팅_뒤_건강하지_않은_컨테이너가_있으면_실
     [msg] = maint.messages()
     assert "✗ 6 확인: 컨테이너: backend(running·unhealthy); 백엔드 /api/health 실패" in msg and "실행:" in msg
 
+
+
+# --------------------------------------------------------------------------- 문서·cron
+def test_ADR0053_cron_두_줄과_손으로_실행하는_법이_DEVELOPMENT_7에_있다():
+    text = (ROOT / "docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    section = text[text.index("## 7. Vultr 서버"):]
+    assert "30 8 * * 6 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh" in section
+    assert "@reboot /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh --after-reboot" in section
+    assert "journalctl -t my-macro-maintenance" in section and "--dry-run" in section
+    script = (ROOT / "scripts/vultr/maintenance.sh").read_text(encoding="utf-8")
+    assert "30 8 * * 6 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh" in script
+    assert os.access(ROOT / "scripts/vultr/maintenance.sh", os.X_OK)

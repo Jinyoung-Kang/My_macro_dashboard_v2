@@ -516,6 +516,10 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 ```
 
 - 순서: main fast-forward → 버전 → backend → frontend → collector → browser 하나씩 빌드(4 GB) → 배포 전 DB 덤프 → 기동 → 스키마 → caddy 다시 만들기 → 정리.
+  `bash scripts/vultr/deploy.sh --no-fetch`는 코드를 받지 않고 서버 폴더의 판 그대로 다시 빌드·기동합니다(서버에서 고친 파일이 없고 `main`일 때만 — 주간 유지보수가 이 길만 씀, ADR 0053).
+  겹쳐 돌지 않게 `backups/.deploy.lock`을 쥐고(다른 배포나 주간 유지보수가 돌면 멈춤), 성공한 끝에 그 커밋을 `backups/.last-deploy-ok`에 남깁니다.
+  이미지 안 OS 패키지 층(backend·frontend `apk upgrade`, collector·browser `apt-get upgrade`)은 `--build-arg OS_PKG_REFRESH`(기본 ISO 주 — 환경변수로 바꿈)가 바뀐 뒤 첫 빌드에서 새로 만들어집니다
+  (층 캐시가 있으면 `--pull`도 그 층을 다시 쓰기 때문 — QA-263의 남은 한계, ADR 0053). 끝 요약에 그 값이 한 줄 나옵니다.
   기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스가 있음) 스키마 적용과 caddy 다시 만들기는 마친 뒤 0이 아닌 값으로 끝나고, 건강하지 않은 서비스를 표로 알립니다(QA-369).
   서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
   `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
@@ -761,7 +765,8 @@ getent hosts api.telegram.org && cd ~/My_macro_dashboard_v2 && docker compose ps
 
 이름 조회가 비고 `/etc/resolv.conf`가 Tailscale 리졸버(`100.100.100.100`)를 가리키면 `sudo bash scripts/vultr/tailscale-up.sh`를 다시 돌린 뒤(이미 tailnet에 있으면
 키를 읽지 않음 — Tailscale DNS를 끄고 원래 설정으로 되돌림, ADR 0023 개정 2026-11-12) 앱 컨테이너를 재시작합니다(`docker compose restart backend collector frontend
-browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale·Git은 Ubuntu 보안 저장소 밖이라 자동으로 오르지 않습니다: Docker는
+browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale·Git은 Ubuntu 보안 저장소 밖이라 자동 업데이트로는 오르지 않고, 토요일의 주간 유지보수(아래)가 올립니다.
+그 사이에 급히 손으로 올릴 때: Docker는
 `sudo apt-get install --only-upgrade docker-ce docker-ce-cli docker-ce-rootless-extras docker-compose-plugin`(컨테이너 모두 재시작), Tailscale은 올리는 동안
 Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --only-upgrade tailscale`, Git은 `sudo apt-get install --only-upgrade git git-man`
 (2026-11-21부터 Git 관리자 PPA `ppa:git-core/ppa` — ADR 0023 개정 2026-11-21). 여럿을 한 번에 올릴 때는 SSH가 끊겨도 끝까지 돌도록 `sudo systemd-run`으로
@@ -783,6 +788,53 @@ Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정
 
 재부팅은 Vultr 화면(Server → Restart)이나 서버 셸의 `sudo reboot`로 합니다. 앱 컨테이너는 `restart: unless-stopped`라 저절로 다시 뜨고, 1~2분 뒤 위의 확인 명령과
 `sudo canonical-livepatch status`·`bash scripts/vultr/reboot-check.sh --summary`로 봅니다.
+
+### 주간 유지보수 (cron, 토 17:30 KST — [ADR 0053](adr/0053-weekly-server-maintenance.md))
+
+`scripts/vultr/maintenance.sh`가 토요일에 한 번, 손으로 하던 순서를 돌립니다. 실패하면 그 단계에서 멈추고 운영 텔레그램 봇으로 멈춘 단계와 할 일('실행:')을 보내며, 자동으로 되돌리지 않습니다.
+
+0. 점검 — 걸리면 아무것도 바꾸지 않고 '건너뜀'으로 알림: 잠금(`backups/.deploy.lock` — 배포와 같은 잠금), 도는 복원 확인·S3 백업, 서버 폴더의 판이 마지막으로 끝까지 배포한 판
+   (`backups/.last-deploy-ok`)인지(빌드 실패·기동 직전 가드로 멈춘 배포를 토요일에 띄우지 않음 — `deploy.sh`를 끝까지 돌리면 풀림), `sudo -n`, 실제 매매 가드(`deploy.sh`와 같은 함수
+   `scripts/vultr/realtrade-guard.sh` — `REALTRADE_DEPLOY_OK`는 무시).
+1. S3 백업(`backup-s3.sh`).
+2. `apt-get update` 뒤 Docker(`docker-ce`·`docker-ce-cli`·`docker-ce-rootless-extras`·`docker-compose-plugin`·`containerd.io`·`docker-buildx-plugin`)와 Git PPA(`git`·`git-man`)의 보류만
+   `--only-upgrade`(needrestart는 목록만). 그 밖의 보류는 올리지 않고 보고에 이름만 적습니다.
+3. `deploy.sh --no-fetch` — 코드를 받지 않고(날짜를 정해 배포하기로 한 main의 변경이 저절로 나가지 않게) 다시 빌드·기동, 이미지 안 OS 패키지 층은 `OS_PKG_REFRESH=<그날 날짜>`로 새로.
+4. Tailscale — 보류가 있으면 따로 올리고, 올릴 것이 없어도 넷을 봅니다: `tailscaled` 동작 · tailnet `Running` · `tailscale serve`의 `127.0.0.1:8201` 줄 · 이름 조회(`/etc/resolv.conf`가
+   `100.100.100.100`이 아님). 어긋나면 위 '재부팅 뒤 확인'의 복구(`sudo bash scripts/vultr/tailscale-up.sh` + 앱 컨테이너 재시작)를 **한 번만** 하고 다시 보며, 그래도 어긋나면
+   **재부팅하지 않고** 멈춥니다. 로그아웃·재가입·키·방화벽으로는 고치지 않습니다.
+5. 재부팅 — `/var/run/reboot-required`가 있거나 needrestart가 새 커널·재시작이 필요한 서비스를 말할 때만. 표시 파일(`backups/.maintenance-reboot`)을 남기고 재부팅하면 `@reboot` cron이
+   `--after-reboot`로 6·7을 마저 합니다(표시가 2시간보다 오래됐으면 지우고 아무것도 하지 않음).
+6. 확인 — Tailscale 넷(재부팅 뒤 이름 조회가 깨졌으면 같은 복구 한 번 — 2026-11-12 장애 꼴)·컨테이너 모두 동작·건강·백엔드 `/api/health`·스키마 번호·`reboot-check.sh --summary`.
+   기동(재부팅) 뒤 5분의 `ERROR` 줄 수는 참고로 적습니다.
+7. `inventory.sh`(버전 목록) → 운영 봇 한 통. 보고와 syslog에는 패키지 이름·건수·단계 결과만 — 버전 문자열은 없습니다(ADR 0046). 보내지 못하면(이름 조회가 깨짐 등)
+   `backups/.maintenance-unsent`에 남겨 다음 실행과 매일 16:10 KST의 `reboot-check.sh`가 다시 보냅니다.
+
+자세한 출력(apt·docker 빌드 — 판이 찍힘)은 서버의 `backups/maintenance/<UTC 시각>.log`(소유자만, 최근 12개)에만 있고, 단계 결과는 `journalctl -t my-macro-maintenance`.
+**토요일 18:30 KST까지 보고가 오지 않으면** Tailscale이 끝내 올라오지 않았을 수 있습니다 — 비상용 22(`ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>`, PC IP가 바뀌었으면
+PC에서 `bash scripts/vultr/firewall-pc-ip.sh`)로 들어가 위 두 곳을 봅니다.
+
+미리 보기(아무것도 쓰지 않음 — 파일·syslog·알림·`apt-get update` 모두 없음, apt 목록은 마지막으로 받은 것):
+
+```bash
+cd ~/My_macro_dashboard_v2 && bash scripts/vultr/maintenance.sh --dry-run
+```
+
+손으로 실제 실행할 때는 Tailscale을 올리는 동안 Tailscale SSH가 끊겨도 끝까지 돌도록 systemd 단위로 띄우고(ubuntu 사용자로 — root로 부르면 멈춤), `systemctl is-active my-macro-maintenance-manual`과
+출력 파일로 끝났는지 봅니다. 재부팅이 일어나면 `@reboot` 줄이 이어 하고, 그 줄을 아직 등록하지 않았으면 재부팅 뒤 `bash scripts/vultr/maintenance.sh --after-reboot`를 손으로 돌립니다.
+
+```bash
+sudo systemd-run --uid=ubuntu --gid=ubuntu --setenv=HOME=/home/ubuntu --unit=my-macro-maintenance-manual bash /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh
+```
+
+cron 등록(서버 ubuntu — 서버 시간대는 UTC, 08:30 UTC = 토 17:30 KST, 여러 번 돌려도 두 줄):
+
+```bash
+(crontab -l 2>/dev/null | grep -v 'scripts/vultr/maintenance.sh'; echo '30 8 * * 6 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh'; echo '@reboot /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/maintenance.sh --after-reboot') | crontab -
+```
+
+실패 알림을 받았을 때: 알림의 '실행:'을 따르고(멈춘 단계마다 다름), 고친 뒤 위 systemd 단위로 다시 돌리거나 다음 토요일을 기다립니다. 같은 실행 안에서 재시도하지 않으므로
+단계 1(백업)·2(apt)에서 멈췄으면 컨테이너는 그대로이고, 3(이미지)에서 멈췄으면 `docker compose ps`로 내려간 서비스를 보고 `bash scripts/vultr/deploy.sh --no-fetch`로 다시 띄웁니다.
 
 ### 버전 목록 (보안 공지 — [ADR 0046](adr/0046-security-notices.md))
 
