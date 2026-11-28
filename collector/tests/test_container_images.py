@@ -50,3 +50,42 @@ def test_화면_실행_이미지는_npm을_부르지_않는다():
         text = (ROOT / compose).read_text(encoding="utf-8")
         for test in re.findall(r"(?m)^\s*test:\s*(\[.*\])\s*$", text):
             assert "npm" not in test and "npx" not in test, f"{compose}: {test}"
+
+
+# ADR 0053: OS 패키지를 올리는 층은 층 캐시가 있으면 build --pull도 다시 씁니다. 서버 배포가 넘기는 OS_PKG_REFRESH를 그 층이 참조해야
+# 값이 바뀔 때(주에 한 번·주간 유지보수 날) 새로 만들어집니다 — ARG 바로 다음 층이 그 RUN이고, 실행 단계의 USER 앞(root)에 있어야 합니다.
+_OS_LAYERS = {
+    "backend/Dockerfile": r"\bapk\s+upgrade\b",
+    "frontend/Dockerfile": r"\bapk\s+upgrade\b",
+    "collector/Dockerfile": r"\bapt-get\s+update\b.*\bapt-get\s+upgrade\s+-y\b",
+    "collector/sidecar/Dockerfile": r"\bapt-get\s+update\b.*\bapt-get\s+upgrade\s+-y\b",
+}
+
+
+def test_ADR0053_네_이미지의_OS_패키지_층은_주기_값이_바뀌면_새로_만들어진다():
+    for name, upgrade in _OS_LAYERS.items():
+        text = (ROOT / name).read_text(encoding="utf-8")
+        stage = text[[m.start() for m in re.finditer(r"(?m)^FROM\s", text)][-1]:]
+        lines = stage.splitlines()
+        arg = [i for i, line in enumerate(lines) if re.fullmatch(r"ARG OS_PKG_REFRESH=?", line.strip())]
+        assert len(arg) == 1, f"{name}: 실행 단계에 ARG OS_PKG_REFRESH가 하나"
+        nxt = next(i for i in range(arg[0] + 1, len(lines)) if re.match(r"(RUN|COPY|FROM|USER|ENV|WORKDIR)\s", lines[i]))
+        assert lines[nxt].startswith("RUN "), f"{name}: ARG 바로 다음 층이 그 RUN"
+        end = nxt
+        while lines[end].rstrip().endswith("\\"):
+            end += 1
+        run = " ".join(lines[nxt:end + 1])
+        assert "${OS_PKG_REFRESH}" in run, f"{name}: RUN이 값을 참조해야 캐시 열쇠에 들어감"
+        assert re.search(upgrade, run), f"{name}: 그 RUN이 패키지를 올림 — {run}"
+        user = next((i for i, line in enumerate(lines) if line.startswith("USER ")), None)
+        assert user is not None and nxt < user, f"{name}: 비루트 USER 앞(root)에서 올림"
+
+
+def test_ADR0053_수집기_OS_패키지_층은_pip_층_뒤에_있어_의존성을_다시_설치하지_않는다():
+    for name in ("collector/Dockerfile", "collector/sidecar/Dockerfile"):
+        lines = (ROOT / name).read_text(encoding="utf-8").splitlines()
+        arg = next(i for i, line in enumerate(lines) if line.strip().startswith("ARG OS_PKG_REFRESH"))
+        pip = max(i for i, line in enumerate(lines) if line.startswith("RUN pip install"))
+        assert pip < arg, name
+    sidecar = (ROOT / "collector/sidecar/Dockerfile").read_text(encoding="utf-8")
+    assert sidecar.index("patchright install") < sidecar.index("ARG OS_PKG_REFRESH"), "이 값만 바뀔 때 Chrome을 다시 받지 않음"

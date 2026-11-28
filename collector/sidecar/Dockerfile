@@ -23,6 +23,15 @@ RUN echo "chrome refresh: ${CHROME_REFRESH}" \
     && patchright install --with-deps chrome \
     && rm -rf /var/lib/apt/lists/*
 
+# 베이스 이미지에 든 패키지와 위 층들이 깐 패키지를 Debian 저장소의 수정판까지 올립니다. 층 캐시가 있으면 --pull도 다시 쓰므로, 서버 배포
+# (scripts/vultr/deploy.sh)가 OS_PKG_REFRESH(ISO 주, 주간 유지보수는 그날 날짜)를 넘겨 값이 바뀔 때 새로 만듭니다(ADR 0053). Chrome 층 뒤에 두어
+# 이 값만 바뀔 때는 Chrome을 다시 받지 않습니다. 값이 비면(로컬·CI) 캐시 그대로.
+ARG OS_PKG_REFRESH=
+RUN echo "os packages refresh: ${OS_PKG_REFRESH}" \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # root로 돌지 않습니다. 쓰는 곳은 프로필 볼륨(/profile)과 /tmp·홈뿐이고 코드는 읽기만 합니다.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app \
     && mkdir -p /profile \

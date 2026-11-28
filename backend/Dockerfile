@@ -14,9 +14,13 @@ WORKDIR /app
 
 # wget은 헬스체크에 씁니다.
 # apk upgrade: 베이스 이미지가 만들어진 뒤 alpine 저장소에 나온 수정판까지 올립니다(QA-263 — libexpat 2.9.0 HIGH가 남았음). 이 층을 새로
-# 빌드할 때까지의 수정판입니다 — 베이스 digest와 이 줄이 같으면 build --pull도 캐시된 층을 다시 씁니다(정기 갱신은 QA-263 기록의 제안).
+# 빌드할 때까지의 수정판입니다 — 베이스 digest와 이 줄이 같으면 build --pull도 캐시된 층을 다시 씁니다. 그래서 서버 배포(scripts/vultr/deploy.sh)가
+# OS_PKG_REFRESH(ISO 주, 주간 유지보수는 그날 날짜)를 넘겨 값이 바뀔 때 이 층을 새로 만듭니다(ADR 0053). 값이 비면(로컬·CI) 캐시를 그대로 씁니다.
+# ARG는 아래 RUN이 참조해야 캐시 열쇠에 들어갑니다.
 # root로 돌지 않습니다. 쓰는 곳은 /tmp(내장 톰캣 작업 폴더)뿐이고 app.jar는 읽기만 합니다.
-RUN apk upgrade --no-cache \
+ARG OS_PKG_REFRESH=
+RUN echo "os packages refresh: ${OS_PKG_REFRESH}" \
+    && apk upgrade --no-cache \
     && apk add --no-cache wget tzdata \
     && addgroup -S app && adduser -S -G app -u 10001 app
 ENV TZ=Asia/Seoul

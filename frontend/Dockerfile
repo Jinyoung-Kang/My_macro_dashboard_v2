@@ -38,6 +38,12 @@ FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production TZ=Asia/Seoul
 
+# 베이스 이미지가 만들어진 뒤 alpine 저장소에 나온 수정판까지 올립니다. 층 캐시가 있으면 --pull도 다시 쓰므로, 서버 배포(scripts/vultr/deploy.sh)가
+# OS_PKG_REFRESH(ISO 주, 주간 유지보수는 그날 날짜)를 넘겨 값이 바뀔 때 새로 만듭니다(ADR 0053 — backend와 같은 방식). 값이 비면(로컬·CI) 캐시 그대로.
+ARG OS_PKG_REFRESH=
+RUN echo "os packages refresh: ${OS_PKG_REFRESH}" \
+    && apk upgrade --no-cache
+
 COPY --from=build /app/package.json ./
 # next start는 실행 시점에 이 파일을 읽습니다. 빠지면 poweredByHeader: false 같은 실행 설정이 무시돼
 # X-Powered-By: Next.js가 다시 붙습니다(QA-002). headers()는 빌드 산출물에 들어가 영향이 없었습니다.

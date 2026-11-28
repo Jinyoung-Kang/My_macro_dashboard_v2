@@ -14,6 +14,15 @@ COPY requirements.txt constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt \
     && apt-get purge -y build-essential && apt-get autoremove -y
 
+# 베이스 이미지에 든 패키지를 Debian 저장소의 수정판까지 올립니다. 위 설치 층은 패키지를 더할 뿐 올리지 않고, 층 캐시가 있으면 --pull도 다시 씁니다.
+# 서버 배포(scripts/vultr/deploy.sh)가 OS_PKG_REFRESH(ISO 주, 주간 유지보수는 그날 날짜)를 넘겨 값이 바뀔 때 이 층을 새로 만듭니다(ADR 0053).
+# pip 층 뒤에 두어 의존성 설치는 다시 하지 않습니다. 값이 비면(로컬·CI) 캐시 그대로.
+ARG OS_PKG_REFRESH=
+RUN echo "os packages refresh: ${OS_PKG_REFRESH}" \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # root로 돌지 않습니다. 앱이 쓰는 곳은 /tmp(yfinance 캐시)와 홈(라이브러리 설정 캐시)뿐이고,
 # 코드(/app)는 읽기만 합니다. 컨테이너가 뚫려도 이미지 안의 파일을 바꿀 수 없습니다.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app
