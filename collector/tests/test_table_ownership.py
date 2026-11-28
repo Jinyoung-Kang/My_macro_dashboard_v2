@@ -58,6 +58,8 @@ BACKEND_TABLES = (
     # 배포판 보안 추적기에 물어볼 것(V42, ADR 0046 덧붙임 2026-11-21) — 백엔드 SecurityTrackerStore만 씁니다. 수집기는 읽기만 합니다
     # (store.distro_tracker_due — 태스크 kisa_security_notices가 물을 것을 고름).
     "security_tracker_wants",
+    # 보안 공지 '확인함' 표시(V47, ADR 0046 덧붙임 2026-11-28) — 백엔드 SecurityAckStore만 씁니다. 수집기는 읽지도 쓰지도 않습니다.
+    "security_acks",
     # 13F 즐겨찾기 기관(V43, ADR 0048) — 백엔드 Sec13FFavoriteStore만 씁니다. 수집기는 읽기만 합니다(store.sec13f_favorites — sec_13f 대상).
     "sec13f_favorites",
 )

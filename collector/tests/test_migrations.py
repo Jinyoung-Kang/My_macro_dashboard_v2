@@ -418,3 +418,27 @@ def test_V46_매매_내역의_요청_열쇠_칸은_있던_줄을_비워_두고_�
     for bad in ("short", "k" * 65):
         with pytest.raises(psycopg.errors.CheckViolation):
             conn.execute(keyed, ("fake_a", bad))
+
+
+def test_V47_확인함_표는_두_번_적용해도_되고_공지당_한_행과_메모_길이를_지킨다(conn):
+    """보안 공지 '확인함' 표시(ADR 0046 덧붙임 2026-11-28) — 백엔드 표 하나. 값은 가짜(공개 저장소)."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v47 = next(m for m in found if m.version == 47)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 47])
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 47]) == [47]
+    conn.execute(v47.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v47.sql)
+
+    columns = {r["column_name"] for r in conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'security_acks'")}
+    assert columns == {"ntt_id", "acked_at", "note", "verdict", "reasons"}
+
+    conn.execute("INSERT INTO security_acks (ntt_id, acked_at, verdict) VALUES (900001, now(), 'check')")
+    row = conn.execute("SELECT note, reasons FROM security_acks WHERE ntt_id = 900001").fetchone()
+    assert row == {"note": None, "reasons": ""}, "메모는 선택, 사유는 빈 글이 기본"
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute("INSERT INTO security_acks (ntt_id, acked_at, verdict) VALUES (900001, now(), 'check')")
+    conn.execute("INSERT INTO security_acks (ntt_id, acked_at, note, verdict, reasons) VALUES (900002, now(), %s, 'check', 'NAME_MATCH')",
+                 ("가" * 500,))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO security_acks (ntt_id, acked_at, note, verdict) VALUES (900003, now(), %s, 'check')", ("가" * 501,))
