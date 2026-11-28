@@ -12,6 +12,7 @@ import { EMPTY } from "@/lib/format";
 import {
   ALL,
   SECURITY_LIMIT_NOTE,
+  ackState,
   SECURITY_PAGE_SIZE,
   collectionLine,
   filterParam,
@@ -23,6 +24,7 @@ import {
   securityKpis,
   staleInventoryText,
   verdictFilterItems,
+  verdictFilterParams,
 } from "@/lib/security";
 import type { SecurityInventoryResponse, SecurityNoticeItem, SecurityNoticesResponse } from "@/lib/types";
 import { InventoryPanel } from "./InventoryPanel";
@@ -38,7 +40,8 @@ const TABS: readonly { key: TabKey; label: string }[] = [
 
 /**
  * 보안 공지(/security, ADR 0046) — KISA 보호나라 보안공지를 이 서버·컨테이너의 실제 버전과 대조한 판정(해당·확인 필요·패치됨·무관)을 봅니다. 운영자 전용이고
- * 읽기만 합니다(쓰기 경로 없음 — '확인함' 표시는 범위 밖, 결정 9의 4). 판정은 백엔드가 읽을 때 계산하고, 화면 조회는 수집을 일으키지 않습니다.
+ * 쓰기는 '확인함' 표시뿐입니다(요약 칸·상세의 AckPanel — ADR 0046 덧붙임 2026-11-28: 확인 필요 공지를 손으로 확인했다고 적음, 판정은 그대로. 판정 거르기의
+ * '확인 필요'는 남은 것만, '확인함'은 확인해 둔 것, KPI의 확인 필요도 남은 것만 셈). 판정은 백엔드가 읽을 때 계산하고, 화면 조회는 수집을 일으키지 않습니다.
  *
  * 작업대 화면 언어(ADR 0042): 머리 → 한계 한 줄(늘 보임) → 버전 목록·수집 상태 안내 → KPI 띠(해당·확인 필요·패치됨·버전 목록 기준 시각) → 탭(공지 | 버전 목록).
  * 공지 탭은 검색 + 거르기 둘(판정·사유 — API의 verdict·reason·q 인자, 고르면 첫 쪽부터 다시 읽음) + 조밀 표 + 요약 칸(넓은 틀은 옆 28rem, 그 밖은 대화상자 —
@@ -76,7 +79,7 @@ export function SecurityScreen() {
   const opened = useCallback(() => setOpenTarget(null), []);
 
   const notices = useApi<SecurityNoticesResponse>(
-    endpoints.security.notices({ verdict: filterParam(verdict), reason: filterParam(reason), q: query, page, size: SECURITY_PAGE_SIZE }),
+    endpoints.security.notices({ ...verdictFilterParams(verdict), reason: filterParam(reason), q: query, page, size: SECURITY_PAGE_SIZE }),
     300_000,
   );
   const inventory = useApi<SecurityInventoryResponse>(tab === "inventory" ? endpoints.security.inventory : null, 0);
@@ -259,7 +262,7 @@ function NoticeList({
         onSelectedKeyChange={onSelect}
         dialogFocus="title"
         inspectorHint="제목을 고르면 이 칸에 이 환경에 걸린 것(해당·확인 필요)과 '자세히 보기'·원문 링크가 나옵니다."
-        renderDetail={(key) => <NoticeSummary key={key} nttId={key} />}
+        renderDetail={(key) => <NoticeSummary key={key} nttId={key} onAckChange={reload} />}
       >
         {(inspector) => (
           <>
@@ -285,6 +288,8 @@ function NoticeList({
                         {row.title}
                       </InspectorTrigger>
                       {row.pinned ? <Tag>고정</Tag> : null}
+                      {ackState(row) === "valid" ? <Tag>확인함</Tag> : null}
+                      {ackState(row) === "stale" ? <Tag>확인 뒤 바뀜</Tag> : null}
                     </span>
                   ),
                 },

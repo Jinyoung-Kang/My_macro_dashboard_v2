@@ -33,6 +33,7 @@ import {
   type NoticeRowScope,
 } from "@/lib/security";
 import type { SecurityMatch, SecurityNoticeResponse, SecurityNoticeRow, SecurityTrackerCve } from "@/lib/types";
+import { AckPanel } from "./AckPanel";
 import { Fold } from "./Fold";
 import { VerdictText } from "./VerdictText";
 
@@ -46,9 +47,10 @@ const LIST_HREF = "/security";
 const NOTICE_TABLE_MAX_HEIGHT = 480;
 
 /**
- * 보안 공지 상세(/security/<번호> — ADR 0046, 운영자 전용·읽기만). 목록의 요약 칸 '자세히 보기'가 오는 곳이고, 기존 API `GET /api/security/notices/{번호}` 하나만
+ * 보안 공지 상세(/security/<번호> — ADR 0046, 운영자 전용). 목록의 요약 칸 '자세히 보기'가 오는 곳이고, 기존 API `GET /api/security/notices/{번호}` 하나만
  * 읽습니다(수집을 일으키지 않음). 작업대 대상 문법(ADR 0042 — 대상 머리 + 패널):
  *
+ * - 머리 아래 '확인함' 표시(AckPanel — 확인 필요 공지에만, ADR 0046 덧붙임 2026-11-28: 이 화면의 하나뿐인 쓰기).
  * - 머리: 제목(h1)·'보안 공지' 종류 태그·글 번호·게시일·표 틀·상세 받기 상태·판정(아이콘 + 글)·사유, 오른쪽 '목록으로'·'원문 열기(새 창)'.
  * - ① 이 환경 판정: 같은 제품·구역·판정의 근거를 한 줄로 묶은 표(판정·제품·구역·설치 판·해결 판·사유/근거) — 해당 → 확인 필요가 먼저 보이고, 패치됨·무관은
  *   건수를 적은 접기 안(기본 접힘).
@@ -133,6 +135,8 @@ export function NoticeScreen({ raw }: { raw: string }) {
           </>
         }
       />
+
+      <AckPanel nttId={ntt} notice={detail} onChange={read.reload} framed />
 
       <NoticeDetailSections data={data} />
     </div>

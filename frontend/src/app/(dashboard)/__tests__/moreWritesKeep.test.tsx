@@ -434,7 +434,7 @@ describe("보안 공지 — 요청과 쓰기", () => {
   it("열 때 공지 목록 한 번(300초), 버전 목록은 그 탭을 열 때만, 공지 한 건은 고를 때만 — 거르기·탭·고르기를 눌러도 쓰기 0", async () => {
     reads = {
       [SECURITY_LIST]: SECURITY_NOTICES,
-      [endpoints.security.notices({ verdict: "check", page: 1, size: 20 })]: SECURITY_NOTICES,
+      [endpoints.security.notices({ verdict: "check", ack: "open", page: 1, size: 20 })]: SECURITY_NOTICES,
       [endpoints.security.inventory]: { available: true, checkedAt: "2026-11-21T00:00:00Z", present: false, collectedAt: null, receivedAt: null,
         ageSeconds: null, stale: null, hostIncluded: null, aptListsAt: null, sections: [], counts: null, components: [], pending: [] },
     };
@@ -456,7 +456,7 @@ describe("보안 공지 — 요청과 쓰기", () => {
     await settled();
 
     expect(pathSet()).toEqual([
-      SECURITY_LIST, endpoints.security.notices({ verdict: "check", page: 1, size: 20 }), endpoints.security.notice(900001), endpoints.security.inventory,
+      SECURITY_LIST, endpoints.security.notices({ verdict: "check", ack: "open", page: 1, size: 20 }), endpoints.security.notice(900001), endpoints.security.inventory,
     ].sort());
     expectNoWrites();
   });

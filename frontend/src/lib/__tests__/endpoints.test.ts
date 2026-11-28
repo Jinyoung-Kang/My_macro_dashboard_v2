@@ -45,7 +45,10 @@ const CASES: Case[] = [
     after: endpoints.security.notices({ verdict: undefined, reason: undefined, q: "", page: 1, size: 20 }) },
   { name: "security.notices 판정·사유·검색", before: `/api/security/notices?verdict=check&reason=NO_INVENTORY&q=${encodeURIComponent("CVE-2099 & 가짜")}&page=2&size=20`,
     after: endpoints.security.notices({ verdict: "check", reason: "NO_INVENTORY", q: " CVE-2099 & 가짜 ", page: 2, size: 20 }) },
+  { name: "security.notices 확인함 거르기", before: "/api/security/notices?verdict=check&ack=acked&page=1&size=20",
+    after: endpoints.security.notices({ verdict: "check", ack: "acked", page: 1, size: 20 }) },
   { name: "security.notice", before: "/api/security/notices/900001", after: endpoints.security.notice("900001") },
+  { name: "security.noticeAck", before: "/api/security/notices/900001/ack", after: endpoints.security.noticeAck(900001) },
   { name: "detail.quote", before: `/api/detail/quote?market=us&code=${encodeURIComponent("BRK-B")}`,
     after: endpoints.detail.quote("us", "BRK-B") },
   { name: "detail.news 종목·검색어", before: `/api/detail/news?market=kr&code=005930&q=${encodeURIComponent("삼성전자")}`,
@@ -374,6 +377,7 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+\/undo$/, "/api/manual/isa/trades/{id}/undo")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+$/, "/api/manual/isa/trades/{id}")
   .replace(/^\/api\/info\/items\/[^/]+$/, "/api/info/items/{id}")
+  .replace(/^\/api\/security\/notices\/[^/]+\/ack$/, "/api/security/notices/{nttId}/ack")
   .replace(/^\/api\/security\/notices\/[^/]+$/, "/api/security/notices/{nttId}")
   .replace(/^\/api\/search\/watch\/[^/]+\/seen$/, "/api/search/watch/{id}/seen")
   .replace(/^\/api\/search\/watch\/[^/]+$/, "/api/search/watch/{id}")
@@ -391,6 +395,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(84);
+    expect(functions).toBe(85);
   });
 });

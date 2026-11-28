@@ -9,7 +9,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  ACKED,
   ALL,
+  MAX_ACK_NOTE,
+  ackState,
   NO_INVENTORY_NOTE,
   REASON_ORDER,
   SECURITY_LIMIT_NOTE,
@@ -40,6 +43,7 @@ import {
   securityInboxHref,
   securityKpis,
   verdictFilterItems,
+  verdictFilterParams,
   verdictView,
 } from "../security";
 import { parseSecurityNoticeNo, securityNoticeHref } from "../detail";
@@ -221,10 +225,42 @@ describe("수집 상태 한 줄", () => {
   });
 });
 
+describe("확인함 표시", () => {
+  it("거르기 키 → API 인자: 확인 필요는 남은 것만(ack=open), 확인함은 확인 필요 가운데 확인해 둔 것(ack=acked), 그 밖은 판정만", () => {
+    expect(verdictFilterParams("check")).toEqual({ verdict: "check", ack: "open" });
+    expect(verdictFilterParams(ACKED)).toEqual({ verdict: "check", ack: "acked" });
+    expect(verdictFilterParams("affected")).toEqual({ verdict: "affected", ack: undefined });
+    expect(verdictFilterParams(ALL)).toEqual({ verdict: undefined, ack: undefined });
+  });
+
+  it("기록의 상태: 없음·유효·무효 — 무효는 지금 판정이 해당·확인 필요일 때만 알린다", () => {
+    expect(ackState({ verdict: "check" })).toBe("none");
+    expect(ackState({ verdict: "check", ack: null })).toBe("none");
+    expect(ackState({ verdict: "check", ack: { valid: true } })).toBe("valid");
+    expect(ackState({ verdict: "check", ack: { valid: false } })).toBe("stale");
+    expect(ackState({ verdict: "affected", ack: { valid: false } })).toBe("stale");
+    expect(ackState({ verdict: "patched", ack: { valid: false } })).toBe("none");
+    expect(MAX_ACK_NOTE).toBe(500);
+  });
+
+  it("KPI의 확인 필요는 남은 것만 세고 확인해 둔 것은 보조 글 — 확인해 둔 것이 없으면 보조 글 없음", () => {
+    const kpi = securityKpis(response({ counts: { ...response().counts!, checkOpen: 1, checkAcked: 3 } }))[1];
+    expect([kpi.label, kpi.value, kpi.note]).toEqual(["확인 필요", 1, "확인함 3건"]);
+    const none = securityKpis(response({ counts: { ...response().counts!, checkOpen: 4, checkAcked: 0 } }))[1];
+    expect([none.value, none.note]).toEqual([4, undefined]);
+  });
+});
+
 describe("거르기", () => {
-  it("판정 줄은 전체 + 넷(건수는 counts), 사유 줄은 전체 + 아홉(건수는 reasonCounts — 없으면 보조 글 없음)", () => {
+  it("판정 줄은 전체 + 넷 + 확인함(건수는 counts), 사유 줄은 전체 + 아홉(건수는 reasonCounts — 없으면 보조 글 없음)", () => {
+    // 옛 서버 응답(확인 필요를 나눈 수 없음): '확인 필요'는 전체 수, '확인함'은 보조 글 없음.
     expect(verdictFilterItems(response().counts).map((item) => `${item.key}:${item.label}:${item.note}`)).toEqual([
-      "all:전체:12건", "affected:해당:1건", "check:확인 필요:4건", "patched:패치됨:0건", "unrelated:무관:7건",
+      "all:전체:12건", "affected:해당:1건", "check:확인 필요:4건", "acked:확인함:null", "patched:패치됨:0건", "unrelated:무관:7건",
+    ]);
+    // 나눈 수가 오면 '확인 필요'는 남은 것만, '확인함'은 확인해 둔 것(ADR 0046 덧붙임 2026-11-28).
+    const split = verdictFilterItems({ ...response().counts!, checkOpen: 1, checkAcked: 3 });
+    expect(split.filter((item) => item.key === "check" || item.key === "acked").map((item) => `${item.label}:${item.note}`)).toEqual([
+      "확인 필요:1건", "확인함:3건",
     ]);
     expect(verdictFilterItems(null).every((item) => item.note === null)).toBe(true);
     const reasons = reasonFilterItems(response().reasonCounts);

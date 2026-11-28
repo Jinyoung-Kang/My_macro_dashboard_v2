@@ -118,13 +118,49 @@ export type FilterItem = { key: string; label: string; note: string | null; note
 /** 건수 보조 글 자리의 견본 — 세 자리 건수까지 응답 전후 칩 폭이 같습니다(QA-995). */
 const COUNT_SLOT = "000건";
 
-/** 판정 거르기 줄 — 전체 + 판정 넷, 보조 글은 건수(검색어로 거른 뒤의 수 — counts). 건수를 모르면 보조 글 없음. */
+/** 판정 거르기의 '확인함' 키 — 판정은 확인 필요 그대로이고 유효한 확인 기록이 있는 것(API 인자 verdict=check&ack=acked). */
+export const ACKED = "acked";
+
+/** 확인 메모 상한(글자) — 백엔드·표의 상한과 같습니다. */
+export const MAX_ACK_NOTE = 500;
+
+/**
+ * 판정 거르기 줄 — 전체 + 해당·확인 필요·확인함·패치됨·무관, 보조 글은 건수(검색어로 거른 뒤의 수 — counts). 건수를 모르면 보조 글 없음.
+ * '확인 필요'는 남은 것(유효한 확인이 없는 것 — checkOpen)만 세고, '확인함'은 손으로 확인해 둔 것(checkAcked)입니다(ADR 0046 덧붙임 2026-11-28).
+ * 옛 서버 응답(나눈 수 없음)이면 '확인 필요'는 전체 수, '확인함'은 보조 글 없음.
+ */
 export function verdictFilterItems(counts: SecurityNoticesResponse["counts"]): FilterItem[] {
   const count = (value: number | undefined) => (counts && typeof value === "number" ? `${value}건` : null);
+  const of = (code: SecurityVerdict): FilterItem => ({
+    key: code,
+    label: VERDICTS[code].label,
+    note: count(code === "check" ? (counts?.checkOpen ?? counts?.check) : counts?.[code]),
+    noteSlot: COUNT_SLOT,
+  });
   return [
     { key: ALL, label: "전체", note: count(counts?.total), noteSlot: COUNT_SLOT },
-    ...VERDICT_ORDER.map((code) => ({ key: code, label: VERDICTS[code].label, note: count(counts?.[code]), noteSlot: COUNT_SLOT })),
+    of("affected"),
+    of("check"),
+    { key: ACKED, label: "확인함", note: count(counts?.checkAcked), noteSlot: COUNT_SLOT },
+    of("patched"),
+    of("unrelated"),
   ];
+}
+
+/** 판정 거르기 키 → API 인자 둘. '확인 필요'는 남은 것만(ack=open), '확인함'은 확인 필요 가운데 확인해 둔 것(ack=acked), 그 밖은 판정만. */
+export function verdictFilterParams(key: string): { verdict: string | undefined; ack: string | undefined } {
+  if (key === ACKED) return { verdict: "check", ack: "acked" };
+  if (key === "check") return { verdict: "check", ack: "open" };
+  return { verdict: filterParam(key), ack: undefined };
+}
+
+/** 확인함 기록의 상태 — 없음·유효(확인함)·무효(확인한 뒤 판정·사유가 바뀜). 무효는 지금 판정이 해당·확인 필요일 때만 알립니다(패치됨·무관이면 볼 것이 없음). */
+export type AckState = "none" | "valid" | "stale";
+
+export function ackState(item: { verdict: string; ack?: { valid: boolean } | null }): AckState {
+  if (!item.ack) return "none";
+  if (item.ack.valid) return "valid";
+  return item.verdict === "check" || item.verdict === "affected" ? "stale" : "none";
 }
 
 /** 사유 거르기 줄 — 전체 + 사유 여덟, 보조 글은 건수(판정까지 거른 뒤의 수 — reasonCounts). */
@@ -272,12 +308,15 @@ function lateMinutes(collection: SecurityCollection, now: string | null | undefi
  */
 export function securityKpis(data: SecurityNoticesResponse | null | undefined, pending = false): KpiItem[] {
   const counts = data?.counts ?? null;
+  const acked = counts?.checkAcked ?? 0;
   const count = (code: SecurityVerdict): KpiItem => ({
     key: code,
     label: VERDICTS[code].label,
-    value: counts ? counts[code] : null,
+    // 확인 필요는 남은 것만 셉니다(손으로 확인해 둔 것은 보조 글로 — ADR 0046 덧붙임 2026-11-28). 옛 서버 응답이면 전체 수.
+    value: counts ? (code === "check" ? (counts.checkOpen ?? counts.check) : counts[code]) : null,
     format: (value) => String(Math.round(value)),
     unit: "건",
+    ...(code === "check" && acked > 0 ? { note: `확인함 ${acked}건` } : {}),
     emptyReason: data && !counts ? "표 없음" : null,
     pending,
   });

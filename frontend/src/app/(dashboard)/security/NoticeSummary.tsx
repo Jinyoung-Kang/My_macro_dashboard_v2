@@ -19,6 +19,7 @@ import {
   type EvidenceLine,
 } from "@/lib/security";
 import type { SecurityNoticeResponse } from "@/lib/types";
+import { AckPanel } from "./AckPanel";
 import { NoticeDetailDialog } from "./NoticeDetailDialog";
 import { VerdictText } from "./VerdictText";
 
@@ -34,8 +35,9 @@ const SUBHEADING = "mb-1 text-caption font-semibold text-text-2";
  * - ※ 조건 문장 수와 첫 문장(있을 때만).
  * - 단추 둘: '자세히 보기'(팝업 — 상세 페이지와 같은 구역 ①~⑤, NoticeDetailDialog, 2026-11-22 사용자 요청)·'원문 열기(새 창)'.
  *   상세 페이지 주소(/security/<번호>)는 그대로 열립니다.
+ * - '확인함' 표시(AckPanel — 확인 필요 공지에만, ADR 0046 덧붙임 2026-11-28). 적거나 지우면 이 칸과 목록(onAckChange)을 다시 읽습니다.
  */
-export function NoticeSummary({ nttId }: { nttId: string }) {
+export function NoticeSummary({ nttId, onAckChange }: { nttId: string; onAckChange?: () => void }) {
   const read = useApi<SecurityNoticeResponse>(endpoints.security.notice(nttId), 0);
   if (firstLoadPending(read)) return <Skeleton lines={5} label="공지를 불러오는 중" />;
   if (read.error) return <ErrorState message={read.error} onRetry={read.reload} />;
@@ -83,6 +85,15 @@ export function NoticeSummary({ nttId }: { nttId: string }) {
           </StatusText>
         </p>
       ) : null}
+
+      <AckPanel
+        nttId={nttId}
+        notice={notice}
+        onChange={() => {
+          read.reload();
+          onAckChange?.();
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <NoticeDetailDialog

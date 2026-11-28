@@ -1,12 +1,14 @@
 /**
- * 보안 공지 화면(/security — ADR 0046, 운영자 전용·읽기만). 응답은 모두 가짜 값입니다(글 번호 9000xx, CVE-2099-*, 실제로 없는 큰 버전 — 실제 서버 버전·공지 원문 아님).
+ * 보안 공지 화면(/security — ADR 0046, 운영자 전용). 응답은 모두 가짜 값입니다(글 번호 9000xx, CVE-2099-*, 실제로 없는 큰 버전 — 실제 서버 버전·공지 원문 아님).
  * - 네 판정은 아이콘 + 글(색만이 아님), 사유는 한국어 글
  * - 거르기(판정·사유)와 검색이 API 인자(verdict·reason·q)로 가고 첫 쪽부터 다시 읽음
  * - 요약 칸(2026-11-21 사용자 결정): 판정·사유 한 줄, 이 환경에 걸린 것(해당·확인 필요만 — 패치됨 행은 그리지 않음), '패치됨 N개 · 무관 N개' 한 줄,
  *   ※ 조건 문장 수, '자세히 보기'(팝업 — 상세 구역 ①~⑤, 다시 읽지 않음)·원문 링크(새 창) — 행 표 전체는 그리지 않음, 새 사유 DISTRO_OPEN·추적기 칸 있음/없음
  * - 버전 목록 없음 안내·오래됨 경고·한계 한 줄(늘)·수집 상태 한 줄
  * - 알림함 링크 ?ntt=<번호>가 그 공지의 요약 칸을 엶(좁은 화면 대화상자·넓은 화면 옆 칸)
- * - 회원·데모에게는 메뉴가 없음, 이 화면은 GET만(쓰기 0)
+ * - 회원·데모에게는 메뉴가 없음, 쓰기는 '확인함' 표시뿐(누를 때만 — 거르기·검색·탭·검사 칸을 써도 쓰기 0)
+ * - 확인함 표시(ADR 0046 덧붙임 2026-11-28): 확인 필요 공지에만 메모 칸과 단추, 적으면 POST(메모는 있을 때만)·지우면 DELETE 뒤 요약 칸과 목록을 다시 읽음,
+ *   확인 뒤 판정·사유가 바뀐 것은 그 사실과 그때의 메모
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -185,9 +187,10 @@ describe("보안 공지 — 목록", () => {
 
     expect(calledPaths()).toEqual([
       LIST,
-      "/api/security/notices?verdict=check&page=1&size=20",
-      "/api/security/notices?verdict=check&reason=CONDITION_NOTE&page=1&size=20",
-      `/api/security/notices?verdict=check&reason=CONDITION_NOTE&q=${encodeURIComponent("CVE-2099 & 가짜")}&page=1&size=20`,
+      // '확인 필요'는 남은 것만(ack=open — 손으로 확인해 둔 것은 '확인함' 거르기에).
+      "/api/security/notices?verdict=check&ack=open&page=1&size=20",
+      "/api/security/notices?verdict=check&reason=CONDITION_NOTE&ack=open&page=1&size=20",
+      `/api/security/notices?verdict=check&reason=CONDITION_NOTE&ack=open&q=${encodeURIComponent("CVE-2099 & 가짜")}&page=1&size=20`,
     ]);
     // 판정 거르기의 건수(검색어로만 거른 수)는 판정을 바꿔 다시 읽는 동안에도 이어 씀 — 검색어를 바꾸면 이어 쓰지 않음.
     expect(api.apiPost).not.toHaveBeenCalled();
@@ -413,7 +416,7 @@ describe("보안 공지 — 메뉴와 쓰기", () => {
     }
   });
 
-  it("이 화면은 GET만 — 거르기·검색·탭·검사 칸을 써도 POST·DELETE 0", async () => {
+  it("거르기·검색·탭·검사 칸을 써도 POST·DELETE 0 — 쓰기는 '확인함' 단추를 누를 때만", async () => {
     await renderPage();
     fireEvent.click(within(screen.getByRole("radiogroup", { name: "판정" })).getByRole("radio", { name: "해당" }));
     await settled();
@@ -425,5 +428,108 @@ describe("보안 공지 — 메뉴와 쓰기", () => {
     expect(api.apiDelete).not.toHaveBeenCalled();
     expect(api.apiGet).not.toHaveBeenCalled();
     expect(calledPaths().every((path) => path.startsWith("/api/security/"))).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------------ 확인함 표시(ADR 0046 덧붙임 2026-11-28)
+const CHECK_TITLE = "[가짜] 합성 언어 보안 업데이트 권고";
+
+function checkDetail(ack: Record<string, unknown> | null) {
+  return {
+    available: true, checkedAt: "2026-11-21T01:00:00Z", inventory: INVENTORY,
+    notice: {
+      ...ITEMS[2], ack, listNo: 99003, firstSeenAt: "2026-11-20T03:00:00Z", detailFetchedAt: "2026-11-20T03:00:10Z", detailAttempts: 1, detailError: null,
+      noticeProducts: ["Python"], notes: [], conditionNotes: [], bodyText: "가짜 본문",
+    },
+    rows: [],
+    generalMatches: [],
+  };
+}
+
+describe("보안 공지 — 확인함 표시", () => {
+  it("확인 필요 공지의 요약 칸에 메모 칸과 '확인함으로 표시' — 누르면 POST(메모는 앞뒤 공백을 떼어), 그 뒤 요약 칸과 목록을 다시 읽어 확인한 시각·메모와 '확인 취소'", async () => {
+    reads[endpoints.security.notice(900003)] = checkDetail(null);
+    api.apiPost.mockImplementation(() => {
+      reads[endpoints.security.notice(900003)] = checkDetail({
+        ackedAt: "2026-11-21T01:30:00Z", note: "가짜 근거 한 줄", valid: true, verdict: "check", reasons: ["CONDITION_NOTE"],
+      });
+      return Promise.resolve({});
+    });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: CHECK_TITLE }));
+    const dialog = await screen.findByRole("dialog", { name: CHECK_TITLE });
+    const memo = await within(dialog).findByLabelText("확인 메모(선택)");
+    expect((memo as HTMLTextAreaElement).maxLength).toBe(500);
+    expect(api.apiPost).not.toHaveBeenCalled();
+    const listReads = () => calledPaths().filter((path) => path === LIST).length;
+    const before = listReads();
+
+    fireEvent.change(memo, { target: { value: "  가짜 근거 한 줄  " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "확인함으로 표시" }));
+    await settled();
+
+    expect(api.apiPost.mock.calls).toEqual([[endpoints.security.noticeAck("900003"), { note: "가짜 근거 한 줄" }]]);
+    expect(await within(dialog).findByText("확인함 · 2026-11-21 10:30")).toBeTruthy();
+    expect(within(dialog).getByText("메모: 가짜 근거 한 줄")).toBeTruthy();
+    expect(within(dialog).queryByLabelText("확인 메모(선택)")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "확인 취소" })).toBeTruthy();
+    expect(listReads()).toBe(before + 1);
+  });
+
+  it("메모 없이도 확인할 수 있고(본문 {}), '확인 취소'는 DELETE — 실패하면 그 문구를 보이고 다시 읽지 않는다", async () => {
+    reads[endpoints.security.notice(900003)] = checkDetail(null);
+    api.apiPost.mockResolvedValue({});
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: CHECK_TITLE }));
+    const dialog = await screen.findByRole("dialog", { name: CHECK_TITLE });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "확인함으로 표시" }));
+    await settled();
+    expect(api.apiPost.mock.calls).toEqual([[endpoints.security.noticeAck("900003"), {}]]);
+
+    cleanup();
+    reads[endpoints.security.notice(900003)] = checkDetail({ ackedAt: "2026-11-21T01:30:00Z", note: null, valid: true, verdict: "check", reasons: ["CONDITION_NOTE"] });
+    api.apiDelete.mockRejectedValue(new Error("가짜 실패 문구"));
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: CHECK_TITLE }));
+    const again = await screen.findByRole("dialog", { name: CHECK_TITLE });
+    const noticeReads = () => calledPaths().filter((path) => path === endpoints.security.notice(900003)).length;
+    fireEvent.click(await within(again).findByRole("button", { name: "확인 취소" }));
+    const before = noticeReads();
+    await settled();
+    expect(api.apiDelete.mock.calls).toEqual([[endpoints.security.noticeAck("900003")]]);
+    expect(within(again).getByText("가짜 실패 문구")).toBeTruthy();
+    expect(noticeReads()).toBe(before);
+  });
+
+  it("확인한 뒤 판정·사유가 바뀐 공지는 그 사실과 그때의 사유·메모를 보이고 다시 확인할 수 있다 — 목록에는 '확인함'·'확인 뒤 바뀜' 표지", async () => {
+    const stale = { ackedAt: "2026-11-20T01:30:00Z", note: "예전 가짜 메모", valid: false, verdict: "check", reasons: ["NAME_MATCH"] };
+    reads[LIST] = noticesResponse({
+      items: [
+        ITEMS[0],
+        { ...ITEMS[1], verdict: "check", ack: { ...stale, valid: true } },
+        { ...ITEMS[2], ack: stale },
+        ITEMS[3],
+      ],
+    });
+    reads[endpoints.security.notice(900003)] = checkDetail(stale);
+    await renderPage();
+    expect(within(rowOf("[가짜] 합성 런타임 보안 업데이트 권고")).getByText("확인함")).toBeTruthy();
+    expect(within(rowOf(CHECK_TITLE)).getByText("확인 뒤 바뀜")).toBeTruthy();
+    expect(within(rowOf("[가짜] 합성 DB 보안 업데이트 권고")).queryByText("확인함")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: CHECK_TITLE }));
+    const dialog = await screen.findByRole("dialog", { name: CHECK_TITLE });
+    expect(await within(dialog).findByText("확인한 뒤 판정이나 사유가 바뀌었습니다")).toBeTruthy();
+    expect(within(dialog).getByText("2026-11-20 10:30에 확인할 때는 확인 필요(이름만 맞음)였습니다. 그때 메모: 예전 가짜 메모")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "확인함으로 표시" })).toBeTruthy();
+  });
+
+  it("확인 필요가 아닌 공지(해당)에는 확인함 칸이 없다", async () => {
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "[가짜] 합성 DB 보안 업데이트 권고" }));
+    const dialog = await screen.findByRole("dialog", { name: "[가짜] 합성 DB 보안 업데이트 권고" });
+    await within(dialog).findByText("이 환경에 걸린 것 2줄");
+    expect(within(dialog).queryByRole("button", { name: "확인함으로 표시" })).toBeNull();
+    expect(within(dialog).queryByLabelText("확인 메모(선택)")).toBeNull();
   });
 });

@@ -77,19 +77,23 @@ export const endpoints = {
     sectorRotation: (period: string) => withQuery("/api/sector/rotation", { period }),
   },
 
-  // 보안 공지(/security, 운영자 전용 — ADR 0046). 읽기만 — 판정은 백엔드가 읽을 때 계산하고 화면 조회가 수집을 일으키지 않습니다. 쓰기 경로는 없습니다.
+  // 보안 공지(/security, 운영자 전용 — ADR 0046). 판정은 백엔드가 읽을 때 계산하고 화면 조회가 수집을 일으키지 않습니다. 쓰기는 '확인함' 표시 둘뿐입니다
+  // (POST·DELETE noticeAck — ADR 0046 덧붙임 2026-11-28).
   security: {
-    /** 공지 목록 — verdict(affected·check·patched·unrelated)·reason(사유 코드 하나)·q(제목·제품명·CVE)·page(1부터)·size. */
-    notices: (params: { verdict?: string; reason?: string; q?: string; page?: number; size?: number }) =>
+    /** 공지 목록 — verdict(affected·check·patched·unrelated)·reason(사유 코드 하나)·ack(open·acked)·q(제목·제품명·CVE)·page(1부터)·size. */
+    notices: (params: { verdict?: string; reason?: string; ack?: string; q?: string; page?: number; size?: number }) =>
       withQuery("/api/security/notices", {
         verdict: optional(params.verdict),
         reason: optional(params.reason),
+        ack: optional(params.ack),
         q: optional(params.q?.trim()),
         page: params.page,
         size: params.size,
       }),
     /** 공지 한 건 — 표 행마다 판정·사유·설치 버전. */
     notice: (nttId: string | number) => `/api/security/notices/${segment(String(nttId))}`,
+    /** '확인함' 표시 — POST(본문 {note} 선택)로 적고 DELETE로 지웁니다. 응답은 그 공지의 한 건 응답. */
+    noticeAck: (nttId: string | number) => `/api/security/notices/${segment(String(nttId))}/ack`,
     /** 버전 목록 한 벌 — 구역 상태·구성 요소·apt 보류 목록. */
     inventory: "/api/security/inventory",
   },

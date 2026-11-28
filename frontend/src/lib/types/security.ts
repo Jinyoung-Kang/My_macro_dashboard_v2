@@ -1,5 +1,5 @@
 /**
- * 보안 공지(/security, ADR 0046 — 운영자 전용, 읽기만) 응답 계약. 칸은 docs/API.md의 `/api/security/*` 세 줄 그대로입니다.
+ * 보안 공지(/security, ADR 0046 — 운영자 전용) 응답 계약. 칸은 docs/API.md의 `/api/security/*` 줄 그대로입니다(쓰기는 '확인함' 표시 둘뿐).
  * 모르는 값은 null입니다(0·빈 글로 채우지 않음). 시각은 ISO(UTC) 글자, 날짜는 yyyy-MM-dd.
  */
 
@@ -55,6 +55,18 @@ export interface SecurityProductVerdict {
   reasons: string[];
 }
 
+/**
+ * '확인함' 기록(ADR 0046 덧붙임 2026-11-28) — 운영자가 확인 필요 공지를 손으로 확인했다고 적은 것. 판정을 바꾸지 않습니다.
+ * valid가 false면 확인한 뒤 판정·사유가 달라진 것(그때의 판정·사유가 verdict·reasons) — 다시 '남은 것'으로 셉니다.
+ */
+export interface SecurityAck {
+  ackedAt: string | null;
+  note: string | null;
+  valid: boolean;
+  verdict: string;
+  reasons: string[];
+}
+
 /** 공지 목록의 한 줄. */
 export interface SecurityNoticeItem {
   nttId: number;
@@ -72,6 +84,8 @@ export interface SecurityNoticeItem {
   products: SecurityProductVerdict[];
   rowCount: number | null;
   cveCount: number | null;
+  /** 확인함 기록 — 없으면 null(옛 서버 응답에는 칸이 없음). */
+  ack?: SecurityAck | null;
 }
 
 /** GET /api/security/notices */
@@ -80,7 +94,8 @@ export interface SecurityNoticesResponse {
   checkedAt: string;
   inventory: SecurityInventorySummary | null;
   collection: SecurityCollection | null;
-  counts: { affected: number; check: number; patched: number; unrelated: number; total: number } | null;
+  /** checkOpen·checkAcked는 확인 필요를 유효한 확인이 없는 것·있는 것으로 나눈 수(옛 서버 응답에는 없음). */
+  counts: { affected: number; check: number; patched: number; unrelated: number; checkOpen?: number; checkAcked?: number; total: number } | null;
   reasonCounts: Record<string, number> | null;
   items: SecurityNoticeItem[];
   page: number;
