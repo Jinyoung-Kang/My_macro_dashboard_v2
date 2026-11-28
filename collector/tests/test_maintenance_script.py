@@ -121,6 +121,7 @@ exit 0
 """
 _NEEDRESTART = r"""#!/usr/bin/env bash
 echo "needrestart $* | root=${FAKE_AS_ROOT:-}" >> "$FAKE_LOG.host"
+[ -z "${FAKE_NR_FAIL:-}" ] || { echo "needrestart: fake failure" >&2; exit 1; }
 printf '%s\n' "NEEDRESTART-VER: 3.6" "NEEDRESTART-KCUR: 6.8.0-fake" "NEEDRESTART-KEXP: 6.8.0-fake" "NEEDRESTART-KSTA: ${FAKE_KSTA:-1}"
 for s in ${FAKE_NR_SVC:-}; do echo "NEEDRESTART-SVC: $s.service"; done
 """
@@ -462,6 +463,15 @@ def test_ADR0053_재부팅이_필요하면_Tailscale_뒤에_재부팅하고_부�
     logs = list((maint.here / "backups/maintenance").glob("*.log"))
     assert len(logs) == 1, "재부팅 뒤 출력은 같은 파일에 이어 씀"
     _no_versions_or_secrets(maint, after.stdout)
+
+
+def test_ADR0053_needrestart를_읽지_못해도_재부팅하지_않는다(maint):
+    """참고 줄이 재부팅 까닭에 섞이면 표시가 없어도 재부팅했다(2026-11-28 구현 중 발견) — 까닭은 표시·커널·서비스뿐."""
+    result = maint.run(FAKE_NR_FAIL="1")
+    assert result.returncode == 0, maint.side("")
+    assert not [c for c in maint.calls() if c.startswith("systemctl reboot")]
+    [msg] = maint.messages()
+    assert "✓ 5 재부팅: 필요 없음" in msg
 
 
 def test_ADR0053_재부팅_뒤_이름_조회가_깨져_있으면_복구를_한_번_한다(maint):

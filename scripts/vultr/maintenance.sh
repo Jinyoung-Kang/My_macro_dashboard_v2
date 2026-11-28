@@ -163,12 +163,12 @@ pick() {   # $1 = 보류 이름(줄마다), 나머지 = 고를 이름 — 겹치
     local list="$1" name out=""
     shift
     for name in "$@"; do
-        if printf '%s\n' "$list" | grep -qxF -- "$name"; then out+="$name "; fi
+        if grep -qxF -- "$name" <<< "$list"; then out+="$name "; fi
     done
     printf '%s' "${out% }"
 }
 
-reboot_reasons() {   # 재부팅이 필요한 까닭(없으면 빈 값) — 패키지·서비스 이름만
+reboot_reasons() {   # 재부팅이 필요한 까닭(없으면 빈 값) — 패키지·서비스 이름만. 표준출력은 까닭뿐(참고 줄은 stderr — 까닭에 섞이면 재부팅함)
     local out=() nr ksta svcs
     if [ -e "$reboot_flag" ]; then
         local n
@@ -176,12 +176,12 @@ reboot_reasons() {   # 재부팅이 필요한 까닭(없으면 빈 값) — 패�
         if [ "$n" -gt 0 ]; then out+=("재부팅 표시(패키지 ${n}개)"); else out+=("재부팅 표시"); fi
     fi
     if command -v needrestart >/dev/null 2>&1 && nr="$(sudo -n needrestart -b -r l 2>/dev/null)"; then
-        ksta="$(printf '%s\n' "$nr" | sed -n 's/^NEEDRESTART-KSTA: *//p' | head -n 1)"
+        ksta="$(sed -n '/^NEEDRESTART-KSTA:/{s/^NEEDRESTART-KSTA: *//;p;q;}' <<< "$nr")"
         case "$ksta" in 2 | 3) out+=("새 커널 대기") ;; esac
-        svcs="$(printf '%s\n' "$nr" | sed -n 's/^NEEDRESTART-SVC: *//p' | sed 's/\.service$//' | sort -u | tr '\n' ' ')"
+        svcs="$(sed -n 's/^NEEDRESTART-SVC: *//p' <<< "$nr" | sed 's/\.service$//' | sort -u | tr '\n' ' ')"
         [ -z "${svcs// /}" ] || out+=("재시작이 필요한 서비스: $(join_names "$svcs")")
     else
-        log "참고: needrestart를 읽지 못했습니다(재부팅 표시 파일만 봄)."
+        log "참고: needrestart를 읽지 못했습니다(재부팅 표시 파일만 봄)." >&2
     fi
     [ "${#out[@]}" -eq 0 ] || printf '%s; ' "${out[@]}" | sed 's/; $//'
 }
@@ -222,7 +222,7 @@ containers_bad() {   # 동작하지 않거나 건강하지 않은 서비스(없�
     services="$(docker compose config --services 2>/dev/null)" || { printf '서비스 목록을 읽지 못함'; return; }
     ps="$(docker compose ps --all --format '{{.Service}}\t{{.State}}\t{{.Health}}' 2>/dev/null)" || ps=""
     for svc in $services; do
-        line="$(printf '%s\n' "$ps" | awk -F'\t' -v s="$svc" '$1 == s { print; exit }')"
+        line="$(awk -F'\t' -v s="$svc" '$1 == s { print; exit }' <<< "$ps")"
         state="$(printf '%s' "$line" | cut -f2)"
         health="$(printf '%s' "$line" | cut -f3)"
         if [ "$state" != running ] || { [ -n "$health" ] && [ "$health" != healthy ]; }; then
@@ -373,7 +373,8 @@ fi
 
 head_full="$(git rev-parse HEAD 2>/dev/null || true)"
 head_short="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
-deployed="$( (cut -d' ' -f3 "$BACKUP_DIR/.last-deploy-ok" 2>/dev/null || true) | head -n 1)"
+deployed=""
+[ ! -f "$BACKUP_DIR/.last-deploy-ok" ] || read -r _ _ deployed _ < "$BACKUP_DIR/.last-deploy-ok" || true
 if [ -z "$head_full" ] || [ "$deployed" != "$head_full" ]; then
     checks+=("서버 폴더의 판(main@$head_short)이 마지막으로 끝까지 배포한 판(${deployed:+main@${deployed:0:8}}${deployed:-기록 없음})과 다름 — 날짜를 정한 변경이 저절로 나가지 않게 다시 빌드하지 않음")
 elif [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] || [ "$(git symbolic-ref -q --short HEAD || true)" != main ]; then
