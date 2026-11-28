@@ -329,7 +329,7 @@ if [ "$mode" != dry ]; then
     umask 077
     mkdir -p "$BACKUP_DIR/maintenance"
     [ -n "$log_file" ] || log_file="$BACKUP_DIR/maintenance/$(date -u +%Y%m%d-%H%M%S).log"
-    echo "출력: $log_file"
+    [ ! -t 1 ] || echo "출력: $log_file"   # cron에서는 찍지 않음(메일 없는 cron이 버리며 syslog에 잡음을 남김)
     exec >>"$log_file" 2>&1
     # 오래된 출력은 12개만 남깁니다.
     (ls -1t "$BACKUP_DIR"/maintenance/*.log 2>/dev/null || true) | tail -n +13 | while read -r old; do rm -f "$old"; done
