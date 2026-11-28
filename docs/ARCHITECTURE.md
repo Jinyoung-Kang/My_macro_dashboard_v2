@@ -62,6 +62,7 @@ docker compose exec -T collector python -m app.inventory ──(검증 통과 �
 보호나라 게시판 ──► Collector kisa_security_notices(flex 느린 줄 — 틱 작업이 따로라 다른 flex 태스크를 막지 않음, KST 6시간 구간마다 한 번) ──► security_notices · security_notice_rows
 Ubuntu·Debian 추적기·Alpine secdb ──► (같은 실행 안에서, security_tracker_wants만) ──► distro_cve_status
                                                      Backend SecurityService(읽을 때 판정) ──► /api/security/* ──► 화면 /security · /security/<번호>
+                                                              └─► security_acks('확인함' 표시 — 화면의 확인·취소만, 판정을 바꾸지 않음)
                                                      Backend SecurityAlertJob ──► 알림함 · 텔레그램 운영 봇(security_alerts에 기록)
                                                                              └─► security_tracker_wants(판정에서 모은 물어볼 것)
 ```
