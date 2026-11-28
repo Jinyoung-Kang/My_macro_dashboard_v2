@@ -5,8 +5,10 @@
 # 손으로 할 때(서버의 ubuntu 사용자):
 #   export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml   # 두 파일을 늘 함께(서버 .env에도 같은 값)
 #   export APP_VERSION="main@$(git rev-parse --short HEAD)" APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
-#   docker compose build --pull backend && docker compose build --pull frontend && docker compose build --pull collector \
-#     && docker compose build --pull --build-arg CHROME_REFRESH="$(date -u +%G-W%V)" browser   # 4 GB — 하나씩. Chrome은 이 값이 바뀔 때만 새로 받음(QA-1004)
+#   w="$(date -u +%G-W%V)"   # Chrome(QA-1004)·이미지 안 OS 패키지 층(ADR 0053)은 이 값이 바뀔 때만 새로 받음
+#   docker compose build --pull --build-arg OS_PKG_REFRESH="$w" backend && docker compose build --pull --build-arg OS_PKG_REFRESH="$w" frontend \
+#     && docker compose build --pull --build-arg OS_PKG_REFRESH="$w" collector \
+#     && docker compose build --pull --build-arg CHROME_REFRESH="$w" --build-arg OS_PKG_REFRESH="$w" browser   # 4 GB — 하나씩
 #   docker compose up -d && docker compose up -d --no-deps --force-recreate caddy   # 바뀐 Caddyfile(파일 하나 bind mount)
 #   ok=; for i in 1 2 3 4 5 6 7 8 9 10; do docker compose \
 #     exec -T collector python -c "from app import store; store.init_schema()" && { ok=1; break; }; sleep 3; done; \

@@ -179,6 +179,12 @@ def _run(script: Path, cwd: Path, env: dict[str, str]) -> subprocess.CompletedPr
                           encoding="utf-8", errors="replace", timeout=60)
 
 
+def _run_args(script: Path, args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
+    """_run과 같고 스크립트 인자를 함께 넘깁니다."""
+    return subprocess.run(["bash", str(script), *args], cwd=cwd, env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=60)
+
+
 def _git(cwd: Path, *args: str) -> str:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update(_GIT_ENV)

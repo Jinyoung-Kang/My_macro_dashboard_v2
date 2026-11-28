@@ -227,10 +227,10 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert result.returncode == 0, result.stderr
     calls = _docker_calls(fakes)
     builds = [c for c in calls if c.startswith("compose build")]
-    assert builds[:3] == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"] \
+    assert [_OS_BUILD.fullmatch(b).group(1) for b in builds[:3]] == ["backend", "frontend", "collector"] \
         and len(builds) == 4 and _CHROME_BUILD.fullmatch(builds[3]), \
         ("4 GB — 서비스를 하나씩, gate는 Vultr에 없음(ADR 0023), browser는 차단 통과 수집 계층의 브라우저 컨테이너(ADR 0026 — "
-         "Chrome을 주에 한 번 새로 받게 ISO 주를 빌드 인자로, QA-1004)")
+         "Chrome을 주에 한 번 새로 받게 ISO 주를 빌드 인자로, QA-1004), 이미지 안 OS 패키지 층도 주에 한 번(ADR 0053)")
     assert not any(c.startswith("curl ") for c in tools._calls(fakes)), "CloudFront 대역을 받지 않습니다(공개 주소 없음)"
     assert not (server[0] / "deploy/vultr/trusted_proxies.caddy").exists()
     up = calls.index("compose up -d --no-build --wait --wait-timeout 300")
@@ -250,7 +250,8 @@ def test_deploy는_gate_없이_하나씩_빌드하고_Vultr_덧붙임으로_기�
     assert SECRET not in result.stdout + result.stderr, "서버 .env의 값을 찍지 않습니다"
 
 
-_CHROME_BUILD = re.compile(r"compose build --pull --build-arg CHROME_REFRESH=\d{4}-W\d{2} browser")
+_CHROME_BUILD = re.compile(r"compose build --pull --build-arg CHROME_REFRESH=(\d{4}-W\d{2}) --build-arg OS_PKG_REFRESH=(\S+) browser")
+_OS_BUILD = re.compile(r"compose build --pull --build-arg OS_PKG_REFRESH=(?:\S+) (backend|frontend|collector)")
 
 
 def test_QA_1004_브라우저_이미지의_Chrome_층은_빌드_인자가_바뀌면_다시_받는다():
@@ -274,11 +275,93 @@ def test_QA_1004_deploy는_browser_빌드에_ISO_주를_넘겨_주에_한_번_Ch
     week.add(datetime.now(timezone.utc).strftime("%G-W%V"))             # 주가 바뀌는 순간에 돌아도 둘 중 하나
     assert result.returncode == 0, result.stderr
     builds = [c for c in _docker_calls(fakes) if c.startswith("compose build")]
-    assert builds[:3] == ["compose build --pull backend", "compose build --pull frontend", "compose build --pull collector"], \
-        "다른 이미지에는 인자를 넘기지 않음"
+    assert not any("CHROME_REFRESH" in b for b in builds[:3]), "다른 이미지에는 Chrome 인자를 넘기지 않음"
     assert len(builds) == 4 and _CHROME_BUILD.fullmatch(builds[3]), builds
-    assert builds[3].split("CHROME_REFRESH=")[1].split()[0] in week
+    assert _CHROME_BUILD.fullmatch(builds[3]).group(1) in week
     assert any(f"Chrome 새로 받기 주기 값 {w}" in result.stdout for w in week), "끝 요약에 주기 값 한 줄(Chrome 판은 찍지 않음 — ADR 0046)"
+
+
+# --------------------------------------------------------------------------- deploy.sh — 주간 유지보수가 쓰는 길(ADR 0053)
+def test_ADR0053_deploy는_네_이미지의_OS_패키지_층에_ISO_주를_넘기고_주기_값을_알린다(server, fakes):
+    week = {datetime.now(timezone.utc).strftime("%G-W%V")}
+    result = _deploy(server, fakes)
+    week.add(datetime.now(timezone.utc).strftime("%G-W%V"))
+    assert result.returncode == 0, result.stderr
+    builds = [c for c in _docker_calls(fakes) if c.startswith("compose build")]
+    values = [b.split("OS_PKG_REFRESH=")[1].split()[0] for b in builds]
+    assert len(builds) == 4 and len(set(values)) == 1 and values[0] in week, builds
+    assert f"이미지 OS 패키지: 새로 받기 주기 값 {values[0]}" in result.stdout
+
+
+def test_ADR0053_deploy는_OS_PKG_REFRESH가_있으면_그_값을_넘기고_모양이_틀리면_빌드하지_않는다(server, fakes):
+    result = _deploy(server, fakes, OS_PKG_REFRESH="2026-12-05")
+    assert result.returncode == 0, result.stderr
+    builds = [c for c in _docker_calls(fakes) if c.startswith("compose build")]
+    assert len(builds) == 4 and all("--build-arg OS_PKG_REFRESH=2026-12-05 " in b for b in builds), builds
+    fakes[1].write_text("", encoding="utf-8")
+    bad = _deploy(server, fakes, OS_PKG_REFRESH="x y;rm")
+    assert bad.returncode != 0 and "OS_PKG_REFRESH" in bad.stderr
+    assert not [c for c in _docker_calls(fakes) if c.startswith(("compose build", "compose up"))]
+
+
+def test_ADR0053_deploy_no_fetch는_코드를_받지_않고_서버_폴더의_판_그대로_빌드한다(server, fakes):
+    here, seed = server
+    head, remote = tools._git(here, "rev-parse", "HEAD"), tools._git(here, "rev-parse", "origin/main")
+    (seed / "README.md").write_text("new main — 날짜를 정해 배포하기로 한 변경\n", encoding="utf-8")
+    tools._git(seed, "commit", "-qam", "dated change")
+    tools._git(seed, "push", "-q", "origin", "main")
+
+    result = tools._run_args(here / "scripts/vultr/deploy.sh", ["--no-fetch"], here, tools._env(fakes))
+
+    assert result.returncode == 0, result.stderr
+    assert tools._git(here, "rev-parse", "HEAD") == head, "병합하지 않음"
+    assert tools._git(here, "rev-parse", "origin/main") == remote, "fetch도 하지 않음"
+    assert "코드를 받습니다" not in result.stdout and "코드를 받지 않습니다(--no-fetch" in result.stdout
+    assert len([c for c in _docker_calls(fakes) if c.startswith("compose build")]) == 4
+    short = tools._git(here, "rev-parse", "--short", "HEAD")
+    assert all(f"APP_VERSION=main@{short}" in line for line in tools._calls(fakes) if not line.startswith("logger ")), \
+        "버전은 서버 폴더의 판"
+    assert (here / "backups/.last-deploy-ok").read_text(encoding="utf-8").split()[2] == head, "끝까지 배포한 커밋을 남김"
+
+
+def test_ADR0053_deploy_no_fetch는_서버에서_고친_파일이_있거나_main이_아니면_빌드하지_않는다(server, fakes):
+    here, _ = server
+    (here / "README.md").write_text("서버에서 고침\n", encoding="utf-8")
+    result = tools._run_args(here / "scripts/vultr/deploy.sh", ["--no-fetch"], here, tools._env(fakes))
+    assert result.returncode != 0 and "서버에서 고친 파일" in result.stderr
+    tools._git(here, "checkout", "-q", "--", "README.md")
+    tools._git(here, "checkout", "-q", "--detach")
+    result = tools._run_args(here / "scripts/vultr/deploy.sh", ["--no-fetch"], here, tools._env(fakes))
+    assert result.returncode != 0 and "main이 아닙니다" in result.stderr
+    assert not [c for c in _docker_calls(fakes) if c.startswith(("compose build", "compose up"))]
+
+
+def test_ADR0053_deploy는_모르는_인자면_아무것도_하지_않는다(server, fakes):
+    here, _ = server
+    result = tools._run_args(here / "scripts/vultr/deploy.sh", ["--nofetch"], here, tools._env(fakes))
+    assert result.returncode != 0 and "--no-fetch" in result.stderr
+    assert _docker_calls(fakes) == []
+
+
+def test_ADR0053_deploy는_다른_배포나_주간_유지보수가_잠금을_쥐고_있으면_멈춘다(server, fakes):
+    import fcntl
+
+    here, _ = server
+    (here / "backups").mkdir()
+    with (here / "backups/.deploy.lock").open("a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = _deploy(server, fakes)
+        assert result.returncode != 0 and "돌고 있습니다" in result.stderr
+        assert _docker_calls(fakes) == [], "가드 질의·빌드·기동 모두 없음"
+        held_by_parent = _deploy(server, fakes, DEPLOY_LOCK_HELD="1")
+        assert held_by_parent.returncode == 0, "잠금을 쥔 부모(maintenance.sh·새 판으로 다시 도는 판)가 부를 때는 다시 잡지 않음"
+
+
+def test_ADR0053_deploy는_끝나지_않은_배포를_끝까지_배포한_기록으로_남기지_않는다(server, fakes):
+    here, _ = server
+    result = _deploy(server, fakes, FAKE_DOCKER_FAIL="--wait-timeout 300")
+    assert result.returncode != 0
+    assert not (here / "backups/.last-deploy-ok").exists()
 
 
 @pytest.mark.parametrize("line", ["FRONTEND_PORT=3002", "LOCAL_NO_LOGIN=true", "PUBLIC_URL=http://x",
@@ -522,7 +605,8 @@ def test_QA200_deploy는_빌드_뒤_기동_전에_배포_전_덤프를_따로_�
     calls = _docker_calls(fakes)
     dumps = _dump_calls(calls)
     assert len(dumps) == 1, "배포마다 한 번"
-    assert calls.index("compose build --pull collector") < dumps[0] < calls.index(UP), \
+    collector_build = next(i for i, c in enumerate(calls) if c.startswith("compose build") and c.endswith(" collector"))
+    assert collector_build < dumps[0] < calls.index(UP), \
         "빌드가 성공한 뒤, 수집기가 기동하며 마이그레이션을 적용하기(up) 전"
     saved = sorted(p.name for p in (here / "backups").glob("*.sql"))
     assert len(saved) == 1 and saved[0].startswith("pre-deploy-"), \
@@ -536,6 +620,7 @@ def test_QA200_deploy는_배포_전_덤프가_실패하면_기동하지_않고_0
     assert "배포 전" in result.stderr
     assert not any(c.startswith("compose up") for c in _docker_calls(fakes)), "되돌릴 시점 없이 기동하지 않음"
     left = sorted(p.name for p in (here / "backups").glob("*")) if (here / "backups").exists() else []
+    left = [name for name in left if name != ".deploy.lock"]          # 겹쳐 돌지 않게 하는 잠금 파일(ADR 0053)은 덤프가 아님
     assert left == [], f"반쯤 쓴 덤프(.partial)를 남기지 않음 — {left}"
 
 

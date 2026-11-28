@@ -5,14 +5,19 @@
 #
 # 사용(서버 셸 — PC에서 ssh ubuntu@my-macro-app(Tailscale SSH) 또는 비상용 ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>):
 #   bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
+#   bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh --no-fetch   코드를 받지 않고 서버 폴더의 판 그대로 다시 빌드·기동(2단계를 건너뜀 —
+#                                                                     주간 유지보수 scripts/vultr/maintenance.sh가 이 길만 씀, ADR 0053)
 #
 # 순서
 #   1. 점검: 폴더 이름(My_macro_dashboard_v2 — compose 프로젝트·DB 볼륨 이름이 폴더 이름을 따름), .env가 있고
 #      서버에 적지 않는 이름(포트 네 줄·AWS 공개 주소용 값·PC 전용 값 등, .env.vultr.example)이 없는지. 값은 읽지도 찍지도 않습니다.
 #      PAPER_ENABLED=false가 있으면 운영본의 모의 매매 정기 작업이 꺼진 채 뜬다고 '주의'를 찍습니다(끝 요약에도 다시 — QA-194).
+#      겹쳐 돌지 않게 잠금(backups/.deploy.lock — 다른 배포나 주간 유지보수가 쥐고 있으면 멈춤, 2026-11-28).
 #   2. 실제 매매 가드(3과 같은 판정 — 거래 창이면 코드를 받기 전에 멈춤: 서버 폴더와 돌던 컨테이너 그대로, QA-1015) →
 #      git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
+#      --no-fetch면 받지 않습니다 — 서버에서 고친 파일이 없고 main에 있는지만 봅니다(날짜를 정해 배포하기로 한 main의 변경이 주간 유지보수로
+#      저절로 나가지 않게 — ADR 0053).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED). 실제 매매(ADR 0028)가 꺼져(OFF) 있지 않고 — 켜짐(LIVE)뿐 아니라 미체결을 취소하는 끄는 중(STOPPING)·
 #      이상 멈춤(HALTED)도 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체: 시가 맞추기·개장 10분 뒤 맞추기·장중 스탑 매도·종가,
 #      ADR 0033)이면 멈춥니다 —
@@ -24,10 +29,13 @@
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector → browser(베이스 이미지 보안 패치까지 --pull). browser는 차단 통과 수집 계층의
 #      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널은 주에 한 번, ISO 주가 바뀐 뒤 첫 배포에서 새로 받음: --build-arg CHROME_REFRESH, QA-1004).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
+#      이미지 안 OS 패키지를 올리는 층(apk·apt upgrade)도 주에 한 번 새로 만듭니다 — --build-arg OS_PKG_REFRESH(기본 ISO 주, 환경변수로 바꿈 —
+#      주간 유지보수는 그날 날짜를 넘겨 토요일마다 새로 만듦). 층 캐시가 있으면 --pull도 그 층을 다시 쓰기 때문입니다(QA-263, ADR 0053).
 #   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
 #   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile).
 #      기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스) 스키마 적용과 caddy 다시 만들기는 마친 뒤 실패로 끝납니다(QA-369 —
-#      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음).
+#      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음). 여기까지 성공하면 그 커밋을 backups/.last-deploy-ok에 남깁니다(주간 유지보수가
+#      서버 폴더의 판이 끝까지 배포된 판인지 대조 — ADR 0053).
 #   7. 매달린 이미지 정리와 빌드 캐시를 크기 상한까지 줄이기(BUILD_CACHE_MAX — 환경변수 → .env → 기본 15GB, 그 정리가 실패하면 일주일 넘은 것만).
 #      정리가 실패해도 배포 결과는 그대로이고 '경고:' 한 줄만 찍습니다(QA-1034). 끝 요약에 디스크·inode 사용률(scripts/vultr/disk-check.sh — 80% 이상이면 '경고:',
 #      같은 판정을 make status·cron 알림이 씀)과 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
@@ -42,6 +50,13 @@ die() {
     echo "✗ $*" >&2
     exit 1
 }
+
+no_fetch=
+case "${1:-}" in
+    '') ;;
+    --no-fetch) no_fetch=1 ;;
+    *) die "사용: bash scripts/vultr/deploy.sh [--no-fetch]" ;;
+esac
 
 # ---------------------------------------------------------------- 1) 점검
 [ "$(basename "$PWD")" = "My_macro_dashboard_v2" ] ||
@@ -75,6 +90,16 @@ fi
 # 대화형 셸에서 물려받은 umask(예: .env를 받을 때의 077)로 git이 파일을 0600으로 쓰면 컨테이너(root가 아닌 사용자)가 읽지 못합니다.
 umask 022
 
+# 겹쳐 돌지 않게(2026-11-28) — 배포 둘이, 또는 배포와 주간 유지보수(scripts/vultr/maintenance.sh — 같은 잠금을 쥔 채 이 스크립트를 부름)가 함께
+# 빌드·기동하면 4 GB 서버의 메모리가 모자라고 서로의 컨테이너를 다시 만듭니다. 잠금은 이 프로세스(새 판으로 다시 돈 판 포함 — fd를 물려받음)가 끝나면
+# 풀립니다. DEPLOY_LOCK_HELD=1은 이미 그 잠금을 쥔 부모(다시 도는 판·maintenance.sh)가 넘기는 값입니다. flock이 없으면(서버에는 있음) 잠금 없이 갑니다.
+if [ -z "${DEPLOY_LOCK_HELD:-}" ] && command -v flock >/dev/null 2>&1; then
+    mkdir -p backups
+    exec 9>>backups/.deploy.lock
+    flock -n 9 ||
+        die "다른 배포나 주간 유지보수(maintenance.sh)가 돌고 있습니다(backups/.deploy.lock) — 끝난 뒤 다시 실행하세요(journalctl -t my-macro-maintenance)."
+fi
+
 # ---------------------------------------------------------------- 실제 매매 가드(함수 — 2·3·6단계가 부름)
 # 판정(꺼지지 않은 시장 수·한국 거래 창·장 시간 변경일)과 문구는 scripts/vultr/realtrade-guard.sh 한 곳에 있습니다(2026-11-28에 옮김 —
 # 주간 유지보수 scripts/vultr/maintenance.sh도 같은 판정을 씀). 그 파일은 위 die를 부릅니다.
@@ -91,25 +116,34 @@ export COMPOSE_FILE=docker-compose.yml:compose.vultr.yml
 APP_VERSION="main@$(git rev-parse --short HEAD)"
 APP_UPDATED="$(TZ=Asia/Seoul git log -1 --format=%cd --date=format-local:%Y-%m-%d)"
 export APP_VERSION APP_UPDATED
-[ -n "${DEPLOY_REEXEC:-}" ] || realtrade_guard before-fetch
-echo "코드를 받습니다(main)…"
-# 이 스크립트와 가드 파일(source — 옮기기 전에는 이 파일 안에 있었음)의 판. 가드 파일이 없는 판(옮기기 전)은 빈 값입니다.
-self_rev() {
-    printf '%s %s' "$(git rev-parse -q --verify HEAD:scripts/vultr/deploy.sh)" "$(git rev-parse -q --verify HEAD:scripts/vultr/realtrade-guard.sh)"
-}
-self_before="$(self_rev)"
-git fetch --prune --quiet origin
-# 추적 중인 파일만 봅니다(.env·backups는 추적하지 않음).
-[ -z "$(git status --porcelain --untracked-files=no)" ] ||
-    die "서버에서 고친 파일이 있어 받지 않았습니다 — git status로 확인하고 git restore <파일>로 되돌리세요."
-git checkout --quiet main
-git merge --ff-only --quiet origin/main ||
-    die "서버의 main이 origin/main과 갈라져 fast-forward하지 못했습니다 — git log --oneline --graph main origin/main"
-# QA-145: 받은 main에서 이 스크립트(또는 가드 파일)가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다. bash는 이미 연 옛 파일을 끝까지 읽어,
-# 새 판의 빌드 목록·단계가 빠진 채 기동합니다(2026-10-30 AWS gate). 다시 돈 판은 받을 것이 없어 여기를 그냥 지나갑니다.
-if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(self_rev)" != "$self_before" ]; then
-    echo "  deploy.sh(또는 가드 파일)가 바뀌어 받은 새 판으로 다시 돕니다."
-    DEPLOY_REEXEC=1 exec bash scripts/vultr/deploy.sh "$@"
+if [ -n "$no_fetch" ]; then
+    # 서버 폴더의 판 그대로(ADR 0053) — 받지 않으므로 받기 전 가드도 새 판으로 다시 돌기도 없습니다(빌드 전·기동 직전 가드는 그대로).
+    echo "코드를 받지 않습니다(--no-fetch — 서버 폴더의 판 그대로 다시 빌드·기동)."
+    [ -z "$(git status --porcelain --untracked-files=no)" ] ||
+        die "서버에서 고친 파일이 있어 빌드하지 않았습니다 — git status로 확인하고 git restore <파일>로 되돌리세요."
+    [ "$(git symbolic-ref -q --short HEAD || true)" = main ] ||
+        die "서버 폴더가 main이 아닙니다 — git status로 확인하세요(배포는 늘 main)."
+else
+    [ -n "${DEPLOY_REEXEC:-}" ] || realtrade_guard before-fetch
+    echo "코드를 받습니다(main)…"
+    # 이 스크립트와 가드 파일(source — 옮기기 전에는 이 파일 안에 있었음)의 판. 가드 파일이 없는 판(옮기기 전)은 빈 값입니다.
+    self_rev() {
+        printf '%s %s' "$(git rev-parse -q --verify HEAD:scripts/vultr/deploy.sh)" "$(git rev-parse -q --verify HEAD:scripts/vultr/realtrade-guard.sh)"
+    }
+    self_before="$(self_rev)"
+    git fetch --prune --quiet origin
+    # 추적 중인 파일만 봅니다(.env·backups는 추적하지 않음).
+    [ -z "$(git status --porcelain --untracked-files=no)" ] ||
+        die "서버에서 고친 파일이 있어 받지 않았습니다 — git status로 확인하고 git restore <파일>로 되돌리세요."
+    git checkout --quiet main
+    git merge --ff-only --quiet origin/main ||
+        die "서버의 main이 origin/main과 갈라져 fast-forward하지 못했습니다 — git log --oneline --graph main origin/main"
+    # QA-145: 받은 main에서 이 스크립트(또는 가드 파일)가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다. bash는 이미 연 옛 파일을 끝까지 읽어,
+    # 새 판의 빌드 목록·단계가 빠진 채 기동합니다(2026-10-30 AWS gate). 다시 돈 판은 받을 것이 없어 여기를 그냥 지나갑니다.
+    if [ -z "${DEPLOY_REEXEC:-}" ] && [ "$(self_rev)" != "$self_before" ]; then
+        echo "  deploy.sh(또는 가드 파일)가 바뀌어 받은 새 판으로 다시 돕니다."
+        DEPLOY_REEXEC=1 DEPLOY_LOCK_HELD=1 exec bash scripts/vultr/deploy.sh "$@"
+    fi
 fi
 # 받은 코드에 Caddyfile이 없으면 docker가 그 자리에 빈 폴더를 만들고 caddy가 뜨지 못합니다.
 [ -f deploy/vultr/Caddyfile ] || die "deploy/vultr/Caddyfile이 없습니다 — 받은 main(git log -1)을 확인하세요."
@@ -126,12 +160,17 @@ realtrade_guard before-build
 # browser 이미지의 Chrome 설치 층은 층 캐시가 있으면 다시 받지 않습니다(--pull은 FROM 이미지만 다시 봄 — 베이스 이미지나 pinned.txt가 바뀔 때만
 # 새로 받던 것, QA-1004). ISO 주를 빌드 인자로 넘겨 주가 바뀐 뒤 첫 배포에서 그 층을 새로 만듭니다(매번 새로 받으면 4 GB 서버의 배포가 느려짐).
 chrome_refresh="$(date -u +%G-W%V)"
+# 이미지 안 OS 패키지 층(backend·frontend의 apk upgrade, collector·browser의 apt-get upgrade)도 같은 방식입니다 — 베이스 digest와 그 줄이 같으면 --pull도
+# 캐시된 층을 다시 써서, 배포가 잦아도 그 층을 처음 만든 날의 패키지에 머뭅니다(QA-263의 남은 한계). 기본은 ISO 주이고, 주간 유지보수
+# (maintenance.sh)는 그날 날짜를 넘겨 토요일마다 새로 만듭니다(ADR 0053). 값은 빌드 인자로만 쓰여 글자를 좁혀 둡니다.
+os_refresh="${OS_PKG_REFRESH:-$chrome_refresh}"
+[[ "$os_refresh" =~ ^[0-9A-Za-z._-]{1,40}$ ]] || die "OS_PKG_REFRESH의 모양이 틀립니다(영문·숫자·._- 40자까지 — 예 2026-W49)."
 for service in backend frontend collector browser; do
     echo "빌드: $service"
     if [ "$service" = browser ]; then
-        docker compose build --pull --build-arg "CHROME_REFRESH=$chrome_refresh" "$service"
+        docker compose build --pull --build-arg "CHROME_REFRESH=$chrome_refresh" --build-arg "OS_PKG_REFRESH=$os_refresh" "$service"
     else
-        docker compose build --pull "$service"
+        docker compose build --pull --build-arg "OS_PKG_REFRESH=$os_refresh" "$service"
     fi
 done
 docker compose pull --quiet caddy postgres
@@ -194,6 +233,11 @@ if [ -n "$failed" ]; then
     echo "✗ 배포가 끝나지 않았습니다: $failed ($schema_note) — 위 표에서 건강하지 않은 서비스의 로그(docker compose logs <서비스>)를 보고 다시 배포하세요." >&2
     exit 1
 fi
+# 끝까지 배포한 커밋(유닉스 초 · UTC · 커밋) — 주간 유지보수(maintenance.sh)가 서버 폴더의 판과 대조해, 빌드·기동 직전에 멈춘 배포(서버 폴더만 새 main)를
+# 토요일에 저절로 띄우지 않습니다(ADR 0053). 쓰지 못해도 배포는 끝났으므로 '경고:'만 찍습니다(그러면 주간 유지보수가 건너뛰고 알림).
+{ mkdir -p backups && printf '%s %s %s\n' "$(date +%s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git rev-parse HEAD)" > backups/.last-deploy-ok.tmp &&
+    mv -f backups/.last-deploy-ok.tmp backups/.last-deploy-ok; } 2>/dev/null ||
+    echo "경고: 끝까지 배포한 기록(backups/.last-deploy-ok)을 남기지 못했습니다 — 주간 유지보수가 이 판을 다시 빌드하지 않고 건너뜁니다." >&2
 
 # ---------------------------------------------------------------- 7) 정리
 # 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음).
@@ -244,6 +288,7 @@ bash scripts/vultr/reboot-check.sh --summary || true
 # browser 이미지의 Chrome을 언제 것으로 받았는지 — 이 값(ISO 주)이 바뀐 뒤 첫 배포에서 새로 받습니다(QA-1004). Chrome 판 자체는 찍지 않습니다
 # (버전은 운영 DB에만 — ADR 0046, 화면 /security의 버전 목록에서 봄).
 echo "   browser 이미지: Chrome 새로 받기 주기 값 $chrome_refresh(이 값이 바뀐 뒤 첫 배포에서 Chrome 안정판을 새로 받음 — 판은 /security 버전 목록)"
+echo "   이미지 OS 패키지: 새로 받기 주기 값 $os_refresh(이 값이 바뀐 뒤 첫 배포에서 apk·apt 패키지 층을 새로 만듦 — ADR 0053)"
 # 보안 공지(ADR 0046)의 버전 목록 — 새 이미지의 버전을 바로 넘깁니다(배포 출력·syslog에는 건수만, 버전은 운영 DB에만). 실패해도 배포를 실패로 만들지 않습니다.
 bash scripts/vultr/inventory.sh || true
 [ -z "$paper_off" ] ||
