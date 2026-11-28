@@ -195,6 +195,7 @@ def server(tmp_path):
     tools._git(seed, "symbolic-ref", "HEAD", "refs/heads/main")
     (seed / "scripts/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
+    shutil.copy(ROOT / "scripts/vultr/realtrade-guard.sh", seed / "scripts/vultr/realtrade-guard.sh")   # 실제 매매 가드(source)
     shutil.copy(ROOT / "scripts/vultr/backup-age.sh", seed / "scripts/vultr/backup-age.sh")   # 끝 요약의 S3 백업 나이(QA-199)
     shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", seed / "scripts/vultr/reboot-check.sh")   # 끝 요약의 재부팅 필요 여부
     for name in ("disk-check.sh", "notify-common.sh"):                                            # 끝 요약의 디스크·inode 사용률
@@ -378,6 +379,20 @@ def test_QA145_deploy는_받은_main의_deploy_sh가_바뀌었으면_새_판으�
     assert "새 판 deploy.sh" in result.stdout
     assert result.stdout.count("코드를 받습니다") == 2, "옛 판이 받은 뒤 새 판으로 한 번만 다시 돈다(되풀이 없음)"
     assert len([c for c in _docker_calls(fakes) if c.startswith("compose build")]) == 4, "빌드는 새 판에서 한 번만"
+
+
+def test_QA145_deploy는_받은_main의_가드_파일만_바뀌어도_새_판으로_다시_돈다(server, fakes):
+    """가드는 deploy.sh가 받기 전에 source한 파일이라(2026-11-28에 옮김) 받은 판에서 바뀌면 옛 함수로 빌드·기동하지 않게 다시 돈다."""
+    _, seed = server
+    guard = seed / "scripts/vultr/realtrade-guard.sh"
+    guard.write_text(guard.read_text(encoding="utf-8") + '\necho "새 판 가드"\n', encoding="utf-8")
+    tools._git(seed, "commit", "-qam", "new guard")
+    tools._git(seed, "push", "-q", "origin", "main")
+    result = _deploy(server, fakes)
+    assert result.returncode == 0, result.stderr
+    assert "새 판 가드" in result.stdout
+    assert result.stdout.count("코드를 받습니다") == 2, "옛 판이 받은 뒤 새 판으로 한 번만 다시 돈다"
+    assert len([c for c in _docker_calls(fakes) if c.startswith("compose build")]) == 4
 
 
 def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고_0이_아닌_값으로_끝난다(server, fakes):
@@ -734,7 +749,7 @@ def test_RT2_COL_1_deploy는_켜진_시장_수와_오늘의_장_시간_변경을
     assert result.returncode == 0, result.stderr
     psql = [c for c in _docker_calls(rt_fakes) if c.startswith("compose exec -T postgres sh -c psql")]
     assert len(psql) == 3, "받기 전(QA-1015)·빌드 전·기동 직전 가드마다 psql 한 번(수집기 토큰·.env 없이)"
-    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    text = (ROOT / "scripts/vultr/realtrade-guard.sh").read_text(encoding="utf-8")
     sql = text[text.index("<<'SQL'"):text.index("\nSQL\n")]
     # 백엔드가 쓰는 설정 행(paper_settings id = 1)의 중첩 경로 — valueAt이 점 경로 kr.calendar.openTimeOverrides를 중첩 객체로 풂.
     assert "FROM public.paper_settings WHERE id = 1" in sql
@@ -1171,7 +1186,7 @@ def test_firewall은_API가_거절하면_규칙을_바꾸지_않고_콘솔을_�
 # OPS-5: 배포 가드는 꺼지지 않은(LIVE·STOPPING·HALTED) 시장을 셉니다 — 끄는 중·이상 멈춤도 이 기능의 미체결 취소를 보내, 거래 창 안에서
 # 다시 만들면 보내던 취소가 끊깁니다. 가짜 docker 시험은 psql 응답을 흉내 내므로, 질의 자체는 진짜 PostgreSQL에서 돌려 봅니다.
 def _deploy_state_sql() -> str:
-    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    text = (ROOT / "scripts/vultr/realtrade-guard.sh").read_text(encoding="utf-8")   # deploy.sh가 source하는 가드(2026-11-28에 옮김)
     start = text.index("\n", text.index("<<'SQL'")) + 1   # 여기 문서 줄(<<'SQL' || true)의 다음 줄부터
     return text[start:text.index("\nSQL\n", start)] + "\n"
 
